@@ -11,7 +11,11 @@ const router = express.Router();
 // still overridable via environment variables if you ever want to change
 // it without touching code (env vars, if set, always win).
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || "TYC").trim().toLowerCase();
-const OWNER_PIN = process.env.OWNER_PIN || "1969";
+// OWNER_PIN mysteriously never reached the process on GoDaddy despite
+// showing "DEPLOYED" in their dashboard — testing OWNER_PASSCODE as a
+// fresh, never-touched variable name to isolate whether that's a
+// platform-side quirk tied to the OWNER_PIN key specifically.
+const OWNER_PIN = process.env.OWNER_PASSCODE || process.env.OWNER_PIN || "1969";
 // Temporary diagnostic for a login issue — logs presence/length only, never
 // the actual value, so nothing sensitive ends up in the runtime logs.
 console.log(
@@ -19,7 +23,9 @@ console.log(
   "raw length:", (process.env.OWNER_USERNAME || "").length,
   "resolved username:", OWNER_USERNAME.length, "chars,",
   "| OWNER_PIN env set:", !!process.env.OWNER_PIN,
-  "raw length:", (process.env.OWNER_PIN || "").length
+  "raw length:", (process.env.OWNER_PIN || "").length,
+  "| OWNER_PASSCODE env set:", !!process.env.OWNER_PASSCODE,
+  "raw length:", (process.env.OWNER_PASSCODE || "").length
 );
 function safeEqual(a, b) {
   const bufA = Buffer.from(String(a || ""));
