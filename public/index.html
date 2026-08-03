@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Padel League</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2563EB">
+<link rel="apple-touch-icon" href="/images/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Padel League">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="role-guest">
+<div class="wrap">
+  <div id="install-banner" class="install-banner" style="display:none;">
+    <svg class="install-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+    <div class="install-text">
+      <strong>Install this as an app</strong>
+      <span id="install-instructions">Get quick, full-screen access from your home screen.</span>
+    </div>
+    <button class="primary" id="install-btn" style="display:none;">Install</button>
+    <button class="install-dismiss" id="install-dismiss" aria-label="Dismiss">&times;</button>
+  </div>
+
+  <div id="loading" class="loading">Loading…</div>
+
+  <div id="app" style="display:none;">
+
+    <section id="view-hub">
+      <header class="site-header">
+        <a href="/" class="brand-link"><img src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
+        <h1 class="h1 h1-sub">Leagues</h1>
+      </header>
+
+      <nav class="tabs">
+        <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
+        <button class="hub-tab-btn" data-hubview="admin">Admin</button>
+      </nav>
+
+      <section class="hub-view active" id="hub-view-leagues">
+        <div class="card">
+          <h2 class="section-title">Leagues</h2>
+          <div id="league-list"></div>
+        </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-admin">
+        <div class="card" id="owner-login-card">
+          <h2 class="section-title">Admin login</h2>
+          <div class="row">
+            <input type="text" id="owner-username" placeholder="Username" style="width:160px;">
+            <input type="password" id="owner-pin" placeholder="PIN" style="width:140px;">
+            <button class="primary" id="owner-login-btn">Log in</button>
+          </div>
+          <div class="error" id="owner-error"></div>
+        </div>
+        <div class="card" id="create-league-card" style="display:none;">
+          <h2 class="section-title">Create a league<button class="secondary" id="owner-logout-btn">Log out</button></h2>
+          <div class="row">
+            <input type="text" id="new-league-name" placeholder="League name">
+            <input type="email" id="new-league-admin-email" placeholder="Your email (this is how you log in)" style="width:260px;">
+            <button class="primary" id="create-league-btn">Create league</button>
+          </div>
+          <p class="note" style="margin-top:10px;">You'll register a password for this email the first time you log in.</p>
+        </div>
+      </section>
+    </section>
+
+    <section id="view-league">
+      <button class="secondary" id="back-to-hub" style="margin-bottom:10px;">&larr; All leagues</button>
+      <header class="site-header">
+        <div class="brand-row">
+          <a href="/" class="brand-link"><img src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
+          <input id="league-name" class="h1 h1-sub" maxlength="60">
+        </div>
+        <div class="header-right">
+          <span class="role-flag" id="role-flag" style="display:none;"></span>
+          <div class="auth-widget">
+            <button class="secondary" id="auth-toggle">Log in</button>
+            <div class="auth-panel" id="auth-panel">
+              <div id="auth-status" class="note" style="margin-bottom:10px;">Viewing only</div>
+              <p class="note" style="margin-bottom:8px;">First time? Register with the email the organizer added you under. Otherwise, log in. Don't reuse a real password.</p>
+              <input type="email" id="login-email" placeholder="Email">
+              <input type="password" id="login-password" placeholder="Password" style="margin-top:8px;">
+              <div class="row" style="margin-top:10px;">
+                <button class="secondary" id="register-btn">Register</button>
+                <button class="primary" id="login-btn">Log in</button>
+              </div>
+              <div class="error" id="auth-error"></div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div id="sponsor-strip" class="sponsor-strip sponsor-strip-top"></div>
+
+      <nav class="tabs" id="tabs"></nav>
+
+      <section class="view" id="view-admin">
+        <div class="card">
+          <h2 class="section-title">League rules</h2>
+          <div id="rules-body"></div>
+        </div>
+        <div class="card" id="season-card"></div>
+        <div class="card">
+          <h2 class="section-title">Teams</h2>
+          <ul class="plain" id="admin-team-list"></ul>
+          <div class="row" id="add-team-row" style="margin-top:12px;">
+            <input type="text" id="new-team-name" placeholder="Team name">
+            <input type="email" id="new-team-email" placeholder="Captain email">
+            <button class="primary" id="add-team-btn">Add team</button>
+          </div>
+          <details style="margin-top:10px;" id="bulk-add-details">
+            <summary class="note" style="cursor:pointer;">Add several teams at once</summary>
+            <p class="note" style="margin:8px 0;">One per line: <code>Team name, email@address.com</code></p>
+            <textarea id="bulk-team-input" rows="4"></textarea>
+            <button class="secondary" id="bulk-add-btn" style="margin-top:8px;">Add these teams</button>
+          </details>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Player rosters</h2>
+          <div id="admin-roster"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Schedule</h2>
+          <p class="note">One date and venue per week — every match that week uses it. Set your usual venue as the default; only override a specific week if it's playing somewhere else.</p>
+          <div class="row" style="align-items:center;margin-top:12px;">
+            <span class="note" style="width:110px;">Default venue</span>
+            <input type="text" id="default-venue-input" placeholder="e.g. Riverside Padel Club">
+          </div>
+          <div id="admin-fixtures" style="margin-top:6px;"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Sponsors</h2>
+          <p class="note">Shown at the bottom of the site for everyone. Upload a logo and, optionally, a link.</p>
+          <div id="admin-sponsor-list" style="margin:12px 0;"></div>
+          <div class="row" style="align-items:center;">
+            <input type="text" id="sponsor-name" placeholder="Sponsor name" style="width:160px;">
+            <input type="text" id="sponsor-link" placeholder="https://… (optional)" style="width:200px;">
+            <label class="secondary" style="cursor:pointer;">Choose image<input type="file" id="sponsor-file" accept="image/*" style="display:none;"></label>
+            <span class="note" id="sponsor-file-name"></span>
+          </div>
+          <button class="primary" id="add-sponsor-btn" style="margin-top:10px;">Add sponsor</button>
+        </div>
+      </section>
+
+      <section class="view" id="view-selection">
+        <div class="card" style="margin-bottom:16px;">
+          <h2 class="section-title">Selection room</h2>
+          <p class="note">Each captain picks seed 1–4 pairs for this round without seeing the other side. A player can't pair with themselves, and can't appear twice in one night.</p>
+        </div>
+        <div id="round-nav-selection"></div>
+        <div id="selection-container"></div>
+      </section>
+
+      <section class="view" id="view-fixtures">
+        <div id="round-nav-fixtures"></div>
+        <div id="fixtures-container"></div>
+      </section>
+
+      <section class="view" id="view-results">
+        <div class="card" style="margin-bottom:16px;">
+          <p class="note">Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).</p>
+        </div>
+        <div id="round-nav-results"></div>
+        <div id="results-container"></div>
+      </section>
+
+      <section class="view" id="view-table">
+        <div class="card">
+          <h2 class="section-title">League table</h2>
+          <div style="overflow-x:auto;"><div id="log-container"></div></div>
+        </div>
+        <div class="card" id="knockout-card" style="display:none;"></div>
+      </section>
+
+      <section class="view" id="view-stats">
+        <div class="card">
+          <h2 class="section-title">Season at a glance</h2>
+          <div id="stats-totals" class="stats-grid"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Super tie-break record</h2>
+          <div id="stats-tiebreaks"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Top scorers</h2>
+          <div id="stats-scorers"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Best partnerships</h2>
+          <div id="stats-partnerships"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Current win streaks</h2>
+          <div id="stats-streaks"></div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Most byes</h2>
+          <div id="stats-byes"></div>
+        </div>
+      </section>
+
+      <div id="player-modal-backdrop" class="modal-backdrop">
+        <div class="modal-box">
+          <button class="modal-close" id="player-modal-close">&times;</button>
+          <h3 id="player-modal-name" class="modal-title"></h3>
+          <div id="player-modal-body"></div>
+        </div>
+      </div>
+
+      <section class="view" id="view-notifications">
+        <div class="card">
+          <h2 class="section-title">Notifications<button class="secondary" id="mark-all-read-btn">Mark all read</button></h2>
+          <div id="notifications-list"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-roster">
+        <div id="roster-container"></div>
+      </section>
+
+      <section class="view" id="view-news">
+        <div class="card" id="news-post-card" style="display:none;">
+          <h2 class="section-title">Post an update</h2>
+          <div class="row">
+            <input type="text" id="news-title" placeholder="Title" style="flex:1;min-width:200px;">
+          </div>
+          <textarea id="news-body" rows="3" placeholder="Details (optional)" style="margin-top:8px;"></textarea>
+          <button class="primary" id="news-post-btn" style="margin-top:8px;">Post</button>
+        </div>
+        <div class="card">
+          <h2 class="section-title">News room</h2>
+          <div id="news-list"></div>
+        </div>
+      </section>
+
+      <footer class="actions">
+        <span id="team-count-label"></span>
+      </footer>
+    </section>
+
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

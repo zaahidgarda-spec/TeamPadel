@@ -1,0 +1,1374 @@
+let leaguesIndex = [];
+let currentLeagueId = null;
+let league = null;
+let myRole = "guest";
+let myTeamId = null;
+let viewingKey = null;
+let myNotifications = [];
+let isOwner = false;
+
+function el(id) { return document.getElementById(id); }
+function escapeHtml(str) { const d = document.createElement("div"); d.textContent = str == null ? "" : str; return d.innerHTML; }
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+}
+function teamById(id) { return league.teams.find((t) => t.id === id); }
+function playerById(team, id) { return team ? team.players.find((p) => p.id === id) : null; }
+function avatarHtml(t) {
+  if (t && t.logo) return `<img class="avatar" src="${t.logo}" alt="">`;
+  const initial = t ? t.name.charAt(0).toUpperCase() : "?";
+  return `<span class="avatar-fb">${escapeHtml(initial)}</span>`;
+}
+
+async function api(path, opts) {
+  const res = await fetch("/api" + path, {
+    method: (opts && opts.method) || "GET",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) {
+    const err = new Error((data && data.error) || "Something went wrong.");
+    if (data && data.needsConfirm) err.needsConfirm = true;
+    throw err;
+  }
+  return data;
+}
+
+async function boot() {
+  leaguesIndex = await api("/leagues").catch(() => []);
+  el("loading").style.display = "none";
+  el("app").style.display = "block";
+  const m = window.location.hash.match(/^#league\/(.+)$/);
+  if (m && leaguesIndex.find((l) => l.id === m[1])) {
+    await openLeague(m[1]);
+  } else {
+    showHub();
+  }
+}
+
+function showHub() {
+  currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
+  window.location.hash = "";
+  el("view-hub").style.display = "block";
+  el("view-league").style.display = "none";
+  document.body.className = "role-guest";
+  refreshOwnerStatus();
+  renderHub();
+}
+function renderHub() {
+  const list = el("league-list");
+  list.innerHTML = "";
+  if (leaguesIndex.length === 0) { list.innerHTML = '<p class="empty">No leagues yet — create one above.</p>'; return; }
+  leaguesIndex.slice().sort((a, b) => b.createdAt - a.createdAt).forEach((l) => {
+    const div = document.createElement("div");
+    div.className = "card";
+    div.style.cursor = "pointer";
+    div.innerHTML = `<div style="font-family:'Oswald',sans-serif;font-size:18px;text-transform:uppercase;">${escapeHtml(l.name)}</div><div class="note">Created ${new Date(l.createdAt).toLocaleDateString()}</div>`;
+    div.onclick = () => openLeague(l.id);
+    list.appendChild(div);
+  });
+}
+el("create-league-btn").onclick = async () => {
+  const name = el("new-league-name").value.trim();
+  const email = el("new-league-admin-email").value.trim();
+  if (!name) return alert("Give the league a name.");
+  if (!email || !email.includes("@")) return alert("Enter a valid email.");
+  try {
+    const { id } = await api("/leagues", { method: "POST", body: { name, adminEmail: email } });
+    el("new-league-name").value = ""; el("new-league-admin-email").value = "";
+    leaguesIndex = await api("/leagues");
+    await openLeague(id);
+  } catch (e) { alert(e.message); }
+};
+el("back-to-hub").onclick = async () => { leaguesIndex = await api("/leagues").catch(() => leaguesIndex); showHub(); };
+
+/* ---------- Hub tabs (Leagues / Admin) ---------- */
+
+document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll(".hub-tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".hub-view").forEach((v) => v.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("hub-view-" + btn.dataset.hubview).classList.add("active");
+  };
+});
+
+/* ---------- Site owner login (gates who can create leagues) ---------- */
+
+async function refreshOwnerStatus() {
+  const status = await api("/owner/me").catch(() => ({ isOwner: false }));
+  isOwner = !!status.isOwner;
+  el("create-league-card").style.display = isOwner ? "block" : "none";
+  el("owner-login-card").style.display = isOwner ? "none" : "block";
+}
+el("owner-login-btn").onclick = async () => {
+  const username = el("owner-username").value, pin = el("owner-pin").value;
+  try {
+    await api("/owner/login", { method: "POST", body: { username, pin } });
+    el("owner-username").value = ""; el("owner-pin").value = ""; el("owner-error").textContent = "";
+    await refreshOwnerStatus();
+  } catch (e) { el("owner-error").textContent = e.message; }
+};
+el("owner-logout-btn").onclick = async () => {
+  await api("/owner/logout", { method: "POST" });
+  await refreshOwnerStatus();
+};
+
+async function openLeague(id) {
+  currentLeagueId = id;
+  window.location.hash = "league/" + id;
+  el("view-hub").style.display = "none";
+  el("view-league").style.display = "block";
+  await refreshMe();
+  await refreshLeague();
+  buildTabs();
+  switchTab(myRole === "admin" ? "admin" : myRole === "captain" ? "selection" : "fixtures");
+  initViewingKey();
+  renderAll();
+}
+async function refreshMe() {
+  const me = await api(`/leagues/${currentLeagueId}/me`).catch(() => ({ role: "guest" }));
+  myRole = me.role; myTeamId = me.teamId || null;
+  document.body.className = "role-" + myRole;
+}
+async function refreshLeague() {
+  league = await api(`/leagues/${currentLeagueId}`);
+}
+
+/* ---------- Auth ---------- */
+
+el("auth-toggle").onclick = async () => {
+  if (myRole !== "guest") {
+    await api("/logout", { method: "POST" });
+    myRole = "guest"; myTeamId = null;
+    document.body.className = "role-guest";
+    buildTabs(); switchTab("fixtures"); renderAll();
+    return;
+  }
+  el("auth-panel").classList.toggle("open");
+};
+el("login-btn").onclick = async () => {
+  const email = el("login-email").value, password = el("login-password").value;
+  try {
+    const r = await api(`/leagues/${currentLeagueId}/login`, { method: "POST", body: { email, password } });
+    myRole = r.role; myTeamId = r.teamId || null;
+    document.body.className = "role-" + myRole;
+    el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
+    el("login-email").value = ""; el("login-password").value = "";
+    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : "selection"); renderAll();
+  } catch (e) { el("auth-error").textContent = e.message; }
+};
+el("register-btn").onclick = async () => {
+  const email = el("login-email").value, password = el("login-password").value;
+  try {
+    const r = await api(`/leagues/${currentLeagueId}/register`, { method: "POST", body: { email, password } });
+    myRole = r.role; myTeamId = r.teamId || null;
+    document.body.className = "role-" + myRole;
+    el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
+    el("login-email").value = ""; el("login-password").value = "";
+    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : "selection"); renderAll();
+  } catch (e) { el("auth-error").textContent = e.message; }
+};
+
+/* ---------- Tabs ---------- */
+
+function tabDefs() {
+  const defs = [];
+  if (myRole === "admin") defs.push({ key: "admin", label: "Admin" });
+  if (myRole === "admin" || myRole === "captain") defs.push({ key: "selection", label: "Selection room" });
+  defs.push({ key: "fixtures", label: "Fixtures" });
+  defs.push({ key: "results", label: "Results" });
+  defs.push({ key: "table", label: "Table" });
+  defs.push({ key: "stats", label: "Stats" });
+  defs.push({ key: "roster", label: "Team roster" });
+  defs.push({ key: "news", label: "News room" });
+  if (myRole === "captain") {
+    const unread = myNotifications.filter((n) => !n.read).length;
+    defs.push({ key: "notifications", label: unread ? `Notifications (${unread})` : "Notifications" });
+  }
+  return defs;
+}
+function buildTabs() {
+  const nav = el("tabs");
+  nav.innerHTML = "";
+  tabDefs().forEach((d) => {
+    const btn = document.createElement("button");
+    btn.textContent = d.label; btn.dataset.view = d.key;
+    btn.onclick = () => switchTab(d.key);
+    nav.appendChild(btn);
+  });
+  el("role-flag").style.display = myRole === "guest" ? "none" : "inline-block";
+  el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? "Captain view" : "";
+}
+function switchTab(key) {
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
+  document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
+  const v = el("view-" + key);
+  if (v) v.classList.add("active");
+}
+
+/* ---------- Round navigation ---------- */
+
+function getRoundsList() {
+  const regRounds = [...new Set(league.fixtures.map((f) => f.round))].sort((a, b) => a - b);
+  const list = regRounds.map((r) => ({ key: "r" + r, label: "Round " + r, stage: "regular", round: r }));
+  if (league.playoffs) {
+    if (league.playoffs.format === "position") {
+      list.push({ key: "positions", label: "Position playoffs", stage: "position" });
+    } else {
+      list.push({ key: "semis", label: "Semi finals", stage: "semi" });
+      list.push({ key: "final", label: "Final", stage: "final" });
+    }
+  }
+  return list;
+}
+function fixturesForKey(key) {
+  if (!key) return [];
+  if (key.stage === "regular") return league.fixtures.filter((f) => f.round === key.round);
+  if (key.stage === "semi") return league.playoffs ? league.playoffs.semis : [];
+  if (key.stage === "final") return league.playoffs ? [league.playoffs.final] : [];
+  if (key.stage === "position") return league.playoffs ? league.playoffs.matches : [];
+  return [];
+}
+function isRoundOpen(key) {
+  if (!key) return false;
+  if (key.stage === "regular") {
+    if (key.round === 1) return true;
+    const prev = league.fixtures.filter((f) => f.round === key.round - 1);
+    return prev.length > 0 && prev.every((f) => f.finalized);
+  }
+  if (key.stage === "semi" || key.stage === "position") return true;
+  if (key.stage === "final") { const f = league.playoffs && league.playoffs.final; return !!(f && f.teamA && f.teamB); }
+  return false;
+}
+function initViewingKey() {
+  const list = getRoundsList();
+  if (list.length === 0) { viewingKey = null; return; }
+  viewingKey = list.find((k) => fixturesForKey(k).some((f) => !f.finalized)) || list[list.length - 1];
+}
+function syncViewingKey() {
+  const list = getRoundsList();
+  if (list.length === 0) { viewingKey = null; return; }
+  if (!viewingKey || !list.find((k) => k.key === viewingKey.key)) viewingKey = list[0];
+}
+function renderRoundNav(containerId) {
+  const c = el(containerId);
+  const list = getRoundsList();
+  if (list.length === 0) { c.innerHTML = ""; return; }
+  const idx = list.findIndex((k) => k.key === viewingKey.key);
+  c.innerHTML = "";
+  const nav = document.createElement("div");
+  nav.className = "round-nav";
+  const prev = document.createElement("button");
+  prev.textContent = "‹"; prev.disabled = idx <= 0;
+  prev.onclick = () => { viewingKey = list[idx - 1]; renderAll(); };
+  const label = document.createElement("div");
+  label.className = "label"; label.textContent = list[idx].label;
+  const next = document.createElement("button");
+  next.textContent = "›"; next.disabled = idx >= list.length - 1;
+  next.onclick = () => { viewingKey = list[idx + 1]; renderAll(); };
+  nav.appendChild(prev); nav.appendChild(label); nav.appendChild(next);
+  c.appendChild(nav);
+
+  const sched = scheduleFor(viewingKey.key);
+  const venue = effectiveVenue(viewingKey.key);
+  if (sched.date || venue) {
+    const banner = document.createElement("div");
+    banner.className = "matchday-banner";
+    banner.innerHTML = (sched.date ? `<span class="matchday-date">${fmtDate(sched.date)}</span>` : "") + (venue ? `<span class="matchday-venue">${escapeHtml(venue)}</span>` : "");
+    c.appendChild(banner);
+  }
+  if (viewingKey.stage === "regular") {
+    const byes = (league.byes || []).filter((b) => b.round === viewingKey.round);
+    if (byes.length) {
+      const note = document.createElement("div"); note.className = "bye-note";
+      note.textContent = "Bye: " + byes.map((b) => { const t = teamById(b.teamId); return t ? t.name : "?"; }).join(", ");
+      c.appendChild(note);
+    }
+  }
+}
+
+/* ---------- Master render ---------- */
+
+function renderAll() {
+  syncViewingKey();
+  el("league-name").value = league.name;
+  el("league-name").disabled = myRole !== "admin";
+  const status = league.status;
+  const auth = el("auth-status");
+  if (myRole === "admin") auth.textContent = "Signed in as Admin";
+  else if (myRole === "captain") { const t = teamById(myTeamId); auth.textContent = "Signed in as " + (t ? t.name : "captain") + " captain"; }
+  else auth.textContent = "Viewing only — log in to enter scores";
+  el("auth-toggle").textContent = myRole === "guest" ? "Log in" : "Log out";
+
+  if (myRole === "admin") renderAdmin();
+  renderSelection();
+  renderFixtures();
+  renderResults();
+  renderTable();
+  renderRoster();
+  renderStats();
+  renderNews();
+  renderSponsorStrip();
+  renderNotificationsList();
+  refreshNotifications().then(() => { updateNotifTabLabel(); renderNotificationsList(); });
+  el("team-count-label").textContent = `${league.teams.length} team${league.teams.length === 1 ? "" : "s"} · ${league.fixtures.length} fixture${league.fixtures.length === 1 ? "" : "s"}`;
+}
+el("league-name").addEventListener("change", async (e) => {
+  if (myRole !== "admin") return;
+  try { await api(`/leagues/${currentLeagueId}/name`, { method: "PUT", body: { name: e.target.value } }); await refreshLeague(); }
+  catch (err) { alert(err.message); }
+});
+
+/* ---------- Admin tab ---------- */
+
+function renderAdmin() {
+  const status = league.status;
+  const seasonCard = el("season-card");
+  if (status === "setup") {
+    seasonCard.innerHTML = `<h2 class="section-title">Start season</h2><p class="note">Every team plays every other team, 4 pairs a side. Add teams and rosters below, and set your rules in League Rules above, first — at least 3 teams.</p>
+      <div class="row" style="margin-top:14px;"><button class="primary" id="start-season-btn">Start season</button></div>`;
+    el("start-season-btn").onclick = async () => {
+      try {
+        await api(`/leagues/${currentLeagueId}/season/start`, { method: "POST", body: { doubleRound: el("double-round-toggle").checked, playoffFormat: el("playoff-format-select").value } });
+        await refreshLeague(); initViewingKey(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+  } else {
+    seasonCard.innerHTML = `<h2 class="section-title">Season in progress</h2><p class="note">Team list is locked. Head to League Rules above to reset the season or delete this league.</p>`;
+  }
+  renderRulesCard();
+  el("add-team-row").style.display = status === "setup" ? "flex" : "none";
+  el("bulk-add-details").style.display = status === "setup" ? "block" : "none";
+
+  const list = el("admin-team-list");
+  list.innerHTML = "";
+  if (league.teams.length === 0) list.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No teams yet.</li>';
+  league.teams.forEach((t) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="name-tag">${avatarHtml(t)}${escapeHtml(t.name)}</span>`;
+    const right = document.createElement("span");
+    right.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+    const emailInput = document.createElement("input");
+    emailInput.type = "email"; emailInput.className = "small-input"; emailInput.value = t.email || "";
+    emailInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { email: emailInput.value.trim() } }); };
+    right.appendChild(emailInput);
+    const status2 = document.createElement("span");
+    status2.className = "tag"; status2.textContent = t.registered ? "Registered" : "Not registered";
+    right.appendChild(status2);
+    if (t.registered) {
+      const reset = document.createElement("button");
+      reset.className = "link"; reset.textContent = "Reset password";
+      reset.onclick = async () => {
+        if (!confirm("Clear " + t.name + "'s password so they can register again?")) return;
+        await api(`/leagues/${currentLeagueId}/teams/${t.id}/reset-password`, { method: "POST" });
+        await refreshLeague(); renderAll();
+      };
+      right.appendChild(reset);
+    }
+    if (status === "setup") {
+      const del = document.createElement("button");
+      del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove team";
+      del.onclick = async () => {
+        if (!confirm("Remove " + t.name + "?")) return;
+        await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "DELETE" });
+        await refreshLeague(); renderAll();
+      };
+      right.appendChild(del);
+    }
+    li.appendChild(right); list.appendChild(li);
+  });
+
+  renderAdminRoster();
+  renderAdminFixtures();
+  renderAdminSponsors();
+}
+el("add-team-btn").onclick = async () => {
+  const name = el("new-team-name").value.trim(), email = el("new-team-email").value.trim();
+  if (!name) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name, email } });
+    el("new-team-name").value = ""; el("new-team-email").value = "";
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+};
+el("bulk-add-btn").onclick = async () => {
+  const text = el("bulk-team-input").value;
+  if (!text.trim()) return;
+  await api(`/leagues/${currentLeagueId}/teams/bulk`, { method: "POST", body: { text } });
+  el("bulk-team-input").value = "";
+  await refreshLeague(); renderAll();
+};
+
+let draftDoubleRound = false;
+let draftPlayoffFormat = "none";
+function renderRulesCard() {
+  const c = el("rules-body");
+  const status = league.status;
+  if (status === "setup") {
+    c.innerHTML = `
+      <div class="row" style="align-items:center;">
+        <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="double-round-toggle"> Home and away (double round)</label>
+      </div>
+      <div class="row" style="align-items:center;margin-top:10px;">
+        <label class="note" style="display:flex;align-items:center;gap:6px;">Playoffs after the season:
+          <select id="playoff-format-select">
+            <option value="none">None — the table decides the winner</option>
+            <option value="semis_final">Semi-finals + Final (top 4)</option>
+            <option value="position">Position playoffs (1v2, 3v4, 5v6…)</option>
+          </select>
+        </label>
+      </div>`;
+    el("double-round-toggle").checked = draftDoubleRound;
+    el("double-round-toggle").onchange = () => { draftDoubleRound = el("double-round-toggle").checked; };
+    el("playoff-format-select").value = draftPlayoffFormat;
+    el("playoff-format-select").onchange = () => { draftPlayoffFormat = el("playoff-format-select").value; };
+  } else {
+    const fmtLabel = league.playoffFormat === "semis_final" ? "Semi-finals + Final" : league.playoffFormat === "position" ? "Position playoffs" : "None";
+    c.innerHTML = `<p class="note">Playoff format for this season: <strong>${escapeHtml(fmtLabel)}</strong>. Reset the season below to change it.</p>`;
+  }
+
+  const actionsWrap = document.createElement("div");
+  actionsWrap.className = "row";
+  actionsWrap.style.cssText = "margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);";
+
+  const exportBtn = document.createElement("button");
+  exportBtn.className = "secondary"; exportBtn.textContent = "Export league data (backup)";
+  exportBtn.onclick = async () => {
+    try {
+      const data = await api(`/leagues/${currentLeagueId}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const safeName = (league.name || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      a.href = url; a.download = `${safeName}-backup-${dateStr}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { alert("Export failed: " + e.message); }
+  };
+  actionsWrap.appendChild(exportBtn);
+
+  if (status !== "setup") {
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "danger"; resetBtn.textContent = "Reset season";
+    resetBtn.onclick = async () => {
+      if (!confirm("This clears the schedule, results and knockout stage. Continue?")) return;
+      await api(`/leagues/${currentLeagueId}/season/reset`, { method: "POST" });
+      await refreshLeague(); initViewingKey(); renderAll();
+    };
+    actionsWrap.appendChild(resetBtn);
+  }
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "danger"; deleteBtn.textContent = "Delete this league";
+  deleteBtn.onclick = async () => {
+    if (!confirm("Permanently delete this league and all its data? This cannot be undone.")) return;
+    await api(`/leagues/${currentLeagueId}`, { method: "DELETE" });
+    leaguesIndex = await api("/leagues");
+    showHub();
+  };
+  actionsWrap.appendChild(deleteBtn);
+  c.appendChild(actionsWrap);
+}
+
+function renderAdminRoster() {
+  const c = el("admin-roster");
+  c.innerHTML = "";
+  if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams first.</p>'; return; }
+  league.teams.forEach((t) => c.appendChild(adminRosterBlock(t)));
+}
+function adminRosterBlock(t) {
+  const wrap = document.createElement("div");
+  wrap.className = "roster-team";
+  const head = document.createElement("div");
+  head.className = "roster-head";
+  head.innerHTML = avatarHtml(t);
+  const nameWrap = document.createElement("div");
+  nameWrap.innerHTML = `<div style="font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;">${escapeHtml(t.name)}</div>`;
+  const uploadLabel = document.createElement("label");
+  uploadLabel.className = "logo-label"; uploadLabel.textContent = t.logo ? "Change logo" : "Add logo";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file"; fileInput.accept = "image/*"; fileInput.style.display = "none";
+  fileInput.onchange = () => {
+    if (!fileInput.files[0]) return;
+    resizeImageToDataUrl(fileInput.files[0], 128, async (dataUrl) => {
+      await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { logo: dataUrl } });
+      await refreshLeague(); renderAdminRoster(); renderRoster();
+    });
+  };
+  uploadLabel.appendChild(fileInput);
+  nameWrap.appendChild(uploadLabel);
+  head.appendChild(nameWrap);
+  wrap.appendChild(head);
+
+  const ul = document.createElement("ul"); ul.className = "plain";
+  if (t.players.length === 0) ul.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No players yet.</li>';
+  t.players.forEach((p) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${escapeHtml(p.name)}</span>`;
+    const del = document.createElement("button");
+    del.className = "ghost"; del.innerHTML = "&times;";
+    del.onclick = async () => { await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}`, { method: "DELETE" }); await refreshLeague(); renderAdminRoster(); };
+    li.appendChild(del); ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+
+  const addRow = document.createElement("div");
+  addRow.className = "row"; addRow.style.marginTop = "10px";
+  const addInput = document.createElement("input");
+  addInput.type = "text"; addInput.placeholder = "Add player name";
+  const addBtn = document.createElement("button");
+  addBtn.className = "secondary"; addBtn.textContent = "Add player";
+  addBtn.onclick = async () => {
+    const name = addInput.value.trim();
+    if (!name) return;
+    await api(`/leagues/${currentLeagueId}/teams/${t.id}/players`, { method: "POST", body: { name } });
+    addInput.value = ""; await refreshLeague(); renderAdminRoster();
+  };
+  addRow.appendChild(addInput); addRow.appendChild(addBtn);
+  wrap.appendChild(addRow);
+  return wrap;
+}
+function resizeImageToDataUrl(file, maxSize, cb) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      if (w > h) { if (w > maxSize) { h = Math.round((h * maxSize) / w); w = maxSize; } }
+      else { if (h > maxSize) { w = Math.round((w * maxSize) / h); h = maxSize; } }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function stageKeyFor(f) {
+  if (f.stage === "semi") return "semis";
+  if (f.stage === "final") return "final";
+  return "r" + f.round;
+}
+function scheduleFor(key) {
+  return (league.schedule && league.schedule[key]) || { date: "", venue: "" };
+}
+function effectiveVenue(key) {
+  const s = scheduleFor(key);
+  return s.venue || league.defaultVenue || "";
+}
+el("default-venue-input").addEventListener("change", async (e) => {
+  await api(`/leagues/${currentLeagueId}/default-venue`, { method: "PUT", body: { venue: e.target.value } });
+  await refreshLeague(); renderAll();
+});
+function renderAdminFixtures() {
+  el("default-venue-input").value = league.defaultVenue || "";
+  const c = el("admin-fixtures");
+  c.innerHTML = "";
+  const allFixtures = league.fixtures.slice();
+  if (league.playoffs) allFixtures.push(...league.playoffs.semis, league.playoffs.final);
+  if (allFixtures.length === 0) { c.innerHTML = '<p class="empty">No fixtures yet — start the season above.</p>'; return; }
+
+  const seen = new Set();
+  const weeks = [];
+  allFixtures.forEach((f) => {
+    const key = stageKeyFor(f);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const label = f.stage === "semi" ? "Semi finals" : f.stage === "final" ? "Final" : "Round " + f.round;
+    const order = f.stage === "semi" ? 9000 : f.stage === "final" ? 9001 : f.round;
+    weeks.push({ key, label, order });
+  });
+  weeks.sort((a, b) => a.order - b.order);
+
+  weeks.forEach((w) => {
+    const sched = scheduleFor(w.key);
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap;";
+    const label = document.createElement("span");
+    label.style.cssText = "flex:1;min-width:100px;font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;color:var(--text-dim);";
+    label.textContent = w.label;
+    const dateInput = document.createElement("input");
+    dateInput.type = "date"; dateInput.value = sched.date || ""; dateInput.style.cssText = "font-size:12px;padding:6px 8px;";
+    dateInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { date: dateInput.value } }); await refreshLeague(); };
+    const venueInput = document.createElement("input");
+    venueInput.type = "text"; venueInput.placeholder = "Default: " + (league.defaultVenue || "not set"); venueInput.value = sched.venue || "";
+    venueInput.style.cssText = "font-size:12px;padding:6px 8px;width:180px;";
+    venueInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { venue: venueInput.value } }); await refreshLeague(); };
+    row.appendChild(label); row.appendChild(dateInput); row.appendChild(venueInput);
+    c.appendChild(row);
+  });
+}
+
+/* ---------- Sponsors ---------- */
+
+let pendingSponsorImage = null;
+el("sponsor-file").addEventListener("change", () => {
+  const file = el("sponsor-file").files[0];
+  if (!file) return;
+  el("sponsor-file-name").textContent = file.name;
+  resizeImageToDataUrl(file, 240, (dataUrl) => { pendingSponsorImage = dataUrl; });
+});
+el("add-sponsor-btn").onclick = async () => {
+  if (!pendingSponsorImage) return alert("Choose a logo image first.");
+  const name = el("sponsor-name").value.trim();
+  const link = el("sponsor-link").value.trim();
+  try {
+    await api(`/leagues/${currentLeagueId}/sponsors`, { method: "POST", body: { name, link, image: pendingSponsorImage } });
+    el("sponsor-name").value = ""; el("sponsor-link").value = ""; el("sponsor-file").value = ""; el("sponsor-file-name").textContent = "";
+    pendingSponsorImage = null;
+    await refreshLeague(); renderAdmin(); renderSponsorStrip();
+  } catch (e) { alert(e.message); }
+};
+function renderAdminSponsors() {
+  const c = el("admin-sponsor-list");
+  const sponsors = league.sponsors || [];
+  if (sponsors.length === 0) { c.innerHTML = '<p class="empty">No sponsors added yet.</p>'; return; }
+  c.innerHTML = "";
+  sponsors.forEach((s) => {
+    const row = document.createElement("div");
+    row.className = "sponsor-admin-row";
+    row.innerHTML = `<img src="${s.image}" alt=""><span style="font-size:13px;">${escapeHtml(s.name || "Untitled")}</span><span class="link">${escapeHtml(s.link || "")}</span>`;
+    const del = document.createElement("button");
+    del.className = "ghost"; del.innerHTML = "&times;";
+    del.onclick = async () => {
+      if (!confirm("Remove this sponsor?")) return;
+      await api(`/leagues/${currentLeagueId}/sponsors/${s.id}`, { method: "DELETE" });
+      await refreshLeague(); renderAdmin(); renderSponsorStrip();
+    };
+    row.appendChild(del);
+    c.appendChild(row);
+  });
+}
+function renderSponsorStrip() {
+  const c = el("sponsor-strip");
+  const sponsors = league.sponsors || [];
+  if (sponsors.length === 0) { c.innerHTML = ""; return; }
+  c.innerHTML = sponsors
+    .map((s) => {
+      const img = `<img src="${s.image}" alt="${escapeHtml(s.name || "")}">`;
+      return s.link ? `<a href="${escapeHtml(s.link)}" target="_blank" rel="noopener">${img}</a>` : img;
+    })
+    .join("");
+}
+
+/* ---------- Notifications ---------- */
+
+async function refreshNotifications() {
+  if (myRole !== "captain") { myNotifications = []; return; }
+  myNotifications = await api(`/leagues/${currentLeagueId}/notifications`).catch(() => []);
+}
+function updateNotifTabLabel() {
+  const btn = document.querySelector('#tabs button[data-view="notifications"]');
+  if (!btn) return;
+  const unread = myNotifications.filter((n) => !n.read).length;
+  btn.textContent = unread ? `Notifications (${unread})` : "Notifications";
+}
+function renderNotificationsList() {
+  const c = el("notifications-list");
+  if (!c) return;
+  if (myRole !== "captain") { c.innerHTML = '<p class="empty">Notifications are for team captains.</p>'; return; }
+  if (myNotifications.length === 0) { c.innerHTML = '<p class="empty">No notifications yet.</p>'; return; }
+  c.innerHTML = "";
+  myNotifications.forEach((n) => {
+    const row = document.createElement("div");
+    row.className = "notif-row" + (n.read ? "" : " unread");
+    row.innerHTML = `<span class="notif-msg">${escapeHtml(n.message)}</span><time class="notif-time">${new Date(n.createdAt).toLocaleString()}</time>`;
+    if (!n.read) {
+      row.onclick = async () => {
+        await api(`/leagues/${currentLeagueId}/notifications/${n.id}/read`, { method: "POST" });
+        n.read = true; renderNotificationsList(); updateNotifTabLabel();
+      };
+    }
+    c.appendChild(row);
+  });
+}
+el("mark-all-read-btn").onclick = async () => {
+  await api(`/leagues/${currentLeagueId}/notifications/read-all`, { method: "POST" });
+  myNotifications.forEach((n) => { n.read = true; });
+  renderNotificationsList(); updateNotifTabLabel();
+};
+
+function renderSelection() {
+  if (myRole !== "admin" && myRole !== "captain") return;
+  renderRoundNav("round-nav-selection");
+  const c = el("selection-container");
+  c.innerHTML = "";
+  let fixtures = fixturesForKey(viewingKey);
+  if (myRole === "captain") fixtures = fixtures.filter((f) => f.teamA === myTeamId || f.teamB === myTeamId);
+  if (fixtures.length === 0) {
+    c.innerHTML = myRole === "captain"
+      ? '<div class="card"><p class="empty">Your team isn\'t playing this round.</p></div>'
+      : '<div class="card"><p class="empty">No matches this round yet.</p></div>';
+    return;
+  }
+  if (myRole !== "admin" && !isRoundOpen(viewingKey)) { c.innerHTML = '<div class="card"><p class="empty">This round opens once the previous round is finalized.</p></div>'; return; }
+  fixtures.forEach((f) => c.appendChild(selectionCard(f)));
+}
+function selectionCard(f) {
+  const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+  const card = document.createElement("div"); card.className = "fixture-card";
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div></div>`;
+  if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
+  const both = f.selectionA.submitted && f.selectionB.submitted;
+  const grid = document.createElement("div"); grid.className = "selection-grid";
+  if (both) {
+    grid.appendChild(selectionReveal(teamA, f.selectionA));
+    grid.appendChild(selectionReveal(teamB, f.selectionB));
+    card.appendChild(grid);
+    card.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:10px;", textContent: "Both line-ups are in — agree a playing order below, then head to Results to enter scores." }));
+    card.appendChild(timeSlotPanel(f, teamA, teamB));
+  } else {
+    grid.appendChild(selectionForm(f, teamA, "A"));
+    grid.appendChild(selectionForm(f, teamB, "B"));
+    card.appendChild(grid);
+  }
+  return card;
+}
+function timeSlotPanel(f, teamA, teamB) {
+  const wrap = document.createElement("div");
+  wrap.className = "card timeslot-panel";
+  wrap.style.marginTop = "12px";
+
+  const title = document.createElement("h3");
+  title.className = "timeslot-title";
+  title.textContent = "Time slots — playing order for the night";
+  wrap.appendChild(title);
+
+  const seedLabel = (i) => {
+    const nameA = playerNamesFor(teamA, f.selectionA.pairs[i]);
+    const nameB = playerNamesFor(teamB, f.selectionB.pairs[i]);
+    return "Seed " + (i + 1) + ": " + nameA + " vs " + nameB;
+  };
+
+  if (f.slotOrder) {
+    const list = document.createElement("div");
+    list.className = "slot-order-list";
+    f.slotOrder.forEach((seedIdx, slotIdx) => {
+      const row = document.createElement("div");
+      row.className = "slot-order-row";
+      row.innerHTML = `<span class="slot-num">Slot ${slotIdx + 1}</span><span>${escapeHtml(seedLabel(seedIdx))}</span>`;
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+    if (myRole === "admin") {
+      const reset = document.createElement("button");
+      reset.className = "link"; reset.style.marginTop = "8px"; reset.textContent = "Reset order";
+      reset.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/timeslot/reset`, { method: "POST" }); await refreshLeague(); renderAll(); };
+      wrap.appendChild(reset);
+    }
+    return wrap;
+  }
+
+  const myTeamSide = myRole === "captain" ? (myTeamId === f.teamA ? "A" : myTeamId === f.teamB ? "B" : null) : null;
+
+  if (f.slotProposal) {
+    const p = f.slotProposal;
+    const proposerName = (p.by === "A" ? teamA : teamB).name;
+    const list = document.createElement("div");
+    list.className = "slot-order-list";
+    p.order.forEach((seedIdx, slotIdx) => {
+      const row = document.createElement("div");
+      row.className = "slot-order-row";
+      row.innerHTML = `<span class="slot-num">Slot ${slotIdx + 1}</span><span>${escapeHtml(seedLabel(seedIdx))}</span>`;
+      list.appendChild(row);
+    });
+    wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: proposerName + " proposed this order:" }));
+    wrap.appendChild(list);
+
+    const canRespond = myRole === "admin" || (myTeamSide && myTeamSide !== p.by);
+    if (canRespond) {
+      const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "10px";
+      const confirmBtn = document.createElement("button");
+      confirmBtn.className = "primary"; confirmBtn.textContent = "Confirm this order";
+      confirmBtn.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/timeslot/confirm`, { method: "POST" }); await refreshLeague(); renderAll(); };
+      const counterBtn = document.createElement("button");
+      counterBtn.className = "secondary"; counterBtn.textContent = "Propose a different order";
+      counterBtn.onclick = () => { wrap.innerHTML = ""; wrap.appendChild(title); wrap.appendChild(slotOrderPicker(f, seedLabel, p.order)); };
+      row.appendChild(confirmBtn); row.appendChild(counterBtn);
+      wrap.appendChild(row);
+    } else if (myTeamSide === p.by) {
+      wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:8px;", textContent: "Waiting for the other captain to confirm or counter." }));
+    }
+    return wrap;
+  }
+
+  if (myTeamSide || myRole === "admin") {
+    if (myRole === "admin") {
+      wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Waiting for a captain to propose an order — admins can't propose, only confirm or reset." }));
+    } else {
+      wrap.appendChild(slotOrderPicker(f, seedLabel, null));
+    }
+  } else {
+    wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Not set yet — the captains will agree a playing order here." }));
+  }
+  return wrap;
+}
+function slotOrderPicker(f, seedLabel, prefill) {
+  const box = document.createElement("div");
+  const localOrder = prefill ? prefill.slice() : [null, null, null, null];
+  const err = document.createElement("div"); err.className = "error";
+  const selects = [];
+  function refreshOptions() {
+    selects.forEach((select, slot) => {
+      const usedElsewhere = localOrder.filter((v, i) => i !== slot && v !== null);
+      const current = select.value;
+      select.innerHTML = '<option value="">Choose seed…</option>' + [0, 1, 2, 3]
+        .filter((i) => !usedElsewhere.includes(i))
+        .map((i) => `<option value="${i}">${escapeHtml(seedLabel(i))}</option>`)
+        .join("");
+      select.value = current;
+    });
+  }
+  for (let slot = 0; slot < 4; slot++) {
+    const row = document.createElement("div"); row.className = "seed-row";
+    row.innerHTML = `<span class="num">Slot ${slot + 1}</span>`;
+    const select = document.createElement("select");
+    select.onchange = () => { localOrder[slot] = select.value === "" ? null : Number(select.value); refreshOptions(); };
+    selects.push(select);
+    row.appendChild(select);
+    box.appendChild(row);
+  }
+  selects.forEach((select, slot) => { select.value = localOrder[slot] === null ? "" : localOrder[slot]; });
+  refreshOptions();
+  const btn = document.createElement("button");
+  btn.className = "primary"; btn.style.marginTop = "8px"; btn.textContent = "Propose this order";
+  btn.onclick = async () => {
+    const seen = new Set(localOrder);
+    if (localOrder.includes(null) || seen.size !== 4) { err.textContent = "Assign each seed to exactly one slot."; return; }
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/timeslot/propose`, { method: "POST", body: { order: localOrder } });
+      await refreshLeague(); renderAll();
+    } catch (e) { err.textContent = e.message; }
+  };
+  box.appendChild(btn); box.appendChild(err);
+  return box;
+}
+function selectionReveal(team, sel) {
+  const div = document.createElement("div"); div.className = "selection-side";
+  let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
+  sel.pairs.forEach((pair, i) => {
+    const p1 = playerById(team, pair[0]), p2 = playerById(team, pair[1]);
+    const names = [p1 ? p1.name : null, p2 ? p2.name : null].filter(Boolean).join(" & ") || "—";
+    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${escapeHtml(names)}</span></div>`;
+  });
+  div.innerHTML = html;
+  return div;
+}
+function selectionForm(f, team, side) {
+  const div = document.createElement("div"); div.className = "selection-side";
+  const selField = side === "A" ? "selectionA" : "selectionB";
+  const sel = f[selField];
+  const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
+  const already = sel.submitted;
+  div.innerHTML = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
+  if (!canEdit) {
+    div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: already ? "Submitted — waiting on the other team." : "Waiting for " + team.name + "'s captain." }));
+    return div;
+  }
+  if (team.players.length < 2) {
+    div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Add at least 2 players to this team's roster in the Admin tab first." }));
+    return div;
+  }
+  const localPairs = already ? sel.pairs.map((p) => p.slice()) : [[null, null], [null, null], [null, null], [null, null]];
+  const doubleUpNote = document.createElement("div");
+  doubleUpNote.className = "note";
+  doubleUpNote.style.cssText = "display:none;margin:8px 0;padding:10px;background:rgba(226,84,43,.1);border:1px solid var(--clay);border-radius:8px;color:var(--text);";
+  const doubleUpCheckbox = document.createElement("input");
+  doubleUpCheckbox.type = "checkbox"; doubleUpCheckbox.id = "dbl-" + f.id + "-" + side;
+  const doubleUpLabel = document.createElement("label");
+  doubleUpLabel.htmlFor = doubleUpCheckbox.id;
+  doubleUpLabel.style.cssText = "display:flex;gap:8px;align-items:flex-start;cursor:pointer;";
+  doubleUpLabel.appendChild(doubleUpCheckbox);
+  const doubleUpText = document.createElement("span");
+  doubleUpText.textContent = "A player is selected twice tonight — are you sure you're requesting a double-up?";
+  doubleUpLabel.appendChild(doubleUpText);
+  doubleUpNote.appendChild(doubleUpLabel);
+
+  function findDuplicate() {
+    const seen = new Set();
+    for (const pair of localPairs) {
+      for (const id of pair) {
+        if (!id) continue;
+        if (seen.has(id)) return true;
+        seen.add(id);
+      }
+    }
+    return false;
+  }
+  function refreshDoubleUpNote() {
+    doubleUpNote.style.display = findDuplicate() ? "block" : "none";
+    if (!findDuplicate()) doubleUpCheckbox.checked = false;
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const row = document.createElement("div"); row.className = "seed-row";
+    row.innerHTML = `<span class="num">Seed ${i + 1}</span>`;
+    [0, 1].forEach((slot) => {
+      const select = document.createElement("select");
+      select.innerHTML = '<option value="">Player…</option>' + team.players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+      select.value = localPairs[i][slot] || "";
+      select.disabled = already;
+      select.onchange = () => { localPairs[i][slot] = select.value || null; refreshDoubleUpNote(); };
+      row.appendChild(select);
+    });
+    div.appendChild(row);
+  }
+  div.appendChild(doubleUpNote);
+  refreshDoubleUpNote();
+
+  if (already) {
+    div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Submitted — waiting on the other team." }));
+    if (myRole === "admin") {
+      const unlock = document.createElement("button");
+      unlock.className = "link"; unlock.style.marginTop = "6px"; unlock.textContent = "Unlock to edit";
+      unlock.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock`, { method: "POST", body: { side } }); await refreshLeague(); renderAll(); };
+      div.appendChild(unlock);
+    }
+  } else {
+    const err = document.createElement("div"); err.className = "error";
+    const btn = document.createElement("button");
+    btn.className = "primary"; btn.style.marginTop = "8px"; btn.textContent = "Submit line-up";
+    btn.onclick = async () => {
+      if (findDuplicate() && !doubleUpCheckbox.checked) {
+        err.textContent = "Tick the double-up checkbox above to confirm, or fix the selection.";
+        return;
+      }
+      try {
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection`, { method: "POST", body: { side, pairs: localPairs, confirmDoubleUp: doubleUpCheckbox.checked } });
+        await refreshLeague(); renderAll();
+      } catch (e) {
+        err.textContent = e.message;
+        if (e.needsConfirm) doubleUpNote.style.display = "block";
+      }
+    };
+    div.appendChild(btn); div.appendChild(err);
+  }
+  return div;
+}
+
+/* ---------- Fixtures (read-only) ---------- */
+
+function renderFixtures() {
+  renderRoundNav("round-nav-fixtures");
+  const c = el("fixtures-container");
+  c.innerHTML = "";
+  const fixtures = fixturesForKey(viewingKey);
+  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No matches this round yet.</p></div>'; return; }
+  fixtures.forEach((f) => {
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    const card = document.createElement("div"); card.className = "fixture-card";
+    const { winsA, winsB } = fixtureScoreClient(f);
+    const both = f.selectionA.submitted && f.selectionB.submitted;
+    let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : "Pending"}</span></div></div>`;
+    const sched = scheduleFor(stageKeyFor(f));
+    const venue = effectiveVenue(stageKeyFor(f));
+    if (sched.date || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
+    if (teamA && teamB) {
+      if (both) {
+        html += '<div class="rubbers">';
+        f.selectionA.pairs.forEach((pairA, i) => {
+          const pairB = f.selectionB.pairs[i];
+          const nameA = [playerById(teamA, pairA[0]), playerById(teamA, pairA[1])].filter(Boolean).map((p) => p.name).join(" & ") || "—";
+          const nameB = [playerById(teamB, pairB[0]), playerById(teamB, pairB[1])].filter(Boolean).map((p) => p.name).join(" & ") || "—";
+          const w = rubberWinnerClient(f.rubbers[i]);
+          const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
+          const seedLbl = "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
+          html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${escapeHtml(nameA)}</span><span></span><span class="pair ${w === "B" ? "won" : ""}">${escapeHtml(nameB)}</span></div>`;
+        });
+        html += "</div>";
+      } else {
+        html += '<p class="note" style="margin-top:8px;">Line-ups not yet revealed — check Selection Room.</p>';
+      }
+    }
+    card.innerHTML = html;
+    c.appendChild(card);
+  });
+}
+
+/* ---------- Results ---------- */
+
+function isValidSetClient(a, b) {
+  if (a === null || b === null || a === "" || b === "") return null;
+  const av = Number(a), bv = Number(b);
+  if (isNaN(av) || isNaN(bv)) return false;
+  const hi = Math.max(av, bv), lo = Math.min(av, bv);
+  if (hi === 6 && lo <= 4) return true;
+  if (hi === 7 && (lo === 5 || lo === 6)) return true;
+  return false;
+}
+function setWinnerClient(set) {
+  const [a, b] = set;
+  if (a === null || b === null || a === "" || b === "") return null;
+  const av = Number(a), bv = Number(b);
+  if (av > bv) return "A"; if (bv > av) return "B"; return null;
+}
+function tiebreakWinnerClient(tb) {
+  const [a, b] = tb;
+  if (a === null || b === null || a === "" || b === "") return null;
+  const av = Number(a), bv = Number(b);
+  if (av === bv) return null;
+  if (Math.max(av, bv) < 10) return null;
+  if (Math.abs(av - bv) < 2) return null;
+  return av > bv ? "A" : "B";
+}
+function rubberWinnerClient(r) {
+  const s1 = setWinnerClient(r.sets[0]), s2 = setWinnerClient(r.sets[1]);
+  if (!s1 || !s2) return null;
+  if (s1 === s2) return s1;
+  return tiebreakWinnerClient(r.tb);
+}
+function needsTiebreakClient(r) {
+  const s1 = setWinnerClient(r.sets[0]), s2 = setWinnerClient(r.sets[1]);
+  return !!(s1 && s2 && s1 !== s2);
+}
+function fixtureScoreClient(f) {
+  let winsA = 0, winsB = 0, decided = 0;
+  f.rubbers.slice(0, 4).forEach((r) => { const w = rubberWinnerClient(r); if (w) { decided++; if (w === "A") winsA++; else winsB++; } });
+  return { winsA, winsB, decided };
+}
+
+function renderResults() {
+  renderRoundNav("round-nav-results");
+  const c = el("results-container");
+  c.innerHTML = "";
+  const fixtures = fixturesForKey(viewingKey);
+  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No matches this round yet.</p></div>'; return; }
+  fixtures.forEach((f) => c.appendChild(resultsCard(f)));
+}
+function resultsCard(f) {
+  const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+  const card = document.createElement("div"); card.className = "fixture-card";
+  const { winsA, winsB, decided } = fixtureScoreClient(f);
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : decided + "/4 rubbers"}</span></div></div>`;
+  if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
+  if (!(f.selectionA.submitted && f.selectionB.submitted)) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for both teams to submit their line-up in Selection Room." })); return card; }
+
+  const editable = myRole === "admin" || (!f.finalized && myRole === "captain" && (myTeamId === f.teamA || myTeamId === f.teamB));
+  const rubbersWrap = document.createElement("div"); rubbersWrap.className = "rubbers";
+
+  f.rubbers.forEach((rubber, idx) => {
+    const isDecider = idx === 4;
+    if (isDecider) { const { winsA: wa, winsB: wb } = fixtureScoreClient(f); if (wa !== wb) return; }
+    const row = document.createElement("div"); row.className = "rubber-row";
+    const winner = rubberWinnerClient(rubber);
+    const seedTag = document.createElement("div"); seedTag.className = "seed";
+    const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
+    seedTag.textContent = isDecider ? "Decider" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    const pairA = playerNamesFor(teamA, f.selectionA.pairs[idx]);
+    const pairB = playerNamesFor(teamB, f.selectionB.pairs[idx]);
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.textContent = isDecider ? teamA.name : pairA;
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.textContent = isDecider ? teamB.name : pairB;
+
+    const scores = document.createElement("div"); scores.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
+    const setLine = document.createElement("div"); setLine.className = "set-line";
+    [0, 1].forEach((si) => {
+      const pair = document.createElement("div"); pair.className = "set-pair";
+      const inA = document.createElement("input"); inA.type = "number"; inA.min = "0"; inA.max = "7"; inA.disabled = !editable;
+      inA.value = rubber.sets[si][0] === null ? "" : rubber.sets[si][0];
+      const span = document.createElement("span"); span.textContent = "-";
+      const inB = document.createElement("input"); inB.type = "number"; inB.min = "0"; inB.max = "7"; inB.disabled = !editable;
+      inB.value = rubber.sets[si][1] === null ? "" : rubber.sets[si][1];
+      const commit = async () => {
+        const sets = rubber.sets.map((s) => s.slice());
+        sets[si] = [inA.value === "" ? null : inA.value, inB.value === "" ? null : inB.value];
+        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body: { sets } }); await refreshLeague(); renderResults(); }
+        catch (e) { alert(e.message); }
+      };
+      inA.onchange = commit; inB.onchange = commit;
+      pair.appendChild(inA); pair.appendChild(span); pair.appendChild(inB);
+      setLine.appendChild(pair);
+    });
+    scores.appendChild(setLine);
+    if (needsTiebreakClient(rubber)) {
+      const tbWrap = document.createElement("div"); tbWrap.className = "tb-wrap";
+      const tbLabel = document.createElement("div"); tbLabel.className = "tb-label"; tbLabel.textContent = "Super TB";
+      const tbPair = document.createElement("div"); tbPair.className = "set-pair tb";
+      const tA = document.createElement("input"); tA.type = "number"; tA.min = "0"; tA.max = "30"; tA.disabled = !editable;
+      tA.value = rubber.tb[0] === null ? "" : rubber.tb[0];
+      const tSpan = document.createElement("span"); tSpan.textContent = "-";
+      const tB = document.createElement("input"); tB.type = "number"; tB.min = "0"; tB.max = "30"; tB.disabled = !editable;
+      tB.value = rubber.tb[1] === null ? "" : rubber.tb[1];
+      const commitTb = async () => {
+        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body: { tb: [tA.value === "" ? null : tA.value, tB.value === "" ? null : tB.value] } }); await refreshLeague(); renderResults(); }
+        catch (e) { alert(e.message); }
+      };
+      tA.onchange = commitTb; tB.onchange = commitTb;
+      tbPair.appendChild(tA); tbPair.appendChild(tSpan); tbPair.appendChild(tB);
+      tbWrap.appendChild(tbLabel); tbWrap.appendChild(tbPair);
+      scores.appendChild(tbWrap);
+    }
+    [0, 1].forEach((si) => {
+      const valid = isValidSetClient(rubber.sets[si][0], rubber.sets[si][1]);
+      if (valid === false) { const w = document.createElement("div"); w.className = "warn"; w.textContent = "Set " + (si + 1) + ": not a real padel score"; scores.appendChild(w); }
+    });
+    row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
+    rubbersWrap.appendChild(row);
+  });
+  card.appendChild(rubbersWrap);
+
+  const footer = document.createElement("div"); footer.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-top:12px;";
+  if (editable && !f.finalized) {
+    const saveBtn = document.createElement("button"); saveBtn.className = "secondary"; saveBtn.textContent = "Finalize";
+    saveBtn.onclick = async () => {
+      try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" }); await refreshLeague(); renderAll(); }
+      catch (e) { alert(e.message); }
+    };
+    footer.appendChild(saveBtn);
+  } else if (myRole === "admin" && f.finalized) {
+    const unlockBtn = document.createElement("button"); unlockBtn.className = "secondary"; unlockBtn.textContent = "Unlock to edit";
+    unlockBtn.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/unlock`, { method: "POST" }); await refreshLeague(); renderAll(); };
+    footer.appendChild(unlockBtn);
+  }
+  card.appendChild(footer);
+  return card;
+}
+function playerNamesFor(team, pair) {
+  if (!pair) return "—";
+  const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => p.name).join(" & ");
+  return names || "—";
+}
+
+/* ---------- Table ---------- */
+
+function computeStandingsClient() {
+  const rows = league.teams.map((t) => {
+    let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
+    league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id)).forEach((f) => {
+      const isA = f.teamA === t.id;
+      const { winsA, winsB } = fixtureScoreClient(f);
+      const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
+      played++; rubbersWon += myWins; rubbersLost += oppWins;
+      if (myWins > oppWins) nightsWon++; else if (myWins < oppWins) nightsLost++; else nightsDrawn++;
+    });
+    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, diff: rubbersWon - rubbersLost, points: rubbersWon };
+  });
+  rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
+  return rows;
+}
+function matchWinnerClient(f) {
+  const { winsA, winsB } = fixtureScoreClient(f);
+  if (winsA > winsB) return "A"; if (winsB > winsA) return "B";
+  if (f.rubbers.length > 4) return rubberWinnerClient(f.rubbers[4]);
+  return null;
+}
+function renderTable() {
+  const rows = computeStandingsClient();
+  const c = el("log-container");
+  if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
+  else {
+    let html = `<table class="log"><thead><tr><th>#</th><th>Team</th><th class="num">P</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Diff</th><th class="num">Pts</th></tr></thead><tbody>`;
+    rows.forEach((r, i) => {
+      html += `<tr class="${i === 0 && r.played > 0 ? "rank1" : ""}"><td>${i + 1}</td><td><div class="team-cell">${avatarHtml(r)}${escapeHtml(r.name)}</div></td><td class="num">${r.played}</td><td class="num">${r.rubbersWon}</td><td class="num">${r.rubbersLost}</td><td class="num">${r.diff > 0 ? "+" : ""}${r.diff}</td><td class="num pts">${r.points}</td></tr>`;
+    });
+    html += "</tbody></table>";
+    c.innerHTML = html;
+  }
+  const koCard = el("knockout-card");
+  const allDone = league.fixtures.length > 0 && league.fixtures.every((f) => f.finalized);
+  const formatOk = league.playoffFormat === "semis_final" || league.playoffFormat === "position";
+  const minTeamsOk = league.playoffFormat === "semis_final" ? league.teams.length >= 4 : league.teams.length >= 2;
+  if (myRole === "admin" && allDone && !league.playoffs && formatOk && minTeamsOk) {
+    koCard.style.display = "block";
+    const desc = league.playoffFormat === "semis_final"
+      ? "Regular season complete. Generate semi-finals (1st v 4th, 2nd v 3rd) and a final."
+      : "Regular season complete. Generate position playoffs (1st v 2nd, 3rd v 4th, 5th v 6th…) to decide final placings.";
+    koCard.innerHTML = `<h2 class="section-title">Playoffs</h2><p class="note">${desc}</p><div class="row" style="margin-top:12px;"><button class="primary" id="gen-ko-btn">Generate playoffs</button></div>`;
+    el("gen-ko-btn").onclick = async () => {
+      try { await api(`/leagues/${currentLeagueId}/knockout/generate`, { method: "POST" }); await refreshLeague(); initViewingKey(); renderAll(); }
+      catch (e) { alert(e.message); }
+    };
+  } else if (league.playoffs && league.playoffs.format === "position") {
+    koCard.style.display = "block";
+    const nameOf = (id) => { const t = teamById(id); return t ? t.name : "TBD"; };
+    const scoreOf = (f) => { const { winsA, winsB } = fixtureScoreClient(f); return f.finalized ? winsA + "-" + winsB : "in progress"; };
+    let html = `<h2 class="section-title">Position playoffs</h2>`;
+    league.playoffs.matches.forEach((m, i) => {
+      html += `<div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);"><span>${escapeHtml(nameOf(m.teamA))} vs ${escapeHtml(nameOf(m.teamB))}</span><span class="pts">${scoreOf(m)}</span></div>`;
+    });
+    koCard.innerHTML = html;
+  } else if (league.playoffs) {
+    koCard.style.display = "block";
+    const [s0, s1] = league.playoffs.semis, fin = league.playoffs.final;
+    const nameOf = (id) => { const t = teamById(id); return t ? t.name : "TBD"; };
+    const scoreOf = (f) => { const { winsA, winsB } = fixtureScoreClient(f); return f.finalized ? winsA + "-" + winsB : "in progress"; };
+    koCard.innerHTML = `<h2 class="section-title">Knockout stage</h2>
+      <div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);"><span>Semi 1: ${escapeHtml(nameOf(s0.teamA))} vs ${escapeHtml(nameOf(s0.teamB))}</span><span class="pts">${scoreOf(s0)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);"><span>Semi 2: ${escapeHtml(nameOf(s1.teamA))} vs ${escapeHtml(nameOf(s1.teamB))}</span><span class="pts">${scoreOf(s1)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:10px 4px;"><span>Final: ${escapeHtml(nameOf(fin.teamA))} vs ${escapeHtml(nameOf(fin.teamB))}</span><span class="pts">${scoreOf(fin)}</span></div>
+      ${fin.finalized ? `<p class="note" style="margin-top:10px;">Champion: <strong style="color:var(--accent);">${escapeHtml(nameOf(matchWinnerClient(fin) === "A" ? fin.teamA : fin.teamB))}</strong></p>` : ""}`;
+  } else { koCard.style.display = "none"; }
+}
+
+/* ---------- Roster (read-only) ---------- */
+
+function renderRoster() {
+  const c = el("roster-container");
+  if (league.teams.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No teams yet.</p></div>'; return; }
+  const grid = document.createElement("div");
+  grid.className = "roster-grid";
+  league.teams.forEach((t) => {
+    const card = document.createElement("div");
+    card.className = "roster-card";
+    const avatar = t.logo
+      ? `<img class="avatar-big" src="${t.logo}" alt="">`
+      : `<span class="avatar-big-fb">${escapeHtml(t.name.charAt(0).toUpperCase())}</span>`;
+    let chips = t.players.length
+      ? t.players.map((p) => `<button class="player-chip" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${escapeHtml(p.name)}</button>`).join("")
+      : '<span class="note">No players added yet.</span>';
+    card.innerHTML = `${avatar}<div class="team-name-wrap"><div class="team-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}</div></div><div class="player-chips">${chips}</div>`;
+    grid.appendChild(card);
+  });
+  c.innerHTML = "";
+  c.appendChild(grid);
+  grid.querySelectorAll(".player-chip").forEach((btn) => {
+    btn.onclick = () => openPlayerHistory(btn.dataset.pid, btn.dataset.pname);
+  });
+}
+
+/* ---------- Player match history modal ---------- */
+
+async function openPlayerHistory(playerId, playerName) {
+  el("player-modal-name").textContent = playerName;
+  el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
+  el("player-modal-backdrop").classList.add("open");
+  const rows = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => []);
+  if (rows.length === 0) { el("player-modal-body").innerHTML = '<p class="empty">No completed matches yet.</p>'; return; }
+  const wins = rows.filter((r) => r.result === "W").length;
+  let html = `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L</p>`;
+  rows.forEach((r) => {
+    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${r.result === "W" ? "win" : "loss"}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+  });
+  el("player-modal-body").innerHTML = html;
+}
+el("player-modal-close").onclick = () => el("player-modal-backdrop").classList.remove("open");
+el("player-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "player-modal-backdrop") el("player-modal-backdrop").classList.remove("open"); });
+
+/* ---------- Stats ---------- */
+
+async function renderStats() {
+  const stats = await api(`/leagues/${currentLeagueId}/stats`).catch(() => null);
+  if (!stats) return;
+  const t = stats.totals;
+  el("stats-totals").innerHTML = `
+    <div class="stat-tile"><div class="stat-num">${t.teams}</div><div class="stat-lbl">Teams</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.players}</div><div class="stat-lbl">Players</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.matchesPlayed}</div><div class="stat-lbl">Nights played</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.matchesRemaining}</div><div class="stat-lbl">Nights remaining</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.totalRubbers}</div><div class="stat-lbl">Rubbers played</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.totalTiebreaks}</div><div class="stat-lbl">Super tie-breaks</div></div>
+  `;
+
+  const tb = el("stats-tiebreaks");
+  tb.innerHTML = stats.tiebreaks.length === 0 ? '<p class="empty">No super tie-breaks played yet.</p>' :
+    `<table class="log"><thead><tr><th>Team</th><th class="num">Played</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Win%</th></tr></thead><tbody>${
+      stats.tiebreaks.map((r) => `<tr><td>${escapeHtml(r.name)}</td><td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td><td class="num pts">${r.winPct}%</td></tr>`).join("")
+    }</tbody></table>`;
+
+  const sc = el("stats-scorers");
+  sc.innerHTML = stats.topScorers.length === 0 ? '<p class="empty">No results yet.</p>' :
+    stats.topScorers.map((p, i) => `<div class="stat-row"><span>${i + 1}. ${escapeHtml(p.name)} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.wins}W ${p.losses}L</span></div>`).join("");
+
+  const pt = el("stats-partnerships");
+  pt.innerHTML = stats.partnerships.length === 0 ? '<p class="empty">Need at least 2 matches together to qualify.</p>' :
+    stats.partnerships.map((p) => `<div class="stat-row"><span>${escapeHtml(p.names.join(" & "))} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.won}/${p.played}</span></div>`).join("");
+
+  const st = el("stats-streaks");
+  st.innerHTML = stats.streaks.length === 0 ? '<p class="empty">No active streaks of 2+ yet.</p>' :
+    stats.streaks.map((s) => `<div class="stat-row"><span>${escapeHtml(s.name)}</span><span class="pts">${s.streak} in a row</span></div>`).join("");
+
+  const by = el("stats-byes");
+  by.innerHTML = stats.byes.length === 0 ? '<p class="empty">No byes yet.</p>' :
+    stats.byes.map((b) => `<div class="stat-row"><span>${escapeHtml(b.name)}</span><span class="pts">${b.byes}</span></div>`).join("");
+}
+
+/* ---------- News ---------- */
+
+async function renderNews() {
+  el("news-post-card").style.display = myRole === "admin" ? "block" : "none";
+  const posts = await api(`/leagues/${currentLeagueId}/news`).catch(() => []);
+  const c = el("news-list");
+  if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates posted yet.</p>'; return; }
+  c.innerHTML = "";
+  posts.forEach((p) => {
+    const div = document.createElement("div"); div.className = "news-post";
+    div.innerHTML = `<h3>${escapeHtml(p.title)}</h3><time>${new Date(p.createdAt).toLocaleString()}</time>${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}`;
+    if (myRole === "admin") {
+      const del = document.createElement("button"); del.className = "link"; del.textContent = "Delete"; del.style.marginTop = "8px";
+      del.onclick = async () => { await api(`/leagues/${currentLeagueId}/news/${p.id}`, { method: "DELETE" }); renderNews(); };
+      div.appendChild(del);
+    }
+    c.appendChild(div);
+  });
+}
+el("news-post-btn").onclick = async () => {
+  const title = el("news-title").value.trim(), body = el("news-body").value.trim();
+  if (!title) return alert("Give the update a title.");
+  try {
+    await api(`/leagues/${currentLeagueId}/news`, { method: "POST", body: { title, body } });
+    el("news-title").value = ""; el("news-body").value = "";
+    renderNews();
+  } catch (e) {
+    alert("Couldn't post: " + e.message);
+  }
+};
+
+boot();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((e) => console.log("Service worker registration failed:", e));
+  });
+}
+
+/* ---------- Install (PWA) prompt ---------- */
+
+(function () {
+  const banner = document.getElementById("install-banner");
+  const dismissKey = "padel-install-dismissed";
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  let deferredPrompt = null;
+
+  if (isStandalone || localStorage.getItem(dismissKey) === "true") return;
+
+  document.getElementById("install-dismiss").onclick = () => {
+    banner.style.display = "none";
+    localStorage.setItem(dismissKey, "true");
+  };
+
+  if (isIOS) {
+    // Safari never fires beforeinstallprompt — there's no programmatic
+    // install, so just point people at the manual Share-sheet step.
+    document.getElementById("install-instructions").textContent = "Tap the Share icon, then \"Add to Home Screen.\"";
+    banner.style.display = "flex";
+    return;
+  }
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    banner.style.display = "flex";
+    document.getElementById("install-btn").style.display = "inline-block";
+  });
+
+  document.getElementById("install-btn").onclick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    banner.style.display = "none";
+  };
+
+  window.addEventListener("appinstalled", () => {
+    banner.style.display = "none";
+    localStorage.setItem(dismissKey, "true");
+  });
+})();

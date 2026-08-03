@@ -1,0 +1,19 @@
+{
+  "name": "padel-league-app",
+  "version": "1.0.0",
+  "description": "Team padel league manager: fixtures, blind seed selection, results, table and news.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "nodemailer": "^9.0.3"
+  }
+}
