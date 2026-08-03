@@ -7,7 +7,10 @@ a league table, knockout stage, team rosters with logos, and a news room.
 Unlike the earlier prototype, this has a real backend: passwords are
 hashed with bcrypt, sessions are server-side, and "blind" selections are
 actually hidden by the server, not just by the UI. Data is stored as
-JSON files on disk under `/data` — no external database needed.
+JSON files on disk under `/data` for local development, or in
+[Upstash Redis](https://upstash.com) when `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` are set — see "Keeping your data safe in
+production" below.
 
 ## Run it locally first
 
@@ -71,15 +74,26 @@ server, run `npm install`, set `SESSION_SECRET` and `NODE_ENV=production`
 as environment variables, and start it with `npm start` (a process
 manager like `pm2` will keep it running and restart it if it crashes).
 
-### One real limitation worth knowing
+### Keeping your data safe in production
 
-Data is stored as JSON files on the server's own disk. That's simple
-and needs no separate database, but it means **backups are your
-responsibility** (copy the `/data` folder occasionally) and it won't
-survive a host that wipes the disk between deploys (some free tiers
-do this — check). If a league grows large or this needs to be rock
-solid, migrating `/data` to a real database later is a reasonable next
-step, and I can help with that when you get there.
+By default, data is stored as JSON files on the server's own disk. On
+many hosts (including ones that build your app fresh from git each
+time, like GoDaddy Airo) that disk gets wiped on every redeploy or
+restart — meaning any league you create can vanish the next time you
+ship a code change.
+
+To avoid that, set these two environment variables on your host (both,
+not just one):
+
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
+
+Get them free from [upstash.com](https://upstash.com): sign up, create
+a Redis database, and copy the REST URL and token it gives you. Once
+both are set, the app automatically stores and loads league data there
+instead of local disk — no code changes needed, and this survives
+redeploys. Locally, with those variables unset, it keeps using the
+`/data` folder as before, so local dev needs no signup.
 
 ## Installing it as an app on your phone
 

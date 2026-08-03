@@ -3,6 +3,7 @@ const express = require("express");
 const session = require("express-session");
 const path = require("path");
 const routes = require("./src/routes");
+const store = require("./src/store");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,21 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.listen(PORT, () => {
-  console.log("Padel league app running on http://localhost:" + PORT);
-});
+store
+  .init()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log("Padel league app running on http://localhost:" + PORT);
+    });
+  })
+  .catch((e) => {
+    console.error("Failed to initialize data store:", e.message);
+    process.exit(1);
+  });
+
+async function shutdown() {
+  await store.flush();
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
