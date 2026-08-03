@@ -12,6 +12,15 @@ const router = express.Router();
 // it without touching code (env vars, if set, always win).
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || "TYC").trim().toLowerCase();
 const OWNER_PIN = process.env.OWNER_PIN || "1969";
+// Temporary diagnostic for a login issue — logs presence/length only, never
+// the actual value, so nothing sensitive ends up in the runtime logs.
+console.log(
+  "[owner-login-diagnostic] OWNER_USERNAME env set:", !!process.env.OWNER_USERNAME,
+  "raw length:", (process.env.OWNER_USERNAME || "").length,
+  "resolved username:", OWNER_USERNAME.length, "chars,",
+  "| OWNER_PIN env set:", !!process.env.OWNER_PIN,
+  "raw length:", (process.env.OWNER_PIN || "").length
+);
 function safeEqual(a, b) {
   const bufA = Buffer.from(String(a || ""));
   const bufB = Buffer.from(String(b || ""));
