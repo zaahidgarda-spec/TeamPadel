@@ -10,23 +10,13 @@ const router = express.Router();
 // The site owner account. Baked in here so it works with zero setup —
 // still overridable via environment variables if you ever want to change
 // it without touching code (env vars, if set, always win).
+//
+// Named OWNER_PASSCODE rather than OWNER_PIN: on GoDaddy Airo hosting,
+// purely-numeric secret values silently failed to reach the running
+// process (confirmed by testing) while alphanumeric ones worked fine.
+// Keep this value's PIN non-numeric-only if you're hosting there.
 const OWNER_USERNAME = (process.env.OWNER_USERNAME || "TYC").trim().toLowerCase();
-// OWNER_PIN mysteriously never reached the process on GoDaddy despite
-// showing "DEPLOYED" in their dashboard — testing OWNER_PASSCODE as a
-// fresh, never-touched variable name to isolate whether that's a
-// platform-side quirk tied to the OWNER_PIN key specifically.
-const OWNER_PIN = process.env.OWNER_PASSCODE || process.env.OWNER_PIN || "1969";
-// Temporary diagnostic for a login issue — logs presence/length only, never
-// the actual value, so nothing sensitive ends up in the runtime logs.
-console.log(
-  "[owner-login-diagnostic] OWNER_USERNAME env set:", !!process.env.OWNER_USERNAME,
-  "raw length:", (process.env.OWNER_USERNAME || "").length,
-  "resolved username:", OWNER_USERNAME.length, "chars,",
-  "| OWNER_PIN env set:", !!process.env.OWNER_PIN,
-  "raw length:", (process.env.OWNER_PIN || "").length,
-  "| OWNER_PASSCODE env set:", !!process.env.OWNER_PASSCODE,
-  "raw length:", (process.env.OWNER_PASSCODE || "").length
-);
+const OWNER_PIN = process.env.OWNER_PASSCODE || "1969";
 function safeEqual(a, b) {
   const bufA = Buffer.from(String(a || ""));
   const bufB = Buffer.from(String(b || ""));
@@ -182,7 +172,7 @@ router.get("/leagues", (req, res) => {
 });
 
 router.post("/owner/login", (req, res) => {
-  if (!OWNER_USERNAME || !OWNER_PIN) return res.status(500).json({ error: "Admin login isn't configured on this server yet — set OWNER_USERNAME and OWNER_PIN." });
+  if (!OWNER_USERNAME || !OWNER_PIN) return res.status(500).json({ error: "Admin login isn't configured on this server yet — set OWNER_USERNAME and OWNER_PASSCODE." });
   const { username, pin } = req.body || {};
   const usernameOk = (username || "").trim().toLowerCase() === OWNER_USERNAME;
   const pinOk = safeEqual(pin, OWNER_PIN);
