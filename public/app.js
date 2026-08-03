@@ -1397,7 +1397,7 @@ function matchCardHtml(label, teamAId, teamBId, f) {
   </div>`;
 }
 
-/* ---------- Roster (read-only) ---------- */
+/* ---------- Roster (read-only, except a captain can manage their own team) ---------- */
 
 function renderRoster() {
   const c = el("roster-container");
@@ -1410,17 +1410,67 @@ function renderRoster() {
     const avatar = t.logo
       ? `<img class="avatar-big" src="${t.logo}" alt="">`
       : `<span class="avatar-big-fb">${escapeHtml(t.name.charAt(0).toUpperCase())}</span>`;
+    const canManage = myRole === "captain" && myTeamId === t.id;
     let chips = t.players.length
-      ? t.players.map((p) => `<button class="player-chip" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${escapeHtml(p.name)}</button>`).join("")
+      ? t.players.map((p) => `<button class="player-chip" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${escapeHtml(p.name)}${canManage ? ' <span class="chip-remove" data-remove-pid="' + p.id + '">&times;</span>' : ""}</button>`).join("")
       : '<span class="note">No players added yet.</span>';
     card.innerHTML = `${avatar}<div class="team-name-wrap"><div class="team-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}</div></div><div class="player-chips">${chips}</div>`;
+    if (canManage) card.appendChild(ownRosterEditControls(t));
     grid.appendChild(card);
   });
   c.innerHTML = "";
   c.appendChild(grid);
   grid.querySelectorAll(".player-chip").forEach((btn) => {
-    btn.onclick = () => openPlayerHistory(btn.dataset.pid, btn.dataset.pname);
+    btn.onclick = (e) => {
+      if (e.target.dataset.removePid) return;
+      openPlayerHistory(btn.dataset.pid, btn.dataset.pname);
+    };
   });
+  grid.querySelectorAll(".chip-remove").forEach((span) => {
+    span.onclick = async (e) => {
+      e.stopPropagation();
+      const pid = span.dataset.removePid;
+      await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/players/${pid}`, { method: "DELETE" });
+      await refreshLeague(); renderRoster();
+    };
+  });
+}
+function ownRosterEditControls(t) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "width:100%;margin-top:12px;";
+
+  const addRow = document.createElement("div");
+  addRow.className = "row";
+  const addInput = document.createElement("input");
+  addInput.type = "text"; addInput.placeholder = "Add player name";
+  const addBtn = document.createElement("button");
+  addBtn.className = "secondary"; addBtn.textContent = "Add player";
+  addBtn.onclick = async () => {
+    const name = addInput.value.trim();
+    if (!name) return;
+    await api(`/leagues/${currentLeagueId}/teams/${t.id}/players`, { method: "POST", body: { name } });
+    addInput.value = ""; await refreshLeague(); renderRoster();
+  };
+  addRow.appendChild(addInput); addRow.appendChild(addBtn);
+  wrap.appendChild(addRow);
+
+  const bulkDetails = document.createElement("details");
+  bulkDetails.style.marginTop = "8px";
+  const bulkSummary = document.createElement("summary");
+  bulkSummary.className = "note"; bulkSummary.style.cursor = "pointer"; bulkSummary.textContent = "Add several players at once";
+  const bulkTextarea = document.createElement("textarea");
+  bulkTextarea.rows = 4; bulkTextarea.style.marginTop = "8px"; bulkTextarea.placeholder = "One player name per line";
+  const bulkBtn = document.createElement("button");
+  bulkBtn.className = "secondary"; bulkBtn.textContent = "Add these players"; bulkBtn.style.marginTop = "8px";
+  bulkBtn.onclick = async () => {
+    const text = bulkTextarea.value;
+    if (!text.trim()) return;
+    await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/bulk`, { method: "POST", body: { text } });
+    bulkTextarea.value = ""; bulkDetails.open = false; await refreshLeague(); renderRoster();
+  };
+  bulkDetails.appendChild(bulkSummary); bulkDetails.appendChild(bulkTextarea); bulkDetails.appendChild(bulkBtn);
+  wrap.appendChild(bulkDetails);
+  return wrap;
 }
 
 /* ---------- Player match history modal ---------- */
