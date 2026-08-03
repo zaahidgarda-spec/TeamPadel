@@ -69,17 +69,53 @@ function showHub() {
   refreshOwnerStatus();
   renderHub();
 }
+function leagueCardHtml(l) {
+  const statusLabel = l.status === "active" ? "Active" : "In setup";
+  return `<div class="league-card" data-id="${l.id}">
+    <div class="league-card-top">
+      <span class="league-card-name">${escapeHtml(l.name)}</span>
+      <span class="tag league-status-${l.status}">${statusLabel}</span>
+    </div>
+    <div class="league-card-meta">
+      <span>${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span>
+      <span>Created ${new Date(l.createdAt).toLocaleDateString()}</span>
+    </div>
+    ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
+  </div>`;
+}
 function renderHub() {
   const list = el("league-list");
   list.innerHTML = "";
   if (leaguesIndex.length === 0) { list.innerHTML = '<p class="empty">No leagues yet — create one above.</p>'; return; }
-  leaguesIndex.slice().sort((a, b) => b.createdAt - a.createdAt).forEach((l) => {
-    const div = document.createElement("div");
-    div.className = "card";
-    div.style.cursor = "pointer";
-    div.innerHTML = `<div style="font-family:'Oswald',sans-serif;font-size:18px;text-transform:uppercase;">${escapeHtml(l.name)}</div><div class="note">Created ${new Date(l.createdAt).toLocaleDateString()}</div>`;
-    div.onclick = () => openLeague(l.id);
-    list.appendChild(div);
+  const sorted = leaguesIndex.slice().sort((a, b) => b.createdAt - a.createdAt);
+  const groups = [
+    { key: "active", label: "Active leagues" },
+    { key: "setup", label: "In setup" },
+  ];
+  groups.forEach((g) => {
+    const items = sorted.filter((l) => l.status === g.key);
+    if (items.length === 0) return;
+    const section = document.createElement("div");
+    section.className = "league-group";
+    section.innerHTML = `<h3 class="league-group-title">${g.label}</h3><div class="league-grid">${items.map(leagueCardHtml).join("")}</div>`;
+    list.appendChild(section);
+  });
+  list.querySelectorAll(".league-card").forEach((card) => {
+    card.onclick = () => openLeague(card.dataset.id);
+    const copyBtn = card.querySelector(".league-copy-codes-btn");
+    if (copyBtn) {
+      copyBtn.onclick = async (e) => {
+        e.stopPropagation();
+        const full = await api(`/leagues/${card.dataset.id}`).catch(() => null);
+        if (!full || full.teams.length === 0) return;
+        const text = full.teams.map((t) => t.name + ": " + (t.code || "—")).join("\n");
+        navigator.clipboard.writeText(text).then(() => {
+          const original = copyBtn.textContent;
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => { copyBtn.textContent = original; }, 1500);
+        }).catch(() => alert("Couldn't copy — your browser may be blocking clipboard access."));
+      };
+    }
   });
 }
 el("create-league-btn").onclick = async () => {
@@ -114,6 +150,7 @@ async function refreshOwnerStatus() {
   isOwner = !!status.isOwner;
   el("create-league-card").style.display = isOwner ? "block" : "none";
   el("owner-login-card").style.display = isOwner ? "none" : "block";
+  renderHub();
 }
 el("owner-login-btn").onclick = async () => {
   const username = el("owner-username").value, pin = el("owner-pin").value;
@@ -160,6 +197,7 @@ el("auth-toggle").onclick = async () => {
     return;
   }
   el("auth-panel").classList.toggle("open");
+  el("auth-toggle").textContent = el("auth-panel").classList.contains("open") ? "Close" : "Log in";
 };
 el("show-admin-login").onclick = () => {
   el("auth-team-panel").style.display = "none";
@@ -695,7 +733,7 @@ function renderNewRoundMatches() {
     row.appendChild(selA); row.appendChild(vs); row.appendChild(selB);
     if (draftRoundMatches.length > 1) {
       const rm = document.createElement("button");
-      rm.className = "ghost"; rm.innerHTML = "&times;"; rm.title = "Remove this match";
+      rm.className = "ghost"; rm.innerHTML = "&times;"; rm.title = "Remove this fixture";
       rm.onclick = () => { draftRoundMatches.splice(i, 1); renderNewRoundMatches(); };
       row.appendChild(rm);
     }
@@ -708,7 +746,7 @@ el("new-round-create-btn").onclick = async () => {
   const type = el("new-round-type").value;
   const matches = draftRoundMatches.filter((m) => m.teamA && m.teamB).map((m) => ({ teamA: m.teamA, teamB: m.teamB }));
   if (!name) return alert("Give the round a name.");
-  if (matches.length === 0) return alert("Add at least one match.");
+  if (matches.length === 0) return alert("Add at least one fixture.");
   try {
     await api(`/leagues/${currentLeagueId}/rounds`, { method: "POST", body: { name, type, matches } });
     el("new-round-name").value = "";
@@ -816,7 +854,7 @@ function renderSelection() {
   if (fixtures.length === 0) {
     c.innerHTML = myRole === "captain"
       ? '<div class="card"><p class="empty">Your team isn\'t playing this round.</p></div>'
-      : '<div class="card"><p class="empty">No matches this round yet.</p></div>';
+      : '<div class="card"><p class="empty">No fixtures this round yet.</p></div>';
     return;
   }
   if (myRole !== "admin" && !isRoundOpen(viewingKey)) { c.innerHTML = '<div class="card"><p class="empty">This round opens once the previous round is finalized.</p></div>'; return; }
@@ -1021,12 +1059,29 @@ function selectionForm(f, team, side) {
   for (let i = 0; i < 4; i++) {
     const row = document.createElement("div"); row.className = "seed-row";
     row.innerHTML = `<span class="num">Seed ${i + 1}</span>`;
+    const seedIdx = i;
+    const selects = [];
+    // A player picked in one slot is disabled in the other slot of the same
+    // pair — you can't be your own partner, so this rules it out before
+    // it's ever submitted rather than erroring after the fact.
+    const optionsFor = (mySlot) => {
+      const otherVal = localPairs[seedIdx][mySlot === 0 ? 1 : 0];
+      return '<option value="">Player…</option>' + team.players.map((p) => `<option value="${p.id}" ${p.id === otherVal ? "disabled" : ""}>${escapeHtml(p.name)}</option>`).join("");
+    };
     [0, 1].forEach((slot) => {
       const select = document.createElement("select");
-      select.innerHTML = '<option value="">Player…</option>' + team.players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
-      select.value = localPairs[i][slot] || "";
+      select.innerHTML = optionsFor(slot);
+      select.value = localPairs[seedIdx][slot] || "";
       select.disabled = already;
-      select.onchange = () => { localPairs[i][slot] = select.value || null; refreshDoubleUpNote(); };
+      select.onchange = () => {
+        localPairs[seedIdx][slot] = select.value || null;
+        const other = selects[slot === 0 ? 1 : 0];
+        const otherVal = other.value;
+        other.innerHTML = optionsFor(slot === 0 ? 1 : 0);
+        other.value = otherVal;
+        refreshDoubleUpNote();
+      };
+      selects.push(select);
       row.appendChild(select);
     });
     div.appendChild(row);
@@ -1071,7 +1126,7 @@ function renderFixtures() {
   const c = el("fixtures-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
-  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No matches this round yet.</p></div>'; return; }
+  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     const card = document.createElement("div"); card.className = "fixture-card";
@@ -1150,14 +1205,14 @@ function renderResults() {
   const c = el("results-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
-  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No matches this round yet.</p></div>'; return; }
+  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
 }
 function resultsCard(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
   const card = document.createElement("div"); card.className = "fixture-card";
   const { winsA, winsB, decided } = fixtureScoreClient(f);
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : decided + "/4 rubbers"}</span></div></div>`;
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : decided + "/4 matches"}</span></div></div>`;
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
   if (!(f.selectionA.submitted && f.selectionB.submitted)) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for both teams to submit their line-up in Selection Room." })); return card; }
 
@@ -1394,7 +1449,7 @@ async function renderStats() {
     <div class="stat-tile"><div class="stat-num">${t.teams}</div><div class="stat-lbl">Teams</div></div>
     <div class="stat-tile"><div class="stat-num">${t.players}</div><div class="stat-lbl">Players</div></div>
     <div class="stat-tile"><div class="stat-num">${t.matchesPlayed}</div><div class="stat-lbl">Nights played</div></div>
-    <div class="stat-tile"><div class="stat-num">${t.totalRubbers}</div><div class="stat-lbl">Rubbers played</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.totalRubbers}</div><div class="stat-lbl">Matches played</div></div>
     <div class="stat-tile"><div class="stat-num">${t.totalTiebreaks}</div><div class="stat-lbl">Super tie-breaks</div></div>
   `;
 

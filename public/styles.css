@@ -148,6 +148,17 @@ table.log tr.rank1 td{background:rgba(37,99,235,.06);}
 .team-cell{display:flex;align-items:center;gap:8px;}
 .pts{font-family:'Oswald',sans-serif;font-weight:600;color:var(--accent);}
 
+.league-group + .league-group{margin-top:22px;}
+.league-group-title{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.06em;font-size:13px;color:var(--text-dim);margin:0 0 12px;}
+.league-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+.league-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:border-color .15s ease,transform .15s ease;box-shadow:0 1px 3px rgba(18,32,58,.06);}
+.league-card:hover{border-color:var(--accent);transform:translateY(-2px);}
+.league-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.league-card-name{font-family:'Oswald',sans-serif;font-size:17px;text-transform:uppercase;letter-spacing:.01em;}
+.league-status-active{color:var(--accent);border-color:var(--accent);background:rgba(37,99,235,.08);}
+.league-card-meta{display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text-dim);}
+.league-copy-codes-btn{margin-top:10px;}
+
 .news-post{border-bottom:1px solid var(--line);padding:14px 2px;}
 .news-post:last-child{border-bottom:none;}
 .news-post h3{font-family:'Oswald',sans-serif;font-size:15px;margin:0 0 4px;}

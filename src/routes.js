@@ -170,7 +170,15 @@ function syncPlayoffs(league) {
 
 router.get("/leagues", (req, res) => {
   const index = store.getIndex();
-  res.json(index);
+  const enriched = index.map((entry) => {
+    const league = store.getLeague(entry.id);
+    return {
+      ...entry,
+      status: league ? leagueStatus(league) : "setup",
+      teamCount: league ? league.teams.length : 0,
+    };
+  });
+  res.json(enriched);
 });
 
 router.post("/owner/login", (req, res) => {
@@ -211,7 +219,14 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.schedule) league.schedule = {};
   if (!league.notifications) league.notifications = [];
   if (!league.playoffFormat) league.playoffFormat = league.playoffs ? "semis_final" : "none";
-  if (syncPlayoffs(league)) store.saveLeague(league.id, league);
+  if (!league.roundMeta) league.roundMeta = {};
+  let migrated = syncPlayoffs(league);
+  // Teams created before per-team access codes existed won't have one —
+  // give them one automatically so every captain can log in.
+  league.teams.forEach((t) => {
+    if (!t.code) { t.code = genTeamCode(league); migrated = true; }
+  });
+  if (migrated) store.saveLeague(league.id, league);
   res.json(sanitize(league, req));
 });
 
@@ -471,7 +486,7 @@ router.post("/leagues/:leagueId/rounds", requireAdmin, (req, res) => {
   if (!["table", "knockout"].includes(type)) return res.status(400).json({ error: "Choose whether this round counts toward the league table or is a knockout round." });
   if (!Array.isArray(matches) || matches.length === 0) return res.status(400).json({ error: "Add at least one match." });
   for (const m of matches) {
-    if (!m || !m.teamA || !m.teamB) return res.status(400).json({ error: "Every match needs two teams." });
+    if (!m || !m.teamA || !m.teamB) return res.status(400).json({ error: "Every fixture needs two teams." });
     if (m.teamA === m.teamB) return res.status(400).json({ error: "A team can't play itself." });
     if (!league.teams.some((t) => t.id === m.teamA) || !league.teams.some((t) => t.id === m.teamB))
       return res.status(400).json({ error: "Unknown team." });
@@ -491,17 +506,17 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
-  if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this match aren't decided yet." });
+  if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
 
   const u = req.session.user;
   const ownerHere = isOwnerSession(req);
   if (!ownerHere && (!u || u.leagueId !== league.id)) return res.status(401).json({ error: "Not logged in." });
   const side = ownerHere || u.role === "admin" ? req.body.side : u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
-  if (!side) return res.status(403).json({ error: "You're not in this match." });
+  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
   if (!isRoundOpen(league, f)) return res.status(400).json({ error: "This round isn't open yet." });
 
   const selKey = side === "A" ? "selectionA" : "selectionB";
-  if (f[selKey].submitted) return res.status(400).json({ error: "Already submitted for this match." });
+  if (f[selKey].submitted) return res.status(400).json({ error: "Already submitted for this fixture." });
 
   const pairs = req.body.pairs;
   if (!Array.isArray(pairs) || pairs.length !== 4) return res.status(400).json({ error: "Send exactly 4 seed pairs." });
@@ -540,13 +555,13 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   const idx = Number(req.params.idx);
-  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid rubber." });
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
 
   const u = req.session.user;
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
-  if (f.finalized && !isAdmin) return res.status(400).json({ error: "This match is finalized — ask the admin to unlock it." });
+  if (f.finalized && !isAdmin) return res.status(400).json({ error: "This fixture is finalized — ask the admin to unlock it." });
   if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
 
   if (req.body.sets) f.rubbers[idx].sets = req.body.sets;
@@ -563,7 +578,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
-  if (!logic.requiredRubbersOk(f)) return res.status(400).json({ error: "All rubbers need a decided winner first." });
+  if (!logic.requiredRubbersOk(f)) return res.status(400).json({ error: "All matches need a decided winner first." });
   f.finalized = true;
   syncPlayoffs(league);
   store.saveLeague(league.id, league);
@@ -580,7 +595,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/propose", (req, res
   const u = req.session.user;
   if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only a team captain can propose a time slot order." });
   const side = u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
-  if (!side) return res.status(403).json({ error: "You're not in this match." });
+  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
   if (f.slotOrder) return res.status(400).json({ error: "The order is already agreed. Ask the admin to reset it first." });
   const order = req.body.order;
   if (!logic.isValidSlotOrder(order)) return res.status(400).json({ error: "Each seed needs exactly one slot." });
@@ -634,7 +649,7 @@ router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => 
   const league = store.getLeague(req.params.leagueId);
   if (!["semis_final", "position"].includes(league.playoffFormat)) return res.status(400).json({ error: "This league wasn't set up with playoffs." });
   const allDone = league.fixtures.length > 0 && league.fixtures.every((f) => f.finalized);
-  if (!allDone) return res.status(400).json({ error: "Every regular-season match must be finalized first." });
+  if (!allDone) return res.status(400).json({ error: "Every regular-season fixture must be finalized first." });
   const standings = logic.computeStandings(league);
   if (league.playoffFormat === "semis_final") {
     if (league.teams.length < 4) return res.status(400).json({ error: "Need at least 4 teams for a knockout stage." });
