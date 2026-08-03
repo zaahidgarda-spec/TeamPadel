@@ -126,7 +126,9 @@ data/                 Created automatically — your league data lives here
 
 ## Features in this version
 
-- Real bcrypt-hashed passwords; register once per email, then log in
+- League admin: real bcrypt-hashed password, register once per email, then log in
+- Team captains: no email or password — the admin gives each team a
+  unique 6-character code, and that's all a captain needs to log in
 - Multiple leagues, each independently admin-managed
 - Round-by-round Selection Room, locked until the previous round is
   finalized, with server-enforced blind submission

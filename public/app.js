@@ -153,6 +153,27 @@ el("auth-toggle").onclick = async () => {
   }
   el("auth-panel").classList.toggle("open");
 };
+el("show-admin-login").onclick = () => {
+  el("auth-team-panel").style.display = "none";
+  el("auth-admin-panel").style.display = "block";
+  el("auth-error").textContent = "";
+};
+el("show-team-login").onclick = () => {
+  el("auth-admin-panel").style.display = "none";
+  el("auth-team-panel").style.display = "block";
+  el("auth-error").textContent = "";
+};
+el("captain-login-btn").onclick = async () => {
+  const code = el("captain-code").value;
+  try {
+    const r = await api(`/leagues/${currentLeagueId}/captain-login`, { method: "POST", body: { code } });
+    myRole = r.role; myTeamId = r.teamId || null;
+    document.body.className = "role-" + myRole;
+    el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
+    el("captain-code").value = "";
+    await refreshLeague(); buildTabs(); switchTab("selection"); renderAll();
+  } catch (e) { el("auth-error").textContent = e.message; }
+};
 el("login-btn").onclick = async () => {
   const email = el("login-email").value, password = el("login-password").value;
   try {
@@ -355,23 +376,21 @@ function renderAdmin() {
     li.innerHTML = `<span class="name-tag">${avatarHtml(t)}${escapeHtml(t.name)}</span>`;
     const right = document.createElement("span");
     right.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
-    const emailInput = document.createElement("input");
-    emailInput.type = "email"; emailInput.className = "small-input"; emailInput.value = t.email || "";
-    emailInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { email: emailInput.value.trim() } }); };
-    right.appendChild(emailInput);
-    const status2 = document.createElement("span");
-    status2.className = "tag"; status2.textContent = t.registered ? "Registered" : "Not registered";
-    right.appendChild(status2);
-    if (t.registered) {
-      const reset = document.createElement("button");
-      reset.className = "link"; reset.textContent = "Reset password";
-      reset.onclick = async () => {
-        if (!confirm("Clear " + t.name + "'s password so they can register again?")) return;
-        await api(`/leagues/${currentLeagueId}/teams/${t.id}/reset-password`, { method: "POST" });
-        await refreshLeague(); renderAll();
-      };
-      right.appendChild(reset);
-    }
+    const codeTag = document.createElement("span");
+    codeTag.className = "tag"; codeTag.textContent = "Code: " + (t.code || "—");
+    right.appendChild(codeTag);
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "link"; copyBtn.textContent = "Copy";
+    copyBtn.onclick = () => { navigator.clipboard.writeText(t.code || "").catch(() => {}); };
+    right.appendChild(copyBtn);
+    const reset = document.createElement("button");
+    reset.className = "link"; reset.textContent = "New code";
+    reset.onclick = async () => {
+      if (!confirm("Generate a new code for " + t.name + "? Their old code will stop working.")) return;
+      await api(`/leagues/${currentLeagueId}/teams/${t.id}/reset-code`, { method: "POST" });
+      await refreshLeague(); renderAll();
+    };
+    right.appendChild(reset);
     if (status === "setup") {
       const del = document.createElement("button");
       del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove team";
@@ -390,11 +409,11 @@ function renderAdmin() {
   renderAdminSponsors();
 }
 el("add-team-btn").onclick = async () => {
-  const name = el("new-team-name").value.trim(), email = el("new-team-email").value.trim();
+  const name = el("new-team-name").value.trim();
   if (!name) return;
   try {
-    await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name, email } });
-    el("new-team-name").value = ""; el("new-team-email").value = "";
+    await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name } });
+    el("new-team-name").value = "";
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };

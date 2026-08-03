@@ -84,12 +84,23 @@
             <button class="secondary" id="auth-toggle">Log in</button>
             <div class="auth-panel" id="auth-panel">
               <div id="auth-status" class="note" style="margin-bottom:10px;">Viewing only</div>
-              <p class="note" style="margin-bottom:8px;">First time? Register with the email the organizer added you under. Otherwise, log in. Don't reuse a real password.</p>
-              <input type="email" id="login-email" placeholder="Email">
-              <input type="password" id="login-password" placeholder="Password" style="margin-top:8px;">
-              <div class="row" style="margin-top:10px;">
-                <button class="secondary" id="register-btn">Register</button>
-                <button class="primary" id="login-btn">Log in</button>
+              <div id="auth-team-panel">
+                <p class="note" style="margin-bottom:8px;">Enter the team code your organizer gave you.</p>
+                <input type="text" id="captain-code" placeholder="Team code" style="text-transform:uppercase;">
+                <div class="row" style="margin-top:10px;">
+                  <button class="primary" id="captain-login-btn">Enter</button>
+                </div>
+                <button class="link" id="show-admin-login" style="margin-top:10px;">League admin login</button>
+              </div>
+              <div id="auth-admin-panel" style="display:none;">
+                <p class="note" style="margin-bottom:8px;">First time? Register with the email set as this league's admin. Otherwise, log in.</p>
+                <input type="email" id="login-email" placeholder="Email">
+                <input type="password" id="login-password" placeholder="Password" style="margin-top:8px;">
+                <div class="row" style="margin-top:10px;">
+                  <button class="secondary" id="register-btn">Register</button>
+                  <button class="primary" id="login-btn">Log in</button>
+                </div>
+                <button class="link" id="show-team-login" style="margin-top:10px;">Team login</button>
               </div>
               <div class="error" id="auth-error"></div>
             </div>
@@ -112,12 +123,11 @@
           <ul class="plain" id="admin-team-list"></ul>
           <div class="row" id="add-team-row" style="margin-top:12px;">
             <input type="text" id="new-team-name" placeholder="Team name">
-            <input type="email" id="new-team-email" placeholder="Captain email">
             <button class="primary" id="add-team-btn">Add team</button>
           </div>
           <details style="margin-top:10px;" id="bulk-add-details">
             <summary class="note" style="cursor:pointer;">Add several teams at once</summary>
-            <p class="note" style="margin:8px 0;">One per line: <code>Team name, email@address.com</code></p>
+            <p class="note" style="margin:8px 0;">One team name per line.</p>
             <textarea id="bulk-team-input" rows="4"></textarea>
             <button class="secondary" id="bulk-add-btn" style="margin-top:8px;">Add these teams</button>
           </details>

@@ -3,7 +3,6 @@ const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, isAdminSession, isOwnerSession } = require("./auth");
-const { sendMail } = require("./mailer");
 
 const router = express.Router();
 
@@ -54,15 +53,15 @@ function notify(league, teamId, type, message) {
   if (!league.notifications) league.notifications = [];
   league.notifications.push({ id: logic.uid(), teamId, type, message, read: false, createdAt: Date.now() });
 }
-async function sendInviteEmail(req, league, team) {
-  if (!team.email) return;
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
-  const link = `${baseUrl}/#league/${league.id}`;
-  await sendMail({
-    to: team.email,
-    subject: `You're set up on ${league.name}`,
-    text: `Hi,\n\nYou've been added as the captain for "${team.name}" in ${league.name}.\n\nHead here to set your password and get started:\n${link}\n\nUse this email address (${team.email}) when you register — first time in, click "Register" and choose a password; after that, just "Log in" with the same email and password.\n\nSee you on court!`,
-  });
+// No 0/O/1/I — avoids characters that look alike when a captain is reading
+// a code off a phone screen or someone's handwriting.
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function genTeamCode(league) {
+  let code;
+  do {
+    code = Array.from({ length: 6 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("");
+  } while (league.teams.some((t) => t.code === code));
+  return code;
 }
 
 // Strip anything a given viewer shouldn't see: password hashes always,
@@ -74,8 +73,9 @@ function sanitize(league, req) {
   const teamId = user && user.leagueId === league.id ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
-    const { passwordHash, ...rest } = t;
-    return { ...rest, registered: !!passwordHash };
+    const { code, ...rest } = t;
+    const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
+    return { ...rest, code: viewerIsThisTeam ? code : undefined };
   });
 
   const fixtures = league.fixtures.map((f) => {
@@ -257,22 +257,13 @@ router.post("/leagues/:leagueId/register", async (req, res) => {
   if (!password || password.length < 6) return res.status(400).json({ error: "Choose a password of at least 6 characters." });
   const val = email.trim().toLowerCase();
 
-  if (league.adminEmail && val === league.adminEmail.toLowerCase()) {
-    if (league.adminPasswordHash) return res.status(400).json({ error: "Already registered — log in instead." });
-    league.adminPasswordHash = await hashPassword(password);
-    store.saveLeague(league.id, league);
-    req.session.user = { leagueId: league.id, role: "admin" };
-    return res.json({ role: "admin" });
-  }
-  const team = league.teams.find((t) => t.email && t.email.toLowerCase() === val);
-  if (team) {
-    if (team.passwordHash) return res.status(400).json({ error: "Already registered — log in instead." });
-    team.passwordHash = await hashPassword(password);
-    store.saveLeague(league.id, league);
-    req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
-    return res.json({ role: "captain", teamId: team.id });
-  }
-  res.status(404).json({ error: "No account found for that email. Ask the organizer to add you first." });
+  if (!league.adminEmail || val !== league.adminEmail.toLowerCase())
+    return res.status(404).json({ error: "No league admin account found for that email." });
+  if (league.adminPasswordHash) return res.status(400).json({ error: "Already registered — log in instead." });
+  league.adminPasswordHash = await hashPassword(password);
+  store.saveLeague(league.id, league);
+  req.session.user = { leagueId: league.id, role: "admin" };
+  res.json({ role: "admin" });
 });
 
 router.post("/leagues/:leagueId/login", async (req, res) => {
@@ -282,22 +273,25 @@ router.post("/leagues/:leagueId/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: "Enter your email and password." });
   const val = email.trim().toLowerCase();
 
-  if (league.adminEmail && val === league.adminEmail.toLowerCase()) {
-    if (!league.adminPasswordHash) return res.status(400).json({ error: "Not registered yet — use Register instead." });
-    const ok = await verifyPassword(password, league.adminPasswordHash);
-    if (!ok) return res.status(401).json({ error: "Incorrect password." });
-    req.session.user = { leagueId: league.id, role: "admin" };
-    return res.json({ role: "admin" });
-  }
-  const team = league.teams.find((t) => t.email && t.email.toLowerCase() === val);
-  if (team) {
-    if (!team.passwordHash) return res.status(400).json({ error: "Not registered yet — use Register instead." });
-    const ok = await verifyPassword(password, team.passwordHash);
-    if (!ok) return res.status(401).json({ error: "Incorrect password." });
-    req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
-    return res.json({ role: "captain", teamId: team.id });
-  }
-  res.status(404).json({ error: "No account found for that email." });
+  if (!league.adminEmail || val !== league.adminEmail.toLowerCase())
+    return res.status(404).json({ error: "No league admin account found for that email." });
+  if (!league.adminPasswordHash) return res.status(400).json({ error: "Not registered yet — use Register instead." });
+  const ok = await verifyPassword(password, league.adminPasswordHash);
+  if (!ok) return res.status(401).json({ error: "Incorrect password." });
+  req.session.user = { leagueId: league.id, role: "admin" };
+  res.json({ role: "admin" });
+});
+
+router.post("/leagues/:leagueId/captain-login", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { code } = req.body || {};
+  if (!code || !code.trim()) return res.status(400).json({ error: "Enter your team code." });
+  const val = code.trim().toUpperCase();
+  const team = league.teams.find((t) => t.code === val);
+  if (!team) return res.status(401).json({ error: "Invalid team code." });
+  req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
+  res.json({ role: "captain", teamId: team.id });
 });
 
 router.post("/logout", (req, res) => {
@@ -308,59 +302,52 @@ router.post("/logout", (req, res) => {
 
 router.post("/leagues/:leagueId/teams", requireAdmin, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  const { name, email } = req.body || {};
+  const { name } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "Team name is required." });
-  if (!email || !email.includes("@")) return res.status(400).json({ error: "Captain email is required." });
   if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams are locked once the season has started." });
   if (league.teams.some((t) => t.name.toLowerCase() === name.trim().toLowerCase()))
     return res.status(400).json({ error: "A team with that name already exists." });
-  const team = { id: logic.uid(), name: name.trim(), email: email.trim(), passwordHash: null, logo: "", players: [] };
+  const code = genTeamCode(league);
+  const team = { id: logic.uid(), name: name.trim(), code, logo: "", players: [] };
   league.teams.push(team);
   store.saveLeague(league.id, league);
-  sendInviteEmail(req, league, team).catch(() => {});
-  res.json({ id: team.id });
+  res.json({ id: team.id, code: team.code });
 });
 
 router.post("/leagues/:leagueId/teams/bulk", requireAdmin, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams are locked once the season has started." });
   const lines = String(req.body.text || "").split("\n").map((l) => l.trim()).filter(Boolean);
-  let added = 0;
   const newTeams = [];
   lines.forEach((line) => {
-    const [namePart, emailPart] = line.split(",");
-    const name = (namePart || "").trim();
-    const email = (emailPart || "").trim();
+    const name = line.split(",")[0].trim();
     if (!name) return;
     if (league.teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) return;
-    const team = { id: logic.uid(), name, email, passwordHash: null, logo: "", players: [] };
+    const code = genTeamCode(league);
+    const team = { id: logic.uid(), name, code, logo: "", players: [] };
     league.teams.push(team);
     newTeams.push(team);
-    added++;
   });
   store.saveLeague(league.id, league);
-  newTeams.forEach((team) => { if (team.email) sendInviteEmail(req, league, team).catch(() => {}); });
-  res.json({ added });
+  res.json({ added: newTeams.length, teams: newTeams.map((t) => ({ id: t.id, name: t.name, code: t.code })) });
 });
 
 router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
-  if (req.body.email !== undefined) team.email = req.body.email.trim();
   if (req.body.logo !== undefined) team.logo = req.body.logo;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
 
-router.post("/leagues/:leagueId/teams/:teamId/reset-password", requireAdmin, (req, res) => {
+router.post("/leagues/:leagueId/teams/:teamId/reset-code", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
-  team.passwordHash = null;
+  team.code = genTeamCode(league);
   store.saveLeague(league.id, league);
-  sendInviteEmail(req, league, team).catch(() => {});
-  res.json({ ok: true });
+  res.json({ ok: true, code: team.code });
 });
 
 router.delete("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
