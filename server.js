@@ -9,6 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-in-production";
 
+// GoDaddy (like most hosts) terminates HTTPS at a proxy in front of this
+// app, so Express itself only ever sees plain HTTP. Without this, it thinks
+// every request is insecure and silently refuses to set the session cookie
+// (cookie.secure below is true in production), which breaks login entirely.
+app.set("trust proxy", 1);
+
 app.use(express.json({ limit: "6mb" })); // generous enough for a resized team logo
 app.use(
   session({
