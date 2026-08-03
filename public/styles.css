@@ -35,6 +35,7 @@ header.site-header{display:flex;align-items:center;justify-content:space-between
 .h1:disabled{-webkit-text-fill-color:var(--text);opacity:1;}
 .header-right{display:flex;align-items:center;gap:12px;}
 .role-flag{font-family:'Oswald',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:4px 10px;border-radius:6px;background:var(--accent);color:var(--accent-ink);}
+.team-logo-flag{width:32px;height:32px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--accent);}
 
 .auth-widget{position:relative;}
 .auth-panel{display:none;position:absolute;top:calc(100% + 10px);right:0;width:280px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:30;}

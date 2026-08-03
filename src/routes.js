@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, isAdminSession, isOwnerSession } = require("./auth");
+const { sendMail } = require("./mailer");
 
 const router = express.Router();
 
@@ -54,6 +55,10 @@ function fixtureLabel(league, f) {
 function notify(league, teamId, type, message) {
   if (!league.notifications) league.notifications = [];
   league.notifications.push({ id: logic.uid(), teamId, type, message, read: false, createdAt: Date.now() });
+  const team = league.teams.find((t) => t.id === teamId);
+  if (team && team.notifyEmail) {
+    sendMail({ to: team.notifyEmail, subject: league.name + ": " + type, text: message }).catch(() => {});
+  }
 }
 // No 0/O/1/I — avoids characters that look alike when a captain is reading
 // a code off a phone screen or someone's handwriting.
@@ -75,9 +80,9 @@ function sanitize(league, req) {
   const teamId = user && user.leagueId === league.id ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
-    const { code, ...rest } = t;
+    const { code, notifyEmail, ...rest } = t;
     const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
-    return { ...rest, code: viewerIsThisTeam ? code : undefined };
+    return { ...rest, code: viewerIsThisTeam ? code : undefined, notifyEmail: viewerIsThisTeam ? notifyEmail : undefined };
   });
 
   const fixtures = league.fixtures.map((f) => {
@@ -302,11 +307,16 @@ router.post("/leagues/:leagueId/login", async (req, res) => {
 router.post("/leagues/:leagueId/captain-login", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
-  const { code } = req.body || {};
+  const { code, email } = req.body || {};
   if (!code || !code.trim()) return res.status(400).json({ error: "Enter your team code." });
   const val = code.trim().toUpperCase();
   const team = league.teams.find((t) => t.code === val);
   if (!team) return res.status(401).json({ error: "Invalid team code." });
+  if (email !== undefined && email.trim()) {
+    if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email, or leave it blank." });
+    team.notifyEmail = email.trim();
+    store.saveLeague(league.id, league);
+  }
   req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
   res.json({ role: "captain", teamId: team.id });
 });
@@ -325,7 +335,7 @@ router.post("/leagues/:leagueId/teams", requireAdmin, async (req, res) => {
   if (league.teams.some((t) => t.name.toLowerCase() === name.trim().toLowerCase()))
     return res.status(400).json({ error: "A team with that name already exists." });
   const code = genTeamCode(league);
-  const team = { id: logic.uid(), name: name.trim(), code, logo: "", players: [] };
+  const team = { id: logic.uid(), name: name.trim(), code, logo: "", notifyEmail: "", players: [] };
   league.teams.push(team);
   store.saveLeague(league.id, league);
   res.json({ id: team.id, code: team.code });
@@ -341,7 +351,7 @@ router.post("/leagues/:leagueId/teams/bulk", requireAdmin, async (req, res) => {
     if (!name) return;
     if (league.teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) return;
     const code = genTeamCode(league);
-    const team = { id: logic.uid(), name, code, logo: "", players: [] };
+    const team = { id: logic.uid(), name, code, logo: "", notifyEmail: "", players: [] };
     league.teams.push(team);
     newTeams.push(team);
   });
@@ -357,6 +367,21 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
+
+router.put(
+  "/leagues/:leagueId/teams/:teamId/notify-email",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const email = (req.body.email || "").trim();
+    if (email && !email.includes("@")) return res.status(400).json({ error: "Enter a valid email, or leave it blank to turn notifications off." });
+    team.notifyEmail = email;
+    store.saveLeague(league.id, league);
+    res.json({ ok: true });
+  }
+);
 
 router.post("/leagues/:leagueId/teams/:teamId/reset-code", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);

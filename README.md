@@ -127,17 +127,20 @@ data/                 Created automatically — your league data lives here
 ## Features in this version
 
 - League admin: real bcrypt-hashed password, register once per email, then log in
-- Team captains: no email or password — the admin gives each team a
-  unique 6-character code, and that's all a captain needs to log in
+- Team captains: no password needed — the admin gives each team a
+  unique 6-character code, and that's all a captain needs to log in.
+  An email address is optional, purely so they can opt in to getting
+  their in-app notifications emailed too
 - Multiple leagues, each independently admin-managed
 - Round-by-round Selection Room, locked until the previous round is
   finalized, with server-enforced blind submission
-- A player can't be paired with themselves, and can't appear in more
-  than one rubber in the same night (both rejected server-side)
+- A player can't be paired with themselves (blocked in the picker
+  itself, not just on submit), and can't appear in more than one
+  match in the same night without confirming the double-up
 - Real padel set scoring (6-0 to 6-4, 7-5, 7-6) with a super tie-break
   decider, flagged if a score doesn't match a real pattern
 - Knockout stage (semis + final) once the regular season is complete,
-  with an automatic decider rubber if a knockout match ties 2-2
+  with an automatic decider match if a knockout tie ties 2-2
 - Team rosters with player names and an uploaded, auto-resized logo
 - A news room for admin announcements, visible to everyone
 - Distinct visual accent per role (admin / captain / guest) so it's

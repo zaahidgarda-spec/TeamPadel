@@ -79,6 +79,7 @@
           <input id="league-name" class="h1 h1-sub" maxlength="60">
         </div>
         <div class="header-right">
+          <img id="team-logo-flag" class="team-logo-flag" style="display:none;" alt="Your team logo">
           <span class="role-flag" id="role-flag" style="display:none;"></span>
           <div class="auth-widget">
             <button class="secondary" id="auth-toggle">Log in</button>
@@ -87,6 +88,7 @@
               <div id="auth-team-panel">
                 <p class="note" style="margin-bottom:8px;">Enter the team code your organizer gave you.</p>
                 <input type="text" id="captain-code" placeholder="Team code" style="text-transform:uppercase;">
+                <input type="email" id="captain-email" placeholder="Email (optional, for notifications)" style="margin-top:8px;">
                 <div class="row" style="margin-top:10px;">
                   <button class="primary" id="captain-login-btn">Enter</button>
                 </div>
@@ -241,6 +243,15 @@
       </div>
 
       <section class="view" id="view-notifications">
+        <div class="card">
+          <h2 class="section-title">Email notifications</h2>
+          <p class="note" style="margin-bottom:10px;">Optional — get these notifications emailed to you as they happen. Leave blank to turn it off.</p>
+          <div class="row">
+            <input type="email" id="notify-email-input" placeholder="you@example.com" style="width:260px;">
+            <button class="secondary" id="notify-email-save-btn">Save</button>
+          </div>
+          <div class="note" id="notify-email-status" style="margin-top:8px;"></div>
+        </div>
         <div class="card">
           <h2 class="section-title">Notifications<button class="secondary" id="mark-all-read-btn">Mark all read</button></h2>
           <div id="notifications-list"></div>

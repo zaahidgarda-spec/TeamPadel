@@ -211,12 +211,13 @@ el("show-team-login").onclick = () => {
 };
 el("captain-login-btn").onclick = async () => {
   const code = el("captain-code").value;
+  const email = el("captain-email").value;
   try {
-    const r = await api(`/leagues/${currentLeagueId}/captain-login`, { method: "POST", body: { code } });
+    const r = await api(`/leagues/${currentLeagueId}/captain-login`, { method: "POST", body: { code, email } });
     myRole = r.role; myTeamId = r.teamId || null;
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
-    el("captain-code").value = "";
+    el("captain-code").value = ""; el("captain-email").value = "";
     await refreshLeague(); buildTabs(); switchTab("selection"); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
@@ -272,6 +273,14 @@ function buildTabs() {
   });
   el("role-flag").style.display = myRole === "guest" ? "none" : "inline-block";
   el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? "Captain view" : "";
+  const myTeam = myRole === "captain" ? teamById(myTeamId) : null;
+  const logoFlag = el("team-logo-flag");
+  if (myTeam && myTeam.logo) {
+    logoFlag.src = myTeam.logo;
+    logoFlag.style.display = "inline-block";
+  } else {
+    logoFlag.style.display = "none";
+  }
 }
 function switchTab(key) {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
@@ -821,7 +830,24 @@ function updateNotifTabLabel() {
   const unread = myNotifications.filter((n) => !n.read).length;
   btn.textContent = unread ? `Notifications (${unread})` : "Notifications";
 }
+function renderNotifyEmailCard() {
+  const card = el("notify-email-input").closest(".card");
+  if (myRole !== "captain") { card.style.display = "none"; return; }
+  card.style.display = "block";
+  const team = teamById(myTeamId);
+  el("notify-email-input").value = (team && team.notifyEmail) || "";
+  el("notify-email-status").textContent = "";
+}
+el("notify-email-save-btn").onclick = async () => {
+  const email = el("notify-email-input").value.trim();
+  try {
+    await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/notify-email`, { method: "PUT", body: { email } });
+    el("notify-email-status").textContent = email ? "Saved — notifications will be emailed to " + email + "." : "Saved — email notifications are off.";
+    await refreshLeague();
+  } catch (e) { el("notify-email-status").textContent = e.message; }
+};
 function renderNotificationsList() {
+  renderNotifyEmailCard();
   const c = el("notifications-list");
   if (!c) return;
   if (myRole !== "captain") { c.innerHTML = '<p class="empty">Notifications are for team captains.</p>'; return; }
