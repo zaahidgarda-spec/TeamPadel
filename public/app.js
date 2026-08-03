@@ -422,6 +422,16 @@ function renderAdmin() {
   renderAdminFixtures();
   renderAdminSponsors();
 }
+el("copy-all-codes-btn").onclick = () => {
+  if (league.teams.length === 0) return;
+  const text = league.teams.map((t) => t.name + ": " + (t.code || "—")).join("\n");
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = el("copy-all-codes-btn");
+    const original = btn.textContent;
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  }).catch(() => alert("Couldn't copy — your browser may be blocking clipboard access."));
+};
 el("add-team-btn").onclick = async () => {
   const name = el("new-team-name").value.trim();
   if (!name) return;
@@ -566,6 +576,23 @@ function adminRosterBlock(t) {
   };
   addRow.appendChild(addInput); addRow.appendChild(addBtn);
   wrap.appendChild(addRow);
+
+  const bulkDetails = document.createElement("details");
+  bulkDetails.style.marginTop = "8px";
+  const bulkSummary = document.createElement("summary");
+  bulkSummary.className = "note"; bulkSummary.style.cursor = "pointer"; bulkSummary.textContent = "Add several players at once";
+  const bulkTextarea = document.createElement("textarea");
+  bulkTextarea.rows = 4; bulkTextarea.style.marginTop = "8px"; bulkTextarea.placeholder = "One player name per line";
+  const bulkBtn = document.createElement("button");
+  bulkBtn.className = "secondary"; bulkBtn.textContent = "Add these players"; bulkBtn.style.marginTop = "8px";
+  bulkBtn.onclick = async () => {
+    const text = bulkTextarea.value;
+    if (!text.trim()) return;
+    await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/bulk`, { method: "POST", body: { text } });
+    bulkTextarea.value = ""; bulkDetails.open = false; await refreshLeague(); renderAdminRoster();
+  };
+  bulkDetails.appendChild(bulkSummary); bulkDetails.appendChild(bulkTextarea); bulkDetails.appendChild(bulkBtn);
+  wrap.appendChild(bulkDetails);
   return wrap;
 }
 function resizeImageToDataUrl(file, maxSize, cb) {

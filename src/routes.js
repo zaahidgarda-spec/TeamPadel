@@ -375,6 +375,28 @@ router.post(
   }
 );
 
+router.post(
+  "/leagues/:leagueId/teams/:teamId/players/bulk",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const names = String(req.body.text || "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    let added = 0;
+    names.forEach((name) => {
+      if (team.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return;
+      team.players.push({ id: logic.uid(), name });
+      added++;
+    });
+    store.saveLeague(league.id, league);
+    res.json({ ok: true, added });
+  }
+);
+
 router.delete(
   "/leagues/:leagueId/teams/:teamId/players/:playerId",
   requireAdminOrCaptain((req) => req.params.teamId),
