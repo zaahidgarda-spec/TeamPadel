@@ -474,17 +474,19 @@ el("add-team-btn").onclick = async () => {
   const name = el("new-team-name").value.trim();
   if (!name) return;
   try {
-    await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name } });
+    const { code } = await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name } });
     el("new-team-name").value = "";
     await refreshLeague(); renderAll();
+    alert(name + " added — their code is " + code + ". You can copy it any time from the Teams list below.");
   } catch (e) { alert(e.message); }
 };
 el("bulk-add-btn").onclick = async () => {
   const text = el("bulk-team-input").value;
   if (!text.trim()) return;
-  await api(`/leagues/${currentLeagueId}/teams/bulk`, { method: "POST", body: { text } });
+  const { teams } = await api(`/leagues/${currentLeagueId}/teams/bulk`, { method: "POST", body: { text } });
   el("bulk-team-input").value = "";
   await refreshLeague(); renderAll();
+  if (teams && teams.length) alert(teams.length + " team" + (teams.length === 1 ? "" : "s") + " added:\n" + teams.map((t) => t.name + ": " + t.code).join("\n"));
 };
 
 let draftDoubleRound = false;
