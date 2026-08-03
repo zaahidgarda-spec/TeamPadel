@@ -15,6 +15,14 @@ function fmtDate(iso) {
   if (isNaN(d)) return "";
   return d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
 }
+function fmtTime(hhmm) {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return "";
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return h12 + ":" + String(m).padStart(2, "0") + " " + period;
+}
 function teamById(id) { return league.teams.find((t) => t.id === id); }
 function playerById(team, id) { return team ? team.players.find((p) => p.id === id) : null; }
 function avatarHtml(t) {
@@ -236,12 +244,16 @@ function switchTab(key) {
 
 /* ---------- Round navigation ---------- */
 
+function roundLabel(r) {
+  const meta = league.roundMeta && league.roundMeta[r];
+  return (meta && meta.label) || "Round " + r;
+}
 function getRoundsList() {
   const regRounds = [...new Set(league.fixtures.map((f) => f.round))].sort((a, b) => a - b);
-  const list = regRounds.map((r) => ({ key: "r" + r, label: "Round " + r, stage: "regular", round: r }));
+  const list = regRounds.map((r) => ({ key: "r" + r, label: roundLabel(r), stage: "regular", round: r }));
   if (league.playoffs) {
     if (league.playoffs.format === "position") {
-      list.push({ key: "positions", label: "Position playoffs", stage: "position" });
+      list.push({ key: "positions", label: "Final spot playoffs", stage: "position" });
     } else {
       list.push({ key: "semis", label: "Semi finals", stage: "semi" });
       list.push({ key: "final", label: "Final", stage: "final" });
@@ -299,10 +311,10 @@ function renderRoundNav(containerId) {
 
   const sched = scheduleFor(viewingKey.key);
   const venue = effectiveVenue(viewingKey.key);
-  if (sched.date || venue) {
+  if (sched.date || sched.time || venue) {
     const banner = document.createElement("div");
     banner.className = "matchday-banner";
-    banner.innerHTML = (sched.date ? `<span class="matchday-date">${fmtDate(sched.date)}</span>` : "") + (venue ? `<span class="matchday-venue">${escapeHtml(venue)}</span>` : "");
+    banner.innerHTML = (sched.date ? `<span class="matchday-date">${fmtDate(sched.date)}</span>` : "") + (sched.time ? `<span class="matchday-time">${fmtTime(sched.time)}</span>` : "") + (venue ? `<span class="matchday-venue">${escapeHtml(venue)}</span>` : "");
     c.appendChild(banner);
   }
   if (viewingKey.stage === "regular") {
@@ -367,6 +379,8 @@ function renderAdmin() {
   renderRulesCard();
   el("add-team-row").style.display = status === "setup" ? "flex" : "none";
   el("bulk-add-details").style.display = status === "setup" ? "block" : "none";
+  el("add-round-card").style.display = status === "setup" ? "none" : "block";
+  if (status !== "setup") renderNewRoundMatches();
 
   const list = el("admin-team-list");
   list.innerHTML = "";
@@ -440,7 +454,7 @@ function renderRulesCard() {
           <select id="playoff-format-select">
             <option value="none">None — the table decides the winner</option>
             <option value="semis_final">Semi-finals + Final (top 4)</option>
-            <option value="position">Position playoffs (1v2, 3v4, 5v6…)</option>
+            <option value="position">Final spot playoffs (1v2, 3v4, 5v6…)</option>
           </select>
         </label>
       </div>`;
@@ -449,7 +463,7 @@ function renderRulesCard() {
     el("playoff-format-select").value = draftPlayoffFormat;
     el("playoff-format-select").onchange = () => { draftPlayoffFormat = el("playoff-format-select").value; };
   } else {
-    const fmtLabel = league.playoffFormat === "semis_final" ? "Semi-finals + Final" : league.playoffFormat === "position" ? "Position playoffs" : "None";
+    const fmtLabel = league.playoffFormat === "semis_final" ? "Semi-finals + Final" : league.playoffFormat === "position" ? "Final spot playoffs" : "None";
     c.innerHTML = `<p class="note">Playoff format for this season: <strong>${escapeHtml(fmtLabel)}</strong>. Reset the season below to change it.</p>`;
   }
 
@@ -574,10 +588,11 @@ function resizeImageToDataUrl(file, maxSize, cb) {
 function stageKeyFor(f) {
   if (f.stage === "semi") return "semis";
   if (f.stage === "final") return "final";
+  if (f.stage === "position") return "positions";
   return "r" + f.round;
 }
 function scheduleFor(key) {
-  return (league.schedule && league.schedule[key]) || { date: "", venue: "" };
+  return (league.schedule && league.schedule[key]) || { date: "", venue: "", time: "" };
 }
 function effectiveVenue(key) {
   const s = scheduleFor(key);
@@ -592,7 +607,10 @@ function renderAdminFixtures() {
   const c = el("admin-fixtures");
   c.innerHTML = "";
   const allFixtures = league.fixtures.slice();
-  if (league.playoffs) allFixtures.push(...league.playoffs.semis, league.playoffs.final);
+  if (league.playoffs) {
+    if (league.playoffs.format === "position") allFixtures.push(...league.playoffs.matches);
+    else allFixtures.push(...league.playoffs.semis, league.playoffs.final);
+  }
   if (allFixtures.length === 0) { c.innerHTML = '<p class="empty">No fixtures yet — start the season above.</p>'; return; }
 
   const seen = new Set();
@@ -601,8 +619,8 @@ function renderAdminFixtures() {
     const key = stageKeyFor(f);
     if (seen.has(key)) return;
     seen.add(key);
-    const label = f.stage === "semi" ? "Semi finals" : f.stage === "final" ? "Final" : "Round " + f.round;
-    const order = f.stage === "semi" ? 9000 : f.stage === "final" ? 9001 : f.round;
+    const label = f.stage === "semi" ? "Semi finals" : f.stage === "final" ? "Final" : f.stage === "position" ? "Final spot playoffs" : roundLabel(f.round);
+    const order = f.stage === "semi" ? 9000 : f.stage === "final" ? 9001 : f.stage === "position" ? 9002 : f.round;
     weeks.push({ key, label, order });
   });
   weeks.sort((a, b) => a.order - b.order);
@@ -617,14 +635,60 @@ function renderAdminFixtures() {
     const dateInput = document.createElement("input");
     dateInput.type = "date"; dateInput.value = sched.date || ""; dateInput.style.cssText = "font-size:12px;padding:6px 8px;";
     dateInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { date: dateInput.value } }); await refreshLeague(); };
+    const timeInput = document.createElement("input");
+    timeInput.type = "time"; timeInput.value = sched.time || ""; timeInput.style.cssText = "font-size:12px;padding:6px 8px;";
+    timeInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { time: timeInput.value } }); await refreshLeague(); };
     const venueInput = document.createElement("input");
     venueInput.type = "text"; venueInput.placeholder = "Default: " + (league.defaultVenue || "not set"); venueInput.value = sched.venue || "";
     venueInput.style.cssText = "font-size:12px;padding:6px 8px;width:180px;";
     venueInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { venue: venueInput.value } }); await refreshLeague(); };
-    row.appendChild(label); row.appendChild(dateInput); row.appendChild(venueInput);
+    row.appendChild(label); row.appendChild(dateInput); row.appendChild(timeInput); row.appendChild(venueInput);
     c.appendChild(row);
   });
 }
+
+/* ---------- Add a round (extra fixtures outside the round robin) ---------- */
+
+let draftRoundMatches = [{ teamA: "", teamB: "" }];
+function renderNewRoundMatches() {
+  const c = el("new-round-matches");
+  c.innerHTML = "";
+  draftRoundMatches.forEach((m, i) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.cssText = "gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;";
+    const teamOptions = (selected) => '<option value="">Team</option>' + league.teams.map((t) => `<option value="${t.id}" ${t.id === selected ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("");
+    const selA = document.createElement("select");
+    selA.innerHTML = teamOptions(m.teamA);
+    selA.onchange = () => { draftRoundMatches[i].teamA = selA.value; };
+    const vs = document.createElement("span"); vs.className = "vs"; vs.textContent = "vs";
+    const selB = document.createElement("select");
+    selB.innerHTML = teamOptions(m.teamB);
+    selB.onchange = () => { draftRoundMatches[i].teamB = selB.value; };
+    row.appendChild(selA); row.appendChild(vs); row.appendChild(selB);
+    if (draftRoundMatches.length > 1) {
+      const rm = document.createElement("button");
+      rm.className = "ghost"; rm.innerHTML = "&times;"; rm.title = "Remove this match";
+      rm.onclick = () => { draftRoundMatches.splice(i, 1); renderNewRoundMatches(); };
+      row.appendChild(rm);
+    }
+    c.appendChild(row);
+  });
+}
+el("new-round-add-match-btn").onclick = () => { draftRoundMatches.push({ teamA: "", teamB: "" }); renderNewRoundMatches(); };
+el("new-round-create-btn").onclick = async () => {
+  const name = el("new-round-name").value.trim();
+  const type = el("new-round-type").value;
+  const matches = draftRoundMatches.filter((m) => m.teamA && m.teamB).map((m) => ({ teamA: m.teamA, teamB: m.teamB }));
+  if (!name) return alert("Give the round a name.");
+  if (matches.length === 0) return alert("Add at least one match.");
+  try {
+    await api(`/leagues/${currentLeagueId}/rounds`, { method: "POST", body: { name, type, matches } });
+    el("new-round-name").value = "";
+    draftRoundMatches = [{ teamA: "", teamB: "" }];
+    await refreshLeague(); initViewingKey(); renderAll();
+  } catch (e) { alert(e.message); }
+};
 
 /* ---------- Sponsors ---------- */
 
@@ -989,7 +1053,7 @@ function renderFixtures() {
     let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : "Pending"}</span></div></div>`;
     const sched = scheduleFor(stageKeyFor(f));
     const venue = effectiveVenue(stageKeyFor(f));
-    if (sched.date || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
+    if (sched.date || sched.time || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${sched.time ? "<span>" + fmtTime(sched.time) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
     if (teamA && teamB) {
       if (both) {
         html += '<div class="rubbers">';
@@ -1157,10 +1221,14 @@ function playerNamesFor(team, pair) {
 
 /* ---------- Table ---------- */
 
+function roundCountsToTable(round) {
+  const meta = league.roundMeta && league.roundMeta[round];
+  return !meta || meta.type !== "knockout";
+}
 function computeStandingsClient() {
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
-    league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id)).forEach((f) => {
+    league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
       const isA = f.teamA === t.id;
       const { winsA, winsB } = fixtureScoreClient(f);
       const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
@@ -1198,7 +1266,7 @@ function renderTable() {
     koCard.style.display = "block";
     const desc = league.playoffFormat === "semis_final"
       ? "Regular season complete. Generate semi-finals (1st v 4th, 2nd v 3rd) and a final."
-      : "Regular season complete. Generate position playoffs (1st v 2nd, 3rd v 4th, 5th v 6th…) to decide final placings.";
+      : "Regular season complete. Generate final spot playoffs (1st v 2nd, 3rd v 4th, 5th v 6th…) to decide final placings.";
     koCard.innerHTML = `<h2 class="section-title">Playoffs</h2><p class="note">${desc}</p><div class="row" style="margin-top:12px;"><button class="primary" id="gen-ko-btn">Generate playoffs</button></div>`;
     el("gen-ko-btn").onclick = async () => {
       try { await api(`/leagues/${currentLeagueId}/knockout/generate`, { method: "POST" }); await refreshLeague(); initViewingKey(); renderAll(); }
@@ -1206,24 +1274,43 @@ function renderTable() {
     };
   } else if (league.playoffs && league.playoffs.format === "position") {
     koCard.style.display = "block";
-    const nameOf = (id) => { const t = teamById(id); return t ? t.name : "TBD"; };
-    const scoreOf = (f) => { const { winsA, winsB } = fixtureScoreClient(f); return f.finalized ? winsA + "-" + winsB : "in progress"; };
-    let html = `<h2 class="section-title">Position playoffs</h2>`;
+    let html = `<h2 class="section-title">Final spot playoffs</h2><div class="bracket-grid">`;
     league.playoffs.matches.forEach((m, i) => {
-      html += `<div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);"><span>${escapeHtml(nameOf(m.teamA))} vs ${escapeHtml(nameOf(m.teamB))}</span><span class="pts">${scoreOf(m)}</span></div>`;
+      html += matchCardHtml(ordinal(i * 2 + 1) + " v " + ordinal(i * 2 + 2), m.teamA, m.teamB, m);
     });
+    html += `</div>`;
     koCard.innerHTML = html;
   } else if (league.playoffs) {
     koCard.style.display = "block";
     const [s0, s1] = league.playoffs.semis, fin = league.playoffs.final;
-    const nameOf = (id) => { const t = teamById(id); return t ? t.name : "TBD"; };
-    const scoreOf = (f) => { const { winsA, winsB } = fixtureScoreClient(f); return f.finalized ? winsA + "-" + winsB : "in progress"; };
+    const champion = fin.finalized ? teamById(matchWinnerClient(fin) === "A" ? fin.teamA : fin.teamB) : null;
     koCard.innerHTML = `<h2 class="section-title">Knockout stage</h2>
-      <div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);"><span>Semi 1: ${escapeHtml(nameOf(s0.teamA))} vs ${escapeHtml(nameOf(s0.teamB))}</span><span class="pts">${scoreOf(s0)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);"><span>Semi 2: ${escapeHtml(nameOf(s1.teamA))} vs ${escapeHtml(nameOf(s1.teamB))}</span><span class="pts">${scoreOf(s1)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:10px 4px;"><span>Final: ${escapeHtml(nameOf(fin.teamA))} vs ${escapeHtml(nameOf(fin.teamB))}</span><span class="pts">${scoreOf(fin)}</span></div>
-      ${fin.finalized ? `<p class="note" style="margin-top:10px;">Champion: <strong style="color:var(--accent);">${escapeHtml(nameOf(matchWinnerClient(fin) === "A" ? fin.teamA : fin.teamB))}</strong></p>` : ""}`;
+      <div class="bracket-grid bracket-semis">
+        ${matchCardHtml("Semi 1", s0.teamA, s0.teamB, s0)}
+        ${matchCardHtml("Semi 2", s1.teamA, s1.teamB, s1)}
+      </div>
+      <div class="bracket-final-wrap">${matchCardHtml("Final", fin.teamA, fin.teamB, fin)}</div>
+      ${champion ? `<p class="note" style="margin-top:10px;text-align:center;">Champion: <strong style="color:var(--accent);">${escapeHtml(champion.name)}</strong></p>` : ""}`;
   } else { koCard.style.display = "none"; }
+}
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+function matchCardHtml(label, teamAId, teamBId, f) {
+  const teamA = teamAId ? teamById(teamAId) : null;
+  const teamB = teamBId ? teamById(teamBId) : null;
+  const { winsA, winsB } = f ? fixtureScoreClient(f) : { winsA: 0, winsB: 0 };
+  const hasScore = f && (winsA > 0 || winsB > 0 || f.finalized);
+  const aWon = f && f.finalized && winsA > winsB;
+  const bWon = f && f.finalized && winsB > winsA;
+  return `<div class="bracket-match">
+    <div class="bracket-match-label">${escapeHtml(label)}</div>
+    <div class="bracket-team ${aWon ? "winner" : ""}">${avatarHtml(teamA)}<span>${escapeHtml(teamA ? teamA.name : "TBD")}</span></div>
+    <div class="bracket-vs">vs</div>
+    <div class="bracket-team ${bWon ? "winner" : ""}">${avatarHtml(teamB)}<span>${escapeHtml(teamB ? teamB.name : "TBD")}</span></div>
+    <div class="bracket-status">${hasScore ? `<span class="night-score" style="font-size:15px;">${winsA} - ${winsB}</span>` : ""}${f ? `<span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : "Pending"}</span>` : ""}</div>
+  </div>`;
 }
 
 /* ---------- Roster (read-only) ---------- */
@@ -1280,7 +1367,6 @@ async function renderStats() {
     <div class="stat-tile"><div class="stat-num">${t.teams}</div><div class="stat-lbl">Teams</div></div>
     <div class="stat-tile"><div class="stat-num">${t.players}</div><div class="stat-lbl">Players</div></div>
     <div class="stat-tile"><div class="stat-num">${t.matchesPlayed}</div><div class="stat-lbl">Nights played</div></div>
-    <div class="stat-tile"><div class="stat-num">${t.matchesRemaining}</div><div class="stat-lbl">Nights remaining</div></div>
     <div class="stat-tile"><div class="stat-num">${t.totalRubbers}</div><div class="stat-lbl">Rubbers played</div></div>
     <div class="stat-tile"><div class="stat-num">${t.totalTiebreaks}</div><div class="stat-lbl">Super tie-breaks</div></div>
   `;

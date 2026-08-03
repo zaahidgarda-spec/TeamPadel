@@ -134,11 +134,19 @@ function matchWinner(f) {
   return null;
 }
 
+// Admin-added rounds can be marked "knockout" (a decider, not part of the
+// table) rather than "table" — round-robin rounds have no roundMeta entry
+// at all and always count.
+function roundCountsToTable(league, round) {
+  const meta = league.roundMeta && league.roundMeta[round];
+  return !meta || meta.type !== "knockout";
+}
+
 function computeStandings(league) {
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
     league.fixtures
-      .filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id))
+      .filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(league, f.round))
       .forEach((f) => {
         const isA = f.teamA === t.id;
         const { winsA, winsB } = fixtureScore(f);
@@ -193,11 +201,12 @@ function allFixturesOf(league) {
   if (league.playoffs.format === "position") return league.fixtures.concat(league.playoffs.matches || []);
   return league.fixtures.concat([league.playoffs.semis[0], league.playoffs.semis[1], league.playoffs.final]);
 }
-function stageLabel(f) {
+function stageLabel(league, f) {
   if (f.stage === "semi") return "Semi finals";
   if (f.stage === "final") return "Final";
-  if (f.stage === "position") return "Position playoff";
-  return "Round " + f.round;
+  if (f.stage === "position") return "Final spot playoff";
+  const meta = league.roundMeta && league.roundMeta[f.round];
+  return (meta && meta.label) || "Round " + f.round;
 }
 
 function playerMatchHistory(league, playerId) {
@@ -221,7 +230,7 @@ function playerMatchHistory(league, playerId) {
       if (!winner) return;
       const setsStr = rubber.sets.map((s) => (s[0] ?? "?") + "-" + (s[1] ?? "?")).join(", ");
       rows.push({
-        label: stageLabel(f),
+        label: stageLabel(league, f),
         opponentTeam: oppTeam ? oppTeam.name : "?",
         opponentPlayers: oppNames,
         partner: partner ? partner.name : null,
@@ -337,7 +346,6 @@ function computeLeagueStats(league) {
       teams: league.teams.length,
       players: league.teams.reduce((sum, t) => sum + t.players.length, 0),
       matchesPlayed: finalized.length,
-      matchesRemaining: allF.length - finalized.length,
       totalRubbers,
       totalTiebreaks,
     },

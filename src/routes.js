@@ -37,17 +37,19 @@ function newLeagueObj(name, adminEmail) {
     news: [],
     sponsors: [],
     defaultVenue: "",
-    schedule: {}, // keyed by "r1","r2",...,"semis","final" -> { date, venue }
+    schedule: {}, // keyed by "r1","r2",...,"semis","final" -> { date, venue, time }
     notifications: [],
-    playoffFormat: "none", // "none" | "semis_final" — chosen by the admin before the season starts
+    playoffFormat: "none", // "none" | "semis_final" | "position" — chosen by the admin before the season starts
+    roundMeta: {}, // keyed by round number -> { label, type: "table" | "knockout" } for admin-added rounds
     createdAt: Date.now(),
   };
 }
-function fixtureLabel(f) {
+function fixtureLabel(league, f) {
   if (f.stage === "semi") return "Semi finals";
   if (f.stage === "final") return "Final";
-  if (f.stage === "position") return "Position playoff";
-  return "Round " + f.round;
+  if (f.stage === "position") return "Final spot playoff";
+  const meta = league.roundMeta && league.roundMeta[f.round];
+  return (meta && meta.label) || "Round " + f.round;
 }
 function notify(league, teamId, type, message) {
   if (!league.notifications) league.notifications = [];
@@ -392,7 +394,7 @@ router.post("/leagues/:leagueId/season/start", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (league.teams.length < 3) return res.status(400).json({ error: "Add at least 3 teams first." });
   const format = req.body.playoffFormat;
-  if (format && !["none", "semis_final"].includes(format)) return res.status(400).json({ error: "Unknown playoff format." });
+  if (format && !["none", "semis_final", "position"].includes(format)) return res.status(400).json({ error: "Unknown playoff format." });
   const { fixtures, byes } = logic.generateRoundRobin(league.teams, !!req.body.doubleRound);
   league.fixtures = fixtures;
   league.byes = byes;
@@ -407,6 +409,7 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   league.fixtures = [];
   league.byes = [];
   league.playoffs = null;
+  league.roundMeta = {};
   league.status = "setup";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -425,12 +428,41 @@ router.put("/leagues/:leagueId/default-venue", requireAdmin, (req, res) => {
 router.put("/leagues/:leagueId/schedule/:key", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league.schedule) league.schedule = {};
-  const entry = league.schedule[req.params.key] || { date: "", venue: "" };
+  const entry = league.schedule[req.params.key] || { date: "", venue: "", time: "" };
   if (req.body.date !== undefined) entry.date = req.body.date;
   if (req.body.venue !== undefined) entry.venue = req.body.venue;
+  if (req.body.time !== undefined) entry.time = req.body.time;
   league.schedule[req.params.key] = entry;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// Admin-added extra round, beyond the auto-generated round robin. "table"
+// rounds count toward standings like any other round; "knockout" rounds
+// (e.g. a one-off decider) are excluded from computeStandings but still
+// show up in fixtures/results using the normal round machinery.
+router.post("/leagues/:leagueId/rounds", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (leagueStatus(league) === "setup") return res.status(400).json({ error: "Start the season before adding rounds." });
+  const { name, type, matches } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: "Give the round a name." });
+  if (!["table", "knockout"].includes(type)) return res.status(400).json({ error: "Choose whether this round counts toward the league table or is a knockout round." });
+  if (!Array.isArray(matches) || matches.length === 0) return res.status(400).json({ error: "Add at least one match." });
+  for (const m of matches) {
+    if (!m || !m.teamA || !m.teamB) return res.status(400).json({ error: "Every match needs two teams." });
+    if (m.teamA === m.teamB) return res.status(400).json({ error: "A team can't play itself." });
+    if (!league.teams.some((t) => t.id === m.teamA) || !league.teams.some((t) => t.id === m.teamB))
+      return res.status(400).json({ error: "Unknown team." });
+  }
+  const nextRound = (league.fixtures.reduce((max, f) => Math.max(max, f.round), 0) || 0) + 1;
+  const newFixtures = matches.map((m) =>
+    Object.assign({ id: logic.uid(), round: nextRound, stage: "regular", teamA: m.teamA, teamB: m.teamB }, logic.emptyFixtureExtras())
+  );
+  league.fixtures.push(...newFixtures);
+  if (!league.roundMeta) league.roundMeta = {};
+  league.roundMeta[nextRound] = { label: name.trim(), type };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, round: nextRound });
 });
 
 router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
@@ -455,7 +487,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
 
   f[selKey] = { submitted: true, pairs };
-  const label = fixtureLabel(f);
+  const label = fixtureLabel(league, f);
   const teamA = league.teams.find((t) => t.id === f.teamA);
   const teamB = league.teams.find((t) => t.id === f.teamB);
   const myTeam = side === "A" ? teamA : teamB;
@@ -531,7 +563,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/propose", (req, res
   const order = req.body.order;
   if (!logic.isValidSlotOrder(order)) return res.status(400).json({ error: "Each seed needs exactly one slot." });
   f.slotProposal = { by: side, order };
-  const label = fixtureLabel(f);
+  const label = fixtureLabel(league, f);
   const proposerTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamA : f.teamB));
   const oppTeamId = side === "A" ? f.teamB : f.teamA;
   notify(league, oppTeamId, "timeslot", `${proposerTeam ? proposerTeam.name : "Your opponent"} proposed a playing order for ${label} — review it.`);
@@ -551,7 +583,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/confirm", (req, res
   f.slotOrder = f.slotProposal.order;
   const proposerSide = f.slotProposal.by;
   const proposerTeamId = proposerSide === "A" ? f.teamA : f.teamB;
-  notify(league, proposerTeamId, "timeslot", `Your proposed playing order for ${fixtureLabel(f)} was confirmed.`);
+  notify(league, proposerTeamId, "timeslot", `Your proposed playing order for ${fixtureLabel(league, f)} was confirmed.`);
   f.slotProposal = null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -589,7 +621,7 @@ router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => 
     const final = logic.makeKnockoutFixture("final", null, null);
     league.playoffs = { format: "semis_final", semis: [semi1, semi2], final };
   } else {
-    if (league.teams.length < 2) return res.status(400).json({ error: "Need at least 2 teams for position playoffs." });
+    if (league.teams.length < 2) return res.status(400).json({ error: "Need at least 2 teams for final spot playoffs." });
     const matches = [];
     for (let i = 0; i < standings.length; i += 2) {
       if (!standings[i + 1]) break; // odd team out keeps their table position, no match

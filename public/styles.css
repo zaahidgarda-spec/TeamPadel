@@ -91,6 +91,7 @@ ul.plain li:last-child{border-bottom:none;}
 .round-nav .label{font-family:'Oswald',sans-serif;text-transform:uppercase;font-weight:700;font-size:16px;letter-spacing:.02em;min-width:150px;text-align:center;}
 .matchday-banner{display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:9px 14px 12px;margin-bottom:18px;font-size:13px;color:var(--text-dim);}
 .matchday-date{font-weight:600;color:var(--accent);}
+.matchday-time::before{content:"·";margin-right:10px;color:var(--line);}
 .matchday-venue::before{content:"·";margin-right:10px;color:var(--line);}
 .bye-note{font-size:11px;color:var(--text-dim);text-align:center;margin:10px 0 14px;}
 
@@ -102,6 +103,16 @@ ul.plain li:last-child{border-bottom:none;}
 .badge{font-size:11px;text-transform:uppercase;padding:4px 8px;border-radius:5px;font-family:'Oswald',sans-serif;}
 .badge.done{background:rgba(37,99,235,.12);color:var(--accent);}
 .badge.pending{background:rgba(143,169,180,.16);color:var(--text-dim);}
+
+.bracket-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px;}
+.bracket-semis{margin-bottom:16px;}
+.bracket-final-wrap{max-width:260px;margin:0 auto;}
+.bracket-match{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;text-align:center;}
+.bracket-match-label{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.06em;font-size:11px;color:var(--text-dim);margin-bottom:10px;}
+.bracket-team{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;padding:4px 0;}
+.bracket-team.winner{font-weight:700;color:var(--accent);}
+.bracket-vs{color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:2px 0;}
+.bracket-status{margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px;}
 .fixture-sub{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;font-size:12px;color:var(--text-dim);}
 
 .rubbers{border-top:1px dashed var(--line);padding-top:10px;}
