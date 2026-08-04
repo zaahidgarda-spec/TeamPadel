@@ -1185,6 +1185,23 @@ function courtScheduleOptions(fixtures) {
   });
   return options;
 }
+// One color per fixture (matchup), stable for as long as the round's fixture
+// order doesn't change — every seed belonging to that fixture gets the same
+// rectangle color, cycling if a round somehow has more fixtures than colors.
+const COURT_SCHEDULE_PALETTE = [
+  { border: "#2563EB", bg: "rgba(37,99,235,.10)" },
+  { border: "#D97706", bg: "rgba(217,119,6,.10)" },
+  { border: "#DB2777", bg: "rgba(219,39,119,.10)" },
+  { border: "#0D9488", bg: "rgba(13,148,136,.10)" },
+  { border: "#7C3AED", bg: "rgba(124,58,237,.10)" },
+  { border: "#EA580C", bg: "rgba(234,88,12,.10)" },
+  { border: "#16A34A", bg: "rgba(22,163,74,.10)" },
+  { border: "#4F46E5", bg: "rgba(79,70,229,.10)" },
+];
+function fixtureColor(fixtureId, fixtures) {
+  const idx = fixtures.findIndex((f) => f.id === fixtureId);
+  return COURT_SCHEDULE_PALETTE[(idx < 0 ? 0 : idx) % COURT_SCHEDULE_PALETTE.length];
+}
 function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
@@ -1220,6 +1237,10 @@ function renderCourtScheduleGrid(fixtures) {
     for (let c = 0; c < courts; c++) {
       const td = document.createElement("td");
       const cell = savedGrid[s] && savedGrid[s][c];
+      if (cell) {
+        const color = fixtureColor(cell.fixtureId, fixtures);
+        td.style.cssText = `border:2px solid ${color.border};border-radius:8px;background:${color.bg};`;
+      }
       if (myRole === "admin") {
         const select = document.createElement("select");
         const usable = options.filter((o) => !usedKeys.has(o.fixtureId + ":" + o.seed) || (cell && cell.fixtureId === o.fixtureId && cell.seed === o.seed));
@@ -1234,6 +1255,7 @@ function renderCourtScheduleGrid(fixtures) {
             await refreshLeague(); renderAll();
           } catch (e) { alert(e.message); }
         };
+        if (cell) select.style.background = "transparent";
         td.appendChild(select);
       } else {
         const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
