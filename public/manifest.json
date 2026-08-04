@@ -1,6 +1,6 @@
 {
-  "name": "Team Padel League",
-  "short_name": "Padel League",
+  "name": "Team Padel",
+  "short_name": "Team Padel",
   "description": "Fixtures, selection room, results, and standings for team padel leagues.",
   "start_url": "/",
   "scope": "/",
