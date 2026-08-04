@@ -4,6 +4,7 @@ const session = require("express-session");
 const path = require("path");
 const routes = require("./src/routes");
 const store = require("./src/store");
+const { createSessionStore } = require("./src/sessionStore");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,8 +17,13 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-in-production"
 app.set("trust proxy", 1);
 
 app.use(express.json({ limit: "6mb" })); // generous enough for a resized team logo
+const sessionStore = createSessionStore();
+if (!sessionStore) {
+  console.log("UPSTASH_REDIS_REST_URL/TOKEN not set — sessions are in-memory (fine locally, not for production).");
+}
 app.use(
   session({
+    store: sessionStore || undefined, // undefined lets express-session fall back to MemoryStore
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
