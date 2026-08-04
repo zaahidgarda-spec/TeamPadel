@@ -1244,8 +1244,64 @@ function renderResults() {
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
   el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
+  renderMvpCard(fixtures);
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
+}
+function mvpEligiblePlayersClient(fixtures) {
+  const teamIds = new Set();
+  fixtures.forEach((f) => { teamIds.add(f.teamA); teamIds.add(f.teamB); });
+  const players = [];
+  league.teams.forEach((t) => {
+    if (!teamIds.has(t.id)) return;
+    t.players.forEach((p) => players.push({ id: p.id, name: p.name, teamName: t.name }));
+  });
+  return players;
+}
+function renderMvpCard(fixtures) {
+  const card = el("mvp-card");
+  if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0 || !fixtures.every((f) => f.finalized)) {
+    card.style.display = "none";
+    return;
+  }
+  const round = viewingKey.round;
+  const data = (league.mvpByRound && league.mvpByRound[round]) || { tally: [], winner: null };
+  card.style.display = "block";
+
+  let html = '<h2 class="section-title">MVP of the week</h2>';
+  if (data.winner) {
+    html += `<p class="note" style="margin-bottom:10px;">👑 Leading: <strong style="color:var(--accent);">${escapeHtml(data.winner.name)}</strong> <span class="note">(${escapeHtml(data.winner.teamName)})</span> — ${data.winner.votes} vote${data.winner.votes === 1 ? "" : "s"}</p>`;
+    if (data.tally.length > 1) {
+      html += '<div class="mvp-tally">' + data.tally.map((t, i) => `<div class="mvp-tally-row"><span>${i === 0 ? "👑 " : ""}${escapeHtml(t.name)} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
+    }
+  } else {
+    html += '<p class="note" style="margin-bottom:10px;">No votes yet — captains, cast yours below.</p>';
+  }
+  card.innerHTML = html;
+
+  if (myRole === "captain") {
+    const eligible = mvpEligiblePlayersClient(fixtures);
+    const voteWrap = document.createElement("div");
+    voteWrap.className = "row";
+    voteWrap.style.marginTop = "12px";
+    const select = document.createElement("select");
+    select.innerHTML = '<option value="">Choose a player…</option>' + eligible.map((p) => `<option value="${p.id}">${escapeHtml(p.name)} (${escapeHtml(p.teamName)})</option>`).join("");
+    const myVote = league.myMvpVote && league.myMvpVote[round];
+    if (myVote) select.value = myVote;
+    const btn = document.createElement("button");
+    btn.className = "primary";
+    btn.textContent = myVote ? "Change vote" : "Vote";
+    btn.onclick = async () => {
+      const playerId = select.value;
+      if (!playerId) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/mvp/${round}/vote`, { method: "POST", body: { playerId } });
+        await refreshLeague(); renderResults();
+      } catch (e) { alert(e.message); }
+    };
+    voteWrap.appendChild(select); voteWrap.appendChild(btn);
+    card.appendChild(voteWrap);
+  }
 }
 function resultsCard(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
@@ -1404,11 +1460,13 @@ async function drawTeamLogo(ctx, team, cx, cy, radius) {
 async function generatePosterCanvas(mode) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey).slice(0, 8);
+  const sponsors = (league.sponsors || []).slice(0, 5);
   const W = 1080;
   const topY = 300, footerH = 70, rowGap = 16;
   const headerBlockH = 108;
   const pairRowH = 34, pairsTopPad = 8, pairsBottomPad = 10;
   const logoRadius = 40;
+  const sponsorZoneH = sponsors.length ? 140 : 0;
 
   // Player pairs are only known once both captains have submitted their
   // line-up — before that there's nothing to show, so those fixtures just
@@ -1419,7 +1477,7 @@ async function generatePosterCanvas(mode) {
     return { f, revealed, blockH };
   });
   const totalFixturesH = fixtureMeta.reduce((sum, m) => sum + m.blockH + rowGap, 0);
-  const H = Math.max(1350, topY + totalFixturesH + footerH);
+  const H = Math.max(1350, topY + totalFixturesH + sponsorZoneH + footerH);
 
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -1527,6 +1585,33 @@ async function generatePosterCanvas(mode) {
     }
 
     y += blockH + rowGap;
+  }
+
+  if (sponsors.length) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#8FA9B4";
+    ctx.font = "500 20px Oswald, sans-serif";
+    ctx.fillText("SPONSORED BY", W / 2, y + 26);
+
+    const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
+    if (loadedLogos.length) {
+      const maxRowWidth = W - 160;
+      const gap = 40;
+      let logoH = 60;
+      let widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+      let totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+      if (totalW > maxRowWidth) {
+        logoH *= maxRowWidth / totalW;
+        widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+        totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+      }
+      let sx = W / 2 - totalW / 2;
+      const sy = y + 52;
+      loadedLogos.forEach((img, i) => {
+        ctx.drawImage(img, sx, sy, widths[i], logoH);
+        sx += widths[i] + gap;
+      });
+    }
   }
 
   ctx.fillStyle = "#64748B";
@@ -1732,14 +1817,20 @@ function ownRosterEditControls(t) {
 
 /* ---------- Player match history modal ---------- */
 
+function mvpWinCountForPlayer(playerId) {
+  if (!league.mvpByRound) return 0;
+  return Object.values(league.mvpByRound).filter((d) => d.winner && d.winner.playerId === playerId).length;
+}
 async function openPlayerHistory(playerId, playerName) {
   el("player-modal-name").textContent = playerName;
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-backdrop").classList.add("open");
   const rows = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => []);
-  if (rows.length === 0) { el("player-modal-body").innerHTML = '<p class="empty">No completed matches yet.</p>'; return; }
+  const mvpWins = mvpWinCountForPlayer(playerId);
+  const crownLine = mvpWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="mvp-crown-count">MVP × ${mvpWins}</span></p>` : "";
+  if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + '<p class="empty">No completed matches yet.</p>'; return; }
   const wins = rows.filter((r) => r.result === "W").length;
-  let html = `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L</p>`;
+  let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L</p>`;
   rows.forEach((r) => {
     html += `<div class="history-row"><div class="history-top"><span class="history-badge ${r.result === "W" ? "win" : "loss"}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
   });

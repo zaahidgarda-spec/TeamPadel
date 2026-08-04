@@ -77,6 +77,10 @@ ul.plain li{display:flex;align-items:center;justify-content:space-between;paddin
 ul.plain li:last-child{border-bottom:none;}
 .name-tag{display:flex;align-items:center;gap:10px;}
 .tag{font-size:12px;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:3px 8px;}
+.mvp-tally{display:flex;flex-direction:column;gap:6px;}
+.mvp-tally-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;padding:6px 2px;border-bottom:1px solid var(--line);}
+.mvp-tally-row:last-child{border-bottom:none;}
+.mvp-crown-count{color:var(--accent);font-weight:700;}
 .small-input{font-size:12px;padding:6px 8px;width:170px;}
 
 .avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:1px solid var(--line);flex-shrink:0;}
