@@ -1382,35 +1382,45 @@ function renderResults() {
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
   el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
-  renderMvpCard(fixtures);
+  renderPotwCard(fixtures);
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
 }
-function mvpEligiblePlayersClient(fixtures) {
-  const teamIds = new Set();
-  fixtures.forEach((f) => { teamIds.add(f.teamA); teamIds.add(f.teamB); });
-  const players = [];
-  league.teams.forEach((t) => {
-    if (!teamIds.has(t.id)) return;
-    t.players.forEach((p) => players.push({ id: p.id, name: p.name, teamName: t.name }));
+// Every specific partnership that played this round — one per seed per
+// side — as vote options. Mirrors potwEligiblePairs() server-side; the
+// server re-validates on submit so this is just for building the dropdown.
+function potwEligiblePairsClient(fixtures) {
+  const pairs = [];
+  fixtures.forEach((f) => {
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    if (!(f.selectionA.submitted && f.selectionB.submitted)) return;
+    [["A", teamA, f.selectionA], ["B", teamB, f.selectionB]].forEach(([side, team, selection]) => {
+      if (!team) return;
+      selection.pairs.forEach((pair, seed) => {
+        const p1 = playerById(team, pair[0]), p2 = playerById(team, pair[1]);
+        if (!p1 || !p2) return;
+        pairs.push({ key: `${f.id}:${side}:${seed}`, teamName: team.name, playerAName: p1.name, playerBName: p2.name });
+      });
+    });
   });
-  return players;
+  return pairs;
 }
-function renderMvpCard(fixtures) {
-  const card = el("mvp-card");
+function renderPotwCard(fixtures) {
+  const card = el("potw-card");
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0 || !fixtures.every((f) => f.finalized)) {
     card.style.display = "none";
     return;
   }
   const round = viewingKey.round;
-  const data = (league.mvpByRound && league.mvpByRound[round]) || { tally: [], winner: null };
+  const data = (league.potwByRound && league.potwByRound[round]) || { tally: [], winner: null };
   card.style.display = "block";
 
-  let html = '<h2 class="section-title">MVP of the week</h2>';
+  const pairLabel = (p) => `${p.playerAName} & ${p.playerBName}`;
+  let html = '<h2 class="section-title">Pair of the week</h2>';
   if (data.winner) {
-    html += `<p class="note" style="margin-bottom:10px;">👑 Leading: <strong style="color:var(--accent);">${escapeHtml(data.winner.name)}</strong> <span class="note">(${escapeHtml(data.winner.teamName)})</span> — ${data.winner.votes} vote${data.winner.votes === 1 ? "" : "s"}</p>`;
+    html += `<p class="note" style="margin-bottom:10px;">👑 Leading: <strong style="color:var(--accent);">${escapeHtml(pairLabel(data.winner))}</strong> <span class="note">(${escapeHtml(data.winner.teamName)})</span> — ${data.winner.votes} vote${data.winner.votes === 1 ? "" : "s"}</p>`;
     if (data.tally.length > 1) {
-      html += '<div class="mvp-tally">' + data.tally.map((t, i) => `<div class="mvp-tally-row"><span>${i === 0 ? "👑 " : ""}${escapeHtml(t.name)} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
+      html += '<div class="potw-tally">' + data.tally.map((t, i) => `<div class="potw-tally-row"><span>${i === 0 ? "👑 " : ""}${escapeHtml(pairLabel(t))} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
     }
   } else {
     html += '<p class="note" style="margin-bottom:10px;">No votes yet — captains, cast yours below.</p>';
@@ -1418,22 +1428,22 @@ function renderMvpCard(fixtures) {
   card.innerHTML = html;
 
   if (myRole === "captain") {
-    const eligible = mvpEligiblePlayersClient(fixtures);
+    const eligible = potwEligiblePairsClient(fixtures);
     const voteWrap = document.createElement("div");
     voteWrap.className = "row";
     voteWrap.style.marginTop = "12px";
     const select = document.createElement("select");
-    select.innerHTML = '<option value="">Choose a player…</option>' + eligible.map((p) => `<option value="${p.id}">${escapeHtml(p.name)} (${escapeHtml(p.teamName)})</option>`).join("");
-    const myVote = league.myMvpVote && league.myMvpVote[round];
+    select.innerHTML = '<option value="">Choose a pair…</option>' + eligible.map((p) => `<option value="${p.key}">${escapeHtml(pairLabel(p))} (${escapeHtml(p.teamName)})</option>`).join("");
+    const myVote = league.myPotwVote && league.myPotwVote[round];
     if (myVote) select.value = myVote;
     const btn = document.createElement("button");
     btn.className = "primary";
     btn.textContent = myVote ? "Change vote" : "Vote";
     btn.onclick = async () => {
-      const playerId = select.value;
-      if (!playerId) return;
+      const pairKey = select.value;
+      if (!pairKey) return;
       try {
-        await api(`/leagues/${currentLeagueId}/mvp/${round}/vote`, { method: "POST", body: { playerId } });
+        await api(`/leagues/${currentLeagueId}/pair-of-week/${round}/vote`, { method: "POST", body: { pairKey } });
         await refreshLeague(); renderResults();
       } catch (e) { alert(e.message); }
     };
@@ -1462,8 +1472,10 @@ function resultsCard(f) {
     seedTag.textContent = isDecider ? "Decider" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
     const pairA = playerNamesFor(teamA, f.selectionA.pairs[idx]);
     const pairB = playerNamesFor(teamB, f.selectionB.pairs[idx]);
-    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.textContent = isDecider ? teamA.name : pairA;
-    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.textContent = isDecider ? teamB.name : pairB;
+    const potwWinnerKey = league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winner && league.potwByRound[f.round].winner.key;
+    const isPotwPair = (side) => !isDecider && potwWinnerKey === `${f.id}:${side}:${idx}`;
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.textContent = isDecider ? teamA.name : (isPotwPair("A") ? "👑 " : "") + pairA;
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.textContent = isDecider ? teamB.name : (isPotwPair("B") ? "👑 " : "") + pairB;
 
     const scores = document.createElement("div"); scores.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
     const setLine = document.createElement("div"); setLine.className = "set-line";
@@ -1955,17 +1967,17 @@ function ownRosterEditControls(t) {
 
 /* ---------- Player match history modal ---------- */
 
-function mvpWinCountForPlayer(playerId) {
-  if (!league.mvpByRound) return 0;
-  return Object.values(league.mvpByRound).filter((d) => d.winner && d.winner.playerId === playerId).length;
+function potwWinCountForPlayer(playerId) {
+  if (!league.potwByRound) return 0;
+  return Object.values(league.potwByRound).filter((d) => d.winner && (d.winner.playerAId === playerId || d.winner.playerBId === playerId)).length;
 }
 async function openPlayerHistory(playerId, playerName) {
   el("player-modal-name").textContent = playerName;
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-backdrop").classList.add("open");
   const rows = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => []);
-  const mvpWins = mvpWinCountForPlayer(playerId);
-  const crownLine = mvpWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="mvp-crown-count">MVP × ${mvpWins}</span></p>` : "";
+  const potwWins = potwWinCountForPlayer(playerId);
+  const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
   if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + '<p class="empty">No completed matches yet.</p>'; return; }
   const wins = rows.filter((r) => r.result === "W").length;
   let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L</p>`;

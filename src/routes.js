@@ -42,8 +42,8 @@ function newLeagueObj(name, adminEmail) {
     notifications: [],
     playoffFormat: "none", // "none" | "semis_final" | "position" — chosen by the admin before the season starts
     roundMeta: {}, // keyed by round number -> { label, type: "table" | "knockout" } for admin-added rounds
-    mvpVotes: {}, // keyed by round number -> { [voterTeamId]: playerId } — one vote per team per round
-    mvpNotified: {}, // keyed by round number -> true once captains have been notified voting is open
+    potwVotes: {}, // keyed by round number -> { [voterTeamId]: pairKey } — one vote per team per round
+    potwNotified: {}, // keyed by round number -> true once captains have been notified voting is open
     courtCount: 4,
     slotCount: 3,
     // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
@@ -78,32 +78,53 @@ function genTeamCode(league) {
   return code;
 }
 
-// MVP of the week: any player on a team that actually played that round is
-// eligible — not just players from the voter's own fixture, since it's a
-// league-wide weekly award, not a per-match one.
-function mvpEligiblePlayers(league, round) {
-  const teamIds = new Set();
-  league.fixtures.filter((f) => f.round === round).forEach((f) => { teamIds.add(f.teamA); teamIds.add(f.teamB); });
-  const players = [];
-  league.teams.forEach((t) => {
-    if (!teamIds.has(t.id)) return;
-    t.players.forEach((p) => players.push({ id: p.id, name: p.name, teamId: t.id, teamName: t.name }));
+// Pair of the week: every specific partnership that actually took the court
+// that round — one per seed per side — is eligible, identified by fixture +
+// side + seed (not just the two player IDs, since in theory the same two
+// names could be paired up more than once across seeds/fixtures).
+function potwEligiblePairs(league, round) {
+  const pairs = [];
+  league.fixtures.filter((f) => f.round === round).forEach((f) => {
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    [["A", teamA, f.selectionA], ["B", teamB, f.selectionB]].forEach(([side, team, selection]) => {
+      if (!team || !selection || !selection.submitted) return;
+      selection.pairs.forEach((pair, seed) => {
+        const [p1id, p2id] = pair || [];
+        const p1 = team.players.find((p) => p.id === p1id);
+        const p2 = team.players.find((p) => p.id === p2id);
+        if (!p1 || !p2) return;
+        pairs.push({
+          key: `${f.id}:${side}:${seed}`,
+          fixtureId: f.id,
+          side,
+          seed,
+          teamId: team.id,
+          teamName: team.name,
+          playerAId: p1.id,
+          playerAName: p1.name,
+          playerBId: p2.id,
+          playerBName: p2.name,
+        });
+      });
+    });
   });
-  return players;
+  return pairs;
 }
 // Public tally + winner for a round — vote counts and the winner are shared
 // with everyone (so the crown can show), but who voted for whom stays
 // server-side only, to keep captains from feeling pressured either way.
-function mvpTallyForRound(league, round) {
-  const votes = (league.mvpVotes && league.mvpVotes[round]) || {};
+function potwTallyForRound(league, round) {
+  const votes = (league.potwVotes && league.potwVotes[round]) || {};
   const counts = {};
-  Object.values(votes).forEach((playerId) => { counts[playerId] = (counts[playerId] || 0) + 1; });
-  const eligible = mvpEligiblePlayers(league, round);
+  Object.values(votes).forEach((key) => { counts[key] = (counts[key] || 0) + 1; });
+  const eligible = potwEligiblePairs(league, round);
   const tally = Object.keys(counts)
-    .map((playerId) => {
-      const p = eligible.find((x) => x.id === playerId);
-      return { playerId, name: p ? p.name : "?", teamName: p ? p.teamName : "?", votes: counts[playerId] };
+    .map((key) => {
+      const p = eligible.find((x) => x.key === key);
+      return p ? { ...p, votes: counts[key] } : null;
     })
+    .filter(Boolean)
     .sort((a, b) => b.votes - a.votes);
   return { tally, winner: tally.length ? tally[0] : null };
 }
@@ -148,21 +169,22 @@ function sanitize(league, req) {
     }
   }
 
-  // Public per-round MVP tally/winner (for the crown), plus this viewer's
-  // own vote if they're a captain — raw per-voter ballots never leave here.
+  // Public per-round Pair of the Week tally/winner (for the crown), plus
+  // this viewer's own vote if they're a captain — raw per-voter ballots
+  // never leave here.
   const rounds = [...new Set(league.fixtures.map((f) => f.round))];
-  const mvpByRound = {};
-  rounds.forEach((r) => { mvpByRound[r] = mvpTallyForRound(league, r); });
-  const myMvpVote = {};
+  const potwByRound = {};
+  rounds.forEach((r) => { potwByRound[r] = potwTallyForRound(league, r); });
+  const myPotwVote = {};
   if (teamId) {
     rounds.forEach((r) => {
-      const v = league.mvpVotes && league.mvpVotes[r] && league.mvpVotes[r][teamId];
-      if (v) myMvpVote[r] = v;
+      const v = league.potwVotes && league.potwVotes[r] && league.potwVotes[r][teamId];
+      if (v) myPotwVote[r] = v;
     });
   }
 
-  const { adminPasswordHash, mvpVotes, mvpNotified, ...leagueRest } = league;
-  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, mvpByRound, myMvpVote };
+  const { adminPasswordHash, potwVotes, potwNotified, ...leagueRest } = league;
+  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote };
 }
 function sanitizeOne(f, isAdmin, teamId) {
   const copy = JSON.parse(JSON.stringify(f));
@@ -277,8 +299,8 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.notifications) league.notifications = [];
   if (!league.playoffFormat) league.playoffFormat = league.playoffs ? "semis_final" : "none";
   if (!league.roundMeta) league.roundMeta = {};
-  if (!league.mvpVotes) league.mvpVotes = {};
-  if (!league.mvpNotified) league.mvpNotified = {};
+  if (!league.potwVotes) league.potwVotes = {};
+  if (!league.potwNotified) league.potwNotified = {};
   if (!league.courtCount) league.courtCount = 4;
   if (!league.slotCount) league.slotCount = 3;
   if (!league.courtSchedule) league.courtSchedule = {};
@@ -729,17 +751,18 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   f.finalized = true;
   syncPlayoffs(league);
 
-  // Once every regular-round fixture for this round is in, MVP voting for
-  // that week becomes meaningful — let every captain know, once, per round.
+  // Once every regular-round fixture for this round is in, Pair of the Week
+  // voting for that week becomes meaningful — let every captain know, once,
+  // per round.
   if (f.stage === "regular") {
     const roundFixtures = league.fixtures.filter((x) => x.round === f.round);
     const roundComplete = roundFixtures.length > 0 && roundFixtures.every((x) => x.finalized);
     if (roundComplete) {
-      if (!league.mvpNotified) league.mvpNotified = {};
-      if (!league.mvpNotified[f.round]) {
-        league.mvpNotified[f.round] = true;
+      if (!league.potwNotified) league.potwNotified = {};
+      if (!league.potwNotified[f.round]) {
+        league.potwNotified[f.round] = true;
         league.teams.forEach((t) => {
-          notify(league, t.id, "mvp", "Results are in for Round " + f.round + " — vote for your MVP of the week on the Results page!");
+          notify(league, t.id, "potw", "Results are in for Round " + f.round + " — vote for your Pair of the Week on the Results page!");
         });
       }
     }
@@ -749,9 +772,9 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   res.json({ ok: true });
 });
 
-/* ---------- MVP of the week ---------- */
+/* ---------- Pair of the week ---------- */
 
-router.post("/leagues/:leagueId/mvp/:round/vote", (req, res) => {
+router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   const round = Number(req.params.round);
@@ -763,14 +786,14 @@ router.post("/leagues/:leagueId/mvp/:round/vote", (req, res) => {
   const roundFixtures = league.fixtures.filter((f) => f.round === round);
   if (roundFixtures.length === 0) return res.status(404).json({ error: "No fixtures in that round." });
   if (!roundFixtures.every((f) => f.finalized)) return res.status(400).json({ error: "Voting opens once every match in the round is finalized." });
-  const { playerId } = req.body || {};
-  const eligible = mvpEligiblePlayers(league, round);
-  if (!eligible.some((p) => p.id === playerId)) return res.status(400).json({ error: "That player didn't play this round." });
-  if (!league.mvpVotes) league.mvpVotes = {};
-  if (!league.mvpVotes[round]) league.mvpVotes[round] = {};
-  league.mvpVotes[round][u.teamId] = playerId;
+  const { pairKey } = req.body || {};
+  const eligible = potwEligiblePairs(league, round);
+  if (!eligible.some((p) => p.key === pairKey)) return res.status(400).json({ error: "That pair didn't play this round." });
+  if (!league.potwVotes) league.potwVotes = {};
+  if (!league.potwVotes[round]) league.potwVotes[round] = {};
+  league.potwVotes[round][u.teamId] = pairKey;
   store.saveLeague(league.id, league);
-  res.json({ ok: true, tally: mvpTallyForRound(league, round) });
+  res.json({ ok: true, tally: potwTallyForRound(league, round) });
 });
 
 /* ---------- Time slots (play order for the night) ---------- */
