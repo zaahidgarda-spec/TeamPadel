@@ -144,13 +144,21 @@ ul.plain li:last-child{border-bottom:none;}
 .seed-row .num{font-family:'Oswald',sans-serif;font-size:11px;color:var(--text-dim);width:44px;flex-shrink:0;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
 
+.cs-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--line);}
+.cs-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;}
+.cs-swatch{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+
 .court-schedule-scroll{overflow-x:auto;}
 table.court-schedule-table{width:100%;min-width:640px;border-collapse:collapse;font-size:13px;}
 table.court-schedule-table th{text-align:left;font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;color:var(--text-dim);padding:8px;border-bottom:2px dashed var(--line);white-space:nowrap;}
-table.court-schedule-table td{padding:6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+table.court-schedule-table td{padding:6px;border-bottom:1px solid var(--line);vertical-align:middle;text-align:center;}
 table.court-schedule-table tbody th{color:var(--text);}
 table.court-schedule-table select{width:100%;font-size:12px;padding:6px;}
 table.court-schedule-table tr:nth-child(even) td{background:var(--panel-2);}
+table.court-schedule-table .avatar,table.court-schedule-table .avatar-fb,.cs-legend .avatar,.cs-legend .avatar-fb{width:18px;height:18px;font-size:9px;}
+.cs-cell-teams,.cs-cell-preview{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:3px;}
+.cs-vs{font-size:9px;color:var(--text-dim);text-transform:uppercase;}
+.cs-cell-label{font-size:11px;color:var(--text-dim);line-height:1.25;}
 
 table.log{width:100%;min-width:520px;border-collapse:collapse;font-size:15px;}
 table.log th{text-align:left;font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;color:var(--text-dim);padding:10px 8px;border-bottom:2px dashed var(--line);}

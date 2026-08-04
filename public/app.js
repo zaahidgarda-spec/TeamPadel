@@ -1177,10 +1177,15 @@ function courtScheduleOptions(fixtures) {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
     for (let seed = 0; seed < 4; seed++) {
-      const label = revealed
+      // Once revealed, still keep the team names + seed number in the select
+      // option (not just the player pair) — otherwise, with two fixtures'
+      // lineups both revealed, the dropdown is just a flat list of player
+      // names with no way to tell which match each one belongs to.
+      const pairLabel = revealed
         ? playerNamesFor(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesFor(teamB, f.selectionB.pairs[seed])
-        : (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + " — Seed " + (seed + 1);
-      options.push({ fixtureId: f.id, seed, label });
+        : null;
+      const label = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + " — Seed " + (seed + 1) + (pairLabel ? " (" + pairLabel + ")" : "");
+      options.push({ fixtureId: f.id, seed, label, teamA, teamB, shortLabel: pairLabel || ("Seed " + (seed + 1)) });
     }
   });
   return options;
@@ -1221,6 +1226,16 @@ function renderCourtScheduleGrid(fixtures) {
 
   const wrap = el("court-schedule-grid");
   wrap.innerHTML = "";
+
+  const legend = document.createElement("div");
+  legend.className = "cs-legend";
+  legend.innerHTML = fixtures.map((f) => {
+    const color = fixtureColor(f.id, fixtures);
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    return `<div class="cs-legend-item"><span class="cs-swatch" style="background:${color.border}"></span>${avatarHtml(teamA)}<span class="cs-vs">v</span>${avatarHtml(teamB)}<span>${escapeHtml(teamA ? teamA.name : "TBD")} vs ${escapeHtml(teamB ? teamB.name : "TBD")}</span></div>`;
+  }).join("");
+  wrap.appendChild(legend);
+
   const scroll = document.createElement("div");
   scroll.className = "court-schedule-scroll";
   const table = document.createElement("table");
@@ -1256,10 +1271,21 @@ function renderCourtScheduleGrid(fixtures) {
           } catch (e) { alert(e.message); }
         };
         if (cell) select.style.background = "transparent";
+        const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
+        if (opt) {
+          const preview = document.createElement("div");
+          preview.className = "cs-cell-preview";
+          preview.innerHTML = `${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}`;
+          td.appendChild(preview);
+        }
         td.appendChild(select);
       } else {
         const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
-        td.textContent = opt ? opt.label : "—";
+        if (opt) {
+          td.innerHTML = `<div class="cs-cell-teams">${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}</div><div class="cs-cell-label">${escapeHtml(opt.shortLabel)}</div>`;
+        } else {
+          td.textContent = "—";
+        }
       }
       tr.appendChild(td);
     }
