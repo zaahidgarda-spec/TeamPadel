@@ -1163,6 +1163,7 @@ function renderFixtures() {
   const c = el("fixtures-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
+  el("fixtures-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
@@ -1242,6 +1243,7 @@ function renderResults() {
   const c = el("results-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
+  el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
 }
@@ -1337,6 +1339,181 @@ function playerNamesFor(team, pair) {
   const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => p.name).join(" & ");
   return names || "—";
 }
+
+/* ---------- Poster generator (fixtures & results, drawn client-side) ---------- */
+
+function loadImageAsync(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// Shrinks font size to fit maxWidth (down to a floor), then hard-truncates
+// with an ellipsis if it still doesn't fit — team names are admin-entered
+// free text with no length limit, so both guards are needed.
+function fitText(ctx, text, maxWidth, startSize, weight, family) {
+  let size = startSize;
+  const apply = () => { ctx.font = weight + " " + size + "px " + family; };
+  apply();
+  while (size > 18 && ctx.measureText(text).width > maxWidth) { size -= 2; apply(); }
+  let out = text;
+  while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) { out = out.slice(0, -1); }
+  return out.length < text.length ? out + "…" : out;
+}
+async function drawTeamLogo(ctx, team, cx, cy, radius) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  const img = team && team.logo ? await loadImageAsync(team.logo) : null;
+  if (img) {
+    const scale = Math.max((radius * 2) / img.width, (radius * 2) / img.height);
+    const w = img.width * scale, h = img.height * scale;
+    ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+  } else {
+    ctx.fillStyle = "#EEF2F9";
+    ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+  }
+  ctx.restore();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#2563EB";
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  if (!img) {
+    ctx.fillStyle = "#64748B";
+    ctx.font = "700 " + Math.round(radius) + "px Oswald, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(team ? team.name.charAt(0).toUpperCase() : "?", cx, cy + 3);
+    ctx.textBaseline = "alphabetic";
+  }
+}
+async function generatePosterCanvas(mode) {
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const fixtures = fixturesForKey(viewingKey).slice(0, 8);
+  const W = 1080, H = 1350;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0B1730");
+  bg.addColorStop(1, "#16294D");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#2563EB";
+  ctx.font = "700 32px Oswald, sans-serif";
+  ctx.fillText((league.name || "").toUpperCase(), W / 2, 96);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "700 68px Oswald, sans-serif";
+  ctx.fillText(mode === "results" ? "RESULTS" : "FIXTURES", W / 2, 168);
+
+  ctx.fillStyle = "#8FA9B4";
+  ctx.font = "500 28px Oswald, sans-serif";
+  ctx.fillText((viewingKey ? viewingKey.label : "").toUpperCase(), W / 2, 210);
+
+  const sched = viewingKey ? scheduleFor(viewingKey.key) : {};
+  const venue = viewingKey ? effectiveVenue(viewingKey.key) : "";
+  const subParts = [];
+  if (sched.date) subParts.push(fmtDate(sched.date));
+  if (sched.time) subParts.push(fmtTime(sched.time));
+  if (venue) subParts.push(venue);
+  if (subParts.length) {
+    ctx.fillStyle = "#DCE3F0";
+    ctx.font = "400 24px Inter, sans-serif";
+    ctx.fillText(subParts.join("   ·   "), W / 2, 248);
+  }
+
+  const topY = 300, bottomY = H - 70;
+  const rowGap = 14;
+  const rowHeight = Math.max(120, Math.min(210, (bottomY - topY) / Math.max(fixtures.length, 1) - rowGap));
+  let y = topY;
+  const logoRadius = Math.min(52, rowHeight * 0.32);
+
+  for (const f of fixtures) {
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    roundRectPath(ctx, 56, y, W - 112, rowHeight, 18);
+    ctx.fill();
+
+    const midY = y + rowHeight / 2;
+    await drawTeamLogo(ctx, teamA, 56 + 40 + logoRadius, midY, logoRadius);
+    await drawTeamLogo(ctx, teamB, W - 56 - 40 - logoRadius, midY, logoRadius);
+
+    // Results mode draws a wider score (e.g. "10 - 8" at 46px) in the
+    // middle than fixtures mode's small "VS", so it needs more clearance
+    // to avoid the team name running into it.
+    const nameMaxWidth = W / 2 - (mode === "results" ? 280 : 220);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "left";
+    const nameA = fitText(ctx, teamA ? teamA.name : "TBD", nameMaxWidth, 32, "600", "Oswald, sans-serif");
+    ctx.fillText(nameA, 56 + 90 + logoRadius, midY + 11);
+
+    ctx.textAlign = "right";
+    const nameB = fitText(ctx, teamB ? teamB.name : "TBD", nameMaxWidth, 32, "600", "Oswald, sans-serif");
+    ctx.fillText(nameB, W - 56 - 90 - logoRadius, midY + 11);
+
+    ctx.textAlign = "center";
+    if (mode === "results" && f.finalized) {
+      const { winsA, winsB } = fixtureScoreClient(f);
+      ctx.fillStyle = "#2563EB";
+      ctx.font = "700 46px Oswald, sans-serif";
+      ctx.fillText(winsA + " - " + winsB, W / 2, midY + 16);
+    } else {
+      ctx.fillStyle = "#8FA9B4";
+      ctx.font = "600 22px Oswald, sans-serif";
+      ctx.fillText("VS", W / 2, midY + 8);
+    }
+
+    y += rowHeight + rowGap;
+  }
+
+  ctx.fillStyle = "#64748B";
+  ctx.font = "500 22px Oswald, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TEAM PADEL", W / 2, H - 34);
+
+  return canvas;
+}
+async function openPosterModal(mode) {
+  el("poster-modal-title").textContent = mode === "results" ? "Results poster" : "Fixtures poster";
+  el("poster-preview-img").style.display = "none";
+  el("poster-modal-loading").style.display = "block";
+  el("poster-modal-backdrop").classList.add("open");
+  const canvas = await generatePosterCanvas(mode);
+  const dataUrl = canvas.toDataURL("image/png");
+  el("poster-preview-img").src = dataUrl;
+  el("poster-preview-img").style.display = "inline-block";
+  el("poster-modal-loading").style.display = "none";
+  el("poster-download-btn").onclick = () => {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    const safeName = (league.name || "poster").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    a.download = safeName + "-" + mode + ".png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+}
+el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.remove("open");
+el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
+el("generate-results-poster-btn").onclick = () => openPosterModal("results");
 
 /* ---------- Table ---------- */
 

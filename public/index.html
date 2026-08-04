@@ -188,6 +188,9 @@
 
       <section class="view" id="view-fixtures">
         <div id="round-nav-fixtures"></div>
+        <div class="row" id="fixtures-poster-row" style="display:none;margin-bottom:12px;justify-content:flex-end;">
+          <button class="secondary" id="generate-fixtures-poster-btn">Generate poster</button>
+        </div>
         <div id="fixtures-container"></div>
       </section>
 
@@ -196,6 +199,9 @@
           <p class="note">Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).</p>
         </div>
         <div id="round-nav-results"></div>
+        <div class="row" id="results-poster-row" style="display:none;margin-bottom:12px;justify-content:flex-end;">
+          <button class="secondary" id="generate-results-poster-btn">Generate poster</button>
+        </div>
         <div id="results-container"></div>
       </section>
 
@@ -239,6 +245,18 @@
           <button class="modal-close" id="player-modal-close">&times;</button>
           <h3 id="player-modal-name" class="modal-title"></h3>
           <div id="player-modal-body"></div>
+        </div>
+      </div>
+
+      <div id="poster-modal-backdrop" class="modal-backdrop">
+        <div class="modal-box" style="max-width:460px;text-align:center;">
+          <button class="modal-close" id="poster-modal-close">&times;</button>
+          <h3 id="poster-modal-title" class="modal-title">Poster</h3>
+          <div id="poster-modal-loading" class="note">Drawing your poster…</div>
+          <img id="poster-preview-img" style="max-width:100%;border-radius:8px;margin-top:8px;">
+          <div class="row" style="margin-top:14px;justify-content:center;">
+            <button class="primary" id="poster-download-btn">Download</button>
+          </div>
         </div>
       </div>
 
