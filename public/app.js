@@ -686,8 +686,21 @@ el("default-venue-input").addEventListener("change", async (e) => {
   await api(`/leagues/${currentLeagueId}/default-venue`, { method: "PUT", body: { venue: e.target.value } });
   await refreshLeague(); renderAll();
 });
+async function saveCourtSettings() {
+  const courtCount = Number(el("court-count-input").value);
+  const slotCount = Number(el("slot-count-input").value);
+  if (!courtCount || !slotCount) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/court-settings`, { method: "PUT", body: { courtCount, slotCount } });
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+}
+el("court-count-input").addEventListener("change", saveCourtSettings);
+el("slot-count-input").addEventListener("change", saveCourtSettings);
 function renderAdminFixtures() {
   el("default-venue-input").value = league.defaultVenue || "";
+  el("court-count-input").value = league.courtCount || 4;
+  el("slot-count-input").value = league.slotCount || 3;
   const c = el("admin-fixtures");
   c.innerHTML = "";
   const allFixtures = league.fixtures.slice();
@@ -1158,12 +1171,89 @@ function selectionForm(f, team, side) {
 
 /* ---------- Fixtures (read-only) ---------- */
 
+function courtScheduleOptions(fixtures) {
+  const options = [];
+  fixtures.forEach((f) => {
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    const revealed = f.selectionA.submitted && f.selectionB.submitted;
+    for (let seed = 0; seed < 4; seed++) {
+      const label = revealed
+        ? playerNamesFor(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesFor(teamB, f.selectionB.pairs[seed])
+        : (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + " — Seed " + (seed + 1);
+      options.push({ fixtureId: f.id, seed, label });
+    }
+  });
+  return options;
+}
+function renderCourtScheduleGrid(fixtures) {
+  const card = el("court-schedule-card");
+  if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
+  card.style.display = "block";
+
+  const round = viewingKey.round;
+  const courts = league.courtCount || 4;
+  const slots = league.slotCount || 3;
+  // Resize to the current court/slot counts on read, same as the server
+  // does on write — otherwise a saved grid from before a count change would
+  // display with stale, misaligned cells until the next edit re-saves it.
+  const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
+  const savedGrid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) => (rawGrid[s] && rawGrid[s][c]) || null));
+  const options = courtScheduleOptions(fixtures);
+  const usedKeys = new Set();
+  savedGrid.forEach((row) => (row || []).forEach((cell) => { if (cell) usedKeys.add(cell.fixtureId + ":" + cell.seed); }));
+
+  const wrap = el("court-schedule-grid");
+  wrap.innerHTML = "";
+  const scroll = document.createElement("div");
+  scroll.className = "court-schedule-scroll";
+  const table = document.createElement("table");
+  table.className = "court-schedule-table";
+  const thead = document.createElement("thead");
+  thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>Court ${c + 1}</th>`).join("") + "</tr>";
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  for (let s = 0; s < slots; s++) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.textContent = "Match " + (s + 1);
+    tr.appendChild(th);
+    for (let c = 0; c < courts; c++) {
+      const td = document.createElement("td");
+      const cell = savedGrid[s] && savedGrid[s][c];
+      if (myRole === "admin") {
+        const select = document.createElement("select");
+        const usable = options.filter((o) => !usedKeys.has(o.fixtureId + ":" + o.seed) || (cell && cell.fixtureId === o.fixtureId && cell.seed === o.seed));
+        select.innerHTML = '<option value="">— empty —</option>' + usable
+          .map((o) => `<option value="${o.fixtureId}:${o.seed}" ${cell && cell.fixtureId === o.fixtureId && cell.seed === o.seed ? "selected" : ""}>${escapeHtml(o.label)}</option>`)
+          .join("");
+        select.onchange = async () => {
+          const val = select.value;
+          const body = val ? { slot: s, court: c, fixtureId: val.split(":")[0], seed: Number(val.split(":")[1]) } : { slot: s, court: c, fixtureId: null };
+          try {
+            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body });
+            await refreshLeague(); renderAll();
+          } catch (e) { alert(e.message); }
+        };
+        td.appendChild(select);
+      } else {
+        const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
+        td.textContent = opt ? opt.label : "—";
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  scroll.appendChild(table);
+  wrap.appendChild(scroll);
+}
 function renderFixtures() {
   renderRoundNav("round-nav-fixtures");
   const c = el("fixtures-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
   el("fixtures-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
+  renderCourtScheduleGrid(fixtures);
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);

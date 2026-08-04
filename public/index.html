@@ -145,6 +145,13 @@
             <span class="note" style="width:110px;">Default venue</span>
             <input type="text" id="default-venue-input" placeholder="e.g. Riverside Padel Club">
           </div>
+          <div class="row" style="align-items:center;margin-top:10px;">
+            <span class="note" style="width:110px;">Courts / slots</span>
+            <input type="number" id="court-count-input" min="1" max="12" style="width:70px;">
+            <span class="note">×</span>
+            <input type="number" id="slot-count-input" min="1" max="10" style="width:70px;">
+            <span class="note">— used by the court schedule on the Fixtures page.</span>
+          </div>
           <div id="admin-fixtures" style="margin-top:6px;"></div>
         </div>
         <div class="card" id="add-round-card" style="display:none;">
@@ -188,6 +195,10 @@
 
       <section class="view" id="view-fixtures">
         <div id="round-nav-fixtures"></div>
+        <div class="card" id="court-schedule-card" style="display:none;margin-bottom:16px;">
+          <h2 class="section-title">Court schedule</h2>
+          <div id="court-schedule-grid"></div>
+        </div>
         <div class="row" id="fixtures-poster-row" style="display:none;margin-bottom:12px;justify-content:flex-end;">
           <button class="secondary" id="generate-fixtures-poster-btn">Generate poster</button>
         </div>

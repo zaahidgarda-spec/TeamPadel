@@ -44,6 +44,11 @@ function newLeagueObj(name, adminEmail) {
     roundMeta: {}, // keyed by round number -> { label, type: "table" | "knockout" } for admin-added rounds
     mvpVotes: {}, // keyed by round number -> { [voterTeamId]: playerId } — one vote per team per round
     mvpNotified: {}, // keyed by round number -> true once captains have been notified voting is open
+    courtCount: 4,
+    slotCount: 3,
+    // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
+    // which match (a specific seed within a fixture) is assigned to that court at that time.
+    courtSchedule: {},
     createdAt: Date.now(),
   };
 }
@@ -274,6 +279,9 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.roundMeta) league.roundMeta = {};
   if (!league.mvpVotes) league.mvpVotes = {};
   if (!league.mvpNotified) league.mvpNotified = {};
+  if (!league.courtCount) league.courtCount = 4;
+  if (!league.slotCount) league.slotCount = 3;
+  if (!league.courtSchedule) league.courtSchedule = {};
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -546,6 +554,71 @@ router.put("/leagues/:leagueId/schedule/:key", requireAdmin, (req, res) => {
   league.schedule[req.params.key] = entry;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+/* ---------- Court schedule (which match plays on which court, when) ---------- */
+
+function emptyCourtGrid(slots, courts) {
+  return Array.from({ length: slots }, () => Array.from({ length: courts }, () => null));
+}
+// Reads the saved grid for a round, resized to the league's current court/slot
+// counts (padded or trimmed) so a later change to those counts doesn't crash
+// on old data — cells that fall outside the new size are just dropped.
+function getCourtGrid(league, round) {
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  const saved = (league.courtSchedule && league.courtSchedule[round]) || [];
+  const grid = [];
+  for (let s = 0; s < slots; s++) {
+    const row = [];
+    for (let c = 0; c < courts; c++) {
+      row.push((saved[s] && saved[s][c]) || null);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const courtCount = Number(req.body.courtCount);
+  const slotCount = Number(req.body.slotCount);
+  if (!Number.isInteger(courtCount) || courtCount < 1 || courtCount > 12) return res.status(400).json({ error: "Courts must be between 1 and 12." });
+  if (!Number.isInteger(slotCount) || slotCount < 1 || slotCount > 10) return res.status(400).json({ error: "Time slots must be between 1 and 10." });
+  league.courtCount = courtCount;
+  league.slotCount = slotCount;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.post("/leagues/:leagueId/court-schedule/:round/assign", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const round = Number(req.params.round);
+  if (!Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
+  const { slot, court, fixtureId, seed } = req.body || {};
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  if (!Number.isInteger(slot) || slot < 0 || slot >= slots) return res.status(400).json({ error: "Invalid slot." });
+  if (!Number.isInteger(court) || court < 0 || court >= courts) return res.status(400).json({ error: "Invalid court." });
+
+  const grid = getCourtGrid(league, round);
+
+  if (fixtureId) {
+    const f = league.fixtures.find((x) => x.id === fixtureId && x.round === round);
+    if (!f) return res.status(400).json({ error: "That match isn't in this round." });
+    if (!Number.isInteger(seed) || seed < 0 || seed > 3) return res.status(400).json({ error: "Invalid seed." });
+    // A given fixture+seed can only be scheduled once — clear it from
+    // wherever it was before, so moving it never leaves a duplicate behind.
+    grid.forEach((row) => row.forEach((cell, c) => {
+      if (cell && cell.fixtureId === fixtureId && cell.seed === seed) row[c] = null;
+    }));
+    grid[slot][court] = { fixtureId, seed };
+  } else {
+    grid[slot][court] = null;
+  }
+
+  if (!league.courtSchedule) league.courtSchedule = {};
+  league.courtSchedule[round] = grid;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, grid });
 });
 
 // Admin-added extra round, beyond the auto-generated round robin. "table"
