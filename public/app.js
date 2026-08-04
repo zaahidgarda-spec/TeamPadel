@@ -1404,7 +1404,23 @@ async function drawTeamLogo(ctx, team, cx, cy, radius) {
 async function generatePosterCanvas(mode) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey).slice(0, 8);
-  const W = 1080, H = 1350;
+  const W = 1080;
+  const topY = 300, footerH = 70, rowGap = 16;
+  const headerBlockH = 108;
+  const pairRowH = 34, pairsTopPad = 8, pairsBottomPad = 10;
+  const logoRadius = 40;
+
+  // Player pairs are only known once both captains have submitted their
+  // line-up — before that there's nothing to show, so those fixtures just
+  // get the compact team-vs-team header block, same as before this feature.
+  const fixtureMeta = fixtures.map((f) => {
+    const revealed = f.selectionA.submitted && f.selectionB.submitted;
+    const blockH = headerBlockH + (revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0);
+    return { f, revealed, blockH };
+  });
+  const totalFixturesH = fixtureMeta.reduce((sum, m) => sum + m.blockH + rowGap, 0);
+  const H = Math.max(1350, topY + totalFixturesH + footerH);
+
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -1440,48 +1456,77 @@ async function generatePosterCanvas(mode) {
     ctx.fillText(subParts.join("   ·   "), W / 2, 248);
   }
 
-  const topY = 300, bottomY = H - 70;
-  const rowGap = 14;
-  const rowHeight = Math.max(120, Math.min(210, (bottomY - topY) / Math.max(fixtures.length, 1) - rowGap));
   let y = topY;
-  const logoRadius = Math.min(52, rowHeight * 0.32);
-
-  for (const f of fixtures) {
+  for (const { f, revealed, blockH } of fixtureMeta) {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     ctx.fillStyle = "rgba(255,255,255,0.07)";
-    roundRectPath(ctx, 56, y, W - 112, rowHeight, 18);
+    roundRectPath(ctx, 56, y, W - 112, blockH, 18);
     ctx.fill();
 
-    const midY = y + rowHeight / 2;
-    await drawTeamLogo(ctx, teamA, 56 + 40 + logoRadius, midY, logoRadius);
-    await drawTeamLogo(ctx, teamB, W - 56 - 40 - logoRadius, midY, logoRadius);
+    const headerMidY = y + headerBlockH / 2;
+    await drawTeamLogo(ctx, teamA, 56 + 40 + logoRadius, headerMidY, logoRadius);
+    await drawTeamLogo(ctx, teamB, W - 56 - 40 - logoRadius, headerMidY, logoRadius);
 
-    // Results mode draws a wider score (e.g. "10 - 8" at 46px) in the
+    // Results mode draws a wider score (e.g. "10 - 8" at 42px) in the
     // middle than fixtures mode's small "VS", so it needs more clearance
     // to avoid the team name running into it.
     const nameMaxWidth = W / 2 - (mode === "results" ? 280 : 220);
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "left";
-    const nameA = fitText(ctx, teamA ? teamA.name : "TBD", nameMaxWidth, 32, "600", "Oswald, sans-serif");
-    ctx.fillText(nameA, 56 + 90 + logoRadius, midY + 11);
+    const nameA = fitText(ctx, teamA ? teamA.name : "TBD", nameMaxWidth, 30, "600", "Oswald, sans-serif");
+    ctx.fillText(nameA, 56 + 90 + logoRadius, headerMidY + 10);
 
     ctx.textAlign = "right";
-    const nameB = fitText(ctx, teamB ? teamB.name : "TBD", nameMaxWidth, 32, "600", "Oswald, sans-serif");
-    ctx.fillText(nameB, W - 56 - 90 - logoRadius, midY + 11);
+    const nameB = fitText(ctx, teamB ? teamB.name : "TBD", nameMaxWidth, 30, "600", "Oswald, sans-serif");
+    ctx.fillText(nameB, W - 56 - 90 - logoRadius, headerMidY + 10);
 
     ctx.textAlign = "center";
     if (mode === "results" && f.finalized) {
       const { winsA, winsB } = fixtureScoreClient(f);
       ctx.fillStyle = "#2563EB";
-      ctx.font = "700 46px Oswald, sans-serif";
-      ctx.fillText(winsA + " - " + winsB, W / 2, midY + 16);
+      ctx.font = "700 42px Oswald, sans-serif";
+      ctx.fillText(winsA + " - " + winsB, W / 2, headerMidY + 15);
     } else {
       ctx.fillStyle = "#8FA9B4";
-      ctx.font = "600 22px Oswald, sans-serif";
-      ctx.fillText("VS", W / 2, midY + 8);
+      ctx.font = "600 20px Oswald, sans-serif";
+      ctx.fillText("VS", W / 2, headerMidY + 7);
     }
 
-    y += rowHeight + rowGap;
+    if (revealed) {
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(80, y + headerBlockH);
+      ctx.lineTo(W - 80, y + headerBlockH);
+      ctx.stroke();
+
+      const pairMaxWidth = W / 2 - 140;
+      let py = y + headerBlockH + pairsTopPad + pairRowH / 2;
+      for (let i = 0; i < 4; i++) {
+        const namesA = playerNamesFor(teamA, f.selectionA.pairs[i]);
+        const namesB = playerNamesFor(teamB, f.selectionB.pairs[i]);
+        const winner = f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = winner === "A" ? "#5B9CFF" : "#C6D2E3";
+        const fittedA = fitText(ctx, namesA, pairMaxWidth, 20, winner === "A" ? "700" : "400", "Inter, sans-serif");
+        ctx.fillText(fittedA, 90, py + 6);
+
+        ctx.textAlign = "right";
+        ctx.fillStyle = winner === "B" ? "#5B9CFF" : "#C6D2E3";
+        const fittedB = fitText(ctx, namesB, pairMaxWidth, 20, winner === "B" ? "700" : "400", "Inter, sans-serif");
+        ctx.fillText(fittedB, W - 90, py + 6);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#64748B";
+        ctx.font = "500 15px Oswald, sans-serif";
+        ctx.fillText("S" + (i + 1), W / 2, py + 5);
+
+        py += pairRowH;
+      }
+    }
+
+    y += blockH + rowGap;
   }
 
   ctx.fillStyle = "#64748B";
