@@ -1240,8 +1240,24 @@ function renderCourtScheduleGrid(fixtures) {
   scroll.className = "court-schedule-scroll";
   const table = document.createElement("table");
   table.className = "court-schedule-table";
+  const courtNames = league.courtNames || [];
   const thead = document.createElement("thead");
-  thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>Court ${c + 1}</th>`).join("") + "</tr>";
+  if (myRole === "admin") {
+    thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) =>
+      `<th><input type="text" class="court-name-input" placeholder="Court ${c + 1}" value="${escapeHtml(courtNames[c] || "")}"></th>`
+    ).join("") + "</tr>";
+    thead.querySelectorAll(".court-name-input").forEach((input) => {
+      input.onchange = async () => {
+        const names = Array.from(thead.querySelectorAll(".court-name-input")).map((i) => i.value.trim());
+        try {
+          await api(`/leagues/${currentLeagueId}/court-names`, { method: "PUT", body: { names } });
+          await refreshLeague(); renderAll();
+        } catch (e) { alert(e.message); }
+      };
+    });
+  } else {
+    thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr>";
+  }
   table.appendChild(thead);
   const tbody = document.createElement("tbody");
   for (let s = 0; s < slots; s++) {

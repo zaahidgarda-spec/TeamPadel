@@ -154,6 +154,9 @@ table.court-schedule-table th{text-align:left;font-family:'Oswald',sans-serif;te
 table.court-schedule-table td{padding:6px;border-bottom:1px solid var(--line);vertical-align:middle;text-align:center;}
 table.court-schedule-table tbody th{color:var(--text);}
 table.court-schedule-table select{width:100%;font-size:12px;padding:6px;}
+table.court-schedule-table .court-name-input{width:100%;min-width:80px;font:inherit;text-transform:inherit;color:inherit;background:transparent;border:1px solid transparent;border-radius:4px;padding:3px 4px;margin:-3px -4px;}
+table.court-schedule-table .court-name-input:hover{border-color:var(--line);}
+table.court-schedule-table .court-name-input:focus{border-color:var(--accent);background:var(--panel);outline:none;}
 table.court-schedule-table tr:nth-child(even) td{background:var(--panel-2);}
 table.court-schedule-table .avatar,table.court-schedule-table .avatar-fb,.cs-legend .avatar,.cs-legend .avatar-fb{width:18px;height:18px;font-size:9px;}
 .cs-cell-teams,.cs-cell-preview{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:3px;}

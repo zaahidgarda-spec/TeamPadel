@@ -46,6 +46,7 @@ function newLeagueObj(name, adminEmail) {
     potwNotified: {}, // keyed by round number -> true once captains have been notified voting is open
     courtCount: 4,
     slotCount: 3,
+    courtNames: [], // keyed by court index -> custom label; falls back to "Court N" when blank
     // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
     // which match (a specific seed within a fixture) is assigned to that court at that time.
     courtSchedule: {},
@@ -303,6 +304,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.potwNotified) league.potwNotified = {};
   if (!league.courtCount) league.courtCount = 4;
   if (!league.slotCount) league.slotCount = 3;
+  if (!league.courtNames) league.courtNames = [];
   if (!league.courtSchedule) league.courtSchedule = {};
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
@@ -608,6 +610,15 @@ router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
   if (!Number.isInteger(slotCount) || slotCount < 1 || slotCount > 10) return res.status(400).json({ error: "Time slots must be between 1 and 10." });
   league.courtCount = courtCount;
   league.slotCount = slotCount;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.put("/leagues/:leagueId/court-names", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const names = req.body.names;
+  if (!Array.isArray(names)) return res.status(400).json({ error: "Invalid names." });
+  league.courtNames = names.slice(0, 12).map((n) => String(n || "").trim().slice(0, 30));
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
