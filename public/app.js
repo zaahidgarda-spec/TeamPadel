@@ -1194,14 +1194,14 @@ function courtScheduleOptions(fixtures) {
 // order doesn't change — every seed belonging to that fixture gets the same
 // rectangle color, cycling if a round somehow has more fixtures than colors.
 const COURT_SCHEDULE_PALETTE = [
-  { border: "#2563EB", bg: "rgba(37,99,235,.10)" },
-  { border: "#D97706", bg: "rgba(217,119,6,.10)" },
-  { border: "#DB2777", bg: "rgba(219,39,119,.10)" },
-  { border: "#0D9488", bg: "rgba(13,148,136,.10)" },
-  { border: "#7C3AED", bg: "rgba(124,58,237,.10)" },
-  { border: "#EA580C", bg: "rgba(234,88,12,.10)" },
-  { border: "#16A34A", bg: "rgba(22,163,74,.10)" },
-  { border: "#4F46E5", bg: "rgba(79,70,229,.10)" },
+  { border: "#2563EB", bg: "rgba(37,99,235,.18)" },
+  { border: "#D97706", bg: "rgba(217,119,6,.18)" },
+  { border: "#DB2777", bg: "rgba(219,39,119,.18)" },
+  { border: "#0D9488", bg: "rgba(13,148,136,.18)" },
+  { border: "#7C3AED", bg: "rgba(124,58,237,.18)" },
+  { border: "#EA580C", bg: "rgba(234,88,12,.18)" },
+  { border: "#16A34A", bg: "rgba(22,163,74,.18)" },
+  { border: "#4F46E5", bg: "rgba(79,70,229,.18)" },
 ];
 function fixtureColor(fixtureId, fixtures) {
   const idx = fixtures.findIndex((f) => f.id === fixtureId);
@@ -1270,7 +1270,7 @@ function renderCourtScheduleGrid(fixtures) {
       const cell = savedGrid[s] && savedGrid[s][c];
       if (cell) {
         const color = fixtureColor(cell.fixtureId, fixtures);
-        td.style.cssText = `border:2px solid ${color.border};border-radius:8px;background:${color.bg};`;
+        td.style.cssText = `border-radius:8px;background:${color.bg};`;
       }
       if (myRole === "admin") {
         const select = document.createElement("select");
