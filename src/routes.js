@@ -181,6 +181,8 @@ router.get("/leagues", (req, res) => {
       ...entry,
       status: league ? leagueStatus(league) : "setup",
       teamCount: league ? league.teams.length : 0,
+      // Just enough for a logo strip on the league card — never codes/emails.
+      teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
     };
   });
   res.json(enriched);

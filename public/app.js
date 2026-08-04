@@ -71,11 +71,19 @@ function showHub() {
 }
 function leagueCardHtml(l) {
   const statusLabel = l.status === "active" ? "Active" : "In setup";
+  const teams = l.teams || [];
+  const maxShown = 8;
+  const shown = teams.slice(0, maxShown);
+  const overflow = teams.length - shown.length;
+  const logos = shown.length
+    ? `<div class="league-card-logos">${shown.map((t) => avatarHtml(t)).join("")}${overflow > 0 ? `<span class="avatar-fb">+${overflow}</span>` : ""}</div>`
+    : "";
   return `<div class="league-card" data-id="${l.id}">
     <div class="league-card-top">
       <span class="league-card-name">${escapeHtml(l.name)}</span>
       <span class="tag league-status-${l.status}">${statusLabel}</span>
     </div>
+    ${logos}
     <div class="league-card-meta">
       <span>${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span>
       <span>Created ${new Date(l.createdAt).toLocaleDateString()}</span>
@@ -810,12 +818,13 @@ function renderSponsorStrip() {
   const c = el("sponsor-strip");
   const sponsors = league.sponsors || [];
   if (sponsors.length === 0) { c.innerHTML = ""; return; }
-  c.innerHTML = sponsors
+  const logos = sponsors
     .map((s) => {
       const img = `<img src="${s.image}" alt="${escapeHtml(s.name || "")}">`;
       return s.link ? `<a href="${escapeHtml(s.link)}" target="_blank" rel="noopener">${img}</a>` : img;
     })
     .join("");
+  c.innerHTML = `<span class="sponsor-strip-label">Sponsored by</span>${logos}`;
 }
 
 /* ---------- Notifications ---------- */
