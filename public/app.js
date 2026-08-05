@@ -940,8 +940,8 @@ function selectionCard(f) {
   const both = f.selectionA.submitted && f.selectionB.submitted;
   const grid = document.createElement("div"); grid.className = "selection-grid";
   if (both) {
-    grid.appendChild(selectionReveal(teamA, f.selectionA));
-    grid.appendChild(selectionReveal(teamB, f.selectionB));
+    grid.appendChild(selectionReveal(f, teamA, f.selectionA, "A"));
+    grid.appendChild(selectionReveal(f, teamB, f.selectionB, "B"));
     card.appendChild(grid);
     card.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:10px;", textContent: "Both line-ups are in — agree a playing order below, then head to Results to enter scores." }));
     card.appendChild(timeSlotPanel(f, teamA, teamB));
@@ -1071,7 +1071,7 @@ function slotOrderPicker(f, seedLabel, prefill) {
   box.appendChild(btn); box.appendChild(err);
   return box;
 }
-function selectionReveal(team, sel) {
+function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
@@ -1080,6 +1080,18 @@ function selectionReveal(team, sel) {
     html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${escapeHtml(names)}</span></div>`;
   });
   div.innerHTML = html;
+  if (myRole === "admin") {
+    const reset = document.createElement("button");
+    reset.className = "link"; reset.style.marginTop = "6px"; reset.textContent = "Reset lineup";
+    reset.onclick = async () => {
+      if (!confirm(`Reset ${team.name}'s lineup? They'll need to resubmit their pairs. If match scores have already been entered for this fixture, they'll stay tied to the seed number, not the specific players — so changing the pairing afterward changes who gets credit.`)) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock`, { method: "POST", body: { side } });
+        await refreshLeague(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    div.appendChild(reset);
+  }
   return div;
 }
 function selectionForm(f, team, side) {
