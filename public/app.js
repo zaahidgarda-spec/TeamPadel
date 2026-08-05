@@ -36,6 +36,11 @@ function goldNameHtml(p) {
   if (!p) return "";
   return isGoldPlayer(p) ? `<span class="gold-name">★ ${escapeHtml(p.name)}</span>` : escapeHtml(p.name);
 }
+function pairNamesGoldHtml(team, pair) {
+  if (!pair) return "—";
+  const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldNameHtml(p)).join(" & ");
+  return html || "—";
+}
 function playerNamesForGold(team, pair) {
   if (!pair) return "—";
   const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldPrefix(p) + p.name).join(" & ");
@@ -1132,9 +1137,7 @@ function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
-    const p1 = playerById(team, pair[0]), p2 = playerById(team, pair[1]);
-    const names = [p1, p2].filter(Boolean).map((p) => goldNameHtml(p)).join(" & ") || "—";
-    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${names}</span></div>`;
+    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesGoldHtml(team, pair)}</span></div>`;
   });
   div.innerHTML = html;
   if (myRole === "admin") {
@@ -1273,7 +1276,7 @@ function courtScheduleOptions(fixtures) {
       // lineups both revealed, the dropdown is just a flat list of player
       // names with no way to tell which match each one belongs to.
       const pairLabel = revealed
-        ? playerNamesFor(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesFor(teamB, f.selectionB.pairs[seed])
+        ? playerNamesForGold(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[seed])
         : null;
       const label = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + " — Seed " + (seed + 1) + (pairLabel ? " (" + pairLabel + ")" : "");
       options.push({ fixtureId: f.id, seed, label, teamA, teamB, shortLabel: pairLabel || ("Seed " + (seed + 1)) });
@@ -1424,12 +1427,12 @@ function renderFixtures() {
         html += '<div class="rubbers">';
         f.selectionA.pairs.forEach((pairA, i) => {
           const pairB = f.selectionB.pairs[i];
-          const nameA = [playerById(teamA, pairA[0]), playerById(teamA, pairA[1])].filter(Boolean).map((p) => p.name).join(" & ") || "—";
-          const nameB = [playerById(teamB, pairB[0]), playerById(teamB, pairB[1])].filter(Boolean).map((p) => p.name).join(" & ") || "—";
+          const nameA = pairNamesGoldHtml(teamA, pairA);
+          const nameB = pairNamesGoldHtml(teamB, pairB);
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
           const seedLbl = "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
-          html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${escapeHtml(nameA)}</span><span></span><span class="pair ${w === "B" ? "won" : ""}">${escapeHtml(nameB)}</span></div>`;
+          html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span></span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
         });
         html += "</div>";
       } else {
@@ -1577,12 +1580,12 @@ function resultsCard(f) {
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
     seedTag.textContent = isDecider ? "Decider" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
-    const pairA = playerNamesFor(teamA, f.selectionA.pairs[idx]);
-    const pairB = playerNamesFor(teamB, f.selectionB.pairs[idx]);
+    const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[idx]);
+    const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[idx]);
     const potwWinnerKey = league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winner && league.potwByRound[f.round].winner.key;
     const isPotwPair = (side) => !isDecider && potwWinnerKey === `${f.id}:${side}:${idx}`;
-    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.textContent = isDecider ? teamA.name : (isPotwPair("A") ? "👑 " : "") + pairA;
-    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.textContent = isDecider ? teamB.name : (isPotwPair("B") ? "👑 " : "") + pairB;
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairAHtml;
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairBHtml;
 
     const scores = document.createElement("div"); scores.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
     const setLine = document.createElement("div"); setLine.className = "set-line";
