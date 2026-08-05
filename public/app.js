@@ -555,6 +555,28 @@ function renderRulesCard() {
   };
   actionsWrap.appendChild(exportBtn);
 
+  const importInput = document.createElement("input");
+  importInput.type = "file"; importInput.accept = "application/json,.json"; importInput.style.display = "none";
+  importInput.onchange = async () => {
+    const file = importInput.files[0];
+    importInput.value = "";
+    if (!file) return;
+    let data;
+    try { data = JSON.parse(await file.text()); }
+    catch (e) { alert("That file isn't valid JSON."); return; }
+    if (!confirm(`Restore "${league.name}" from this backup? This overwrites all current teams, fixtures, results and settings for this league. This cannot be undone.`)) return;
+    try {
+      await api(`/leagues/${currentLeagueId}/import`, { method: "POST", body: data });
+      await refreshLeague(); initViewingKey(); renderAll();
+      alert("League restored from backup.");
+    } catch (e) { alert("Import failed: " + e.message); }
+  };
+  const importBtn = document.createElement("button");
+  importBtn.className = "secondary"; importBtn.textContent = "Import backup (restore)";
+  importBtn.onclick = () => importInput.click();
+  actionsWrap.appendChild(importBtn);
+  actionsWrap.appendChild(importInput);
+
   if (status !== "setup") {
     const resetBtn = document.createElement("button");
     resetBtn.className = "danger"; resetBtn.textContent = "Reset season";

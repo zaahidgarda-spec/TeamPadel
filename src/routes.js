@@ -324,6 +324,29 @@ router.get("/leagues/:leagueId/export", requireAdmin, (req, res) => {
   res.json(league);
 });
 
+// Restore this league from one of its own backup files — overwrites
+// everything (teams, fixtures, results, settings). Only accepts a backup
+// that was exported from this same league (matching id), so it can't be
+// used to accidentally clobber one league's data with another's. Any
+// fields missing from an older backup get their defaults applied the next
+// time the league is loaded, same as any other lazy migration.
+router.post("/leagues/:leagueId/import", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const data = req.body;
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    return res.status(400).json({ error: "That doesn't look like a league backup file." });
+  if (!Array.isArray(data.teams) || !Array.isArray(data.fixtures) || !data.name || typeof data.name !== "string")
+    return res.status(400).json({ error: "That doesn't look like a league backup file." });
+  if (data.id !== league.id)
+    return res.status(400).json({ error: "That backup is from a different league — it can only be restored into the league it came from." });
+  store.saveLeague(league.id, data);
+  const index = store.getIndex();
+  const entry = index.find((l) => l.id === league.id);
+  if (entry) { entry.name = data.name; store.saveIndex(index); }
+  res.json({ ok: true });
+});
+
 router.put("/leagues/:leagueId/name", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
