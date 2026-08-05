@@ -273,6 +273,10 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .player-chip:hover{border-color:var(--accent);color:var(--accent);}
 .chip-remove{color:var(--text-dim);margin-left:4px;}
 .chip-remove:hover{color:var(--clay);}
+.player-chip.gold-chip{border-color:#B8860B;background:rgba(184,134,11,.12);color:#8a6508;}
+.player-chip.gold-chip:hover{border-color:#B8860B;color:#8a6508;}
+.gold-name{color:#B8860B;font-weight:600;}
+.gold-toggle{white-space:nowrap;}
 
 /* ---------- Player history modal ---------- */
 .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(18,32,58,.45);z-index:100;align-items:center;justify-content:center;padding:20px;}

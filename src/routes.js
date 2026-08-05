@@ -47,6 +47,8 @@ function newLeagueObj(name, adminEmail) {
     courtCount: 4,
     slotCount: 3,
     courtNames: [], // keyed by court index -> custom label; falls back to "Court N" when blank
+    tieringEnabled: false, // gold-tier seeding — off by default, admin opts in
+    goldTierCount: 0, // how many players per team must be tagged "gold" once enabled
     // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
     // which match (a specific seed within a fixture) is assigned to that court at that time.
     courtSchedule: {},
@@ -306,6 +308,8 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.slotCount) league.slotCount = 3;
   if (!league.courtNames) league.courtNames = [];
   if (!league.courtSchedule) league.courtSchedule = {};
+  if (league.tieringEnabled === undefined) league.tieringEnabled = false;
+  if (!league.goldTierCount) league.goldTierCount = 0;
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -549,6 +553,48 @@ router.delete(
     const team = league.teams.find((t) => t.id === req.params.teamId);
     if (!team) return res.status(404).json({ error: "Team not found." });
     team.players = team.players.filter((p) => p.id !== req.params.playerId);
+    store.saveLeague(league.id, league);
+    res.json({ ok: true });
+  }
+);
+
+router.put("/leagues/:leagueId/tiering", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const enabled = !!req.body.enabled;
+  if (enabled) {
+    const goldTierCount = Number(req.body.goldTierCount);
+    if (!Number.isInteger(goldTierCount) || goldTierCount < 1 || goldTierCount > 20)
+      return res.status(400).json({ error: "Gold-tier count must be between 1 and 20." });
+    league.goldTierCount = goldTierCount;
+  }
+  league.tieringEnabled = enabled;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// Tags/untags one player as gold tier — capped per team at league.goldTierCount
+// so the "how many gold players" quota the admin set is actually enforced,
+// not just advisory.
+router.put(
+  "/leagues/:leagueId/teams/:teamId/players/:playerId/tier",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    if (!league.tieringEnabled) return res.status(400).json({ error: "Turn on gold-tier seeding for this league first." });
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const player = team.players.find((p) => p.id === req.params.playerId);
+    if (!player) return res.status(404).json({ error: "Player not found." });
+    const gold = !!req.body.gold;
+    if (gold && !player.gold) {
+      const currentGoldCount = team.players.filter((p) => p.gold).length;
+      if (currentGoldCount >= league.goldTierCount) {
+        return res.status(400).json({
+          error: `${team.name} already has its ${league.goldTierCount} gold-tier player${league.goldTierCount === 1 ? "" : "s"}. Untag one first.`,
+        });
+      }
+    }
+    player.gold = gold;
     store.saveLeague(league.id, league);
     res.json({ ok: true });
   }

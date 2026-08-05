@@ -135,6 +135,17 @@
           </details>
         </div>
         <div class="card">
+          <h2 class="section-title">Player tiering</h2>
+          <p class="note">Mark each team's strongest player(s) as Gold — captains will see gold names flagged in the Selection Room to help keep seeding fair.</p>
+          <div class="row" style="align-items:center;margin-top:12px;">
+            <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="tiering-enabled-toggle"> Enable gold-tier seeding</label>
+          </div>
+          <div class="row" id="tiering-count-row" style="align-items:center;margin-top:10px;display:none;">
+            <span class="note" style="width:180px;">Gold-tier players per team</span>
+            <input type="number" id="gold-tier-count-input" min="1" max="20" style="width:70px;">
+          </div>
+        </div>
+        <div class="card">
           <h2 class="section-title">Player rosters</h2>
           <div id="admin-roster"></div>
         </div>

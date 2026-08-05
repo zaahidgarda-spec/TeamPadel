@@ -30,6 +30,17 @@ function avatarHtml(t) {
   const initial = t ? t.name.charAt(0).toUpperCase() : "?";
   return `<span class="avatar-fb">${escapeHtml(initial)}</span>`;
 }
+function isGoldPlayer(p) { return !!(league && league.tieringEnabled && p && p.gold); }
+function goldPrefix(p) { return isGoldPlayer(p) ? "★ " : ""; }
+function goldNameHtml(p) {
+  if (!p) return "";
+  return isGoldPlayer(p) ? `<span class="gold-name">★ ${escapeHtml(p.name)}</span>` : escapeHtml(p.name);
+}
+function playerNamesForGold(team, pair) {
+  if (!pair) return "—";
+  const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldPrefix(p) + p.name).join(" & ");
+  return names || "—";
+}
 
 async function api(path, opts) {
   const res = await fetch("/api" + path, {
@@ -432,6 +443,9 @@ function renderAdmin() {
     seasonCard.innerHTML = `<h2 class="section-title">Season in progress</h2><p class="note">Team list is locked. Head to League Rules above to reset the season or delete this league.</p>`;
   }
   renderRulesCard();
+  el("tiering-enabled-toggle").checked = !!league.tieringEnabled;
+  el("tiering-count-row").style.display = league.tieringEnabled ? "flex" : "none";
+  el("gold-tier-count-input").value = league.goldTierCount || 1;
   el("add-team-row").style.display = status === "setup" ? "flex" : "none";
   el("bulk-add-details").style.display = status === "setup" ? "block" : "none";
   el("add-round-card").style.display = status === "setup" ? "none" : "block";
@@ -626,6 +640,13 @@ function adminRosterBlock(t) {
   };
   uploadLabel.appendChild(fileInput);
   nameWrap.appendChild(uploadLabel);
+  if (league.tieringEnabled) {
+    const goldCount = t.players.filter((p) => p.gold).length;
+    const goldTag = document.createElement("div");
+    goldTag.className = "note"; goldTag.style.marginTop = "4px";
+    goldTag.textContent = `Gold tier: ${goldCount}/${league.goldTierCount}`;
+    nameWrap.appendChild(goldTag);
+  }
   head.appendChild(nameWrap);
   wrap.appendChild(head);
 
@@ -633,7 +654,21 @@ function adminRosterBlock(t) {
   if (t.players.length === 0) ul.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No players yet.</li>';
   t.players.forEach((p) => {
     const li = document.createElement("li");
-    li.innerHTML = `<span>${escapeHtml(p.name)}</span>`;
+    const nameSpan = document.createElement("span");
+    nameSpan.innerHTML = goldNameHtml(p);
+    li.appendChild(nameSpan);
+    if (league.tieringEnabled) {
+      const goldBtn = document.createElement("button");
+      goldBtn.className = "link gold-toggle"; goldBtn.style.marginLeft = "8px";
+      goldBtn.textContent = p.gold ? "★ Gold" : "☆ Mark gold";
+      goldBtn.onclick = async () => {
+        try {
+          await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}/tier`, { method: "PUT", body: { gold: !p.gold } });
+          await refreshLeague(); renderAdminRoster(); renderRoster();
+        } catch (e) { alert(e.message); }
+      };
+      li.appendChild(goldBtn);
+    }
     const del = document.createElement("button");
     del.className = "ghost"; del.innerHTML = "&times;";
     del.onclick = async () => { await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}`, { method: "DELETE" }); await refreshLeague(); renderAdminRoster(); };
@@ -719,6 +754,28 @@ async function saveCourtSettings() {
 }
 el("court-count-input").addEventListener("change", saveCourtSettings);
 el("slot-count-input").addEventListener("change", saveCourtSettings);
+el("tiering-enabled-toggle").addEventListener("change", async (e) => {
+  const enabled = e.target.checked;
+  el("tiering-count-row").style.display = enabled ? "flex" : "none";
+  const goldTierCount = Number(el("gold-tier-count-input").value) || 1;
+  if (enabled) el("gold-tier-count-input").value = goldTierCount;
+  try {
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled, goldTierCount } });
+    await refreshLeague(); renderAll();
+  } catch (err) {
+    alert(err.message);
+    e.target.checked = !enabled;
+    el("tiering-count-row").style.display = !enabled ? "flex" : "none";
+  }
+});
+el("gold-tier-count-input").addEventListener("change", async () => {
+  const goldTierCount = Number(el("gold-tier-count-input").value);
+  if (!goldTierCount || goldTierCount < 1) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount } });
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+});
 function renderAdminFixtures() {
   el("default-venue-input").value = league.defaultVenue || "";
   el("court-count-input").value = league.courtCount || 4;
@@ -963,8 +1020,8 @@ function timeSlotPanel(f, teamA, teamB) {
   wrap.appendChild(title);
 
   const seedLabel = (i) => {
-    const nameA = playerNamesFor(teamA, f.selectionA.pairs[i]);
-    const nameB = playerNamesFor(teamB, f.selectionB.pairs[i]);
+    const nameA = playerNamesForGold(teamA, f.selectionA.pairs[i]);
+    const nameB = playerNamesForGold(teamB, f.selectionB.pairs[i]);
     return "Seed " + (i + 1) + ": " + nameA + " vs " + nameB;
   };
 
@@ -1076,8 +1133,8 @@ function selectionReveal(f, team, sel, side) {
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
     const p1 = playerById(team, pair[0]), p2 = playerById(team, pair[1]);
-    const names = [p1 ? p1.name : null, p2 ? p2.name : null].filter(Boolean).join(" & ") || "—";
-    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${escapeHtml(names)}</span></div>`;
+    const names = [p1, p2].filter(Boolean).map((p) => goldNameHtml(p)).join(" & ") || "—";
+    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${names}</span></div>`;
   });
   div.innerHTML = html;
   if (myRole === "admin") {
@@ -1150,7 +1207,7 @@ function selectionForm(f, team, side) {
     // it's ever submitted rather than erroring after the fact.
     const optionsFor = (mySlot) => {
       const otherVal = localPairs[seedIdx][mySlot === 0 ? 1 : 0];
-      return '<option value="">Player…</option>' + team.players.map((p) => `<option value="${p.id}" ${p.id === otherVal ? "disabled" : ""}>${escapeHtml(p.name)}</option>`).join("");
+      return '<option value="">Player…</option>' + team.players.map((p) => `<option value="${p.id}" ${p.id === otherVal ? "disabled" : ""}>${goldPrefix(p)}${escapeHtml(p.name)}</option>`).join("");
     };
     [0, 1].forEach((slot) => {
       const select = document.createElement("select");
@@ -1954,9 +2011,9 @@ function renderRoster() {
       : `<span class="avatar-big-fb">${escapeHtml(t.name.charAt(0).toUpperCase())}</span>`;
     const canManage = myRole === "captain" && myTeamId === t.id;
     let chips = t.players.length
-      ? t.players.map((p) => `<button class="player-chip" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${escapeHtml(p.name)}${canManage ? ' <span class="chip-remove" data-remove-pid="' + p.id + '">&times;</span>' : ""}</button>`).join("")
+      ? t.players.map((p) => `<button class="player-chip${isGoldPlayer(p) ? " gold-chip" : ""}" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${isGoldPlayer(p) ? "★ " : ""}${escapeHtml(p.name)}${canManage ? ' <span class="chip-remove" data-remove-pid="' + p.id + '">&times;</span>' : ""}</button>`).join("")
       : '<span class="note">No players added yet.</span>';
-    card.innerHTML = `${avatar}<div class="team-name-wrap"><div class="team-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}</div></div><div class="player-chips">${chips}</div>`;
+    card.innerHTML = `${avatar}<div class="team-name-wrap"><div class="team-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}${league.tieringEnabled ? " · Gold: " + t.players.filter((p) => p.gold).length + "/" + league.goldTierCount : ""}</div></div><div class="player-chips">${chips}</div>`;
     if (canManage) card.appendChild(ownRosterEditControls(t));
     grid.appendChild(card);
   });
@@ -2012,6 +2069,34 @@ function ownRosterEditControls(t) {
   };
   bulkDetails.appendChild(bulkSummary); bulkDetails.appendChild(bulkTextarea); bulkDetails.appendChild(bulkBtn);
   wrap.appendChild(bulkDetails);
+
+  if (league.tieringEnabled && t.players.length) {
+    const goldWrap = document.createElement("div");
+    goldWrap.style.cssText = "margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);";
+    const goldCount = t.players.filter((p) => p.gold).length;
+    const title = document.createElement("div");
+    title.className = "note"; title.style.marginBottom = "8px";
+    title.textContent = `Gold tier (${goldCount}/${league.goldTierCount}) — mark your strongest player${league.goldTierCount === 1 ? "" : "s"}:`;
+    goldWrap.appendChild(title);
+    t.players.forEach((p) => {
+      const row = document.createElement("label");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!p.gold;
+      cb.disabled = !p.gold && goldCount >= league.goldTierCount;
+      cb.onchange = async () => {
+        try {
+          await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}/tier`, { method: "PUT", body: { gold: cb.checked } });
+          await refreshLeague(); renderRoster();
+        } catch (e) { alert(e.message); cb.checked = !cb.checked; }
+      };
+      const label = document.createElement("span");
+      label.textContent = p.name;
+      row.appendChild(cb); row.appendChild(label);
+      goldWrap.appendChild(row);
+    });
+    wrap.appendChild(goldWrap);
+  }
   return wrap;
 }
 
