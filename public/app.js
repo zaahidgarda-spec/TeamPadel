@@ -1594,11 +1594,11 @@ function renderPotwCard(fixtures) {
       html += '<div class="potw-tally">' + data.tally.map((t, i) => `<div class="potw-tally-row"><span>${i === 0 ? "👑 " : ""}${escapeHtml(pairLabel(t))} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
     }
   } else {
-    html += '<p class="note" style="margin-bottom:10px;">No votes yet — captains, cast yours below.</p>';
+    html += '<p class="note" style="margin-bottom:10px;">No votes yet — cast yours below.</p>';
   }
   card.innerHTML = html;
 
-  if (myRole === "captain") {
+  if (myRole === "captain" || myRole === "admin") {
     const eligible = potwEligiblePairsClient(fixtures);
     const voteWrap = document.createElement("div");
     voteWrap.className = "row";

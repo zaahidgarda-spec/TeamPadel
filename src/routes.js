@@ -212,15 +212,16 @@ function sanitize(league, req) {
   }
 
   // Public per-round Pair of the Week tally/winner (for the crown), plus
-  // this viewer's own vote if they're a captain — raw per-voter ballots
-  // never leave here.
+  // this viewer's own vote if they're a captain or the admin — raw
+  // per-voter ballots never leave here.
   const rounds = [...new Set(league.fixtures.map((f) => f.round))];
   const potwByRound = {};
   rounds.forEach((r) => { potwByRound[r] = potwTallyForRound(league, r); });
+  const potwVoterKey = isAdmin ? "admin" : teamId;
   const myPotwVote = {};
-  if (teamId) {
+  if (potwVoterKey) {
     rounds.forEach((r) => {
-      const v = league.potwVotes && league.potwVotes[r] && league.potwVotes[r][teamId];
+      const v = league.potwVotes && league.potwVotes[r] && league.potwVotes[r][potwVoterKey];
       if (v) myPotwVote[r] = v;
     });
   }
@@ -980,9 +981,12 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   const round = Number(req.params.round);
   if (!Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
   const u = req.session.user;
-  // Captains only, by design — the site owner/league admin doesn't get a
-  // vote here, this is the captains' call.
-  if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only team captains can vote." });
+  const isAdmin = isAdminSession(req, league.id);
+  const isCaptain = !!(u && u.leagueId === league.id && u.role === "captain");
+  if (!isAdmin && !isCaptain) return res.status(403).json({ error: "Only team captains or the admin can vote." });
+  // Admin gets one vote too, same as a team captain, just not tied to any
+  // specific team — stored under a fixed "admin" key rather than a teamId.
+  const voterKey = isAdmin ? "admin" : u.teamId;
   const roundFixtures = league.fixtures.filter((f) => f.round === round);
   if (roundFixtures.length === 0) return res.status(404).json({ error: "No fixtures in that round." });
   if (!roundFixtures.every((f) => f.finalized)) return res.status(400).json({ error: "Voting opens once every match in the round is finalized." });
@@ -991,7 +995,7 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   if (!eligible.some((p) => p.key === pairKey)) return res.status(400).json({ error: "That pair didn't play this round." });
   if (!league.potwVotes) league.potwVotes = {};
   if (!league.potwVotes[round]) league.potwVotes[round] = {};
-  league.potwVotes[round][u.teamId] = pairKey;
+  league.potwVotes[round][voterKey] = pairKey;
   store.saveLeague(league.id, league);
   res.json({ ok: true, tally: potwTallyForRound(league, round) });
 });
