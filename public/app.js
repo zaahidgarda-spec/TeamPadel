@@ -549,8 +549,28 @@ function renderRulesCard() {
     el("playoff-format-select").value = draftPlayoffFormat;
     el("playoff-format-select").onchange = () => { draftPlayoffFormat = el("playoff-format-select").value; };
   } else {
-    const fmtLabel = league.playoffFormat === "semis_final" ? "Semi-finals + Final" : league.playoffFormat === "position" ? "Final spot playoffs" : "None";
-    c.innerHTML = `<p class="note">Playoff format for this season: <strong>${escapeHtml(fmtLabel)}</strong>. Reset the season below to change it.</p>`;
+    c.innerHTML = `
+      <div class="row" style="align-items:center;">
+        <label class="note" style="display:flex;align-items:center;gap:8px;">Playoffs after the season:
+          <select id="playoff-format-live-select">
+            <option value="none">None — the table decides the winner</option>
+            <option value="semis_final">Semi-finals + Final (top 4)</option>
+            <option value="position">Final spot playoffs (1v2, 3v4, 5v6…)</option>
+          </select>
+        </label>
+      </div>
+      <p class="note" style="margin-top:8px;">Change this any time before playoff results are entered — no season reset needed.</p>`;
+    el("playoff-format-live-select").value = league.playoffFormat || "none";
+    el("playoff-format-live-select").onchange = async (e) => {
+      const format = e.target.value;
+      try {
+        await api(`/leagues/${currentLeagueId}/playoff-format`, { method: "PUT", body: { format } });
+        await refreshLeague(); renderAll();
+      } catch (err) {
+        alert(err.message);
+        e.target.value = league.playoffFormat || "none";
+      }
+    };
   }
 
   const actionsWrap = document.createElement("div");

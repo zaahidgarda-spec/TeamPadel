@@ -630,6 +630,28 @@ router.post("/leagues/:leagueId/season/start", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Free to change any time the knockout bracket hasn't actually been played
+// yet — it's just a preference read once, when the admin later clicks
+// "Generate playoffs" after the regular season finishes. Only blocked once
+// a playoff match has a real result recorded, since switching format at
+// that point would orphan an in-progress bracket.
+router.put("/leagues/:leagueId/playoff-format", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const format = req.body.format;
+  if (!["none", "semis_final", "position"].includes(format)) return res.status(400).json({ error: "Unknown playoff format." });
+  if (league.playoffs) {
+    const hasResults =
+      league.playoffs.format === "position"
+        ? (league.playoffs.matches || []).some((m) => m.finalized)
+        : league.playoffs.semis.some((m) => m.finalized) || league.playoffs.final.finalized;
+    if (hasResults) return res.status(400).json({ error: "Playoff results have already been entered — reset the season if you need to change the format now." });
+    league.playoffs = null; // bracket was built for the old format and hasn't been played — clear it so it regenerates correctly
+  }
+  league.playoffFormat = format;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   league.fixtures = [];
