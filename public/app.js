@@ -1554,7 +1554,6 @@ function renderResults() {
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
   el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
-  renderPotwCard(fixtures);
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
 }
@@ -1616,7 +1615,7 @@ function renderPotwCard(fixtures) {
       if (!pairKey) return;
       try {
         await api(`/leagues/${currentLeagueId}/pair-of-week/${round}/vote`, { method: "POST", body: { pairKey } });
-        await refreshLeague(); renderResults();
+        await refreshLeague(); renderAwards();
       } catch (e) { alert(e.message); }
     };
     voteWrap.appendChild(select); voteWrap.appendChild(btn);
@@ -2436,6 +2435,9 @@ async function renderStats() {
 /* ---------- Awards ---------- */
 
 function renderAwards() {
+  renderRoundNav("round-nav-awards");
+  renderPotwCard(fixturesForKey(viewingKey));
+
   const c = el("awards-potw");
   if (!c) return;
   const byRound = league.potwByRound || {};
