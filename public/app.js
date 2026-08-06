@@ -167,6 +167,18 @@ document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
   };
 });
 
+/* ---------- Captain login from the home page (no need to find your league first) ---------- */
+
+el("hub-captain-login-btn").onclick = async () => {
+  const code = el("hub-captain-code").value;
+  const email = el("hub-captain-email").value;
+  try {
+    const { leagueId } = await api("/captain-login", { method: "POST", body: { code, email } });
+    el("hub-captain-code").value = ""; el("hub-captain-email").value = ""; el("hub-captain-error").textContent = "";
+    await openLeague(leagueId);
+  } catch (e) { el("hub-captain-error").textContent = e.message; }
+};
+
 /* ---------- Site owner login (gates who can create leagues) ---------- */
 
 async function refreshOwnerStatus() {

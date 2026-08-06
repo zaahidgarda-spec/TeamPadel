@@ -39,6 +39,7 @@
 
       <nav class="tabs">
         <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
+        <button class="hub-tab-btn" data-hubview="captain">Captain</button>
         <button class="hub-tab-btn" data-hubview="admin">Admin</button>
       </nav>
 
@@ -46,6 +47,19 @@
         <div class="card">
           <h2 class="section-title">Leagues</h2>
           <div id="league-list"></div>
+        </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-captain">
+        <div class="card">
+          <h2 class="section-title">Captain login</h2>
+          <p class="note" style="margin-bottom:10px;">Enter the team code your organizer gave you — you don't need to find your league first.</p>
+          <div class="row">
+            <input type="text" id="hub-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
+            <input type="email" id="hub-captain-email" placeholder="Email (optional, for notifications)" style="width:260px;">
+            <button class="primary" id="hub-captain-login-btn">Log in</button>
+          </div>
+          <div class="error" id="hub-captain-error"></div>
         </div>
       </section>
 

@@ -100,11 +100,20 @@ function notify(league, teamId, type, message) {
 // No 0/O/1/I — avoids characters that look alike when a captain is reading
 // a code off a phone screen or someone's handwriting.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+// Checked against every league's teams, not just this one — codes need to
+// be globally unique so a captain can log in from the home page with just
+// their code, with no need to say which league they're in first.
+function codeInUse(code) {
+  return store.getIndex().some((entry) => {
+    const other = store.getLeague(entry.id);
+    return other && other.teams.some((t) => t.code === code);
+  });
+}
 function genTeamCode(league) {
   let code;
   do {
     code = Array.from({ length: 6 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("");
-  } while (league.teams.some((t) => t.code === code));
+  } while (codeInUse(code));
   return code;
 }
 
@@ -454,6 +463,37 @@ router.post("/leagues/:leagueId/captain-login", loginLimiter, (req, res) => {
   }
   req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
   res.json({ role: "captain", teamId: team.id });
+});
+
+// Same idea as the per-league captain login above, but for the home page —
+// a captain shouldn't have to find their league first just to log in. Codes
+// are generated globally unique (see genTeamCode) so a bare code is enough
+// to find the right team; a collision with an older, pre-existing code is
+// vanishingly unlikely but handled safely rather than guessed at.
+router.post("/captain-login", loginLimiter, (req, res) => {
+  const { code, email } = req.body || {};
+  if (!code || !code.trim()) return res.status(400).json({ error: "Enter your team code." });
+  const val = code.trim().toUpperCase();
+  if (email !== undefined && email.trim() && !email.includes("@"))
+    return res.status(400).json({ error: "Enter a valid email, or leave it blank." });
+
+  const matches = [];
+  for (const entry of store.getIndex()) {
+    const league = store.getLeague(entry.id);
+    if (!league) continue;
+    const team = league.teams.find((t) => t.code === val);
+    if (team) matches.push({ league, team });
+  }
+  if (matches.length === 0) return res.status(401).json({ error: "Invalid team code." });
+  if (matches.length > 1) return res.status(409).json({ error: "That code matches more than one league — please log in from your league's own page instead." });
+
+  const { league, team } = matches[0];
+  if (email !== undefined && email.trim()) {
+    team.notifyEmail = email.trim();
+    store.saveLeague(league.id, league);
+  }
+  req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
+  res.json({ role: "captain", leagueId: league.id, teamId: team.id });
 });
 
 router.post("/logout", (req, res) => {
