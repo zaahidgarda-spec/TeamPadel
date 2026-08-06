@@ -290,6 +290,7 @@ function tabDefs() {
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
   defs.push({ key: "stats", label: "Stats" });
+  defs.push({ key: "awards", label: "Awards" });
   defs.push({ key: "roster", label: "Team roster" });
   defs.push({ key: "news", label: "News room" });
   if (myRole === "captain") {
@@ -430,6 +431,7 @@ function renderAll() {
   renderTable();
   renderRoster();
   renderStats();
+  renderAwards();
   renderNews();
   renderSponsorStrip();
   renderNotificationsList();
@@ -2429,6 +2431,36 @@ async function renderStats() {
   const by = el("stats-byes");
   by.innerHTML = stats.byes.length === 0 ? '<p class="empty">No byes yet.</p>' :
     stats.byes.map((b) => `<div class="stat-row"><span>${escapeHtml(b.name)}</span><span class="pts">${b.byes}</span></div>`).join("");
+}
+
+/* ---------- Awards ---------- */
+
+function renderAwards() {
+  const c = el("awards-potw");
+  if (!c) return;
+  const byRound = league.potwByRound || {};
+  // Only rounds where voting was actually possible (every fixture in that
+  // round finalized) — matches the same gate the Results page's own
+  // Pair of the Week card uses, so a round in progress doesn't show up
+  // here as a false "no votes yet".
+  const rounds = Object.keys(byRound).map(Number).filter((r) => {
+    const roundFixtures = league.fixtures.filter((f) => f.round === r);
+    return roundFixtures.length > 0 && roundFixtures.every((f) => f.finalized);
+  }).sort((a, b) => b - a);
+
+  if (rounds.length === 0) { c.innerHTML = '<p class="empty">No rounds finalized yet — Pair of the Week winners will show up here once a round is complete.</p>'; return; }
+
+  c.innerHTML = rounds.map((r) => {
+    const data = byRound[r];
+    const label = escapeHtml(roundLabel(r));
+    if (!data || !data.winner) {
+      return `<div class="stat-row"><span>${label}</span><span class="note">No votes yet</span></div>`;
+    }
+    const w = data.winner;
+    const team = teamById(w.teamId);
+    const pairHtml = pairNamesGoldHtml(team, [w.playerAId, w.playerBId]);
+    return `<div class="stat-row"><span>${label}</span><span>👑 ${pairHtml} <span class="note">(${escapeHtml(w.teamName)})</span></span></div>`;
+  }).join("");
 }
 
 /* ---------- News ---------- */
