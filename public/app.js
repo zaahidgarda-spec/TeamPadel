@@ -1699,11 +1699,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
 // Shrinks font size to fit maxWidth (down to a floor), then hard-truncates
 // with an ellipsis if it still doesn't fit — team names are admin-entered
 // free text with no length limit, so both guards are needed.
-function fitText(ctx, text, maxWidth, startSize, weight, family) {
+function fitText(ctx, text, maxWidth, startSize, weight, family, floor) {
+  floor = floor || 18;
   let size = startSize;
   const apply = () => { ctx.font = weight + " " + size + "px " + family; };
   apply();
-  while (size > 18 && ctx.measureText(text).width > maxWidth) { size -= 2; apply(); }
+  while (size > floor && ctx.measureText(text).width > maxWidth) { size -= 2; apply(); }
   let out = text;
   while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) { out = out.slice(0, -1); }
   return out.length < text.length ? out + "…" : out;
@@ -1920,14 +1921,17 @@ async function generateCourtSchedulePosterCanvas() {
 
   const marginX = 56;
   const firstColW = 150;
-  const courtColW = 230;
+  const courtColW = 264;
   const W = Math.max(1080, marginX * 2 + firstColW + courts * courtColW);
 
   const topY = 300;
   const legendItemH = 42;
   const legendH = fixtures.length ? 20 + fixtures.length * legendItemH + 24 : 0;
   const headerRowH = 76;
-  const matchRowH = 128;
+  // Tall enough for two full lines of player names (one per pair) stacked
+  // vertically — a single "PairA v PairB" line doesn't fit real names in a
+  // column this narrow, so each pair gets the full cell width to itself.
+  const matchRowH = 176;
   const footerH = 70;
   const sponsorZoneH = sponsors.length ? 140 : 0;
   const H = topY + legendH + headerRowH + slots * matchRowH + sponsorZoneH + footerH + 40;
@@ -2022,17 +2026,33 @@ async function generateCourtSchedulePosterCanvas() {
         ctx.stroke();
 
         const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
+        const fixture = fixtures.find((f) => f.id === cell.fixtureId);
+        const revealed = fixture && fixture.selectionA.submitted && fixture.selectionB.submitted;
         const midX = cellX + cellW / 2;
-        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - 24, cellY + 32, 16);
+        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - 24, cellY + 28, 15);
         ctx.textAlign = "center";
         ctx.fillStyle = "#8FA9B4";
-        ctx.font = "500 14px Oswald, sans-serif";
-        ctx.fillText("v", midX, cellY + 37);
-        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + 24, cellY + 32, 16);
+        ctx.font = "500 13px Oswald, sans-serif";
+        ctx.fillText("v", midX, cellY + 33);
+        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + 24, cellY + 28, 15);
 
-        ctx.fillStyle = "#FFFFFF";
-        const label = opt ? opt.shortLabel : "Seed " + (cell.seed + 1);
-        ctx.fillText(fitText(ctx, label, cellW - 20, 18, "500", "Inter, sans-serif"), midX, cellY + 70);
+        if (revealed && opt) {
+          // Each pair gets its own full-width line — showing every player's
+          // name, not just team names, is the whole point of this poster.
+          const pairA = playerNamesForGold(opt.teamA, fixture.selectionA.pairs[cell.seed]);
+          const pairB = playerNamesForGold(opt.teamB, fixture.selectionB.pairs[cell.seed]);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillText(fitText(ctx, pairA, cellW - 16, 17, "600", "Inter, sans-serif", 12), midX, cellY + 66);
+          ctx.fillStyle = "#8FA9B4";
+          ctx.font = "500 12px Oswald, sans-serif";
+          ctx.fillText("VS", midX, cellY + 86);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillText(fitText(ctx, pairB, cellW - 16, 17, "600", "Inter, sans-serif", 12), midX, cellY + 110);
+        } else {
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "500 18px Inter, sans-serif";
+          ctx.fillText("Seed " + (cell.seed + 1), midX, cellY + 70);
+        }
       } else {
         ctx.textAlign = "center";
         ctx.fillStyle = "rgba(255,255,255,0.25)";
