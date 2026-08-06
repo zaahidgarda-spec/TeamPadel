@@ -1506,6 +1506,20 @@ function fixtureScoreClient(f) {
   f.rubbers.slice(0, 4).forEach((r) => { const w = rubberWinnerClient(r); if (w) { decided++; if (w === "A") winsA++; else winsB++; } });
   return { winsA, winsB, decided };
 }
+// e.g. "6-3, 6-4" or "6-4, 3-6, [10-7]" for a split needing a super
+// tie-break — same "6-0 to 6-4, 7-5, or 7-6" notation used everywhere else.
+function rubberScoreText(r) {
+  const parts = [];
+  const setText = (s) => (s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "") ? s[0] + "-" + s[1] : null;
+  const s0 = setText(r.sets[0]), s1 = setText(r.sets[1]);
+  if (s0) parts.push(s0);
+  if (s1) parts.push(s1);
+  if (needsTiebreakClient(r)) {
+    const tb = setText(r.tb);
+    if (tb) parts.push("[" + tb + "]");
+  }
+  return parts.join(", ");
+}
 
 function renderResults() {
   renderRoundNav("round-nav-results");
@@ -1746,7 +1760,9 @@ async function generatePosterCanvas(mode) {
   const W = 1080;
   const topY = 300, footerH = 70, rowGap = 16;
   const headerBlockH = 108;
-  const pairRowH = 34, pairsTopPad = 8, pairsBottomPad = 10;
+  // Results mode needs a second, taller line per seed row to fit the set
+  // score under the "SEED N" label, alongside the pair names.
+  const pairRowH = mode === "results" ? 46 : 34, pairsTopPad = 8, pairsBottomPad = 10;
   const logoRadius = 40;
   const sponsorZoneH = sponsors.length ? 140 : 0;
 
@@ -1858,9 +1874,18 @@ async function generatePosterCanvas(mode) {
         ctx.fillText(fittedB, W - 90, py + 6);
 
         ctx.textAlign = "center";
-        ctx.fillStyle = "#64748B";
-        ctx.font = "500 15px Oswald, sans-serif";
-        ctx.fillText("S" + (i + 1), W / 2, py + 5);
+        if (mode === "results" && f.finalized) {
+          ctx.fillStyle = "#64748B";
+          ctx.font = "500 12px Oswald, sans-serif";
+          ctx.fillText("SEED " + (i + 1), W / 2, py - 9);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.font = "600 18px Oswald, sans-serif";
+          ctx.fillText(rubberScoreText(f.rubbers[i]) || "—", W / 2, py + 14);
+        } else {
+          ctx.fillStyle = "#64748B";
+          ctx.font = "500 15px Oswald, sans-serif";
+          ctx.fillText("S" + (i + 1), W / 2, py + 5);
+        }
 
         py += pairRowH;
       }
