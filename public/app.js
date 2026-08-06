@@ -1648,48 +1648,20 @@ function resultsCard(f) {
     const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairAHtml;
     const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairBHtml;
 
-    const scores = document.createElement("div"); scores.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
-    const setLine = document.createElement("div"); setLine.className = "set-line";
-    [0, 1].forEach((si) => {
-      const pair = document.createElement("div"); pair.className = "set-pair";
-      const inA = document.createElement("input"); inA.type = "number"; inA.min = "0"; inA.max = "7"; inA.disabled = !editable;
-      inA.value = rubber.sets[si][0] === null ? "" : rubber.sets[si][0];
-      const span = document.createElement("span"); span.textContent = "-";
-      const inB = document.createElement("input"); inB.type = "number"; inB.min = "0"; inB.max = "7"; inB.disabled = !editable;
-      inB.value = rubber.sets[si][1] === null ? "" : rubber.sets[si][1];
-      const commit = async () => {
-        const sets = rubber.sets.map((s) => s.slice());
-        sets[si] = [inA.value === "" ? null : inA.value, inB.value === "" ? null : inB.value];
-        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body: { sets } }); await refreshLeague(); renderResults(); }
-        catch (e) { alert(e.message); }
-      };
-      inA.onchange = commit; inB.onchange = commit;
-      pair.appendChild(inA); pair.appendChild(span); pair.appendChild(inB);
-      setLine.appendChild(pair);
-    });
-    scores.appendChild(setLine);
-    if (needsTiebreakClient(rubber)) {
-      const tbWrap = document.createElement("div"); tbWrap.className = "tb-wrap";
-      const tbLabel = document.createElement("div"); tbLabel.className = "tb-label"; tbLabel.textContent = "Super TB";
-      const tbPair = document.createElement("div"); tbPair.className = "set-pair tb";
-      const tA = document.createElement("input"); tA.type = "number"; tA.min = "0"; tA.max = "30"; tA.disabled = !editable;
-      tA.value = rubber.tb[0] === null ? "" : rubber.tb[0];
-      const tSpan = document.createElement("span"); tSpan.textContent = "-";
-      const tB = document.createElement("input"); tB.type = "number"; tB.min = "0"; tB.max = "30"; tB.disabled = !editable;
-      tB.value = rubber.tb[1] === null ? "" : rubber.tb[1];
-      const commitTb = async () => {
-        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body: { tb: [tA.value === "" ? null : tA.value, tB.value === "" ? null : tB.value] } }); await refreshLeague(); renderResults(); }
-        catch (e) { alert(e.message); }
-      };
-      tA.onchange = commitTb; tB.onchange = commitTb;
-      tbPair.appendChild(tA); tbPair.appendChild(tSpan); tbPair.appendChild(tB);
-      tbWrap.appendChild(tbLabel); tbWrap.appendChild(tbPair);
-      scores.appendChild(tbWrap);
-    }
+    const scores = document.createElement("div"); scores.className = "score-summary-wrap";
+    const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
+    scoreText.textContent = rubberScoreText(rubber) || "Not played yet";
+    scores.appendChild(scoreText);
     [0, 1].forEach((si) => {
       const valid = isValidSetClient(rubber.sets[si][0], rubber.sets[si][1]);
       if (valid === false) { const w = document.createElement("div"); w.className = "warn"; w.textContent = "Set " + (si + 1) + ": not a real padel score"; scores.appendChild(w); }
     });
+    if (editable) {
+      const editBtn = document.createElement("button"); editBtn.className = "secondary score-edit-btn";
+      editBtn.textContent = rubberScoreText(rubber) ? "Edit score" : "Enter score";
+      editBtn.onclick = () => openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml);
+      scores.appendChild(editBtn);
+    }
     row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
     rubbersWrap.appendChild(row);
   });
@@ -1711,6 +1683,87 @@ function resultsCard(f) {
   card.appendChild(footer);
   return card;
 }
+// Tap-to-pick score entry: sets are 0-7 so a row of number buttons beats a
+// tiny text input on mobile, and edits are staged locally until Save so one
+// PUT covers sets + tie-break together instead of firing per keystroke.
+function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml) {
+  const state = {
+    sets: rubber.sets.map((s) => [s[0] === null || s[0] === "" ? null : Number(s[0]), s[1] === null || s[1] === "" ? null : Number(s[1])]),
+    tb: [rubber.tb[0] === null || rubber.tb[0] === "" ? 0 : Number(rubber.tb[0]), rubber.tb[1] === null || rubber.tb[1] === "" ? 0 : Number(rubber.tb[1])],
+  };
+  const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
+  el("score-modal-title").textContent = isDecider ? "Decider score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
+  const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
+  const needsTb = () => {
+    const s1 = setWinnerClient(state.sets[0]), s2 = setWinnerClient(state.sets[1]);
+    return !!(s1 && s2 && s1 !== s2);
+  };
+  const picks = [0, 1, 2, 3, 4, 5, 6, 7];
+  function render() {
+    const body = el("score-modal-body");
+    let html = "";
+    [0, 1].forEach((si) => {
+      html += `<div class="score-set-block">
+        <div class="score-set-label">Set ${si + 1}</div>
+        <div class="score-side-row">
+          <span class="score-side-name">${nameA}</span>
+          <div class="score-pick-row" data-set="${si}" data-side="0">${picks.map((n) => `<button type="button" class="score-pick-btn${state.sets[si][0] === n ? " selected" : ""}" data-val="${n}">${n}</button>`).join("")}</div>
+        </div>
+        <div class="score-side-row">
+          <span class="score-side-name">${nameB}</span>
+          <div class="score-pick-row" data-set="${si}" data-side="1">${picks.map((n) => `<button type="button" class="score-pick-btn${state.sets[si][1] === n ? " selected" : ""}" data-val="${n}">${n}</button>`).join("")}</div>
+        </div>
+        ${isValidSetClient(state.sets[si][0], state.sets[si][1]) === false ? '<div class="warn">Not a real padel score</div>' : ""}
+      </div>`;
+    });
+    if (needsTb()) {
+      html += `<div class="score-tb-block">
+        <div class="tb-label">Super tie-break — first to 10, win by 2</div>
+        <div class="score-side-row">
+          <span class="score-side-name">${nameA}</span>
+          <div class="tb-stepper" data-side="0"><button type="button" class="tb-step-btn" data-dir="-1">−</button><span class="tb-step-val">${state.tb[0]}</span><button type="button" class="tb-step-btn" data-dir="1">+</button></div>
+        </div>
+        <div class="score-side-row">
+          <span class="score-side-name">${nameB}</span>
+          <div class="tb-stepper" data-side="1"><button type="button" class="tb-step-btn" data-dir="-1">−</button><span class="tb-step-val">${state.tb[1]}</span><button type="button" class="tb-step-btn" data-dir="1">+</button></div>
+        </div>
+      </div>`;
+    }
+    body.innerHTML = html;
+    body.querySelectorAll(".score-pick-btn").forEach((btn) => {
+      btn.onclick = () => {
+        const row = btn.closest(".score-pick-row");
+        state.sets[Number(row.dataset.set)][Number(row.dataset.side)] = Number(btn.dataset.val);
+        render();
+      };
+    });
+    body.querySelectorAll(".tb-stepper").forEach((stepper) => {
+      const side = Number(stepper.dataset.side);
+      stepper.querySelectorAll(".tb-step-btn").forEach((btn) => {
+        btn.onclick = () => {
+          state.tb[side] = Math.max(0, state.tb[side] + Number(btn.dataset.dir));
+          render();
+        };
+      });
+    });
+  }
+  render();
+  el("score-modal-backdrop").classList.add("open");
+  el("score-modal-clear").onclick = () => { state.sets = [[null, null], [null, null]]; state.tb = [0, 0]; render(); };
+  el("score-modal-save").onclick = async () => {
+    const body = { sets: state.sets };
+    if (needsTb()) body.tb = state.tb;
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body });
+      el("score-modal-backdrop").classList.remove("open");
+      await refreshLeague(); renderResults();
+    } catch (e) { alert(e.message); }
+  };
+}
+el("score-modal-close").onclick = () => el("score-modal-backdrop").classList.remove("open");
+el("score-modal-cancel").onclick = () => el("score-modal-backdrop").classList.remove("open");
+el("score-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "score-modal-backdrop") el("score-modal-backdrop").classList.remove("open"); });
 function playerNamesFor(team, pair) {
   if (!pair) return "—";
   const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => p.name).join(" & ");
