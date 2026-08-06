@@ -184,6 +184,10 @@ table.log td{padding:12px 8px;border-bottom:1px solid var(--line);}
 table.log td.num,table.log th.num{text-align:center;}
 table.log tr:nth-child(even) td{background:var(--panel-2);}
 table.log tr.rank1 td{background:rgba(37,99,235,.06);}
+/* The tie-break table only has 4 narrow columns (Team/Played/Won/Win%) —
+   the 520px min-width above is sized for the 7-column league table and
+   just forces needless horizontal scrolling here on phones. */
+#stats-tiebreaks table.log{min-width:0;}
 .team-cell{display:flex;align-items:center;gap:8px;}
 .pts{font-family:'Oswald',sans-serif;font-weight:600;color:var(--accent);}
 
