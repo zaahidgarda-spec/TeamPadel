@@ -1325,6 +1325,7 @@ function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
   card.style.display = "block";
+  el("court-schedule-poster-row").style.display = myRole === "admin" ? "flex" : "none";
 
   const round = viewingKey.round;
   const courts = league.courtCount || 4;
@@ -1901,12 +1902,187 @@ async function generatePosterCanvas(mode) {
 
   return canvas;
 }
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+async function generateCourtSchedulePosterCanvas() {
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const fixtures = fixturesForKey(viewingKey);
+  const sponsors = (league.sponsors || []).slice(0, 5);
+  const round = viewingKey.round;
+  const courts = league.courtCount || 4;
+  const slots = league.slotCount || 3;
+  const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
+  const grid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) => (rawGrid[s] && rawGrid[s][c]) || null));
+  const options = courtScheduleOptions(fixtures);
+  const courtNames = league.courtNames || [];
+
+  const marginX = 56;
+  const firstColW = 150;
+  const courtColW = 230;
+  const W = Math.max(1080, marginX * 2 + firstColW + courts * courtColW);
+
+  const topY = 300;
+  const legendItemH = 42;
+  const legendH = fixtures.length ? 20 + fixtures.length * legendItemH + 24 : 0;
+  const headerRowH = 76;
+  const matchRowH = 128;
+  const footerH = 70;
+  const sponsorZoneH = sponsors.length ? 140 : 0;
+  const H = topY + legendH + headerRowH + slots * matchRowH + sponsorZoneH + footerH + 40;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0B1730");
+  bg.addColorStop(1, "#16294D");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#2563EB";
+  ctx.font = "700 32px Oswald, sans-serif";
+  ctx.fillText((league.name || "").toUpperCase(), W / 2, 96);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "700 58px Oswald, sans-serif";
+  ctx.fillText("COURT SCHEDULE", W / 2, 168);
+
+  ctx.fillStyle = "#8FA9B4";
+  ctx.font = "500 28px Oswald, sans-serif";
+  ctx.fillText((viewingKey ? viewingKey.label : "").toUpperCase(), W / 2, 210);
+
+  const sched = viewingKey ? scheduleFor(viewingKey.key) : {};
+  const venue = viewingKey ? effectiveVenue(viewingKey.key) : "";
+  const subParts = [];
+  if (sched.date) subParts.push(fmtDate(sched.date));
+  if (sched.time) subParts.push(fmtTime(sched.time));
+  if (venue) subParts.push(venue);
+  if (subParts.length) {
+    ctx.fillStyle = "#DCE3F0";
+    ctx.font = "400 24px Inter, sans-serif";
+    ctx.fillText(subParts.join("   ·   "), W / 2, 248);
+  }
+
+  let y = topY;
+
+  if (fixtures.length) {
+    let ly = y + 24;
+    for (const f of fixtures) {
+      const color = fixtureColor(f.id, fixtures);
+      const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+      ctx.fillStyle = color.border;
+      roundRectPath(ctx, marginX, ly - 8, 16, 16, 4);
+      ctx.fill();
+      await drawTeamLogo(ctx, teamA, marginX + 42, ly, 14);
+      await drawTeamLogo(ctx, teamB, marginX + 78, ly, 14);
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#DCE3F0";
+      ctx.font = "500 20px Inter, sans-serif";
+      const label = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD");
+      ctx.fillText(fitText(ctx, label, W - marginX - 102, 20, "500", "Inter, sans-serif"), marginX + 102, ly + 6);
+      ly += legendItemH;
+    }
+    y += legendH;
+  }
+
+  ctx.textAlign = "center";
+  for (let c = 0; c < courts; c++) {
+    const cx = marginX + firstColW + c * courtColW + courtColW / 2;
+    ctx.fillStyle = "#8FA9B4";
+    ctx.font = "600 22px Oswald, sans-serif";
+    const label = (courtNames[c] || ("COURT " + (c + 1))).toUpperCase();
+    ctx.fillText(fitText(ctx, label, courtColW - 24, 22, "600", "Oswald, sans-serif"), cx, y + headerRowH / 2 + 8);
+  }
+  y += headerRowH;
+
+  for (let s = 0; s < slots; s++) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#8FA9B4";
+    ctx.font = "600 20px Oswald, sans-serif";
+    ctx.fillText("MATCH " + (s + 1), marginX, y + matchRowH / 2 + 7);
+
+    for (let c = 0; c < courts; c++) {
+      const cellX = marginX + firstColW + c * courtColW + 8;
+      const cellW = courtColW - 16;
+      const cellY = y + 8;
+      const cellH = matchRowH - 16;
+      const cell = grid[s][c];
+      if (cell) {
+        const color = fixtureColor(cell.fixtureId, fixtures);
+        ctx.fillStyle = hexToRgba(color.border, 0.22);
+        roundRectPath(ctx, cellX, cellY, cellW, cellH, 12);
+        ctx.fill();
+        ctx.strokeStyle = color.border;
+        ctx.lineWidth = 2;
+        roundRectPath(ctx, cellX, cellY, cellW, cellH, 12);
+        ctx.stroke();
+
+        const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
+        const midX = cellX + cellW / 2;
+        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - 24, cellY + 32, 16);
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#8FA9B4";
+        ctx.font = "500 14px Oswald, sans-serif";
+        ctx.fillText("v", midX, cellY + 37);
+        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + 24, cellY + 32, 16);
+
+        ctx.fillStyle = "#FFFFFF";
+        const label = opt ? opt.shortLabel : "Seed " + (cell.seed + 1);
+        ctx.fillText(fitText(ctx, label, cellW - 20, 18, "500", "Inter, sans-serif"), midX, cellY + 70);
+      } else {
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.font = "400 20px Inter, sans-serif";
+        ctx.fillText("—", cellX + cellW / 2, cellY + cellH / 2 + 7);
+      }
+    }
+    y += matchRowH;
+  }
+
+  if (sponsors.length) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#8FA9B4";
+    ctx.font = "500 20px Oswald, sans-serif";
+    ctx.fillText("SPONSORED BY", W / 2, y + 26);
+
+    const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
+    if (loadedLogos.length) {
+      const maxRowWidth = W - 160;
+      const gap = 40;
+      let logoH = 60;
+      let widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+      let totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+      if (totalW > maxRowWidth) {
+        logoH *= maxRowWidth / totalW;
+        widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+        totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+      }
+      let sx = W / 2 - totalW / 2;
+      const sy = y + 52;
+      loadedLogos.forEach((img, i) => {
+        ctx.drawImage(img, sx, sy, widths[i], logoH);
+        sx += widths[i] + gap;
+      });
+    }
+  }
+
+  ctx.fillStyle = "#64748B";
+  ctx.font = "500 22px Oswald, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TEAM PADEL", W / 2, H - 34);
+
+  return canvas;
+}
 async function openPosterModal(mode) {
-  el("poster-modal-title").textContent = mode === "results" ? "Results poster" : "Fixtures poster";
+  el("poster-modal-title").textContent = mode === "results" ? "Results poster" : mode === "court-schedule" ? "Court schedule poster" : "Fixtures poster";
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
   el("poster-modal-backdrop").classList.add("open");
-  const canvas = await generatePosterCanvas(mode);
+  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas() : await generatePosterCanvas(mode);
   const dataUrl = canvas.toDataURL("image/png");
   el("poster-preview-img").src = dataUrl;
   el("poster-preview-img").style.display = "inline-block";
@@ -1924,6 +2100,7 @@ async function openPosterModal(mode) {
 el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.remove("open");
 el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
 el("generate-results-poster-btn").onclick = () => openPosterModal("results");
+el("generate-court-schedule-poster-btn").onclick = () => openPosterModal("court-schedule");
 
 /* ---------- Table ---------- */
 
