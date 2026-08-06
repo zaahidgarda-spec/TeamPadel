@@ -996,7 +996,7 @@ function renderNotificationsList() {
   myNotifications.forEach((n) => {
     const row = document.createElement("div");
     // Pair of the Week notifications carry the round they're about — clicking
-    // one jumps straight to that round's Results page instead of leaving the
+    // one jumps straight to that round's Awards page instead of leaving the
     // captain to go find it themselves.
     const goToRound = n.type === "potw" && Number.isInteger(n.round) ? getRoundsList().find((k) => k.stage === "regular" && k.round === n.round) : null;
     row.className = "notif-row" + (n.read ? "" : " unread") + (goToRound ? " notif-clickable" : "");
@@ -1009,7 +1009,7 @@ function renderNotificationsList() {
         }
         if (goToRound) {
           viewingKey = goToRound;
-          switchTab("results");
+          switchTab("awards");
           renderAll();
         } else {
           renderNotificationsList();

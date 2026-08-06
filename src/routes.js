@@ -963,7 +963,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
       if (!league.potwNotified[f.round]) {
         league.potwNotified[f.round] = true;
         league.teams.forEach((t) => {
-          notify(league, t.id, "potw", "Results are in for Round " + f.round + " — vote for your Pair of the Week on the Results page!", { round: f.round });
+          notify(league, t.id, "potw", "Results are in for Round " + f.round + " — vote now for Pair of the Week on the Awards page!", { round: f.round });
         });
       }
     }
