@@ -1,11 +1,25 @@
 const express = require("express");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail } = require("./mailer");
 
 const router = express.Router();
+
+// Shared across every login-type endpoint (site owner, league admin, team
+// code) and keyed by IP — brute-forcing one doesn't reset the count against
+// the others. Only failed attempts count, so a captain who gets their code
+// right first try never sees this, no matter how often they log in.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: "Too many login attempts from this network. Please wait 15 minutes and try again." },
+});
 
 // The site owner account. Baked in here so it works with zero setup —
 // still overridable via environment variables if you ever want to change
@@ -263,7 +277,7 @@ router.get("/leagues", (req, res) => {
   res.json(enriched);
 });
 
-router.post("/owner/login", (req, res) => {
+router.post("/owner/login", loginLimiter, (req, res) => {
   if (!OWNER_USERNAME || !OWNER_PIN) return res.status(500).json({ error: "Admin login isn't configured on this server yet — set OWNER_USERNAME and OWNER_PASSCODE." });
   const { username, pin } = req.body || {};
   const usernameOk = (username || "").trim().toLowerCase() === OWNER_USERNAME;
@@ -396,7 +410,7 @@ router.post("/leagues/:leagueId/register", async (req, res) => {
   res.json({ role: "admin" });
 });
 
-router.post("/leagues/:leagueId/login", async (req, res) => {
+router.post("/leagues/:leagueId/login", loginLimiter, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   const { email, password } = req.body || {};
@@ -412,7 +426,7 @@ router.post("/leagues/:leagueId/login", async (req, res) => {
   res.json({ role: "admin" });
 });
 
-router.post("/leagues/:leagueId/captain-login", (req, res) => {
+router.post("/leagues/:leagueId/captain-login", loginLimiter, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   const { code, email } = req.body || {};
