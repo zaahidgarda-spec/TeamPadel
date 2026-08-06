@@ -536,8 +536,8 @@ function renderRulesCard() {
         <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="double-round-toggle"> Home and away (double round)</label>
       </div>
       <div class="row" style="align-items:center;margin-top:10px;">
-        <label class="note" style="display:flex;align-items:center;gap:6px;">Playoffs after the season:
-          <select id="playoff-format-select">
+        <label class="note" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Playoffs after the season:
+          <select id="playoff-format-select" style="flex:1;min-width:220px;">
             <option value="none">None — the table decides the winner</option>
             <option value="semis_final">Semi-finals + Final (top 4)</option>
             <option value="position">Final spot playoffs (1v2, 3v4, 5v6…)</option>
@@ -551,8 +551,8 @@ function renderRulesCard() {
   } else {
     c.innerHTML = `
       <div class="row" style="align-items:center;">
-        <label class="note" style="display:flex;align-items:center;gap:8px;">Playoffs after the season:
-          <select id="playoff-format-live-select">
+        <label class="note" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">Playoffs after the season:
+          <select id="playoff-format-live-select" style="flex:1;min-width:220px;">
             <option value="none">None — the table decides the winner</option>
             <option value="semis_final">Semi-finals + Final (top 4)</option>
             <option value="position">Final spot playoffs (1v2, 3v4, 5v6…)</option>

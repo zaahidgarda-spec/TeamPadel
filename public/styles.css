@@ -31,7 +31,7 @@ header.site-header{display:flex;align-items:center;justify-content:space-between
 .brand-row{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
 .brand-eyebrow{font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin:0 0 4px;font-weight:600;}
 .h1{font-family:'Oswald',sans-serif;font-weight:700;font-size:34px;letter-spacing:.01em;text-transform:uppercase;margin:0;background:transparent;border:none;color:var(--text);padding:0;}
-.h1-sub{font-size:20px;padding-left:18px;border-left:1px solid var(--line);}
+.h1-sub{font-size:20px;padding-left:18px;border-left:1px solid var(--line);max-width:100%;box-sizing:border-box;min-width:0;text-overflow:ellipsis;}
 .h1:disabled{-webkit-text-fill-color:var(--text);opacity:1;}
 .header-right{display:flex;align-items:center;gap:12px;}
 .role-flag{font-family:'Oswald',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:4px 10px;border-radius:6px;background:var(--accent);color:var(--accent-ink);}
