@@ -1,6 +1,5 @@
 const express = require("express");
 const crypto = require("crypto");
-const rateLimit = require("express-rate-limit");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, isAdminSession, isOwnerSession } = require("./auth");
@@ -8,18 +7,32 @@ const { sendMail } = require("./mailer");
 
 const router = express.Router();
 
+// Hand-rolled rather than a library (e.g. express-rate-limit) — deliberately
+// zero-dependency, so it never breaks on a host that reuses a stale
+// node_modules and won't pick up a newly-added package.
+//
 // Shared across every login-type endpoint (site owner, league admin, team
 // code) and keyed by IP — brute-forcing one doesn't reset the count against
-// the others. Only failed attempts count, so a captain who gets their code
-// right first try never sees this, no matter how often they log in.
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true,
-  message: { error: "Too many login attempts from this network. Please wait 15 minutes and try again." },
-});
+// the others. Only failed attempts count (checked via res.on("finish")), so
+// a captain who gets their code right first try never sees this, no matter
+// how often they log in.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 20;
+const loginAttempts = new Map(); // ip -> { count, resetAt }
+function loginLimiter(req, res, next) {
+  const ip = req.ip;
+  const now = Date.now();
+  let entry = loginAttempts.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    entry = { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+    loginAttempts.set(ip, entry);
+  }
+  if (entry.count >= LOGIN_MAX_ATTEMPTS) {
+    return res.status(429).json({ error: "Too many login attempts from this network. Please wait 15 minutes and try again." });
+  }
+  res.on("finish", () => { if (res.statusCode >= 400) entry.count++; });
+  next();
+}
 
 // The site owner account. Baked in here so it works with zero setup —
 // still overridable via environment variables if you ever want to change
