@@ -89,9 +89,12 @@ function fixtureLabel(league, f) {
   const meta = league.roundMeta && league.roundMeta[f.round];
   return (meta && meta.label) || "Round " + f.round;
 }
-function notify(league, teamId, type, message) {
+// `extra` is optional structured data a notification can carry alongside
+// its message — e.g. { round } so the frontend can jump straight to the
+// relevant page on click instead of the reader having to go find it.
+function notify(league, teamId, type, message, extra) {
   if (!league.notifications) league.notifications = [];
-  league.notifications.push({ id: logic.uid(), teamId, type, message, read: false, createdAt: Date.now() });
+  league.notifications.push({ id: logic.uid(), teamId, type, message, read: false, createdAt: Date.now(), ...extra });
   const team = league.teams.find((t) => t.id === teamId);
   if (team && team.notifyEmail) {
     sendMail({ to: team.notifyEmail, subject: league.name + ": " + type, text: message }).catch(() => {});
@@ -959,7 +962,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
       if (!league.potwNotified[f.round]) {
         league.potwNotified[f.round] = true;
         league.teams.forEach((t) => {
-          notify(league, t.id, "potw", "Results are in for Round " + f.round + " — vote for your Pair of the Week on the Results page!");
+          notify(league, t.id, "potw", "Results are in for Round " + f.round + " — vote for your Pair of the Week on the Results page!", { round: f.round });
         });
       }
     }

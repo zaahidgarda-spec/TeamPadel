@@ -254,7 +254,8 @@ nav.tabs::-webkit-scrollbar{display:none;}
 /* ---------- Notifications ---------- */
 .notif-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid var(--line);cursor:default;}
 .notif-row:last-child{border-bottom:none;}
-.notif-row.unread{cursor:pointer;}
+.notif-row.unread,.notif-row.notif-clickable{cursor:pointer;}
+.notif-row.notif-clickable:hover{background:var(--panel-2);}
 .notif-row.unread .notif-msg{color:var(--text);font-weight:600;}
 .notif-row.unread::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-right:4px;}
 .notif-msg{font-size:14px;color:var(--text-dim);flex:1;}

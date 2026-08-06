@@ -993,12 +993,25 @@ function renderNotificationsList() {
   c.innerHTML = "";
   myNotifications.forEach((n) => {
     const row = document.createElement("div");
-    row.className = "notif-row" + (n.read ? "" : " unread");
+    // Pair of the Week notifications carry the round they're about — clicking
+    // one jumps straight to that round's Results page instead of leaving the
+    // captain to go find it themselves.
+    const goToRound = n.type === "potw" && Number.isInteger(n.round) ? getRoundsList().find((k) => k.stage === "regular" && k.round === n.round) : null;
+    row.className = "notif-row" + (n.read ? "" : " unread") + (goToRound ? " notif-clickable" : "");
     row.innerHTML = `<span class="notif-msg">${escapeHtml(n.message)}</span><time class="notif-time">${new Date(n.createdAt).toLocaleString()}</time>`;
-    if (!n.read) {
+    if (!n.read || goToRound) {
       row.onclick = async () => {
-        await api(`/leagues/${currentLeagueId}/notifications/${n.id}/read`, { method: "POST" });
-        n.read = true; renderNotificationsList(); updateNotifTabLabel();
+        if (!n.read) {
+          await api(`/leagues/${currentLeagueId}/notifications/${n.id}/read`, { method: "POST" });
+          n.read = true; updateNotifTabLabel();
+        }
+        if (goToRound) {
+          viewingKey = goToRound;
+          switchTab("results");
+          renderAll();
+        } else {
+          renderNotificationsList();
+        }
       };
     }
     c.appendChild(row);
