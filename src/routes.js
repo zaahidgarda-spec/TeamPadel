@@ -685,6 +685,34 @@ function getCourtGrid(league, round) {
   return grid;
 }
 
+// Re-sorts a fixture's already-scheduled cells (if the admin has placed any)
+// into the slot rows matching its agreed/proposed playing order, keeping
+// each seed on whatever court it was already assigned to — this only moves
+// cells the admin put there, it never invents a court assignment for a seed
+// that hasn't been placed yet, and it never overwrites another fixture's
+// cell (if the target spot is taken, that seed is left wherever it was).
+function reorderCourtScheduleForFixture(league, fixture, order) {
+  if (!order) return;
+  const slots = league.slotCount || 3;
+  const grid = getCourtGrid(league, fixture.round);
+  const placements = [];
+  grid.forEach((row, s) => row.forEach((cell, c) => {
+    if (cell && cell.fixtureId === fixture.id) placements.push({ court: c, seed: cell.seed, fromSlot: s });
+  }));
+  if (!placements.length) return;
+  // Clearing every one of this fixture's cells first guarantees each one's
+  // original (fromSlot, court) spot is free again below, so falling back to
+  // it on a collision or an out-of-range target is always safe.
+  grid.forEach((row) => row.forEach((cell, c) => { if (cell && cell.fixtureId === fixture.id) row[c] = null; }));
+  placements.forEach(({ court, seed, fromSlot }) => {
+    const targetSlot = order.indexOf(seed);
+    const fits = targetSlot >= 0 && targetSlot < slots && !grid[targetSlot][court];
+    grid[fits ? targetSlot : fromSlot][court] = { fixtureId: fixture.id, seed };
+  });
+  if (!league.courtSchedule) league.courtSchedule = {};
+  league.courtSchedule[fixture.round] = grid;
+}
+
 router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const courtCount = Number(req.body.courtCount);
@@ -905,6 +933,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/propose", (req, res
   const order = req.body.order;
   if (!logic.isValidSlotOrder(order)) return res.status(400).json({ error: "Each seed needs exactly one slot." });
   f.slotProposal = { by: side, order };
+  reorderCourtScheduleForFixture(league, f, order);
   const label = fixtureLabel(league, f);
   const proposerTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamA : f.teamB));
   const oppTeamId = side === "A" ? f.teamB : f.teamA;
@@ -923,6 +952,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/confirm", (req, res
   const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
   if (!isAdmin && (!side || side === f.slotProposal.by)) return res.status(403).json({ error: "Only the other captain can confirm this proposal." });
   f.slotOrder = f.slotProposal.order;
+  reorderCourtScheduleForFixture(league, f, f.slotOrder);
   const proposerSide = f.slotProposal.by;
   const proposerTeamId = proposerSide === "A" ? f.teamA : f.teamB;
   notify(league, proposerTeamId, "timeslot", `Your proposed playing order for ${fixtureLabel(league, f)} was confirmed.`);
