@@ -4,7 +4,8 @@
   "description": "Team padel league manager: fixtures, blind seed selection, results, table and news.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "echo \"No build step needed — this is a plain Node/Express server.\""
   },
   "engines": {
     "node": ">=18.0.0"
