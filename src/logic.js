@@ -307,12 +307,6 @@ function bestPartnerships(league, minMatches, limit) {
   return rows.slice(0, limit || 5);
 }
 
-function byeLeaders(league) {
-  const counts = {};
-  (league.byes || []).forEach((b) => { counts[b.teamId] = (counts[b.teamId] || 0) + 1; });
-  return league.teams.map((t) => ({ name: t.name, byes: counts[t.id] || 0 })).filter((x) => x.byes > 0).sort((a, b) => b.byes - a.byes);
-}
-
 function winStreaks(league) {
   return league.teams
     .map((t) => {
@@ -352,7 +346,6 @@ function computeLeagueStats(league) {
     tiebreaks: teamTiebreakStats(league),
     topScorers: topScorers(league, 5),
     partnerships: bestPartnerships(league, 2, 5),
-    byes: byeLeaders(league),
     streaks: winStreaks(league),
   };
 }

@@ -2479,10 +2479,6 @@ async function renderStats() {
   const st = el("stats-streaks");
   st.innerHTML = stats.streaks.length === 0 ? '<p class="empty">No active streaks of 2+ yet.</p>' :
     stats.streaks.map((s) => `<div class="stat-row"><span>${escapeHtml(s.name)}</span><span class="pts">${s.streak} in a row</span></div>`).join("");
-
-  const by = el("stats-byes");
-  by.innerHTML = stats.byes.length === 0 ? '<p class="empty">No byes yet.</p>' :
-    stats.byes.map((b) => `<div class="stat-row"><span>${escapeHtml(b.name)}</span><span class="pts">${b.byes}</span></div>`).join("");
 }
 
 /* ---------- Awards ---------- */
