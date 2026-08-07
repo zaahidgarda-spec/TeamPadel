@@ -855,7 +855,7 @@ function renderAdminFixtures() {
     timeInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { time: timeInput.value } }); await refreshLeague(); };
     const venueInput = document.createElement("input");
     venueInput.type = "text"; venueInput.placeholder = "Default: " + (league.defaultVenue || "not set"); venueInput.value = sched.venue || "";
-    venueInput.style.cssText = "font-size:12px;padding:6px 8px;width:180px;";
+    venueInput.style.cssText = "font-size:12px;padding:6px 8px;flex:1;min-width:140px;max-width:260px;";
     venueInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { venue: venueInput.value } }); await refreshLeague(); };
     row.appendChild(label); row.appendChild(dateInput); row.appendChild(timeInput); row.appendChild(venueInput);
     c.appendChild(row);
