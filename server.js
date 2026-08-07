@@ -37,8 +37,17 @@ app.use(
 );
 
 app.use("/api", routes);
-app.use(express.static(path.join(__dirname, "public")));
+// no-cache (not no-store) still lets the browser cache these, but forces a
+// revalidation request on every load — so a stale service worker or CDN
+// layer can't be the only thing standing between a deploy and what users
+// actually see. Revalidation is a cheap 304 when nothing changed.
+app.use(
+  express.static(path.join(__dirname, "public"), {
+    setHeaders: (res) => res.setHeader("Cache-Control", "no-cache"),
+  })
+);
 app.get("*", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 

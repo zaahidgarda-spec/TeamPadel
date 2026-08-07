@@ -1,4 +1,4 @@
-const CACHE_NAME = "padel-league-shell-v1";
+const CACHE_NAME = "padel-league-shell-v2";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -34,20 +34,28 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
   if (event.request.method !== "GET") return;
 
+  // Network-first: always try to fetch the latest version. The cache is
+  // purely a fallback for when the network is unavailable (offline / flaky
+  // connection), not a source of truth to prefer over it. The old
+  // stale-while-revalidate approach here served last visit's cached copy
+  // instantly and only refreshed the cache in the background — meaning
+  // installed/PWA users could sit a full deploy behind indefinitely
+  // without ever seeing what actually changed.
+  //
+  // cache:"no-store" also matters here — without it this fetch() still
+  // consults the browser's own HTTP cache first, so a previous response's
+  // Cache-Control (a long max-age from before this fix, or from a CDN in
+  // front of the app) could keep serving stale bytes even though this
+  // handler is "network-first" in intent.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      // Serve from cache instantly if we have it, but still refresh the
-      // cache in the background so the next load is up to date.
-      return cached || networkFetch;
-    })
+    fetch(event.request, { cache: "no-store" })
+      .then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

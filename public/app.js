@@ -2551,9 +2551,39 @@ el("news-post-btn").onclick = async () => {
 
 boot();
 
+// A deploy landing while someone already has the page open (installed PWA,
+// a tab left open for days) doesn't help them until something tells them a
+// newer version exists — network-first fetching in sw.js fixes the *next*
+// load, but this banner covers the tab that's already sitting there.
+function showUpdateBanner() {
+  el("update-banner").style.display = "flex";
+}
+el("update-refresh-btn").onclick = () => window.location.reload();
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((e) => console.log("Service worker registration failed:", e));
+    // Captured once, before any install/claim can happen during *this*
+    // load — skipWaiting()+clients.claim() in sw.js mean a first-ever
+    // install can end up with a controller by the time "installed" fires,
+    // which would otherwise make every fresh visit look like an update.
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => {
+        if (reg.waiting && hadController) showUpdateBanner();
+        reg.addEventListener("updatefound", () => {
+          const installing = reg.installing;
+          if (!installing) return;
+          installing.addEventListener("statechange", () => {
+            if (installing.state === "installed" && hadController) showUpdateBanner();
+          });
+        });
+        setInterval(() => reg.update(), 30 * 60 * 1000);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update();
+        });
+      })
+      .catch((e) => console.log("Service worker registration failed:", e));
   });
 }
 
