@@ -1683,9 +1683,13 @@ function resultsCard(f) {
   card.appendChild(footer);
   return card;
 }
-// Tap-to-pick score entry: sets are 0-7 so a row of number buttons beats a
-// tiny text input on mobile, and edits are staged locally until Save so one
-// PUT covers sets + tie-break together instead of firing per keystroke.
+// Scorecard-style entry: one column per set (plus a Super TB column once
+// sets are split), one row per pair, real number cells you tap and type
+// into. Edits are staged locally until Save so one PUT covers sets +
+// tie-break together instead of firing per keystroke. Cells commit on
+// blur/change rather than on every keystroke — re-rendering on each
+// keypress would rebuild the DOM and kick focus out of the field, making
+// it impossible to type a 2-digit tie-break score.
 function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml) {
   const state = {
     sets: rubber.sets.map((s) => [s[0] === null || s[0] === "" ? null : Number(s[0]), s[1] === null || s[1] === "" ? null : Number(s[1])]),
@@ -1699,53 +1703,42 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     const s1 = setWinnerClient(state.sets[0]), s2 = setWinnerClient(state.sets[1]);
     return !!(s1 && s2 && s1 !== s2);
   };
-  const picks = [0, 1, 2, 3, 4, 5, 6, 7];
   function render() {
     const body = el("score-modal-body");
-    let html = "";
-    [0, 1].forEach((si) => {
-      html += `<div class="score-set-block">
-        <div class="score-set-label">Set ${si + 1}</div>
-        <div class="score-side-row">
-          <span class="score-side-name">${nameA}</span>
-          <div class="score-pick-row" data-set="${si}" data-side="0">${picks.map((n) => `<button type="button" class="score-pick-btn${state.sets[si][0] === n ? " selected" : ""}" data-val="${n}">${n}</button>`).join("")}</div>
-        </div>
-        <div class="score-side-row">
-          <span class="score-side-name">${nameB}</span>
-          <div class="score-pick-row" data-set="${si}" data-side="1">${picks.map((n) => `<button type="button" class="score-pick-btn${state.sets[si][1] === n ? " selected" : ""}" data-val="${n}">${n}</button>`).join("")}</div>
-        </div>
-        ${isValidSetClient(state.sets[si][0], state.sets[si][1]) === false ? '<div class="warn">Not a real padel score</div>' : ""}
-      </div>`;
-    });
-    if (needsTb()) {
-      html += `<div class="score-tb-block">
-        <div class="tb-label">Super tie-break — first to 10, win by 2</div>
-        <div class="score-side-row">
-          <span class="score-side-name">${nameA}</span>
-          <div class="tb-stepper" data-side="0"><button type="button" class="tb-step-btn" data-dir="-1">−</button><span class="tb-step-val">${state.tb[0]}</span><button type="button" class="tb-step-btn" data-dir="1">+</button></div>
-        </div>
-        <div class="score-side-row">
-          <span class="score-side-name">${nameB}</span>
-          <div class="tb-stepper" data-side="1"><button type="button" class="tb-step-btn" data-dir="-1">−</button><span class="tb-step-val">${state.tb[1]}</span><button type="button" class="tb-step-btn" data-dir="1">+</button></div>
-        </div>
-      </div>`;
-    }
+    const tb = needsTb();
+    const cols = tb ? 4 : 3;
+    let html = `<div class="score-table" style="grid-template-columns:1fr repeat(${cols - 1},var(--score-col-w,48px));">`;
+    html += `<div class="score-th"></div><div class="score-th">Set 1</div><div class="score-th">Set 2</div>${tb ? '<div class="score-th">Super TB</div>' : ""}`;
+    html += `<div class="score-team-cell">${avatarHtml(teamA)}<span>${nameA}</span></div>`;
+    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="0" data-side="0" value="${state.sets[0][0] === null ? "" : state.sets[0][0]}">`;
+    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="1" data-side="0" value="${state.sets[1][0] === null ? "" : state.sets[1][0]}">`;
+    if (tb) html += `<input class="score-cell-input tb" type="text" inputmode="numeric" data-tb="0" value="${state.tb[0]}">`;
+    html += `<div class="score-row-divider" style="grid-column:1/-1;"></div>`;
+    html += `<div class="score-team-cell">${avatarHtml(teamB)}<span>${nameB}</span></div>`;
+    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="0" data-side="1" value="${state.sets[0][1] === null ? "" : state.sets[0][1]}">`;
+    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="1" data-side="1" value="${state.sets[1][1] === null ? "" : state.sets[1][1]}">`;
+    if (tb) html += `<input class="score-cell-input tb" type="text" inputmode="numeric" data-tb="1" value="${state.tb[1]}">`;
+    html += `</div>`;
+    const warnings = [0, 1]
+      .filter((si) => isValidSetClient(state.sets[si][0], state.sets[si][1]) === false)
+      .map((si) => `<div class="warn">Set ${si + 1}: not a real padel score</div>`);
+    if (warnings.length) html += `<div class="score-warnings">${warnings.join("")}</div>`;
     body.innerHTML = html;
-    body.querySelectorAll(".score-pick-btn").forEach((btn) => {
-      btn.onclick = () => {
-        const row = btn.closest(".score-pick-row");
-        state.sets[Number(row.dataset.set)][Number(row.dataset.side)] = Number(btn.dataset.val);
+    body.querySelectorAll(".score-cell-input[data-set]").forEach((inp) => {
+      inp.onchange = () => {
+        const si = Number(inp.dataset.set), side = Number(inp.dataset.side);
+        const v = inp.value.trim();
+        state.sets[si][side] = v === "" ? null : Math.max(0, Math.min(7, parseInt(v, 10) || 0));
         render();
       };
     });
-    body.querySelectorAll(".tb-stepper").forEach((stepper) => {
-      const side = Number(stepper.dataset.side);
-      stepper.querySelectorAll(".tb-step-btn").forEach((btn) => {
-        btn.onclick = () => {
-          state.tb[side] = Math.max(0, state.tb[side] + Number(btn.dataset.dir));
-          render();
-        };
-      });
+    body.querySelectorAll(".score-cell-input[data-tb]").forEach((inp) => {
+      inp.onchange = () => {
+        const side = Number(inp.dataset.tb);
+        const v = inp.value.trim();
+        state.tb[side] = v === "" ? 0 : Math.max(0, parseInt(v, 10) || 0);
+        render();
+      };
     });
   }
   render();

@@ -136,20 +136,19 @@ ul.plain li:last-child{border-bottom:none;}
 .score-summary-text.done{color:var(--accent);font-weight:600;}
 .score-edit-btn{font-size:11.5px;padding:8px 12px;min-height:36px;white-space:nowrap;}
 
-/* Score entry modal: tap-to-pick score buttons (0-7) beat a tiny number
-   input for touch, and a +/- stepper covers the wider tie-break range. */
-.score-set-block+.score-set-block,.score-tb-block{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);}
-.score-set-label{font-family:'Oswald',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px;}
-.score-side-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
-.score-side-name{font-size:13px;flex:1;min-width:0;}
-.score-pick-row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;}
-.score-pick-btn{width:34px;height:34px;flex-shrink:0;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);font-family:'Oswald',sans-serif;font-size:14px;cursor:pointer;}
-.score-pick-btn.selected{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700;}
-.score-tb-block .tb-label{display:block;margin-bottom:10px;}
-.tb-stepper{display:flex;align-items:center;gap:10px;}
-.tb-step-btn{width:34px;height:34px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--text);font-size:18px;line-height:1;cursor:pointer;}
-.tb-step-val{font-family:'Oswald',sans-serif;font-size:16px;min-width:24px;text-align:center;}
-.tb-label{font-size:10px;font-weight:700;color:var(--clay);text-transform:uppercase;letter-spacing:.04em;background:rgba(226,67,47,.1);padding:2px 7px;border-radius:20px;}
+/* Score entry modal: a scorecard grid — one column per set (plus Super TB
+   once sets are split), one row per pair, real number cells. */
+.score-table{display:grid;gap:10px 6px;align-items:center;}
+.score-th{font-family:'Oswald',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);text-align:center;}
+.score-team-cell{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0;}
+.score-team-cell span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.score-cell-input{width:100%;aspect-ratio:1;min-height:44px;text-align:center;font-family:'Oswald',sans-serif;font-size:19px;font-weight:600;border:2px solid var(--line);border-radius:12px;background:var(--panel-2);color:var(--text);padding:0;}
+.score-cell-input:focus{border-color:var(--accent);outline:none;}
+.score-cell-input.tb{border-color:rgba(226,67,47,.4);}
+.score-cell-input.tb:focus{border-color:var(--clay);}
+.score-row-divider{border-top:1px dashed var(--line);margin:2px 0;}
+.score-warnings{margin-top:10px;display:flex;flex-direction:column;gap:2px;}
+.score-confirm-btn{width:100%;margin-top:12px;padding:14px;border-radius:999px;font-size:14px;}
 
 .selection-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 @media (max-width:640px){.selection-grid{grid-template-columns:1fr;}}
@@ -273,9 +272,8 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
   .rubber-row .score-summary-wrap{order:2;padding-top:4px;border-top:1px dashed var(--line);}
   .modal-backdrop{padding:12px;}
   .modal-box{padding:18px 16px;}
-  .score-pick-btn,.tb-step-btn{width:38px;height:38px;}
-  .score-side-row{flex-wrap:wrap;}
-  .score-pick-row{justify-content:center;width:100%;}
+  .score-table{--score-col-w:42px;gap:8px 4px;}
+  .score-cell-input{font-size:17px;}
   /* Each seed row packs two player <select>s beside a label — long player
      names push their intrinsic width past the screen since flex items
      don't shrink below content size by default. Stack them instead of
