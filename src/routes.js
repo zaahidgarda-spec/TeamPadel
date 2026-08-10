@@ -959,6 +959,60 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock", requireAd
   res.json({ ok: true });
 });
 
+// Swaps one player out of an already-submitted line-up without reopening
+// the whole selection — for when someone drops out after the team's
+// pairs are locked in (real padel: an injury or a no-show the same
+// night). The incoming player can be anyone else already on the team's
+// roster, or a brand-new name, which also permanently adds them to the
+// roster the same way the admin's "add player" flow does.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
+
+  const u = req.session.user;
+  const ownerHere = isOwnerSession(req);
+  if (!ownerHere && (!u || u.leagueId !== league.id)) return res.status(401).json({ error: "Not logged in." });
+  const side = ownerHere || u.role === "admin" ? req.body.side : u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
+  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
+  if (f.finalized) return res.status(400).json({ error: "This fixture is finalized — ask the admin to unlock it first." });
+
+  const selKey = side === "A" ? "selectionA" : "selectionB";
+  const sel = f[selKey];
+  if (!sel.submitted) return res.status(400).json({ error: "Submit your line-up before substituting a player." });
+
+  const teamId = side === "A" ? f.teamA : f.teamB;
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+
+  const { outPlayerId, inPlayerId, newPlayerName } = req.body || {};
+  const usedIds = new Set(sel.pairs.flat().filter(Boolean));
+  if (!outPlayerId || !usedIds.has(outPlayerId)) return res.status(400).json({ error: "Choose who's coming out." });
+
+  let incomingId = inPlayerId;
+  if (!incomingId) {
+    const name = (newPlayerName || "").trim();
+    if (!name) return res.status(400).json({ error: "Enter the substitute's name, or choose an existing player." });
+    incomingId = logic.uid();
+    team.players.push({ id: incomingId, name });
+  } else {
+    if (!team.players.some((p) => p.id === incomingId)) return res.status(400).json({ error: "Unknown player." });
+    if (usedIds.has(incomingId)) return res.status(400).json({ error: "That player is already in this line-up." });
+  }
+
+  sel.pairs = sel.pairs.map((pair) => pair.map((pid) => (pid === outPlayerId ? incomingId : pid)));
+
+  const outName = (team.players.find((p) => p.id === outPlayerId) || {}).name || "A player";
+  const inName = (team.players.find((p) => p.id === incomingId) || {}).name || "Substitute";
+  const label = fixtureLabel(league, f);
+  const oppTeamId = side === "A" ? f.teamB : f.teamA;
+  notify(league, oppTeamId, "selection", `${team.name} made a substitution for ${label}: ${inName} is in for ${outName}.`);
+
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, pairs: sel.pairs });
+});
+
 router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);

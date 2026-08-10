@@ -1259,6 +1259,7 @@ function selectionReveal(f, team, sel, side) {
     html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesGoldHtml(team, pair)}</span></div>`;
   });
   div.innerHTML = html;
+  const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
   if (myRole === "admin") {
     const reset = document.createElement("button");
     reset.className = "link"; reset.style.marginTop = "6px"; reset.textContent = "Reset lineup";
@@ -1270,6 +1271,12 @@ function selectionReveal(f, team, sel, side) {
       } catch (e) { alert(e.message); }
     };
     div.appendChild(reset);
+  }
+  if (canEdit && !f.finalized) {
+    const sub = document.createElement("button");
+    sub.className = "link"; sub.style.marginTop = "6px"; sub.style.marginLeft = myRole === "admin" ? "12px" : "0"; sub.textContent = "Substitute a player";
+    sub.onclick = () => openSubModal(f, team, side, sel);
+    div.appendChild(sub);
   }
   return div;
 }
@@ -1360,6 +1367,12 @@ function selectionForm(f, team, side) {
       unlock.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock`, { method: "POST", body: { side } }); await refreshLeague(); renderAll(); };
       div.appendChild(unlock);
     }
+    if (!f.finalized) {
+      const sub = document.createElement("button");
+      sub.className = "link"; sub.style.marginTop = "6px"; sub.style.marginLeft = myRole === "admin" ? "12px" : "0"; sub.textContent = "Substitute a player";
+      sub.onclick = () => openSubModal(f, team, side, sel);
+      div.appendChild(sub);
+    }
   } else {
     const err = document.createElement("div"); err.className = "error";
     const btn = document.createElement("button");
@@ -1381,6 +1394,58 @@ function selectionForm(f, team, side) {
   }
   return div;
 }
+// Swaps one player out of an already-locked-in line-up — for when someone
+// drops out after selection closes. Staged locally like the score modal;
+// only committed to the server on Confirm.
+function openSubModal(f, team, side, sel) {
+  const state = { outPlayerId: "", mode: "existing", inPlayerId: "", newName: "" };
+  el("sub-modal-title").textContent = "Substitute a player — " + team.name;
+  el("sub-modal-error").textContent = "";
+  const usedIds = new Set(sel.pairs.flat().filter(Boolean));
+  const usedPlayers = Array.from(usedIds).map((id) => playerById(team, id)).filter(Boolean);
+  const availablePlayers = team.players.filter((p) => !usedIds.has(p.id));
+  function render() {
+    const body = el("sub-modal-body");
+    let html = `<div class="row" style="flex-direction:column;align-items:stretch;gap:10px;">`;
+    html += `<label class="note">Player going out<select id="sub-out-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${usedPlayers.map((p) => `<option value="${p.id}" ${state.outPlayerId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>`;
+    html += `<label class="note">Bringing in<select id="sub-mode-select" style="width:100%;margin-top:4px;">
+      <option value="existing" ${state.mode === "existing" ? "selected" : ""}>An existing player on this team</option>
+      <option value="new" ${state.mode === "new" ? "selected" : ""}>A new player</option>
+    </select></label>`;
+    if (state.mode === "existing") {
+      html += `<label class="note">Player coming in<select id="sub-in-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${availablePlayers.map((p) => `<option value="${p.id}" ${state.inPlayerId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>`;
+    } else {
+      html += `<label class="note">New player's name<input type="text" id="sub-new-name" value="${escapeHtml(state.newName)}" placeholder="Full name" style="width:100%;margin-top:4px;"></label>`;
+    }
+    html += `</div>`;
+    body.innerHTML = html;
+    el("sub-out-select").onchange = (e) => { state.outPlayerId = e.target.value; };
+    el("sub-mode-select").onchange = (e) => { state.mode = e.target.value; render(); };
+    if (state.mode === "existing") el("sub-in-select").onchange = (e) => { state.inPlayerId = e.target.value; };
+    else el("sub-new-name").oninput = (e) => { state.newName = e.target.value; };
+  }
+  render();
+  el("sub-modal-backdrop").classList.add("open");
+  el("sub-modal-save").onclick = async () => {
+    if (!state.outPlayerId) { el("sub-modal-error").textContent = "Choose who's coming out."; return; }
+    const body = { side, outPlayerId: state.outPlayerId };
+    if (state.mode === "existing") {
+      if (!state.inPlayerId) { el("sub-modal-error").textContent = "Choose who's coming in."; return; }
+      body.inPlayerId = state.inPlayerId;
+    } else {
+      if (!state.newName.trim()) { el("sub-modal-error").textContent = "Enter the new player's name."; return; }
+      body.newPlayerName = state.newName.trim();
+    }
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/substitute`, { method: "POST", body });
+      el("sub-modal-backdrop").classList.remove("open");
+      await refreshLeague(); renderAll();
+    } catch (e) { el("sub-modal-error").textContent = e.message; }
+  };
+}
+el("sub-modal-close").onclick = () => el("sub-modal-backdrop").classList.remove("open");
+el("sub-modal-cancel").onclick = () => el("sub-modal-backdrop").classList.remove("open");
+el("sub-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "sub-modal-backdrop") el("sub-modal-backdrop").classList.remove("open"); });
 
 /* ---------- Fixtures (read-only) ---------- */
 
