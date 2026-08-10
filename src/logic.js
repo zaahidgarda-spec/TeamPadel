@@ -324,6 +324,19 @@ function winStreaks(league) {
     .sort((a, b) => b.streak - a.streak);
 }
 
+// A "night" is every fixture sharing the same round (regular season) or the
+// same knockout stage (semis/final/position playoffs) — teams play all of
+// those together on one night. A night counts as played once every fixture
+// in it is finalized.
+function nightsPlayed(league) {
+  const groups = {};
+  allFixturesOf(league).forEach((f) => {
+    const key = f.stage === "regular" ? "r" + f.round : f.stage;
+    (groups[key] || (groups[key] = [])).push(f);
+  });
+  return Object.values(groups).filter((g) => g.every((f) => f.finalized)).length;
+}
+
 function computeLeagueStats(league) {
   const allF = allFixturesOf(league);
   const finalized = allF.filter((f) => f.finalized);
@@ -339,7 +352,7 @@ function computeLeagueStats(league) {
     totals: {
       teams: league.teams.length,
       players: league.teams.reduce((sum, t) => sum + t.players.length, 0),
-      matchesPlayed: finalized.length,
+      nightsPlayed: nightsPlayed(league),
       totalRubbers,
       totalTiebreaks,
     },

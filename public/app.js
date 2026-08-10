@@ -2600,7 +2600,7 @@ async function renderStats() {
   el("stats-totals").innerHTML = `
     <div class="stat-tile"><div class="stat-num">${t.teams}</div><div class="stat-lbl">Teams</div></div>
     <div class="stat-tile"><div class="stat-num">${t.players}</div><div class="stat-lbl">Players</div></div>
-    <div class="stat-tile"><div class="stat-num">${t.matchesPlayed}</div><div class="stat-lbl">Nights played</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.nightsPlayed}</div><div class="stat-lbl">Nights played</div></div>
     <div class="stat-tile"><div class="stat-num">${t.totalRubbers}</div><div class="stat-lbl">Matches played</div></div>
     <div class="stat-tile"><div class="stat-num">${t.totalTiebreaks}</div><div class="stat-lbl">Super tie-breaks</div></div>
   `;
