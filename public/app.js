@@ -121,6 +121,7 @@ function leagueCardHtml(l) {
   </div>`;
 }
 function renderHub() {
+  renderInterestLeagueOptions();
   const list = el("league-list");
   list.innerHTML = "";
   if (leaguesIndex.length === 0) { list.innerHTML = '<p class="empty">No leagues yet — create one above.</p>'; return; }
@@ -169,6 +170,33 @@ el("create-league-btn").onclick = async () => {
 };
 el("back-to-hub").onclick = async () => { leaguesIndex = await api("/leagues").catch(() => leaguesIndex); showHub(); };
 
+/* ---------- "Interested in joining a league?" signup form ---------- */
+
+function renderInterestLeagueOptions() {
+  const select = el("interest-league");
+  const current = select.value;
+  select.innerHTML = '<option value="">Which league?</option>' +
+    leaguesIndex.map((l) => `<option value="${escapeHtml(l.name)}">${escapeHtml(l.name)}</option>`).join("") +
+    '<option value="Not sure / new league">Not sure / new league</option>';
+  select.value = current;
+}
+el("interest-submit-btn").onclick = async () => {
+  const name = el("interest-name").value.trim();
+  const contactNumber = el("interest-contact").value.trim();
+  const email = el("interest-email").value.trim();
+  const playtomicLevel = el("interest-playtomic-level").value.trim();
+  const league_ = el("interest-league").value;
+  const joinAs = el("interest-join-as").value;
+  el("interest-error").textContent = "";
+  el("interest-success").style.display = "none";
+  try {
+    await api("/interest", { method: "POST", body: { name, contactNumber, email, playtomicLevel, league: league_, joinAs } });
+    el("interest-name").value = ""; el("interest-contact").value = ""; el("interest-email").value = "";
+    el("interest-playtomic-level").value = ""; el("interest-league").value = ""; el("interest-join-as").value = "";
+    el("interest-success").style.display = "block";
+  } catch (e) { el("interest-error").textContent = e.message; }
+};
+
 /* ---------- Hub tabs (Leagues / Admin) ---------- */
 
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
@@ -199,7 +227,33 @@ async function refreshOwnerStatus() {
   isOwner = !!status.isOwner;
   el("create-league-card").style.display = isOwner ? "block" : "none";
   el("owner-login-card").style.display = isOwner ? "none" : "block";
+  el("interest-signups-card").style.display = isOwner ? "block" : "none";
+  if (isOwner) renderInterestSignups();
   renderHub();
+}
+async function renderInterestSignups() {
+  const signups = await api("/interest").catch(() => []);
+  const c = el("interest-signups-list");
+  if (signups.length === 0) { c.innerHTML = '<p class="empty">No signups yet.</p>'; return; }
+  c.innerHTML = signups.map((s) => `
+    <div class="notif-row" data-id="${s.id}">
+      <div>
+        <strong>${escapeHtml(s.name)}</strong> — ${s.joinAs === "team" ? "Full team" : "Individual player"}${s.league ? " · " + escapeHtml(s.league) : ""}
+        <div class="note">${escapeHtml(s.contactNumber || "—")} · ${escapeHtml(s.email || "—")}${s.playtomicLevel ? " · Playtomic " + escapeHtml(s.playtomicLevel) : ""}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <time class="notif-time">${new Date(s.createdAt).toLocaleString()}</time>
+        <button class="link interest-remove-btn" type="button">Remove</button>
+      </div>
+    </div>
+  `).join("");
+  c.querySelectorAll(".interest-remove-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.closest(".notif-row").dataset.id;
+      await api(`/interest/${id}`, { method: "DELETE" }).catch(() => {});
+      renderInterestSignups();
+    };
+  });
 }
 el("owner-login-btn").onclick = async () => {
   const username = el("owner-username").value, pin = el("owner-pin").value;

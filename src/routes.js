@@ -303,6 +303,38 @@ router.get("/leagues", (req, res) => {
   res.json(enriched);
 });
 
+/* ---------- "Interested to join a league" signups ---------- */
+
+router.post("/interest", (req, res) => {
+  const { name, contactNumber, email, playtomicLevel, league, joinAs } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+  if (!contactNumber || !contactNumber.trim()) return res.status(400).json({ error: "Contact number is required." });
+  if (!email || !email.includes("@")) return res.status(400).json({ error: "A valid email is required." });
+  if (joinAs !== "team" && joinAs !== "individual") return res.status(400).json({ error: "Choose team or individual player." });
+  const signups = store.getSignups();
+  signups.unshift({
+    id: logic.uid(),
+    name: name.trim(),
+    contactNumber: contactNumber.trim(),
+    email: email.trim(),
+    playtomicLevel: (playtomicLevel || "").trim(),
+    league: (league || "").trim(),
+    joinAs,
+    createdAt: Date.now(),
+  });
+  store.saveSignups(signups);
+  res.json({ ok: true });
+});
+router.get("/interest", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  res.json(store.getSignups());
+});
+router.delete("/interest/:id", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  store.saveSignups(store.getSignups().filter((x) => x.id !== req.params.id));
+  res.json({ ok: true });
+});
+
 router.post("/owner/login", loginLimiter, (req, res) => {
   if (!OWNER_USERNAME || !OWNER_PIN) return res.status(500).json({ error: "Admin login isn't configured on this server yet — set OWNER_USERNAME and OWNER_PASSCODE." });
   const { username, pin } = req.body || {};

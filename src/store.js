@@ -65,6 +65,7 @@ async function init() {
     const league = await redis.get("league-" + entry.id);
     if (league) cache.set("league-" + entry.id, league);
   }
+  cache.set("interest-signups", (await redis.get("interest-signups")) || []);
 }
 
 // Lets the server wait for any in-flight writes before exiting on
@@ -107,6 +108,19 @@ function deleteLeague(id) {
   if (fs.existsSync(p)) fs.unlinkSync(p);
 }
 
+function getSignups() {
+  if (useRedis) return cache.get("interest-signups") || [];
+  return readJsonFile("interest-signups", []);
+}
+function saveSignups(signups) {
+  if (useRedis) {
+    cache.set("interest-signups", signups);
+    persist("interest-signups", signups);
+    return;
+  }
+  writeJsonFile("interest-signups", signups);
+}
+
 module.exports = {
   init,
   flush,
@@ -115,4 +129,6 @@ module.exports = {
   getLeague,
   saveLeague,
   deleteLeague,
+  getSignups,
+  saveSignups,
 };
