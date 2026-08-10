@@ -1350,7 +1350,6 @@ function openSubModal(f, team, side, sel) {
   el("sub-modal-error").textContent = "";
   const usedIds = new Set(sel.pairs.flat().filter(Boolean));
   const usedPlayers = Array.from(usedIds).map((id) => playerById(team, id)).filter(Boolean);
-  const availablePlayers = team.players.filter((p) => !usedIds.has(p.id));
   function render() {
     const body = el("sub-modal-body");
     let html = `<div class="row" style="flex-direction:column;align-items:stretch;gap:10px;">`;
@@ -1360,13 +1359,23 @@ function openSubModal(f, team, side, sel) {
       <option value="new" ${state.mode === "new" ? "selected" : ""}>A new player</option>
     </select></label>`;
     if (state.mode === "existing") {
-      html += `<label class="note">Player coming in<select id="sub-in-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${availablePlayers.map((p) => `<option value="${p.id}" ${state.inPlayerId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>`;
+      // Anyone else already playing tonight can still come in — that's a
+      // deliberate double-up (one player covering two pairs), not a
+      // mistake, so it's offered rather than hidden — just labelled
+      // clearly so it's an informed choice. The one exception: whoever's
+      // already partnering the outgoing player can't come in for them —
+      // that'd pair that seed with itself.
+      const partnersOfOut = new Set(
+        sel.pairs.filter((pair) => pair.includes(state.outPlayerId)).map((pair) => pair.find((pid) => pid !== state.outPlayerId)).filter(Boolean)
+      );
+      const inOptions = team.players.filter((p) => p.id !== state.outPlayerId && !partnersOfOut.has(p.id));
+      html += `<label class="note">Player coming in<select id="sub-in-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${inOptions.map((p) => `<option value="${p.id}" ${state.inPlayerId === p.id ? "selected" : ""}>${escapeHtml(p.name)}${usedIds.has(p.id) ? " (double up)" : ""}</option>`).join("")}</select></label>`;
     } else {
       html += `<label class="note">New player's name<input type="text" id="sub-new-name" value="${escapeHtml(state.newName)}" placeholder="Full name" style="width:100%;margin-top:4px;"></label>`;
     }
     html += `</div>`;
     body.innerHTML = html;
-    el("sub-out-select").onchange = (e) => { state.outPlayerId = e.target.value; };
+    el("sub-out-select").onchange = (e) => { state.outPlayerId = e.target.value; state.inPlayerId = ""; render(); };
     el("sub-mode-select").onchange = (e) => { state.mode = e.target.value; render(); };
     if (state.mode === "existing") el("sub-in-select").onchange = (e) => { state.inPlayerId = e.target.value; };
     else el("sub-new-name").oninput = (e) => { state.newName = e.target.value; };

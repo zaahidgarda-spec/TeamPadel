@@ -959,7 +959,16 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req,
     team.players.push({ id: incomingId, name });
   } else {
     if (!team.players.some((p) => p.id === incomingId)) return res.status(400).json({ error: "Unknown player." });
-    if (usedIds.has(incomingId)) return res.status(400).json({ error: "That player is already in this line-up." });
+    if (incomingId === outPlayerId) return res.status(400).json({ error: "Choose someone other than who's coming out." });
+    // Someone already playing tonight is allowed in — a deliberate
+    // double-up, same as the main selection form supports — so this
+    // isn't rejected, just surfaced clearly in the UI's option label.
+    // But if they're already the outgoing player's partner in some seed,
+    // swapping would pair them with themselves in that seed — that's
+    // never valid, double-up or not.
+    if (sel.pairs.some((pair) => pair.includes(outPlayerId) && pair.includes(incomingId))) {
+      return res.status(400).json({ error: "That player already partners the outgoing player — pick someone else, or a different seed." });
+    }
   }
 
   sel.pairs = sel.pairs.map((pair) => pair.map((pid) => (pid === outPlayerId ? incomingId : pid)));
