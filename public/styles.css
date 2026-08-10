@@ -200,6 +200,16 @@ table.log tr.rank1 td{background:rgba(37,99,235,.06);}
 .league-status-active{color:var(--accent);border-color:var(--accent);background:rgba(37,99,235,.08);}
 .league-card-logos{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
 .league-card-meta{display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text-dim);}
+.league-card-logo{height:24px;width:auto;display:block;}
+
+/* Branded leagues (Premier League / Business Class) get their own logo and
+   a gold-shaded treatment so they read as distinct from generic leagues. */
+header.site-header.league-theme-premier,
+header.site-header.league-theme-business{background:linear-gradient(180deg,rgba(212,175,55,.14),rgba(212,175,55,0) 75%);margin:0 -20px 24px;padding-left:20px;padding-right:20px;border-bottom-color:#D4AF37;}
+.league-card.league-theme-premier,
+.league-card.league-theme-business{border-color:#D4AF37;background:linear-gradient(165deg,rgba(212,175,55,.14),var(--panel) 60%);}
+.league-card.league-theme-premier:hover,
+.league-card.league-theme-business:hover{border-color:#D4AF37;}
 .league-copy-codes-btn{margin-top:10px;}
 
 .news-post{border-bottom:1px solid var(--line);padding:14px 2px;}

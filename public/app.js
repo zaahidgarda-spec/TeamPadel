@@ -25,6 +25,15 @@ function fmtTime(hhmm) {
 }
 function teamById(id) { return league.teams.find((t) => t.id === id); }
 function playerById(team, id) { return team ? team.players.find((p) => p.id === id) : null; }
+// Matches a league's name against the two branded leagues (Premier League,
+// Business Class) so their header/logo/card styling stays in sync wherever
+// the league name is edited — no separate "brand" field to keep up to date.
+function leagueBrand(name) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("premier league")) return { logo: "/images/league-premier-league.png", theme: "league-theme-premier", alt: "Team Padel Premier League" };
+  if (n.includes("business class")) return { logo: "/images/league-business-class.png", theme: "league-theme-business", alt: "Team Padel Business Class" };
+  return null;
+}
 function avatarHtml(t) {
   if (t && t.logo) return `<img class="avatar" src="${t.logo}" alt="">`;
   const initial = t ? t.name.charAt(0).toUpperCase() : "?";
@@ -94,9 +103,13 @@ function leagueCardHtml(l) {
   const logos = shown.length
     ? `<div class="league-card-logos">${shown.map((t) => avatarHtml(t)).join("")}${overflow > 0 ? `<span class="avatar-fb">+${overflow}</span>` : ""}</div>`
     : "";
-  return `<div class="league-card" data-id="${l.id}">
+  const brand = leagueBrand(l.name);
+  const nameHtml = brand
+    ? `<img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">`
+    : `<span class="league-card-name">${escapeHtml(l.name)}</span>`;
+  return `<div class="league-card${brand ? " " + brand.theme : ""}" data-id="${l.id}">
     <div class="league-card-top">
-      <span class="league-card-name">${escapeHtml(l.name)}</span>
+      ${nameHtml}
       <span class="tag league-status-${l.status}">${statusLabel}</span>
     </div>
     ${logos}
@@ -417,6 +430,12 @@ function renderAll() {
   syncViewingKey();
   el("league-name").value = league.name;
   el("league-name").disabled = myRole !== "admin";
+  const brand = leagueBrand(league.name);
+  const brandHeader = document.querySelector("#view-league .site-header");
+  brandHeader.classList.remove("league-theme-premier", "league-theme-business");
+  const brandLogo = el("league-brand-logo");
+  if (brand) { brandHeader.classList.add(brand.theme); brandLogo.src = brand.logo; brandLogo.alt = brand.alt; }
+  else { brandLogo.src = "/images/logo-dark.png"; brandLogo.alt = "Team Padel"; }
   const status = league.status;
   const auth = el("auth-status");
   if (myRole === "admin") auth.textContent = "Signed in as Admin";
