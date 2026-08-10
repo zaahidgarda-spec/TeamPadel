@@ -146,6 +146,8 @@ ul.plain li:last-child{border-bottom:none;}
 .score-cell-input:focus{border-color:var(--accent);outline:none;}
 .score-cell-input.tb{border-color:rgba(226,67,47,.4);}
 .score-cell-input.tb:focus{border-color:var(--clay);}
+.score-cell-input.won{background:rgba(37,99,235,.14);border-color:var(--accent);}
+.score-cell-input.won.tb{background:rgba(226,67,47,.14);}
 .score-row-divider{border-top:1px dashed var(--line);margin:2px 0;}
 .score-warnings{margin-top:10px;display:flex;flex-direction:column;gap:2px;}
 .score-confirm-btn{width:100%;margin-top:12px;padding:14px;border-radius:999px;font-size:14px;}

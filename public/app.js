@@ -1854,17 +1854,20 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     const body = el("score-modal-body");
     const tb = needsTb();
     const cols = tb ? 4 : 3;
+    const w0 = setWinnerClient(state.sets[0]), w1 = setWinnerClient(state.sets[1]);
+    const wtb = tb ? tiebreakWinnerClient(state.tb) : null;
+    const winCls = (won) => won ? " won" : "";
     let html = `<div class="score-table" style="grid-template-columns:1fr repeat(${cols - 1},var(--score-col-w,48px));">`;
     html += `<div class="score-th"></div><div class="score-th">Set 1</div><div class="score-th">Set 2</div>${tb ? '<div class="score-th">Super TB</div>' : ""}`;
     html += `<div class="score-team-cell">${avatarHtml(teamA)}<span>${nameA}</span></div>`;
-    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="0" data-side="0" value="${state.sets[0][0] === null ? "" : state.sets[0][0]}">`;
-    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="1" data-side="0" value="${state.sets[1][0] === null ? "" : state.sets[1][0]}">`;
-    if (tb) html += `<input class="score-cell-input tb" type="text" inputmode="numeric" data-tb="0" value="${state.tb[0]}">`;
+    html += `<input class="score-cell-input${winCls(w0 === "A")}" type="text" inputmode="numeric" data-set="0" data-side="0" value="${state.sets[0][0] === null ? "" : state.sets[0][0]}">`;
+    html += `<input class="score-cell-input${winCls(w1 === "A")}" type="text" inputmode="numeric" data-set="1" data-side="0" value="${state.sets[1][0] === null ? "" : state.sets[1][0]}">`;
+    if (tb) html += `<input class="score-cell-input tb${winCls(wtb === "A")}" type="text" inputmode="numeric" data-tb="0" value="${state.tb[0]}">`;
     html += `<div class="score-row-divider" style="grid-column:1/-1;"></div>`;
     html += `<div class="score-team-cell">${avatarHtml(teamB)}<span>${nameB}</span></div>`;
-    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="0" data-side="1" value="${state.sets[0][1] === null ? "" : state.sets[0][1]}">`;
-    html += `<input class="score-cell-input" type="text" inputmode="numeric" data-set="1" data-side="1" value="${state.sets[1][1] === null ? "" : state.sets[1][1]}">`;
-    if (tb) html += `<input class="score-cell-input tb" type="text" inputmode="numeric" data-tb="1" value="${state.tb[1]}">`;
+    html += `<input class="score-cell-input${winCls(w0 === "B")}" type="text" inputmode="numeric" data-set="0" data-side="1" value="${state.sets[0][1] === null ? "" : state.sets[0][1]}">`;
+    html += `<input class="score-cell-input${winCls(w1 === "B")}" type="text" inputmode="numeric" data-set="1" data-side="1" value="${state.sets[1][1] === null ? "" : state.sets[1][1]}">`;
+    if (tb) html += `<input class="score-cell-input tb${winCls(wtb === "B")}" type="text" inputmode="numeric" data-tb="1" value="${state.tb[1]}">`;
     html += `</div>`;
     const warnings = [0, 1]
       .filter((si) => isValidSetClient(state.sets[si][0], state.sets[si][1]) === false)
