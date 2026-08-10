@@ -303,6 +303,45 @@ router.get("/leagues", (req, res) => {
   res.json(enriched);
 });
 
+/* ---------- "Interested to join a league" signups ---------- */
+
+router.post("/interest", (req, res) => {
+  const { name, playtomicName, playtomicLevel, league, joinAs } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+  if (joinAs !== "team" && joinAs !== "individual") return res.status(400).json({ error: "Choose team or individual player." });
+  const signups = store.getSignups();
+  signups.unshift({
+    id: logic.uid(),
+    name: name.trim(),
+    playtomicName: (playtomicName || "").trim(),
+    playtomicLevel: (playtomicLevel || "").trim(),
+    league: (league || "").trim(),
+    joinAs,
+    read: false,
+    createdAt: Date.now(),
+  });
+  store.saveSignups(signups);
+  res.json({ ok: true });
+});
+router.get("/interest", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  res.json(store.getSignups());
+});
+router.post("/interest/:id/read", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const signups = store.getSignups();
+  const s = signups.find((x) => x.id === req.params.id);
+  if (!s) return res.status(404).json({ error: "Not found." });
+  s.read = true;
+  store.saveSignups(signups);
+  res.json({ ok: true });
+});
+router.delete("/interest/:id", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  store.saveSignups(store.getSignups().filter((x) => x.id !== req.params.id));
+  res.json({ ok: true });
+});
+
 router.post("/owner/login", loginLimiter, (req, res) => {
   if (!OWNER_USERNAME || !OWNER_PIN) return res.status(500).json({ error: "Admin login isn't configured on this server yet — set OWNER_USERNAME and OWNER_PASSCODE." });
   const { username, pin } = req.body || {};

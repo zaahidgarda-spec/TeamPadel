@@ -59,6 +59,26 @@
           <h2 class="section-title">Leagues</h2>
           <div id="league-list"></div>
         </div>
+        <div class="card">
+          <h2 class="section-title">Interested in joining a league?</h2>
+          <p class="note" style="margin-bottom:12px;">Tell us a bit about yourself and we'll be in touch.</p>
+          <div class="row">
+            <input type="text" id="interest-name" placeholder="Your name" style="min-width:160px;">
+            <input type="text" id="interest-playtomic-name" placeholder="Playtomic name" style="min-width:160px;">
+            <input type="text" id="interest-playtomic-level" placeholder="Playtomic level, e.g. 3.5" style="width:190px;">
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <select id="interest-league" style="min-width:200px;"><option value="">Which league?</option></select>
+            <select id="interest-join-as" style="min-width:170px;">
+              <option value="">Joining as…</option>
+              <option value="team">Full team</option>
+              <option value="individual">Individual player</option>
+            </select>
+            <button class="primary" id="interest-submit-btn">Submit interest</button>
+          </div>
+          <div class="error" id="interest-error"></div>
+          <p class="note" id="interest-success" style="display:none;margin-top:10px;color:var(--accent);">Thanks — we'll be in touch!</p>
+        </div>
       </section>
 
       <section class="hub-view" id="hub-view-captain">
@@ -92,6 +112,10 @@
             <button class="primary" id="create-league-btn">Create league</button>
           </div>
           <p class="note" style="margin-top:10px;">You'll register a password for this email the first time you log in.</p>
+        </div>
+        <div class="card" id="interest-signups-card" style="display:none;">
+          <h2 class="section-title">League interest signups</h2>
+          <div id="interest-signups-list"></div>
         </div>
       </section>
     </section>
