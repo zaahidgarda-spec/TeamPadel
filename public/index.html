@@ -48,10 +48,13 @@
         <h1 class="h1 h1-sub">Leagues</h1>
       </header>
 
-      <nav class="tabs">
-        <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
-        <button class="hub-tab-btn" data-hubview="captain">Captain</button>
-        <button class="hub-tab-btn" data-hubview="admin">Admin</button>
+      <nav class="tabs" style="width:100%;justify-content:space-between;">
+        <div style="display:flex;gap:4px;">
+          <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
+          <button class="hub-tab-btn" data-hubview="captain">Captain</button>
+          <button class="hub-tab-btn" data-hubview="admin">Admin</button>
+        </div>
+        <button class="hub-tab-btn" data-hubview="join">Join a league</button>
       </nav>
 
       <section class="hub-view active" id="hub-view-leagues">
@@ -59,6 +62,9 @@
           <h2 class="section-title">Leagues</h2>
           <div id="league-list"></div>
         </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-join">
         <div class="card">
           <h2 class="section-title">Interested in joining a league?</h2>
           <p class="note" style="margin-bottom:12px;">Tell us a bit about yourself and we'll be in touch.</p>
