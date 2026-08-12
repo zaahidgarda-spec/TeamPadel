@@ -290,20 +290,16 @@ function syncPlayoffs(league) {
 
 router.get("/leagues", (req, res) => {
   const index = store.getIndex();
-  const enriched = index
-    .map((entry) => {
-      const league = store.getLeague(entry.id);
-      return {
-        ...entry,
-        status: league ? leagueStatus(league) : "setup",
-        teamCount: league ? league.teams.length : 0,
-        // Just enough for a logo strip on the league card — never codes/emails.
-        teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
-      };
-    })
-    // Leagues still being set up aren't ready for the public — only the
-    // site owner (who's the one setting them up) should see them listed.
-    .filter((l) => l.status === "active" || isOwnerSession(req));
+  const enriched = index.map((entry) => {
+    const league = store.getLeague(entry.id);
+    return {
+      ...entry,
+      status: league ? leagueStatus(league) : "setup",
+      teamCount: league ? league.teams.length : 0,
+      // Just enough for a logo strip on the league card — never codes/emails.
+      teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
+    };
+  });
   res.json(enriched);
 });
 

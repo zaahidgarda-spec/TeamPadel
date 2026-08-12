@@ -96,6 +96,9 @@ function showHub() {
 }
 function leagueCardHtml(l) {
   const statusLabel = l.status === "active" ? "Active" : "In setup";
+  // Setup-phase leagues are a teaser for the public — visible, but only the
+  // owner (who's actually building it) can click through.
+  const locked = l.status === "setup" && !isOwner;
   const teams = l.teams || [];
   const maxShown = 8;
   const shown = teams.slice(0, maxShown);
@@ -107,7 +110,7 @@ function leagueCardHtml(l) {
   const nameHtml = brand
     ? `<img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">`
     : `<span class="league-card-name">${escapeHtml(l.name)}</span>`;
-  return `<div class="league-card${brand ? " " + brand.theme : ""}" data-id="${l.id}">
+  return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}>
     <div class="league-card-top">
       ${nameHtml}
       <span class="tag league-status-${l.status}">${statusLabel}</span>
@@ -117,6 +120,7 @@ function leagueCardHtml(l) {
       <span>${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span>
       <span>Created ${new Date(l.createdAt).toLocaleDateString()}</span>
     </div>
+    ${locked ? '<p class="note">Coming soon</p>' : ""}
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
 }
@@ -139,7 +143,7 @@ function renderHub() {
     list.appendChild(section);
   });
   list.querySelectorAll(".league-card").forEach((card) => {
-    card.onclick = () => openLeague(card.dataset.id);
+    if (!card.dataset.locked) card.onclick = () => openLeague(card.dataset.id);
     const copyBtn = card.querySelector(".league-copy-codes-btn");
     if (copyBtn) {
       copyBtn.onclick = async (e) => {
@@ -224,16 +228,11 @@ el("hub-captain-login-btn").onclick = async () => {
 
 async function refreshOwnerStatus() {
   const status = await api("/owner/me").catch(() => ({ isOwner: false }));
-  const wasOwner = isOwner;
   isOwner = !!status.isOwner;
   el("create-league-card").style.display = isOwner ? "block" : "none";
   el("owner-login-card").style.display = isOwner ? "none" : "block";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   if (isOwner) renderInterestSignups();
-  // Leagues still in setup are only included in the API response for the
-  // owner — re-fetch on a login/logout transition so they show up (or
-  // disappear) without needing a page reload.
-  if (isOwner !== wasOwner) leaguesIndex = await api("/leagues").catch(() => leaguesIndex);
   renderHub();
 }
 async function renderInterestSignups() {
