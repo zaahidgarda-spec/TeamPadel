@@ -198,6 +198,7 @@ table.log tr.rank1 td{background:rgba(37,99,235,.06);}
 .league-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:border-color .15s ease,transform .15s ease;box-shadow:0 1px 3px rgba(18,32,58,.06);}
 .league-card:hover{border-color:var(--accent);transform:translateY(-2px);}
 .league-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.league-card-top .tag{white-space:nowrap;flex-shrink:0;}
 .league-card-name{font-family:'Oswald',sans-serif;font-size:17px;text-transform:uppercase;letter-spacing:.01em;}
 .league-status-active{color:var(--accent);border-color:var(--accent);background:rgba(37,99,235,.08);}
 .league-card-logos{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}

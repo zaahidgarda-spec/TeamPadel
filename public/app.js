@@ -95,10 +95,10 @@ function showHub() {
   renderHub();
 }
 function leagueCardHtml(l) {
-  const statusLabel = l.status === "active" ? "Active" : "In setup";
   // Setup-phase leagues are a teaser for the public — visible, but only the
   // owner (who's actually building it) can click through.
   const locked = l.status === "setup" && !isOwner;
+  const statusLabel = l.status === "active" ? "Active" : locked ? "Coming soon" : "In setup";
   const teams = l.teams || [];
   const maxShown = 8;
   const shown = teams.slice(0, maxShown);
@@ -120,7 +120,6 @@ function leagueCardHtml(l) {
       <span>${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span>
       <span>Created ${new Date(l.createdAt).toLocaleDateString()}</span>
     </div>
-    ${locked ? '<p class="note">Coming soon</p>' : ""}
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
 }
@@ -132,7 +131,7 @@ function renderHub() {
   const sorted = leaguesIndex.slice().sort((a, b) => b.createdAt - a.createdAt);
   const groups = [
     { key: "active", label: "Active leagues" },
-    { key: "setup", label: "In setup" },
+    { key: "setup", label: isOwner ? "In setup" : "Coming soon" },
   ];
   groups.forEach((g) => {
     const items = sorted.filter((l) => l.status === g.key);
