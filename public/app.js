@@ -224,11 +224,16 @@ el("hub-captain-login-btn").onclick = async () => {
 
 async function refreshOwnerStatus() {
   const status = await api("/owner/me").catch(() => ({ isOwner: false }));
+  const wasOwner = isOwner;
   isOwner = !!status.isOwner;
   el("create-league-card").style.display = isOwner ? "block" : "none";
   el("owner-login-card").style.display = isOwner ? "none" : "block";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   if (isOwner) renderInterestSignups();
+  // Leagues still in setup are only included in the API response for the
+  // owner — re-fetch on a login/logout transition so they show up (or
+  // disappear) without needing a page reload.
+  if (isOwner !== wasOwner) leaguesIndex = await api("/leagues").catch(() => leaguesIndex);
   renderHub();
 }
 async function renderInterestSignups() {
