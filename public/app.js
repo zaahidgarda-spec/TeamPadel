@@ -1153,7 +1153,7 @@ function timeSlotPanel(f, teamA, teamB) {
   title.textContent = "Court & playing order";
   wrap.appendChild(title);
 
-  const seedLabel = (i) => playerNamesForGold(teamA, f.selectionA.pairs[i]) + " vs " + playerNamesForGold(teamB, f.selectionB.pairs[i]);
+  const seedLabel = (i) => "Seed " + (i + 1) + " — " + playerNamesForGold(teamA, f.selectionA.pairs[i]) + " vs " + playerNamesForGold(teamB, f.selectionB.pairs[i]);
 
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   const savedGrid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) =>
@@ -1476,7 +1476,7 @@ function courtScheduleOptions(fixtures) {
       const pairLabel = revealed
         ? playerNamesForGold(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[seed])
         : null;
-      const label = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + " — Seed " + (seed + 1) + (pairLabel ? " (" + pairLabel + ")" : "");
+      const label = "Seed " + (seed + 1) + " — " + (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + (pairLabel ? " (" + pairLabel + ")" : "");
       options.push({ fixtureId: f.id, seed, label, teamA, teamB, shortLabel: pairLabel || ("Seed " + (seed + 1)) });
     }
   });
