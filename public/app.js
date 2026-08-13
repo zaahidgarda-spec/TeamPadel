@@ -1503,6 +1503,7 @@ function renderCourtScheduleGrid(fixtures) {
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
   card.style.display = "block";
   el("court-schedule-poster-row").style.display = myRole === "admin" ? "flex" : "none";
+  el("court-schedule-generate-row").style.display = myRole === "admin" ? "flex" : "none";
 
   const round = viewingKey.round;
   const courts = league.courtCount || 4;
@@ -2371,6 +2372,13 @@ el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.r
 el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
 el("generate-results-poster-btn").onclick = () => openPosterModal("results");
 el("generate-court-schedule-poster-btn").onclick = () => openPosterModal("court-schedule");
+el("generate-court-rotation-btn").onclick = async () => {
+  if (!confirm("This fills in the court schedule for every round that hasn't been played yet, replacing anything already set for those rounds. Continue?")) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/court-schedule/generate`, { method: "POST" });
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+};
 
 /* ---------- Table ---------- */
 

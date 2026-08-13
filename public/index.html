@@ -262,6 +262,10 @@
         <div id="round-nav-fixtures"></div>
         <div class="card" id="court-schedule-card" style="display:none;margin-bottom:16px;">
           <h2 class="section-title">Court schedule</h2>
+          <div class="row" id="court-schedule-generate-row" style="display:none;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+            <p class="note" style="margin:0;">Fills every round that hasn't been played yet, spreading who gets a double court fairly across the season.</p>
+            <button class="secondary" id="generate-court-rotation-btn">Auto-fill rotation</button>
+          </div>
           <div id="court-schedule-grid"></div>
           <div class="row" id="court-schedule-poster-row" style="display:none;margin-top:12px;justify-content:flex-end;">
             <button class="secondary" id="generate-court-schedule-poster-btn">Generate poster</button>

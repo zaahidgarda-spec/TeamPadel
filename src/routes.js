@@ -824,6 +824,95 @@ function reorderCourtScheduleForFixture(league, fixture, order) {
   league.courtSchedule[fixture.round] = grid;
 }
 
+function permutations(arr) {
+  if (arr.length <= 1) return [arr];
+  const res = [];
+  arr.forEach((x, i) => {
+    permutations(arr.slice(0, i).concat(arr.slice(i + 1))).forEach((p) => res.push([x].concat(p)));
+  });
+  return res;
+}
+
+// Auto-fills the court/slot grid for every regular-season round that hasn't
+// finished yet. When there are at least 4 slots, every match gets its own
+// dedicated court across sequential turns — all 4 seeds fit as separate
+// turns, so no two of a match's rubbers ever need to share a slot. When
+// there are fewer than 4 slots, every match needs exactly one "double" slot
+// (two of its rubbers on two different courts at the same time) — which
+// slot that lands in is chosen, round by round, to keep each team's count
+// of doubles-per-slot as even as possible across the whole season. Already
+// -finalized rounds are left untouched, but their existing court schedule
+// (if any) still counts toward the running fairness tally.
+function generateSeasonCourtRotation(league) {
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  const byRound = {};
+  league.fixtures.forEach((f) => { (byRound[f.round] || (byRound[f.round] = [])).push(f); });
+  const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  const tally = {};
+  const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
+  const doublePerms = slots < 4 ? permutations(Array.from({ length: slots }, (_, i) => i)) : null;
+
+  if (!league.courtSchedule) league.courtSchedule = {};
+
+  roundNums.forEach((round) => {
+    const fixtures = byRound[round];
+    if (fixtures.every((f) => f.finalized)) {
+      getCourtGrid(league, round).forEach((row, s) => row.forEach((cell) => {
+        if (!cell) return;
+        const f = fixtures.find((x) => x.id === cell.fixtureId);
+        if (f) { teamTally(f.teamA)[s]++; teamTally(f.teamB)[s]++; }
+      }));
+      return;
+    }
+
+    const grid = emptyCourtGrid(slots, courts);
+    const courtPtr = Array(slots).fill(0);
+    const place = (slot, fixtureId, seed) => { if (courtPtr[slot] < courts) grid[slot][courtPtr[slot]++] = { fixtureId, seed }; };
+
+    if (!doublePerms) {
+      fixtures.forEach((f, i) => {
+        const court = i % courts;
+        for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][court] = { fixtureId: f.id, seed };
+        teamTally(f.teamA); teamTally(f.teamB);
+      });
+    } else {
+      let best = null;
+      doublePerms.forEach((perm) => {
+        let maxAfter = 0, sumSq = 0;
+        fixtures.forEach((f, i) => {
+          if (i >= perm.length) return;
+          const slot = perm[i];
+          [f.teamA, f.teamB].forEach((teamId) => {
+            const projected = teamTally(teamId)[slot] + 1;
+            sumSq += projected * projected;
+            maxAfter = Math.max(maxAfter, projected);
+          });
+        });
+        if (!best || maxAfter < best.maxAfter || (maxAfter === best.maxAfter && sumSq < best.sumSq)) best = { perm, maxAfter, sumSq };
+      });
+      fixtures.forEach((f, i) => {
+        const doubleSlot = i < best.perm.length ? best.perm[i] : null;
+        if (doubleSlot === null) {
+          // More matches this round than slots to double into — spread its
+          // seeds across whatever courts are free, best effort only.
+          for (let seed = 0; seed < 4; seed++) {
+            const slot = seed % slots;
+            place(slot, f.id, seed);
+          }
+          return;
+        }
+        place(doubleSlot, f.id, 0);
+        place(doubleSlot, f.id, 1);
+        const others = Array.from({ length: slots }, (_, s) => s).filter((s) => s !== doubleSlot);
+        [2, 3].forEach((seed, idx) => { if (others.length) place(others[idx % others.length], f.id, seed); });
+        teamTally(f.teamA)[doubleSlot]++; teamTally(f.teamB)[doubleSlot]++;
+      });
+    }
+
+    league.courtSchedule[round] = grid;
+  });
+}
+
 router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const courtCount = Number(req.body.courtCount);
@@ -874,6 +963,14 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", requireAdmin, (re
   league.courtSchedule[round] = grid;
   store.saveLeague(league.id, league);
   res.json({ ok: true, grid });
+});
+
+router.post("/leagues/:leagueId/court-schedule/generate", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  generateSeasonCourtRotation(league);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
 });
 
 // Admin-added extra round, beyond the auto-generated round robin. "table"
