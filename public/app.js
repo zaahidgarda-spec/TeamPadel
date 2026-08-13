@@ -1498,6 +1498,56 @@ function fixtureColor(fixtureId, fixtures) {
   const idx = fixtures.findIndex((f) => f.id === fixtureId);
   return COURT_SCHEDULE_PALETTE[(idx < 0 ? 0 : idx) % COURT_SCHEDULE_PALETTE.length];
 }
+// Counts, per team per slot, how many times that team has had a "double"
+// (two rubbers on two courts at once) across every round with a saved court
+// schedule — lets the admin see the auto-fill's rotation is actually fair
+// without checking every round by hand.
+function computeDoubleTally() {
+  const slots = league.slotCount || 3;
+  const fixturesById = {};
+  league.fixtures.forEach((f) => { fixturesById[f.id] = f; });
+  const tally = {};
+  Object.values(league.courtSchedule || {}).forEach((grid) => {
+    (grid || []).forEach((row, s) => {
+      const counts = {};
+      (row || []).forEach((cell) => { if (cell) counts[cell.fixtureId] = (counts[cell.fixtureId] || 0) + 1; });
+      Object.keys(counts).forEach((fid) => {
+        if (counts[fid] < 2) return;
+        const f = fixturesById[fid];
+        if (!f) return;
+        [f.teamA, f.teamB].forEach((teamId) => {
+          if (!tally[teamId]) tally[teamId] = Array(slots).fill(0);
+          tally[teamId][s]++;
+        });
+      });
+    });
+  });
+  return tally;
+}
+function courtBalanceStrip() {
+  const tally = computeDoubleTally();
+  const teamIds = Object.keys(tally);
+  const wrap = document.createElement("div");
+  if (teamIds.length === 0) return wrap;
+  const slots = league.slotCount || 3;
+  wrap.className = "cs-balance";
+  const title = document.createElement("h3");
+  title.className = "cs-balance-title";
+  title.textContent = "Season balance — who's had the double, by slot";
+  wrap.appendChild(title);
+  let html = `<table class="log"><thead><tr><th>Team</th>${Array.from({ length: slots }, (_, i) => `<th class="num">Slot ${i + 1}</th>`).join("")}<th class="num">Spread</th></tr></thead><tbody>`;
+  teamIds.forEach((teamId) => {
+    const team = league.teams.find((t) => t.id === teamId);
+    const counts = tally[teamId];
+    const spread = Math.max(...counts) - Math.min(...counts);
+    html += `<tr><td>${escapeHtml(team ? team.name : "?")}</td>${counts.map((v) => `<td class="num">${v}</td>`).join("")}<td class="num" style="color:${spread <= 1 ? "var(--accent)" : "var(--clay)"};">${spread}</td></tr>`;
+  });
+  html += "</tbody></table>";
+  const tableWrap = document.createElement("div");
+  tableWrap.innerHTML = html;
+  wrap.appendChild(tableWrap.firstElementChild);
+  return wrap;
+}
 function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
@@ -1558,13 +1608,47 @@ function renderCourtScheduleGrid(fixtures) {
     const th = document.createElement("th");
     th.textContent = "Match " + (s + 1);
     tr.appendChild(th);
+    // A "double" is a fixture that appears twice in this slot row — two of
+    // its rubbers running on two different courts at the same time.
+    const rowCounts = {};
+    (savedGrid[s] || []).forEach((cell) => { if (cell) rowCounts[cell.fixtureId] = (rowCounts[cell.fixtureId] || 0) + 1; });
+    const isDouble = (cell) => !!(cell && rowCounts[cell.fixtureId] > 1);
+    const doubleBadge = (text) => { const b = document.createElement("div"); b.className = "cs-double-badge"; b.textContent = text; return b; };
+
     for (let c = 0; c < courts; c++) {
-      const td = document.createElement("td");
       const cell = savedGrid[s] && savedGrid[s][c];
+      // Read-only view: merge two adjacent columns holding the same
+      // fixture's double into one cell, so it reads as one connected match
+      // instead of two coincidentally same-colored cells.
+      if (myRole !== "admin" && isDouble(cell)) {
+        const next = savedGrid[s] && savedGrid[s][c + 1];
+        if (next && next.fixtureId === cell.fixtureId) {
+          const td = document.createElement("td");
+          td.colSpan = 2;
+          const color = fixtureColor(cell.fixtureId, fixtures);
+          td.style.cssText = `border-radius:8px;background:${color.bg};`;
+          td.appendChild(doubleBadge("2 courts at once"));
+          const row = document.createElement("div");
+          row.className = "cs-double-row";
+          [cell, next].forEach((c2) => {
+            const opt = options.find((o) => o.fixtureId === c2.fixtureId && o.seed === c2.seed);
+            const half = document.createElement("div");
+            half.className = "cs-double-half";
+            half.innerHTML = opt ? `<div class="cs-cell-teams">${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}</div><div class="cs-cell-label">${escapeHtml(opt.shortLabel)}</div>` : "—";
+            row.appendChild(half);
+          });
+          td.appendChild(row);
+          tr.appendChild(td);
+          c++;
+          continue;
+        }
+      }
+      const td = document.createElement("td");
       if (cell) {
         const color = fixtureColor(cell.fixtureId, fixtures);
         td.style.cssText = `border-radius:8px;background:${color.bg};`;
       }
+      if (isDouble(cell)) td.appendChild(doubleBadge("2 courts"));
       if (myRole === "admin") {
         const select = document.createElement("select");
         const usable = options.filter((o) => !usedKeys.has(o.fixtureId + ":" + o.seed) || (cell && cell.fixtureId === o.fixtureId && cell.seed === o.seed));
@@ -1591,9 +1675,11 @@ function renderCourtScheduleGrid(fixtures) {
       } else {
         const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
         if (opt) {
-          td.innerHTML = `<div class="cs-cell-teams">${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}</div><div class="cs-cell-label">${escapeHtml(opt.shortLabel)}</div>`;
+          const box = document.createElement("div");
+          box.innerHTML = `<div class="cs-cell-teams">${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}</div><div class="cs-cell-label">${escapeHtml(opt.shortLabel)}</div>`;
+          td.appendChild(box);
         } else {
-          td.textContent = "—";
+          td.appendChild(document.createTextNode("—"));
         }
       }
       tr.appendChild(td);
@@ -1603,6 +1689,7 @@ function renderCourtScheduleGrid(fixtures) {
   table.appendChild(tbody);
   scroll.appendChild(table);
   wrap.appendChild(scroll);
+  if (myRole === "admin") wrap.appendChild(courtBalanceStrip());
 }
 function renderFixtures() {
   renderRoundNav("round-nav-fixtures");
