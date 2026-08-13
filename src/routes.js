@@ -1245,6 +1245,49 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/reset", requireAdmi
   res.json({ ok: true });
 });
 
+// Lets a captain (of either team in the match) or the admin rearrange which
+// of the match's 4 pairs sits in which court/slot the auto-rotation already
+// reserved for it — no propose/confirm handshake, either side can just save
+// changes directly, since they're only ever reshuffling seats that already
+// belong to this one shared match.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const admin = isAdminSession(req, league.id);
+  if (!admin) {
+    const u = req.session.user;
+    if (!u || u.leagueId !== league.id || !(u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB))) {
+      return res.status(403).json({ error: "Not allowed for your match." });
+    }
+  }
+  const assignments = req.body.assignments;
+  if (!Array.isArray(assignments) || assignments.length === 0) return res.status(400).json({ error: "Nothing to save." });
+
+  const grid = getCourtGrid(league, f.round);
+  const ownedCells = new Set();
+  grid.forEach((row, s) => row.forEach((cell, c) => { if (cell && cell.fixtureId === f.id) ownedCells.add(s + ":" + c); }));
+
+  const seenSeeds = new Set(), seenCells = new Set();
+  for (const a of assignments) {
+    if (!a || !Number.isInteger(a.slot) || !Number.isInteger(a.court) || !Number.isInteger(a.seed) || a.seed < 0 || a.seed > 3) {
+      return res.status(400).json({ error: "Invalid assignment." });
+    }
+    const key = a.slot + ":" + a.court;
+    if (!ownedCells.has(key)) return res.status(403).json({ error: "That spot isn't part of your match." });
+    if (seenSeeds.has(a.seed) || seenCells.has(key)) return res.status(400).json({ error: "Each pair needs exactly one spot." });
+    seenSeeds.add(a.seed); seenCells.add(key);
+  }
+  if (assignments.length !== ownedCells.size) return res.status(400).json({ error: "Assign every one of your match's spots." });
+
+  assignments.forEach((a) => { grid[a.slot][a.court] = { fixtureId: f.id, seed: a.seed }; });
+  if (!league.courtSchedule) league.courtSchedule = {};
+  league.courtSchedule[f.round] = grid;
+  f.slotOrder = assignments.slice().sort((x, y) => x.slot - y.slot || x.court - y.court).map((a) => a.seed);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.post("/leagues/:leagueId/fixtures/:fixtureId/unlock", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);

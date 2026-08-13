@@ -1137,6 +1137,12 @@ function selectionCard(f) {
   }
   return card;
 }
+// Shows the courts/slots the auto-rotation already reserved for this match
+// (styled like the real Court schedule grid — same colors, same "2 courts"
+// double badge) and lets whoever's in the match rearrange which of their 4
+// pairs sits in which reserved spot. Either captain can save changes right
+// away — no proposing/waiting on the other captain — since they're only
+// ever rearranging seats already set aside for this one shared match.
 function timeSlotPanel(f, teamA, teamB) {
   const wrap = document.createElement("div");
   wrap.className = "card timeslot-panel";
@@ -1144,117 +1150,112 @@ function timeSlotPanel(f, teamA, teamB) {
 
   const title = document.createElement("h3");
   title.className = "timeslot-title";
-  title.textContent = "Time slots — playing order for the night";
+  title.textContent = "Court & playing order";
   wrap.appendChild(title);
 
-  const seedLabel = (i) => {
-    const nameA = playerNamesForGold(teamA, f.selectionA.pairs[i]);
-    const nameB = playerNamesForGold(teamB, f.selectionB.pairs[i]);
-    return "Seed " + (i + 1) + ": " + nameA + " vs " + nameB;
-  };
+  const seedLabel = (i) => playerNamesForGold(teamA, f.selectionA.pairs[i]) + " vs " + playerNamesForGold(teamB, f.selectionB.pairs[i]);
 
-  if (f.slotOrder) {
-    const list = document.createElement("div");
-    list.className = "slot-order-list";
-    f.slotOrder.forEach((seedIdx, slotIdx) => {
-      const row = document.createElement("div");
-      row.className = "slot-order-row";
-      row.innerHTML = `<span class="slot-num">Slot ${slotIdx + 1}</span><span>${escapeHtml(seedLabel(seedIdx))}</span>`;
-      list.appendChild(row);
-    });
-    wrap.appendChild(list);
-    if (myRole === "admin") {
-      const reset = document.createElement("button");
-      reset.className = "link"; reset.style.marginTop = "8px"; reset.textContent = "Reset order";
-      reset.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/timeslot/reset`, { method: "POST" }); await refreshLeague(); renderAll(); };
-      wrap.appendChild(reset);
-    }
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  const savedGrid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) =>
+    (league.courtSchedule && league.courtSchedule[f.round] && league.courtSchedule[f.round][s] && league.courtSchedule[f.round][s][c]) || null
+  ));
+  const ownedCells = [];
+  savedGrid.forEach((row, s) => row.forEach((cell, c) => { if (cell && cell.fixtureId === f.id) ownedCells.push({ slot: s, court: c, seed: cell.seed }); }));
+
+  const canEdit = myRole === "admin" || (myRole === "captain" && (myTeamId === f.teamA || myTeamId === f.teamB));
+
+  if (ownedCells.length === 0) {
+    wrap.appendChild(Object.assign(document.createElement("p"), {
+      className: "note",
+      textContent: myRole === "admin"
+        ? "This match doesn't have a court or time yet — use Auto-fill rotation on the Fixtures tab."
+        : "Court and time aren't set for this match yet — check back once the admin publishes the schedule.",
+    }));
     return wrap;
   }
 
-  const myTeamSide = myRole === "captain" ? (myTeamId === f.teamA ? "A" : myTeamId === f.teamB ? "B" : null) : null;
+  const usedSlots = [...new Set(ownedCells.map((c) => c.slot))].sort((a, b) => a - b);
+  const usedCourts = [...new Set(ownedCells.map((c) => c.court))].sort((a, b) => a - b);
+  const courtNames = league.courtNames || [];
+  const roundFixtures = league.fixtures.filter((x) => x.round === f.round);
+  const color = fixtureColor(f.id, roundFixtures);
 
-  if (f.slotProposal) {
-    const p = f.slotProposal;
-    const proposerName = (p.by === "A" ? teamA : teamB).name;
-    const list = document.createElement("div");
-    list.className = "slot-order-list";
-    p.order.forEach((seedIdx, slotIdx) => {
-      const row = document.createElement("div");
-      row.className = "slot-order-row";
-      row.innerHTML = `<span class="slot-num">Slot ${slotIdx + 1}</span><span>${escapeHtml(seedLabel(seedIdx))}</span>`;
-      list.appendChild(row);
+  const table = document.createElement("table");
+  table.className = "timeslot-order-table";
+  table.innerHTML = "<thead><tr><th></th>" + usedCourts.map((c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr></thead>";
+  const tbody = document.createElement("tbody");
+
+  const localSeedAt = {};
+  ownedCells.forEach((c) => { localSeedAt[c.slot + ":" + c.court] = c.seed; });
+  const selectsByKey = {};
+  // Every spot always holds one of the 4 seeds, so picking a seed that's
+  // currently sitting somewhere else swaps the two spots rather than
+  // leaving a duplicate or a gap.
+  function refreshOptions() {
+    Object.keys(selectsByKey).forEach((key) => {
+      const select = selectsByKey[key];
+      const current = localSeedAt[key];
+      select.innerHTML = [0, 1, 2, 3].map((i) => `<option value="${i}" ${i === current ? "selected" : ""}>${escapeHtml(seedLabel(i))}</option>`).join("");
     });
-    wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: proposerName + " proposed this order:" }));
-    wrap.appendChild(list);
-
-    const canRespond = myRole === "admin" || (myTeamSide && myTeamSide !== p.by);
-    if (canRespond) {
-      const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "10px";
-      const confirmBtn = document.createElement("button");
-      confirmBtn.className = "primary"; confirmBtn.textContent = "Confirm this order";
-      confirmBtn.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/timeslot/confirm`, { method: "POST" }); await refreshLeague(); renderAll(); };
-      const counterBtn = document.createElement("button");
-      counterBtn.className = "secondary"; counterBtn.textContent = "Propose a different order";
-      counterBtn.onclick = () => { wrap.innerHTML = ""; wrap.appendChild(title); wrap.appendChild(slotOrderPicker(f, seedLabel, p.order)); };
-      row.appendChild(confirmBtn); row.appendChild(counterBtn);
-      wrap.appendChild(row);
-    } else if (myTeamSide === p.by) {
-      wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:8px;", textContent: "Waiting for the other captain to confirm or counter." }));
-    }
-    return wrap;
   }
 
-  if (myTeamSide || myRole === "admin") {
-    if (myRole === "admin") {
-      wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Waiting for a captain to propose an order — admins can't propose, only confirm or reset." }));
-    } else {
-      wrap.appendChild(slotOrderPicker(f, seedLabel, null));
-    }
-  } else {
-    wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Not set yet — the captains will agree a playing order here." }));
+  usedSlots.forEach((s) => {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.textContent = "Match " + (s + 1);
+    tr.appendChild(th);
+    const rowCount = ownedCells.filter((oc) => oc.slot === s).length;
+    usedCourts.forEach((c) => {
+      const key = s + ":" + c;
+      const td = document.createElement("td");
+      if (!(key in localSeedAt)) { td.textContent = "—"; tr.appendChild(td); return; }
+      td.style.cssText = `background:${color.bg};`;
+      if (rowCount > 1) {
+        const badge = document.createElement("div");
+        badge.className = "cs-double-badge";
+        badge.textContent = "2 courts";
+        td.appendChild(badge);
+      }
+      if (canEdit) {
+        const select = document.createElement("select");
+        selectsByKey[key] = select;
+        select.onchange = () => {
+          const newSeed = Number(select.value);
+          const oldSeed = localSeedAt[key];
+          const swapKey = Object.keys(localSeedAt).find((k) => k !== key && localSeedAt[k] === newSeed);
+          localSeedAt[key] = newSeed;
+          if (swapKey) localSeedAt[swapKey] = oldSeed;
+          refreshOptions();
+        };
+        td.appendChild(select);
+      } else {
+        td.appendChild(document.createTextNode(seedLabel(localSeedAt[key])));
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  refreshOptions();
+
+  if (canEdit) {
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "primary"; saveBtn.style.marginTop = "10px"; saveBtn.textContent = "Save order";
+    const err = document.createElement("div"); err.className = "error";
+    saveBtn.onclick = async () => {
+      const assignments = Object.keys(localSeedAt).map((key) => {
+        const [slot, court] = key.split(":").map(Number);
+        return { slot, court, seed: localSeedAt[key] };
+      });
+      try {
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/court-order`, { method: "POST", body: { assignments } });
+        await refreshLeague(); renderAll();
+      } catch (e) { err.textContent = e.message; }
+    };
+    wrap.appendChild(saveBtn); wrap.appendChild(err);
   }
   return wrap;
-}
-function slotOrderPicker(f, seedLabel, prefill) {
-  const box = document.createElement("div");
-  const localOrder = prefill ? prefill.slice() : [null, null, null, null];
-  const err = document.createElement("div"); err.className = "error";
-  const selects = [];
-  function refreshOptions() {
-    selects.forEach((select, slot) => {
-      const usedElsewhere = localOrder.filter((v, i) => i !== slot && v !== null);
-      const current = select.value;
-      select.innerHTML = '<option value="">Choose seed…</option>' + [0, 1, 2, 3]
-        .filter((i) => !usedElsewhere.includes(i))
-        .map((i) => `<option value="${i}">${escapeHtml(seedLabel(i))}</option>`)
-        .join("");
-      select.value = current;
-    });
-  }
-  for (let slot = 0; slot < 4; slot++) {
-    const row = document.createElement("div"); row.className = "seed-row";
-    row.innerHTML = `<span class="num">Slot ${slot + 1}</span>`;
-    const select = document.createElement("select");
-    select.onchange = () => { localOrder[slot] = select.value === "" ? null : Number(select.value); refreshOptions(); };
-    selects.push(select);
-    row.appendChild(select);
-    box.appendChild(row);
-  }
-  selects.forEach((select, slot) => { select.value = localOrder[slot] === null ? "" : localOrder[slot]; });
-  refreshOptions();
-  const btn = document.createElement("button");
-  btn.className = "primary"; btn.style.marginTop = "8px"; btn.textContent = "Propose this order";
-  btn.onclick = async () => {
-    const seen = new Set(localOrder);
-    if (localOrder.includes(null) || seen.size !== 4) { err.textContent = "Assign each seed to exactly one slot."; return; }
-    try {
-      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/timeslot/propose`, { method: "POST", body: { order: localOrder } });
-      await refreshLeague(); renderAll();
-    } catch (e) { err.textContent = e.message; }
-  };
-  box.appendChild(btn); box.appendChild(err);
-  return box;
 }
 function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
