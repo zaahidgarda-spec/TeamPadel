@@ -2440,12 +2440,135 @@ async function generateCourtSchedulePosterCanvas() {
 
   return canvas;
 }
+async function generateTablePosterCanvas() {
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const rows = computeStandingsClient();
+  const sponsors = (league.sponsors || []).slice(0, 5);
+  const W = 1080;
+  const topY = 300;
+  const headerRowH = 56;
+  const rowH = 84, rowGap = 10;
+  const footerH = 70;
+  const sponsorZoneH = sponsors.length ? 140 : 0;
+  const H = Math.max(1080, topY + headerRowH + rows.length * (rowH + rowGap) + sponsorZoneH + footerH);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0B1730");
+  bg.addColorStop(1, "#16294D");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#2563EB";
+  ctx.font = "700 32px Oswald, sans-serif";
+  ctx.fillText((league.name || "").toUpperCase(), W / 2, 96);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "700 68px Oswald, sans-serif";
+  ctx.fillText("STANDINGS", W / 2, 168);
+
+  ctx.fillStyle = "#8FA9B4";
+  ctx.font = "500 24px Oswald, sans-serif";
+  ctx.fillText("SEASON TABLE", W / 2, 210);
+
+  const marginX = 56;
+  const rankColW = 60;
+  const logoR = 26;
+  const nameX = marginX + rankColW + 20 + logoR * 2 + 16;
+  const statCols = ["P", "WON", "LOST", "DIFF", "PTS"];
+  const statColW = 90;
+  const statsStartX = W - marginX - statCols.length * statColW;
+
+  let y = topY;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8FA9B4";
+  ctx.font = "600 18px Oswald, sans-serif";
+  statCols.forEach((label, i) => ctx.fillText(label, statsStartX + i * statColW + statColW / 2, y + headerRowH / 2 + 6));
+  y += headerRowH;
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const isLeader = i === 0 && r.played > 0;
+    ctx.fillStyle = isLeader ? "rgba(37,99,235,0.16)" : "rgba(255,255,255,0.06)";
+    roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, 14);
+    ctx.fill();
+    if (isLeader) {
+      ctx.strokeStyle = "#2563EB";
+      ctx.lineWidth = 2;
+      roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, 14);
+      ctx.stroke();
+    }
+
+    const midY = y + rowH / 2;
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = isLeader ? "#2563EB" : "#8FA9B4";
+    ctx.font = "700 26px Oswald, sans-serif";
+    ctx.fillText(String(i + 1), marginX + rankColW / 2, midY + 9);
+
+    await drawTeamLogo(ctx, r, marginX + rankColW + 20 + logoR, midY, logoR);
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#FFFFFF";
+    const nameMaxWidth = statsStartX - nameX - 20;
+    ctx.fillText(fitText(ctx, r.name.toUpperCase(), nameMaxWidth, 24, "600", "Oswald, sans-serif"), nameX, midY + 9);
+
+    const values = [r.played, r.rubbersWon, r.rubbersLost, (r.diff > 0 ? "+" : "") + r.diff, r.points];
+    ctx.textAlign = "center";
+    values.forEach((v, ci) => {
+      ctx.fillStyle = ci === 4 ? "#2563EB" : "#DCE3F0";
+      ctx.font = ci === 4 ? "700 26px Oswald, sans-serif" : "500 22px Oswald, sans-serif";
+      ctx.fillText(String(v), statsStartX + ci * statColW + statColW / 2, midY + 8);
+    });
+
+    y += rowH + rowGap;
+  }
+
+  if (sponsors.length) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#8FA9B4";
+    ctx.font = "500 20px Oswald, sans-serif";
+    ctx.fillText("SPONSORED BY", W / 2, y + 26);
+
+    const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
+    if (loadedLogos.length) {
+      const maxRowWidth = W - 160;
+      const gap = 40;
+      let logoH = 60;
+      let widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+      let totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+      if (totalW > maxRowWidth) {
+        logoH *= maxRowWidth / totalW;
+        widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+        totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+      }
+      let sx = W / 2 - totalW / 2;
+      const sy = y + 52;
+      loadedLogos.forEach((img, i) => {
+        ctx.drawImage(img, sx, sy, widths[i], logoH);
+        sx += widths[i] + gap;
+      });
+    }
+  }
+
+  ctx.fillStyle = "#64748B";
+  ctx.font = "500 22px Oswald, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TEAM PADEL", W / 2, H - 34);
+
+  return canvas;
+}
 async function openPosterModal(mode) {
-  el("poster-modal-title").textContent = mode === "results" ? "Results poster" : mode === "court-schedule" ? "Court schedule poster" : "Fixtures poster";
+  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster" };
+  el("poster-modal-title").textContent = titles[mode] || "Fixtures poster";
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
   el("poster-modal-backdrop").classList.add("open");
-  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas() : await generatePosterCanvas(mode);
+  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas() : mode === "table" ? await generateTablePosterCanvas() : await generatePosterCanvas(mode);
   const dataUrl = canvas.toDataURL("image/png");
   el("poster-preview-img").src = dataUrl;
   el("poster-preview-img").style.display = "inline-block";
@@ -2464,6 +2587,7 @@ el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.r
 el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
 el("generate-results-poster-btn").onclick = () => openPosterModal("results");
 el("generate-court-schedule-poster-btn").onclick = () => openPosterModal("court-schedule");
+el("generate-table-poster-btn").onclick = () => openPosterModal("table");
 el("generate-court-rotation-btn").onclick = async () => {
   if (!confirm("This fills in the court schedule for every round that hasn't been played yet, replacing anything already set for those rounds. Continue?")) return;
   try {
@@ -2502,6 +2626,7 @@ function matchWinnerClient(f) {
 function renderTable() {
   const rows = computeStandingsClient();
   const c = el("log-container");
+  el("table-poster-row").style.display = myRole === "admin" && league.teams.length > 0 ? "flex" : "none";
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
     let html = `<table class="log"><thead><tr><th>#</th><th>Team</th><th class="num">P</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Diff</th><th class="num">Pts</th></tr></thead><tbody>`;
