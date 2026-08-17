@@ -164,6 +164,25 @@ ul.plain li:last-child{border-bottom:none;}
 .cs-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;}
 .cs-swatch{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
 
+/* Horizontally-scrollable tables (court schedule, league table, tie-break
+   record) had no visual cue that there was more to scroll to — on a
+   4-court schedule a captain on their phone would just see it "end" after
+   court 2. This fades the edge and shows a soft shadow whenever there's
+   unscrolled content in that direction, and disappears once you're
+   actually at that edge, using scroll-attached vs local-attached
+   backgrounds instead of JS. */
+.hscroll{
+  overflow-x:auto;
+  background:
+    linear-gradient(to right, var(--panel) 30%, rgba(255,255,255,0)) 0 0,
+    linear-gradient(to left, var(--panel) 30%, rgba(255,255,255,0)) 100% 0,
+    radial-gradient(farthest-side at 0% 50%, rgba(18,32,58,.18), rgba(18,32,58,0)) 0 0,
+    radial-gradient(farthest-side at 100% 50%, rgba(18,32,58,.18), rgba(18,32,58,0)) 100% 0;
+  background-repeat:no-repeat;
+  background-color:var(--panel);
+  background-size:30px 100%, 30px 100%, 12px 100%, 12px 100%;
+  background-attachment:local, local, scroll, scroll;
+}
 .court-schedule-scroll{overflow-x:auto;}
 table.court-schedule-table{width:100%;min-width:640px;border-collapse:collapse;font-size:13px;}
 table.court-schedule-table th{text-align:left;font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;color:var(--text-dim);padding:8px;border-bottom:2px dashed var(--line);white-space:nowrap;}

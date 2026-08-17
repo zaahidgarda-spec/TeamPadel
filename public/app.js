@@ -1585,7 +1585,7 @@ function renderCourtScheduleGrid(fixtures) {
   wrap.appendChild(legend);
 
   const scroll = document.createElement("div");
-  scroll.className = "court-schedule-scroll";
+  scroll.className = "court-schedule-scroll hscroll";
   const table = document.createElement("table");
   table.className = "court-schedule-table";
   const courtNames = league.courtNames || [];
