@@ -1300,7 +1300,11 @@ function selectionForm(f, team, side) {
     div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Add at least 2 players to this team's roster in the Admin tab first." }));
     return div;
   }
-  const localPairs = already ? sel.pairs.map((p) => p.slice()) : [[null, null], [null, null], [null, null], [null, null]];
+  // sel.pairs already holds the right starting point either way — empty
+  // arrays if nothing's ever been picked, or whatever was there before an
+  // admin unlock (unlocking only flips `submitted`, it never clears pairs)
+  // — so the captain edits from where they left off instead of starting over.
+  const localPairs = sel.pairs.map((p) => p.slice());
   const doubleUpNote = document.createElement("div");
   doubleUpNote.className = "note";
   doubleUpNote.style.cssText = "display:none;margin:8px 0;padding:10px;background:rgba(226,84,43,.1);border:1px solid var(--clay);border-radius:8px;color:var(--text);";
