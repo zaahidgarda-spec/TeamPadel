@@ -1015,13 +1015,21 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   if (!isRoundOpen(league, f)) return res.status(400).json({ error: "This round isn't open yet." });
 
   const selKey = side === "A" ? "selectionA" : "selectionB";
-  if (f[selKey].submitted) return res.status(400).json({ error: "Already submitted for this fixture." });
+  const oppKey = selKey === "selectionA" ? "selectionB" : "selectionA";
+  // Blind selection means neither side can see the other's pairs until
+  // both are in, so a team is free to keep revising their own pick right
+  // up until the opponent submits — it only locks once both sides have
+  // gone (a real reveal happened), after which only admin can reopen it.
+  if (f[selKey].submitted && f[oppKey].submitted) {
+    return res.status(400).json({ error: "Both line-ups are already in — ask the admin to unlock it." });
+  }
 
   const pairs = req.body.pairs;
   if (!Array.isArray(pairs) || pairs.length !== 4) return res.status(400).json({ error: "Send exactly 4 seed pairs." });
   const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp);
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
 
+  const isFirstSubmit = !f[selKey].submitted;
   f[selKey] = { submitted: true, pairs };
   const label = fixtureLabel(league, f);
   const teamA = league.teams.find((t) => t.id === f.teamA);
@@ -1031,7 +1039,9 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   if (f.selectionA.submitted && f.selectionB.submitted) {
     notify(league, f.teamA, "selection", `Line-ups revealed for ${label}: ${teamA ? teamA.name : "?"} vs ${teamB ? teamB.name : "?"}.`);
     notify(league, f.teamB, "selection", `Line-ups revealed for ${label}: ${teamA ? teamA.name : "?"} vs ${teamB ? teamB.name : "?"}.`);
-  } else {
+  } else if (isFirstSubmit) {
+    // Only announce the first time — otherwise every tweak a team makes
+    // while waiting on their opponent would re-notify them.
     notify(league, oppTeamId, "selection", `${myTeam ? myTeam.name : "Your opponent"} submitted their line-up for ${label} — you're up.`);
   }
   store.saveLeague(league.id, league);

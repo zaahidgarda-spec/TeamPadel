@@ -1351,7 +1351,6 @@ function selectionForm(f, team, side) {
       const select = document.createElement("select");
       select.innerHTML = optionsFor(slot);
       select.value = localPairs[seedIdx][slot] || "";
-      select.disabled = already;
       select.onchange = () => {
         localPairs[seedIdx][slot] = select.value || null;
         const other = selects[slot === 0 ? 1 : 0];
@@ -1368,39 +1367,31 @@ function selectionForm(f, team, side) {
   div.appendChild(doubleUpNote);
   refreshDoubleUpNote();
 
+  // Blind selection means the other captain can't see this until they've
+  // also submitted, so there's nothing unfair about editing it right up to
+  // that point — no admin unlock needed here. It only truly locks once
+  // both sides are in, at which point this whole form is replaced by the
+  // read-only reveal view (with its own admin "Reset lineup" control).
   if (already) {
-    div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Submitted — waiting on the other team." }));
-    if (myRole === "admin") {
-      const unlock = document.createElement("button");
-      unlock.className = "link"; unlock.style.marginTop = "6px"; unlock.textContent = "Unlock to edit";
-      unlock.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock`, { method: "POST", body: { side } }); await refreshLeague(); renderAll(); };
-      div.appendChild(unlock);
-    }
-    if (!f.finalized) {
-      const sub = document.createElement("button");
-      sub.className = "link"; sub.style.marginTop = "6px"; sub.style.marginLeft = myRole === "admin" ? "12px" : "0"; sub.textContent = "Substitute a player";
-      sub.onclick = () => openSubModal(f, team, side, sel);
-      div.appendChild(sub);
-    }
-  } else {
-    const err = document.createElement("div"); err.className = "error";
-    const btn = document.createElement("button");
-    btn.className = "primary"; btn.style.marginTop = "8px"; btn.textContent = "Submit line-up";
-    btn.onclick = async () => {
-      if (findDuplicate() && !doubleUpCheckbox.checked) {
-        err.textContent = "Tick the double-up checkbox above to confirm, or fix the selection.";
-        return;
-      }
-      try {
-        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection`, { method: "POST", body: { side, pairs: localPairs, confirmDoubleUp: doubleUpCheckbox.checked } });
-        await refreshLeague(); renderAll();
-      } catch (e) {
-        err.textContent = e.message;
-        if (e.needsConfirm) doubleUpNote.style.display = "block";
-      }
-    };
-    div.appendChild(btn); div.appendChild(err);
+    div.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-bottom:8px;", textContent: "Submitted — you can still make changes until the other team submits too." }));
   }
+  const err = document.createElement("div"); err.className = "error";
+  const btn = document.createElement("button");
+  btn.className = "primary"; btn.style.marginTop = "8px"; btn.textContent = already ? "Update line-up" : "Submit line-up";
+  btn.onclick = async () => {
+    if (findDuplicate() && !doubleUpCheckbox.checked) {
+      err.textContent = "Tick the double-up checkbox above to confirm, or fix the selection.";
+      return;
+    }
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection`, { method: "POST", body: { side, pairs: localPairs, confirmDoubleUp: doubleUpCheckbox.checked } });
+      await refreshLeague(); renderAll();
+    } catch (e) {
+      err.textContent = e.message;
+      if (e.needsConfirm) doubleUpNote.style.display = "block";
+    }
+  };
+  div.appendChild(btn); div.appendChild(err);
   return div;
 }
 // Swaps one player out of an already-locked-in line-up — for when someone
