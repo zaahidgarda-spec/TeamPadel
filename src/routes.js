@@ -168,7 +168,11 @@ function potwTallyForRound(league, round) {
     })
     .filter(Boolean)
     .sort((a, b) => b.votes - a.votes);
-  return { tally, winner: tally.length ? tally[0] : null };
+  // A tie at the top goes to everyone tied, not just whichever pair
+  // happened to sort first — no votes means no winners at all.
+  const topVotes = tally.length ? tally[0].votes : 0;
+  const winners = topVotes > 0 ? tally.filter((p) => p.votes === topVotes) : [];
+  return { tally, winners };
 }
 
 // Strip anything a given viewer shouldn't see: password hashes always,

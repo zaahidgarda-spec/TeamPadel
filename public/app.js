@@ -1876,15 +1876,19 @@ function renderPotwCard(fixtures) {
     return;
   }
   const round = viewingKey.round;
-  const data = (league.potwByRound && league.potwByRound[round]) || { tally: [], winner: null };
+  const data = (league.potwByRound && league.potwByRound[round]) || { tally: [], winners: [] };
   card.style.display = "block";
 
   const pairLabel = (p) => `${p.playerAName} & ${p.playerBName}`;
   let html = '<h2 class="section-title">Pair of the week</h2>';
-  if (data.winner) {
-    html += `<p class="note" style="margin-bottom:10px;">👑 Leading: <strong style="color:var(--accent);">${escapeHtml(pairLabel(data.winner))}</strong> <span class="note">(${escapeHtml(data.winner.teamName)})</span> — ${data.winner.votes} vote${data.winner.votes === 1 ? "" : "s"}</p>`;
+  if (data.winners && data.winners.length) {
+    const tied = data.winners.length > 1;
+    const names = data.winners.map((w) => `<strong style="color:var(--accent);">${escapeHtml(pairLabel(w))}</strong> <span class="note">(${escapeHtml(w.teamName)})</span>`).join(" & ");
+    const voteWord = data.winners[0].votes === 1 ? "vote" : "votes";
+    html += `<p class="note" style="margin-bottom:10px;">👑 ${tied ? "Tied" : "Leading"}: ${names} — ${data.winners[0].votes} ${voteWord}${tied ? " each" : ""}</p>`;
     if (data.tally.length > 1) {
-      html += '<div class="potw-tally">' + data.tally.map((t, i) => `<div class="potw-tally-row"><span>${i === 0 ? "👑 " : ""}${escapeHtml(pairLabel(t))} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
+      const winnerKeys = new Set(data.winners.map((w) => w.key));
+      html += '<div class="potw-tally">' + data.tally.map((t) => `<div class="potw-tally-row"><span>${winnerKeys.has(t.key) ? "👑 " : ""}${escapeHtml(pairLabel(t))} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
     }
   } else {
     html += '<p class="note" style="margin-bottom:10px;">No votes yet — cast yours below.</p>';
@@ -1936,8 +1940,8 @@ function resultsCard(f) {
     seedTag.textContent = isDecider ? "Decider" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
     const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[idx]);
     const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[idx]);
-    const potwWinnerKey = league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winner && league.potwByRound[f.round].winner.key;
-    const isPotwPair = (side) => !isDecider && potwWinnerKey === `${f.id}:${side}:${idx}`;
+    const potwWinners = (league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winners) || [];
+    const isPotwPair = (side) => !isDecider && potwWinners.some((w) => w.key === `${f.id}:${side}:${idx}`);
     const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairAHtml;
     const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairBHtml;
 
@@ -2849,7 +2853,7 @@ function ownRosterEditControls(t) {
 
 function potwWinCountForPlayer(playerId) {
   if (!league.potwByRound) return 0;
-  return Object.values(league.potwByRound).filter((d) => d.winner && (d.winner.playerAId === playerId || d.winner.playerBId === playerId)).length;
+  return Object.values(league.potwByRound).filter((d) => (d.winners || []).some((w) => w.playerAId === playerId || w.playerBId === playerId)).length;
 }
 async function openPlayerHistory(playerId, playerName) {
   el("player-modal-name").textContent = playerName;
@@ -2925,13 +2929,15 @@ function renderAwards() {
   c.innerHTML = rounds.map((r) => {
     const data = byRound[r];
     const label = escapeHtml(roundLabel(r));
-    if (!data || !data.winner) {
+    if (!data || !data.winners || data.winners.length === 0) {
       return `<div class="stat-row"><span>${label}</span><span class="note">No votes yet</span></div>`;
     }
-    const w = data.winner;
-    const team = teamById(w.teamId);
-    const pairHtml = pairNamesGoldHtml(team, [w.playerAId, w.playerBId]);
-    return `<div class="stat-row"><span>${label}</span><span>👑 ${pairHtml} <span class="note">(${escapeHtml(w.teamName)})</span></span></div>`;
+    const winnersHtml = data.winners.map((w) => {
+      const team = teamById(w.teamId);
+      const pairHtml = pairNamesGoldHtml(team, [w.playerAId, w.playerBId]);
+      return `👑 ${pairHtml} <span class="note">(${escapeHtml(w.teamName)})</span>`;
+    }).join(" &nbsp;·&nbsp; ");
+    return `<div class="stat-row"><span>${label}</span><span>${winnersHtml}</span></div>`;
   }).join("");
 }
 
