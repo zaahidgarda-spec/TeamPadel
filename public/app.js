@@ -55,6 +55,31 @@ function playerNamesForGold(team, pair) {
   const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldPrefix(p) + p.name).join(" & ");
   return names || "—";
 }
+// "Sam Ortiz" -> "Sam O." — used only where column width is genuinely
+// tight (the court schedule poster's grid cells), so a long full name
+// doesn't have to shrink to an unreadable size or get cut off with an
+// ellipsis. Single-word names are left as they are.
+function shortPlayerName(p) {
+  if (!p) return "?";
+  const parts = p.name.trim().split(/\s+/);
+  const short = parts.length > 1 ? parts[0] + " " + parts[parts.length - 1].charAt(0).toUpperCase() + "." : parts[0];
+  return goldPrefix(p) + short;
+}
+function posterPairNamesShort(team, pair) {
+  if (!pair) return "—";
+  const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map(shortPlayerName).join(" & ");
+  return names || "—";
+}
+function shortPlayerNamePlain(p) {
+  if (!p) return "?";
+  const parts = p.name.trim().split(/\s+/);
+  return parts.length > 1 ? parts[0] + " " + parts[parts.length - 1].charAt(0).toUpperCase() + "." : parts[0];
+}
+function playerNamesForShort(team, pair) {
+  if (!pair) return "—";
+  const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map(shortPlayerNamePlain).join(" & ");
+  return names || "—";
+}
 
 async function api(path, opts) {
   const res = await fetch("/api" + path, {
@@ -2057,12 +2082,6 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
 el("score-modal-close").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-cancel").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "score-modal-backdrop") el("score-modal-backdrop").classList.remove("open"); });
-function playerNamesFor(team, pair) {
-  if (!pair) return "—";
-  const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => p.name).join(" & ");
-  return names || "—";
-}
-
 /* ---------- Poster generator (fixtures & results, drawn client-side) ---------- */
 
 function loadImageAsync(src) {
@@ -2091,6 +2110,10 @@ function fitText(ctx, text, maxWidth, startSize, weight, family, floor) {
   const apply = () => { ctx.font = weight + " " + size + "px " + family; };
   apply();
   while (size > floor && ctx.measureText(text).width > maxWidth) { size -= 2; apply(); }
+  // Text that already fits at the floor size needs no ellipsis — checking
+  // `text + "…"` here instead would needlessly truncate text that fits by
+  // a margin narrower than the ellipsis glyph itself.
+  if (ctx.measureText(text).width <= maxWidth) return text;
   let out = text;
   while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) { out = out.slice(0, -1); }
   return out.length < text.length ? out + "…" : out;
@@ -2129,25 +2152,35 @@ async function generatePosterCanvas(mode) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey).slice(0, 8);
   const sponsors = (league.sponsors || []).slice(0, 5);
-  const W = 1080;
-  const topY = 300, footerH = 70, rowGap = 16;
-  const headerBlockH = 108;
-  // Results mode needs a second, taller line per seed row to fit the set
-  // score under the "SEED N" label, alongside the pair names.
-  const pairRowH = mode === "results" ? 46 : 34, pairsTopPad = 8, pairsBottomPad = 10;
-  const logoRadius = 40;
+  // Fixed 9:16 canvas (Instagram Story/Reel size) — content scales to fit
+  // instead of the canvas growing to fit the content.
+  const W = 1080, H = 1920;
+  const topY = 300, footerH = 70;
   const sponsorZoneH = sponsors.length ? 140 : 0;
+  const availableH = H - topY - footerH - sponsorZoneH - 20;
 
-  // Player pairs are only known once both captains have submitted their
-  // line-up — before that there's nothing to show, so those fixtures just
-  // get the compact team-vs-team header block, same as before this feature.
+  // Natural (unscaled) sizes, then a single scale factor shrinks a busy
+  // round to fit and grows a light one (capped, so text never gets
+  // absurdly huge) — leftover space is used to center the block instead
+  // of stretching it, so two fixtures don't get blown up to fill a story.
+  const baseHeaderBlockH = 108, baseRowGap = 16;
+  const basePairRowH = mode === "results" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
   const fixtureMeta = fixtures.map((f) => {
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
-    const blockH = headerBlockH + (revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0);
+    const blockH = baseHeaderBlockH + (revealed ? basePairsTopPad + 4 * basePairRowH + basePairsBottomPad : 0);
     return { f, revealed, blockH };
   });
-  const totalFixturesH = fixtureMeta.reduce((sum, m) => sum + m.blockH + rowGap, 0);
-  const H = Math.max(1350, topY + totalFixturesH + sponsorZoneH + footerH);
+  const naturalH = fixtureMeta.reduce((sum, m) => sum + m.blockH + baseRowGap, 0) || 1;
+  const scale = Math.min(1.5, Math.max(0.4, availableH / naturalH));
+  const sz = (px) => px * scale;
+
+  const headerBlockH = sz(baseHeaderBlockH), rowGap = sz(baseRowGap);
+  const pairRowH = sz(basePairRowH), pairsTopPad = sz(basePairsTopPad), pairsBottomPad = sz(basePairsBottomPad);
+  const logoRadius = sz(40);
+  const scaledContentH = fixtureMeta.reduce((sum, m) => sum + (headerBlockH + (m.revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0)) + rowGap, 0);
+  // Bias the leftover space toward the bottom rather than a dead center —
+  // reads better sitting just under the title than floating mid-page.
+  const startY = topY + Math.max(0, (availableH - scaledContentH) * 0.32);
 
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -2184,40 +2217,46 @@ async function generatePosterCanvas(mode) {
     ctx.fillText(subParts.join("   ·   "), W / 2, 248);
   }
 
-  let y = topY;
-  for (const { f, revealed, blockH } of fixtureMeta) {
+  let y = startY;
+  for (const { f, revealed } of fixtureMeta) {
+    const blockH = headerBlockH + (revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0);
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     ctx.fillStyle = "rgba(255,255,255,0.07)";
-    roundRectPath(ctx, 56, y, W - 112, blockH, 18);
+    roundRectPath(ctx, 56, y, W - 112, blockH, sz(18));
     ctx.fill();
 
     const headerMidY = y + headerBlockH / 2;
-    await drawTeamLogo(ctx, teamA, 56 + 40 + logoRadius, headerMidY, logoRadius);
-    await drawTeamLogo(ctx, teamB, W - 56 - 40 - logoRadius, headerMidY, logoRadius);
+    const logoCenterOffset = sz(40) + logoRadius;
+    await drawTeamLogo(ctx, teamA, 56 + logoCenterOffset, headerMidY, logoRadius);
+    await drawTeamLogo(ctx, teamB, W - 56 - logoCenterOffset, headerMidY, logoRadius);
 
-    // Results mode draws a wider score (e.g. "10 - 8" at 42px) in the
-    // middle than fixtures mode's small "VS", so it needs more clearance
-    // to avoid the team name running into it.
-    const nameMaxWidth = W / 2 - (mode === "results" ? 280 : 220);
+    // Name starts past the logo's far edge (center offset + radius again),
+    // plus a small gap — has to be recomputed from the actual scaled logo
+    // size rather than a fixed pixel gap, or a big logo overlaps the name.
+    const nameStartOffset = logoCenterOffset + logoRadius + sz(10);
+    // Results mode draws a wider score (e.g. "10 - 8") in the middle than
+    // fixtures mode's small "VS", so it needs more clearance to avoid the
+    // team name running into it.
+    const nameMaxWidth = W / 2 - sz(mode === "results" ? 280 : 220);
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "left";
-    const nameA = fitText(ctx, teamA ? teamA.name : "TBD", nameMaxWidth, 30, "600", "Oswald, sans-serif");
-    ctx.fillText(nameA, 56 + 90 + logoRadius, headerMidY + 10);
+    const nameA = fitText(ctx, teamA ? teamA.name : "TBD", nameMaxWidth, sz(30), "600", "Oswald, sans-serif", Math.max(12, sz(18)));
+    ctx.fillText(nameA, 56 + nameStartOffset, headerMidY + sz(10));
 
     ctx.textAlign = "right";
-    const nameB = fitText(ctx, teamB ? teamB.name : "TBD", nameMaxWidth, 30, "600", "Oswald, sans-serif");
-    ctx.fillText(nameB, W - 56 - 90 - logoRadius, headerMidY + 10);
+    const nameB = fitText(ctx, teamB ? teamB.name : "TBD", nameMaxWidth, sz(30), "600", "Oswald, sans-serif", Math.max(12, sz(18)));
+    ctx.fillText(nameB, W - 56 - nameStartOffset, headerMidY + sz(10));
 
     ctx.textAlign = "center";
     if (mode === "results" && f.finalized) {
       const { winsA, winsB } = fixtureScoreClient(f);
       ctx.fillStyle = "#2563EB";
-      ctx.font = "700 42px Oswald, sans-serif";
-      ctx.fillText(winsA + " - " + winsB, W / 2, headerMidY + 15);
+      ctx.font = "700 " + sz(42) + "px Oswald, sans-serif";
+      ctx.fillText(winsA + " - " + winsB, W / 2, headerMidY + sz(15));
     } else {
       ctx.fillStyle = "#8FA9B4";
-      ctx.font = "600 20px Oswald, sans-serif";
-      ctx.fillText("VS", W / 2, headerMidY + 7);
+      ctx.font = "600 " + sz(20) + "px Oswald, sans-serif";
+      ctx.fillText("VS", W / 2, headerMidY + sz(7));
     }
 
     if (revealed) {
@@ -2228,35 +2267,35 @@ async function generatePosterCanvas(mode) {
       ctx.lineTo(W - 80, y + headerBlockH);
       ctx.stroke();
 
-      const pairMaxWidth = W / 2 - 140;
+      const pairMaxWidth = W / 2 - sz(140);
       let py = y + headerBlockH + pairsTopPad + pairRowH / 2;
       for (let i = 0; i < 4; i++) {
-        const namesA = playerNamesFor(teamA, f.selectionA.pairs[i]);
-        const namesB = playerNamesFor(teamB, f.selectionB.pairs[i]);
+        const namesA = playerNamesForShort(teamA, f.selectionA.pairs[i]);
+        const namesB = playerNamesForShort(teamB, f.selectionB.pairs[i]);
         const winner = f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
 
         ctx.textAlign = "left";
         ctx.fillStyle = winner === "A" ? "#5B9CFF" : "#C6D2E3";
-        const fittedA = fitText(ctx, namesA, pairMaxWidth, 20, winner === "A" ? "700" : "400", "Inter, sans-serif");
-        ctx.fillText(fittedA, 90, py + 6);
+        const fittedA = fitText(ctx, namesA, pairMaxWidth, sz(20), winner === "A" ? "700" : "400", "Inter, sans-serif", Math.max(11, sz(12)));
+        ctx.fillText(fittedA, 90, py + sz(6));
 
         ctx.textAlign = "right";
         ctx.fillStyle = winner === "B" ? "#5B9CFF" : "#C6D2E3";
-        const fittedB = fitText(ctx, namesB, pairMaxWidth, 20, winner === "B" ? "700" : "400", "Inter, sans-serif");
-        ctx.fillText(fittedB, W - 90, py + 6);
+        const fittedB = fitText(ctx, namesB, pairMaxWidth, sz(20), winner === "B" ? "700" : "400", "Inter, sans-serif", Math.max(11, sz(12)));
+        ctx.fillText(fittedB, W - 90, py + sz(6));
 
         ctx.textAlign = "center";
         if (mode === "results" && f.finalized) {
           ctx.fillStyle = "#64748B";
-          ctx.font = "500 12px Oswald, sans-serif";
-          ctx.fillText("SEED " + (i + 1), W / 2, py - 9);
+          ctx.font = "500 " + sz(12) + "px Oswald, sans-serif";
+          ctx.fillText("SEED " + (i + 1), W / 2, py - sz(9));
           ctx.fillStyle = "#FFFFFF";
-          ctx.font = "600 18px Oswald, sans-serif";
-          ctx.fillText(rubberScoreText(f.rubbers[i]) || "—", W / 2, py + 14);
+          ctx.font = "600 " + sz(18) + "px Oswald, sans-serif";
+          ctx.fillText(rubberScoreText(f.rubbers[i]) || "—", W / 2, py + sz(14));
         } else {
           ctx.fillStyle = "#64748B";
-          ctx.font = "500 15px Oswald, sans-serif";
-          ctx.fillText("S" + (i + 1), W / 2, py + 5);
+          ctx.font = "500 " + sz(15) + "px Oswald, sans-serif";
+          ctx.fillText("S" + (i + 1), W / 2, py + sz(5));
         }
 
         py += pairRowH;
@@ -2266,11 +2305,15 @@ async function generatePosterCanvas(mode) {
     y += blockH + rowGap;
   }
 
+  // Anchored to the bottom of the fixed canvas rather than wherever the
+  // content loop's cursor ends up — content is centered in its own zone
+  // above, so it won't reliably land right before this otherwise.
   if (sponsors.length) {
+    const sponsorTopY = H - footerH - sponsorZoneH;
     ctx.textAlign = "center";
     ctx.fillStyle = "#8FA9B4";
     ctx.font = "500 20px Oswald, sans-serif";
-    ctx.fillText("SPONSORED BY", W / 2, y + 26);
+    ctx.fillText("SPONSORED BY", W / 2, sponsorTopY + 26);
 
     const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
     if (loadedLogos.length) {
@@ -2285,7 +2328,7 @@ async function generatePosterCanvas(mode) {
         totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
       }
       let sx = W / 2 - totalW / 2;
-      const sy = y + 52;
+      const sy = sponsorTopY + 52;
       loadedLogos.forEach((img, i) => {
         ctx.drawImage(img, sx, sy, widths[i], logoH);
         sx += widths[i] + gap;
@@ -2316,22 +2359,45 @@ async function generateCourtSchedulePosterCanvas() {
   const options = courtScheduleOptions(fixtures);
   const courtNames = league.courtNames || [];
 
+  // Fixed 9:16 canvas — court columns divide the fixed width evenly
+  // (however many courts there are), so this never runs wider than a
+  // story regardless of league size.
+  const W = 1080, H = 1920;
   const marginX = 56;
-  const firstColW = 150;
-  const courtColW = 264;
-  const W = Math.max(1080, marginX * 2 + firstColW + courts * courtColW);
+  const firstColW = courts > 5 ? 110 : 150;
+  const courtColW = (W - marginX * 2 - firstColW) / courts;
+  // How much a court column has been squeezed relative to the reference
+  // design (264px) — used to shrink cell content so it never overflows a
+  // narrow column on a many-court schedule.
+  const widthScale = Math.min(1, courtColW / 264);
 
-  const topY = 300;
-  const legendItemH = 42;
-  const legendH = fixtures.length ? 20 + fixtures.length * legendItemH + 24 : 0;
-  const headerRowH = 76;
+  const topY = 300, footerH = 70;
+  const sponsorZoneH = sponsors.length ? 140 : 0;
+  const availableH = H - topY - footerH - sponsorZoneH - 20;
+
+  const baseLegendItemH = 42;
+  const baseLegendH = fixtures.length ? 20 + fixtures.length * baseLegendItemH + 24 : 0;
+  const baseHeaderRowH = 76;
   // Tall enough for two full lines of player names (one per pair) stacked
   // vertically — a single "PairA v PairB" line doesn't fit real names in a
   // column this narrow, so each pair gets the full cell width to itself.
-  const matchRowH = 176;
-  const footerH = 70;
-  const sponsorZoneH = sponsors.length ? 140 : 0;
-  const H = topY + legendH + headerRowH + slots * matchRowH + sponsorZoneH + footerH + 40;
+  const baseMatchRowH = 176;
+  const naturalH = baseLegendH + baseHeaderRowH + slots * baseMatchRowH || 1;
+  // Vertical scale-to-fit, same idea as the fixtures/results poster: shrink
+  // a packed night to fit, grow a light one (capped), center the leftover
+  // space instead of stretching a couple of rows to fill a whole story.
+  const vScale = Math.min(1.6, Math.max(0.4, availableH / naturalH));
+  const sz = (px) => px * vScale;
+  // Cell content (logos, player names) is constrained by whichever is
+  // tighter — a short row (many slots) or a narrow column (many courts).
+  const cellScale = Math.min(vScale, widthScale * 1.3);
+  const csz = (px) => Math.max(1, px * cellScale);
+
+  const legendItemH = sz(baseLegendItemH), legendH = sz(baseLegendH);
+  const headerRowH = sz(baseHeaderRowH), matchRowH = sz(baseMatchRowH);
+  const scaledContentH = legendH + headerRowH + slots * matchRowH;
+  // Bias the leftover space toward the bottom rather than a dead center.
+  const startY = topY + Math.max(0, (availableH - scaledContentH) * 0.32);
 
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -2368,23 +2434,22 @@ async function generateCourtSchedulePosterCanvas() {
     ctx.fillText(subParts.join("   ·   "), W / 2, 248);
   }
 
-  let y = topY;
+  let y = startY;
 
   if (fixtures.length) {
-    let ly = y + 24;
+    let ly = y + sz(24);
     for (const f of fixtures) {
       const color = fixtureColor(f.id, fixtures);
       const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
       ctx.fillStyle = color.border;
-      roundRectPath(ctx, marginX, ly - 8, 16, 16, 4);
+      roundRectPath(ctx, marginX, ly - sz(8), sz(16), sz(16), sz(4));
       ctx.fill();
-      await drawTeamLogo(ctx, teamA, marginX + 42, ly, 14);
-      await drawTeamLogo(ctx, teamB, marginX + 78, ly, 14);
+      await drawTeamLogo(ctx, teamA, marginX + sz(42), ly, sz(14));
+      await drawTeamLogo(ctx, teamB, marginX + sz(78), ly, sz(14));
       ctx.textAlign = "left";
       ctx.fillStyle = "#DCE3F0";
-      ctx.font = "500 20px Inter, sans-serif";
       const label = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD");
-      ctx.fillText(fitText(ctx, label, W - marginX - 102, 20, "500", "Inter, sans-serif"), marginX + 102, ly + 6);
+      ctx.fillText(fitText(ctx, label, W - marginX - sz(102), sz(20), "500", "Inter, sans-serif", Math.max(11, sz(13))), marginX + sz(102), ly + sz(6));
       ly += legendItemH;
     }
     y += legendH;
@@ -2394,77 +2459,78 @@ async function generateCourtSchedulePosterCanvas() {
   for (let c = 0; c < courts; c++) {
     const cx = marginX + firstColW + c * courtColW + courtColW / 2;
     ctx.fillStyle = "#8FA9B4";
-    ctx.font = "600 22px Oswald, sans-serif";
     const label = (courtNames[c] || ("COURT " + (c + 1))).toUpperCase();
-    ctx.fillText(fitText(ctx, label, courtColW - 24, 22, "600", "Oswald, sans-serif"), cx, y + headerRowH / 2 + 8);
+    ctx.fillText(fitText(ctx, label, courtColW - 24, sz(22), "600", "Oswald, sans-serif", Math.max(11, csz(14))), cx, y + headerRowH / 2 + sz(8));
   }
   y += headerRowH;
 
   for (let s = 0; s < slots; s++) {
     ctx.textAlign = "left";
     ctx.fillStyle = "#8FA9B4";
-    ctx.font = "600 20px Oswald, sans-serif";
-    ctx.fillText("MATCH " + (s + 1), marginX, y + matchRowH / 2 + 7);
+    ctx.font = "600 " + sz(20) + "px Oswald, sans-serif";
+    ctx.fillText("MATCH " + (s + 1), marginX, y + matchRowH / 2 + sz(7));
 
     for (let c = 0; c < courts; c++) {
-      const cellX = marginX + firstColW + c * courtColW + 8;
-      const cellW = courtColW - 16;
-      const cellY = y + 8;
-      const cellH = matchRowH - 16;
+      const cellX = marginX + firstColW + c * courtColW + csz(8);
+      const cellW = courtColW - csz(16);
+      const cellY = y + csz(8);
+      const cellH = matchRowH - csz(16);
       const cell = grid[s][c];
       if (cell) {
         const color = fixtureColor(cell.fixtureId, fixtures);
         ctx.fillStyle = hexToRgba(color.border, 0.22);
-        roundRectPath(ctx, cellX, cellY, cellW, cellH, 12);
+        roundRectPath(ctx, cellX, cellY, cellW, cellH, csz(12));
         ctx.fill();
         ctx.strokeStyle = color.border;
         ctx.lineWidth = 2;
-        roundRectPath(ctx, cellX, cellY, cellW, cellH, 12);
+        roundRectPath(ctx, cellX, cellY, cellW, cellH, csz(12));
         ctx.stroke();
 
         const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
         const fixture = fixtures.find((f) => f.id === cell.fixtureId);
         const revealed = fixture && fixture.selectionA.submitted && fixture.selectionB.submitted;
         const midX = cellX + cellW / 2;
-        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - 24, cellY + 28, 15);
+        const logoR = csz(15);
+        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - logoR * 1.6, cellY + cellH * 0.16, logoR);
         ctx.textAlign = "center";
         ctx.fillStyle = "#8FA9B4";
-        ctx.font = "500 13px Oswald, sans-serif";
-        ctx.fillText("v", midX, cellY + 33);
-        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + 24, cellY + 28, 15);
+        ctx.font = "500 " + csz(13) + "px Oswald, sans-serif";
+        ctx.fillText("v", midX, cellY + cellH * 0.16 + csz(5));
+        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + logoR * 1.6, cellY + cellH * 0.16, logoR);
 
         if (revealed && opt) {
           // Each pair gets its own full-width line — showing every player's
           // name, not just team names, is the whole point of this poster.
-          const pairA = playerNamesForGold(opt.teamA, fixture.selectionA.pairs[cell.seed]);
-          const pairB = playerNamesForGold(opt.teamB, fixture.selectionB.pairs[cell.seed]);
+          const pairA = posterPairNamesShort(opt.teamA, fixture.selectionA.pairs[cell.seed]);
+          const pairB = posterPairNamesShort(opt.teamB, fixture.selectionB.pairs[cell.seed]);
           ctx.fillStyle = "#FFFFFF";
-          ctx.fillText(fitText(ctx, pairA, cellW - 16, 17, "600", "Inter, sans-serif", 12), midX, cellY + 66);
+          ctx.fillText(fitText(ctx, pairA, cellW - csz(16), csz(17), "600", "Inter, sans-serif", Math.max(10, csz(12))), midX, cellY + cellH * 0.42);
           ctx.fillStyle = "#8FA9B4";
-          ctx.font = "500 12px Oswald, sans-serif";
-          ctx.fillText("VS", midX, cellY + 86);
+          ctx.font = "500 " + csz(12) + "px Oswald, sans-serif";
+          ctx.fillText("VS", midX, cellY + cellH * 0.56);
           ctx.fillStyle = "#FFFFFF";
-          ctx.fillText(fitText(ctx, pairB, cellW - 16, 17, "600", "Inter, sans-serif", 12), midX, cellY + 110);
+          ctx.fillText(fitText(ctx, pairB, cellW - csz(16), csz(17), "600", "Inter, sans-serif", Math.max(10, csz(12))), midX, cellY + cellH * 0.70);
         } else {
           ctx.fillStyle = "#FFFFFF";
-          ctx.font = "500 18px Inter, sans-serif";
-          ctx.fillText("Seed " + (cell.seed + 1), midX, cellY + 70);
+          ctx.font = "500 " + csz(18) + "px Inter, sans-serif";
+          ctx.fillText("Seed " + (cell.seed + 1), midX, cellY + cellH * 0.55);
         }
       } else {
         ctx.textAlign = "center";
         ctx.fillStyle = "rgba(255,255,255,0.25)";
-        ctx.font = "400 20px Inter, sans-serif";
-        ctx.fillText("—", cellX + cellW / 2, cellY + cellH / 2 + 7);
+        ctx.font = "400 " + sz(20) + "px Inter, sans-serif";
+        ctx.fillText("—", cellX + cellW / 2, cellY + cellH / 2 + sz(7));
       }
     }
     y += matchRowH;
   }
 
   if (sponsors.length) {
+    const sponsorTopY = H - footerH - sponsorZoneH;
     ctx.textAlign = "center";
     ctx.fillStyle = "#8FA9B4";
     ctx.font = "500 20px Oswald, sans-serif";
-    ctx.fillText("SPONSORED BY", W / 2, y + 26);
+    ctx.fillText("SPONSORED BY", W / 2, sponsorTopY + 26);
 
     const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
     if (loadedLogos.length) {
@@ -2479,7 +2545,7 @@ async function generateCourtSchedulePosterCanvas() {
         totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
       }
       let sx = W / 2 - totalW / 2;
-      const sy = y + 52;
+      const sy = sponsorTopY + 52;
       loadedLogos.forEach((img, i) => {
         ctx.drawImage(img, sx, sy, widths[i], logoH);
         sx += widths[i] + gap;
@@ -2498,13 +2564,29 @@ async function generateTablePosterCanvas() {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const rows = computeStandingsClient();
   const sponsors = (league.sponsors || []).slice(0, 5);
-  const W = 1080;
-  const topY = 300;
-  const headerRowH = 56;
-  const rowH = 84, rowGap = 10;
-  const footerH = 70;
+  const W = 1080, H = 1920;
+  const topY = 300, footerH = 70;
   const sponsorZoneH = sponsors.length ? 140 : 0;
-  const H = Math.max(1080, topY + headerRowH + rows.length * (rowH + rowGap) + sponsorZoneH + footerH);
+  const availableH = H - topY - footerH - sponsorZoneH - 20;
+
+  const baseHeaderRowH = 56, baseRowH = 84, baseRowGap = 10;
+  const naturalH = baseHeaderRowH + rows.length * (baseRowH + baseRowGap) || 1;
+  // Same scale-to-fit-then-center approach as the other posters: a big
+  // league shrinks its rows to fit the fixed height, a small one grows
+  // (capped) and centers instead of stretching a couple of rows tall.
+  const scale = Math.min(1.7, Math.max(0.45, availableH / naturalH));
+  const sz = (px) => px * scale;
+  // The row's horizontal layout (rank + logo + name + 5 stat columns) is
+  // fixed-width, unlike the row's height — scaling it by the same factor
+  // as a tall/sparse table would push the stat columns wider than the
+  // fixed canvas, leaving negative room for the name. Cap it separately.
+  const hScale = Math.min(scale, 1.3);
+  const hz = (px) => px * hScale;
+
+  const headerRowH = sz(baseHeaderRowH), rowH = sz(baseRowH), rowGap = sz(baseRowGap);
+  const scaledContentH = headerRowH + rows.length * (rowH + rowGap);
+  // Bias the leftover space toward the bottom rather than a dead center.
+  const startY = topY + Math.max(0, (availableH - scaledContentH) * 0.32);
 
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -2530,30 +2612,30 @@ async function generateTablePosterCanvas() {
   ctx.fillText("SEASON TABLE", W / 2, 210);
 
   const marginX = 56;
-  const rankColW = 60;
-  const logoR = 26;
-  const nameX = marginX + rankColW + 20 + logoR * 2 + 16;
+  const rankColW = hz(60);
+  const logoR = hz(26);
+  const nameX = marginX + rankColW + hz(20) + logoR * 2 + hz(16);
   const statCols = ["P", "WON", "LOST", "DIFF", "PTS"];
-  const statColW = 90;
+  const statColW = hz(90);
   const statsStartX = W - marginX - statCols.length * statColW;
 
-  let y = topY;
+  let y = startY;
   ctx.textAlign = "center";
   ctx.fillStyle = "#8FA9B4";
-  ctx.font = "600 18px Oswald, sans-serif";
-  statCols.forEach((label, i) => ctx.fillText(label, statsStartX + i * statColW + statColW / 2, y + headerRowH / 2 + 6));
+  ctx.font = "600 " + hz(18) + "px Oswald, sans-serif";
+  statCols.forEach((label, i) => ctx.fillText(label, statsStartX + i * statColW + statColW / 2, y + headerRowH / 2 + sz(6)));
   y += headerRowH;
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const isLeader = i === 0 && r.played > 0;
     ctx.fillStyle = isLeader ? "rgba(37,99,235,0.16)" : "rgba(255,255,255,0.06)";
-    roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, 14);
+    roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, sz(14));
     ctx.fill();
     if (isLeader) {
       ctx.strokeStyle = "#2563EB";
       ctx.lineWidth = 2;
-      roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, 14);
+      roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, sz(14));
       ctx.stroke();
     }
 
@@ -2561,32 +2643,33 @@ async function generateTablePosterCanvas() {
 
     ctx.textAlign = "center";
     ctx.fillStyle = isLeader ? "#2563EB" : "#8FA9B4";
-    ctx.font = "700 26px Oswald, sans-serif";
-    ctx.fillText(String(i + 1), marginX + rankColW / 2, midY + 9);
+    ctx.font = "700 " + hz(26) + "px Oswald, sans-serif";
+    ctx.fillText(String(i + 1), marginX + rankColW / 2, midY + hz(9));
 
-    await drawTeamLogo(ctx, r, marginX + rankColW + 20 + logoR, midY, logoR);
+    await drawTeamLogo(ctx, r, marginX + rankColW + hz(20) + logoR, midY, logoR);
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#FFFFFF";
-    const nameMaxWidth = statsStartX - nameX - 20;
-    ctx.fillText(fitText(ctx, r.name.toUpperCase(), nameMaxWidth, 24, "600", "Oswald, sans-serif"), nameX, midY + 9);
+    const nameMaxWidth = statsStartX - nameX - hz(20);
+    ctx.fillText(fitText(ctx, r.name.toUpperCase(), nameMaxWidth, hz(24), "600", "Oswald, sans-serif", Math.max(11, hz(14))), nameX, midY + hz(9));
 
     const values = [r.played, r.rubbersWon, r.rubbersLost, (r.diff > 0 ? "+" : "") + r.diff, r.points];
     ctx.textAlign = "center";
     values.forEach((v, ci) => {
       ctx.fillStyle = ci === 4 ? "#2563EB" : "#DCE3F0";
-      ctx.font = ci === 4 ? "700 26px Oswald, sans-serif" : "500 22px Oswald, sans-serif";
-      ctx.fillText(String(v), statsStartX + ci * statColW + statColW / 2, midY + 8);
+      ctx.font = (ci === 4 ? "700 " : "500 ") + hz(ci === 4 ? 26 : 22) + "px Oswald, sans-serif";
+      ctx.fillText(String(v), statsStartX + ci * statColW + statColW / 2, midY + hz(8));
     });
 
     y += rowH + rowGap;
   }
 
   if (sponsors.length) {
+    const sponsorTopY = H - footerH - sponsorZoneH;
     ctx.textAlign = "center";
     ctx.fillStyle = "#8FA9B4";
     ctx.font = "500 20px Oswald, sans-serif";
-    ctx.fillText("SPONSORED BY", W / 2, y + 26);
+    ctx.fillText("SPONSORED BY", W / 2, sponsorTopY + 26);
 
     const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
     if (loadedLogos.length) {
@@ -2601,7 +2684,7 @@ async function generateTablePosterCanvas() {
         totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
       }
       let sx = W / 2 - totalW / 2;
-      const sy = y + 52;
+      const sy = sponsorTopY + 52;
       loadedLogos.forEach((img, i) => {
         ctx.drawImage(img, sx, sy, widths[i], logoH);
         sx += widths[i] + gap;
