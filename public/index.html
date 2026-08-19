@@ -91,7 +91,9 @@
           <h2 class="section-title">Captain login</h2>
           <p class="note" style="margin-bottom:10px;">Enter the team code your organizer gave you — you don't need to find your league first.</p>
           <div class="row">
+            <label class="sr-only" for="hub-captain-code">Team code</label>
             <input type="text" id="hub-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
+            <label class="sr-only" for="hub-captain-email">Email (optional, for notifications)</label>
             <input type="email" id="hub-captain-email" placeholder="Email (optional, for notifications)" style="width:260px;">
             <button class="primary" id="hub-captain-login-btn">Log in</button>
           </div>
@@ -103,7 +105,9 @@
         <div class="card" id="owner-login-card">
           <h2 class="section-title">Admin login</h2>
           <div class="row">
+            <label class="sr-only" for="owner-username">Username</label>
             <input type="text" id="owner-username" placeholder="Username" style="width:160px;">
+            <label class="sr-only" for="owner-pin">PIN</label>
             <input type="password" id="owner-pin" placeholder="PIN" style="width:140px;">
             <button class="primary" id="owner-login-btn">Log in</button>
           </div>
@@ -141,7 +145,9 @@
               <div id="auth-status" class="note" style="margin-bottom:10px;">Viewing only</div>
               <div id="auth-team-panel">
                 <p class="note" style="margin-bottom:8px;">Enter the team code your organizer gave you.</p>
+                <label class="sr-only" for="captain-code">Team code</label>
                 <input type="text" id="captain-code" placeholder="Team code" style="text-transform:uppercase;">
+                <label class="sr-only" for="captain-email">Email (optional, for notifications)</label>
                 <input type="email" id="captain-email" placeholder="Email (optional, for notifications)" style="margin-top:8px;">
                 <div class="row" style="margin-top:10px;">
                   <button class="primary" id="captain-login-btn">Enter</button>
@@ -150,7 +156,9 @@
               </div>
               <div id="auth-admin-panel" style="display:none;">
                 <p class="note" style="margin-bottom:8px;">First time? Register with the email set as this league's admin. Otherwise, log in.</p>
+                <label class="sr-only" for="login-email">Email</label>
                 <input type="email" id="login-email" placeholder="Email">
+                <label class="sr-only" for="login-password">Password</label>
                 <input type="password" id="login-password" placeholder="Password" style="margin-top:8px;">
                 <div class="row" style="margin-top:10px;">
                   <button class="secondary" id="register-btn">Register</button>
@@ -333,7 +341,7 @@
 
       <div id="player-modal-backdrop" class="modal-backdrop">
         <div class="modal-box">
-          <button class="modal-close" id="player-modal-close">&times;</button>
+          <button class="modal-close" id="player-modal-close" aria-label="Close">&times;</button>
           <h3 id="player-modal-name" class="modal-title"></h3>
           <div id="player-modal-body"></div>
         </div>
@@ -341,7 +349,7 @@
 
       <div id="poster-modal-backdrop" class="modal-backdrop">
         <div class="modal-box" style="max-width:460px;text-align:center;">
-          <button class="modal-close" id="poster-modal-close">&times;</button>
+          <button class="modal-close" id="poster-modal-close" aria-label="Close">&times;</button>
           <h3 id="poster-modal-title" class="modal-title">Poster</h3>
           <div id="poster-modal-loading" class="note">Drawing your poster…</div>
           <img id="poster-preview-img" style="max-width:100%;border-radius:8px;margin-top:8px;">
@@ -353,7 +361,7 @@
 
       <div id="score-modal-backdrop" class="modal-backdrop">
         <div class="modal-box" style="max-width:420px;">
-          <button class="modal-close" id="score-modal-close">&times;</button>
+          <button class="modal-close" id="score-modal-close" aria-label="Close">&times;</button>
           <h3 id="score-modal-title" class="modal-title">Enter score</h3>
           <div id="score-modal-body"></div>
           <div class="row" style="margin-top:16px;justify-content:space-between;align-items:center;">
@@ -366,7 +374,7 @@
 
       <div id="sub-modal-backdrop" class="modal-backdrop">
         <div class="modal-box" style="max-width:420px;">
-          <button class="modal-close" id="sub-modal-close">&times;</button>
+          <button class="modal-close" id="sub-modal-close" aria-label="Close">&times;</button>
           <h3 id="sub-modal-title" class="modal-title">Substitute a player</h3>
           <div id="sub-modal-body"></div>
           <div class="error" id="sub-modal-error"></div>
@@ -382,6 +390,7 @@
           <h2 class="section-title">Email notifications</h2>
           <p class="note" style="margin-bottom:10px;">Optional — get these notifications emailed to you as they happen. Leave blank to turn it off.</p>
           <div class="row">
+            <label class="sr-only" for="notify-email-input">Email for notifications</label>
             <input type="email" id="notify-email-input" placeholder="you@example.com" style="width:260px;">
             <button class="secondary" id="notify-email-save-btn">Save</button>
           </div>

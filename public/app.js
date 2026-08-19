@@ -1798,7 +1798,7 @@ function renderFixtures() {
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
           const seedLbl = "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
-          html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span></span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
+          html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span class="rubber-vs">vs</span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
         });
         html += "</div>";
       } else {
