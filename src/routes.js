@@ -796,34 +796,6 @@ function getCourtGrid(league, round) {
   return grid;
 }
 
-// Re-sorts a fixture's already-scheduled cells (if the admin has placed any)
-// into the slot rows matching its agreed/proposed playing order, keeping
-// each seed on whatever court it was already assigned to — this only moves
-// cells the admin put there, it never invents a court assignment for a seed
-// that hasn't been placed yet, and it never overwrites another fixture's
-// cell (if the target spot is taken, that seed is left wherever it was).
-function reorderCourtScheduleForFixture(league, fixture, order) {
-  if (!order) return;
-  const slots = league.slotCount || 3;
-  const grid = getCourtGrid(league, fixture.round);
-  const placements = [];
-  grid.forEach((row, s) => row.forEach((cell, c) => {
-    if (cell && cell.fixtureId === fixture.id) placements.push({ court: c, seed: cell.seed, fromSlot: s });
-  }));
-  if (!placements.length) return;
-  // Clearing every one of this fixture's cells first guarantees each one's
-  // original (fromSlot, court) spot is free again below, so falling back to
-  // it on a collision or an out-of-range target is always safe.
-  grid.forEach((row) => row.forEach((cell, c) => { if (cell && cell.fixtureId === fixture.id) row[c] = null; }));
-  placements.forEach(({ court, seed, fromSlot }) => {
-    const targetSlot = order.indexOf(seed);
-    const fits = targetSlot >= 0 && targetSlot < slots && !grid[targetSlot][court];
-    grid[fits ? targetSlot : fromSlot][court] = { fixtureId: fixture.id, seed };
-  });
-  if (!league.courtSchedule) league.courtSchedule = {};
-  league.courtSchedule[fixture.round] = grid;
-}
-
 function permutations(arr) {
   if (arr.length <= 1) return [arr];
   const res = [];
@@ -1202,78 +1174,14 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   res.json({ ok: true, tally: potwTallyForRound(league, round) });
 });
 
-/* ---------- Time slots (play order for the night) ---------- */
+/* ---------- Court/playing order (which of a match's pairs plays where) ---------- */
 
-router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/propose", (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  if (!(f.selectionA.submitted && f.selectionB.submitted)) return res.status(400).json({ error: "Both line-ups need to be revealed first." });
-  const u = req.session.user;
-  if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only a team captain can propose a time slot order." });
-  const side = u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
-  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
-  if (f.slotOrder) return res.status(400).json({ error: "The order is already agreed. Ask the admin to reset it first." });
-  const order = req.body.order;
-  if (!logic.isValidSlotOrder(order)) return res.status(400).json({ error: "Each seed needs exactly one slot." });
-  f.slotProposal = { by: side, order };
-  reorderCourtScheduleForFixture(league, f, order);
-  const label = fixtureLabel(league, f);
-  const proposerTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamA : f.teamB));
-  const oppTeamId = side === "A" ? f.teamB : f.teamA;
-  notify(league, oppTeamId, "timeslot", `${proposerTeam ? proposerTeam.name : "Your opponent"} proposed a playing order for ${label} — review it.`);
-  store.saveLeague(league.id, league);
-  res.json({ ok: true });
-});
-
-router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/confirm", (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  if (!f.slotProposal) return res.status(400).json({ error: "There's no proposal to confirm." });
-  const u = req.session.user;
-  const isAdmin = isAdminSession(req, league.id);
-  const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
-  if (!isAdmin && (!side || side === f.slotProposal.by)) return res.status(403).json({ error: "Only the other captain can confirm this proposal." });
-  f.slotOrder = f.slotProposal.order;
-  reorderCourtScheduleForFixture(league, f, f.slotOrder);
-  const proposerSide = f.slotProposal.by;
-  const proposerTeamId = proposerSide === "A" ? f.teamA : f.teamB;
-  notify(league, proposerTeamId, "timeslot", `Your proposed playing order for ${fixtureLabel(league, f)} was confirmed.`);
-  f.slotProposal = null;
-  store.saveLeague(league.id, league);
-  res.json({ ok: true });
-});
-
-router.post("/leagues/:leagueId/fixtures/:fixtureId/timeslot/reset", requireAdmin, (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  f.slotOrder = null;
-  f.slotProposal = null;
-  store.saveLeague(league.id, league);
-  res.json({ ok: true });
-});
-
-// Lets a captain (of either team in the match) or the admin rearrange which
-// of the match's 4 pairs sits in which court/slot the auto-rotation already
-// reserved for it — no propose/confirm handshake, either side can just save
-// changes directly, since they're only ever reshuffling seats that already
-// belong to this one shared match.
-router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order", (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  const admin = isAdminSession(req, league.id);
-  if (!admin) {
-    const u = req.session.user;
-    if (!u || u.leagueId !== league.id || !(u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB))) {
-      return res.status(403).json({ error: "Not allowed for your match." });
-    }
-  }
-  const assignments = req.body.assignments;
-  if (!Array.isArray(assignments) || assignments.length === 0) return res.status(400).json({ error: "Nothing to save." });
-
+// Shared by the admin's direct apply and the captains' propose/confirm
+// below — every cell being touched must already belong to this fixture
+// (never invent a new placement or grab another match's spot), and the
+// full set of the fixture's reserved spots must be assigned exactly once.
+function validateCourtOrderAssignments(league, f, assignments) {
+  if (!Array.isArray(assignments) || assignments.length === 0) return { error: "Nothing to save." };
   const grid = getCourtGrid(league, f.round);
   const ownedCells = new Set();
   grid.forEach((row, s) => row.forEach((cell, c) => { if (cell && cell.fixtureId === f.id) ownedCells.add(s + ":" + c); }));
@@ -1281,19 +1189,86 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order", (req, res) => 
   const seenSeeds = new Set(), seenCells = new Set();
   for (const a of assignments) {
     if (!a || !Number.isInteger(a.slot) || !Number.isInteger(a.court) || !Number.isInteger(a.seed) || a.seed < 0 || a.seed > 3) {
-      return res.status(400).json({ error: "Invalid assignment." });
+      return { error: "Invalid assignment." };
     }
     const key = a.slot + ":" + a.court;
-    if (!ownedCells.has(key)) return res.status(403).json({ error: "That spot isn't part of your match." });
-    if (seenSeeds.has(a.seed) || seenCells.has(key)) return res.status(400).json({ error: "Each pair needs exactly one spot." });
+    if (!ownedCells.has(key)) return { error: "That spot isn't part of your match." };
+    if (seenSeeds.has(a.seed) || seenCells.has(key)) return { error: "Each pair needs exactly one spot." };
     seenSeeds.add(a.seed); seenCells.add(key);
   }
-  if (assignments.length !== ownedCells.size) return res.status(400).json({ error: "Assign every one of your match's spots." });
-
+  if (assignments.length !== ownedCells.size) return { error: "Assign every one of your match's spots." };
+  return { grid };
+}
+function applyCourtOrderAssignments(league, f, assignments, grid) {
   assignments.forEach((a) => { grid[a.slot][a.court] = { fixtureId: f.id, seed: a.seed }; });
   if (!league.courtSchedule) league.courtSchedule = {};
   league.courtSchedule[f.round] = grid;
   f.slotOrder = assignments.slice().sort((x, y) => x.slot - y.slot || x.court - y.court).map((a) => a.seed);
+}
+
+// Admin can apply a court/order change directly — they already have full,
+// unilateral control over the court schedule from the Fixtures tab, so
+// routing them through the captains' propose/confirm dance below would
+// just be a detour.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const result = validateCourtOrderAssignments(league, f, req.body.assignments);
+  if (result.error) return res.status(result.error === "That spot isn't part of your match." ? 403 : 400).json({ error: result.error });
+  applyCourtOrderAssignments(league, f, req.body.assignments, result.grid);
+  f.courtOrderProposal = null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// Captains negotiate a change instead of applying it straight away — one
+// proposes, the other has to confirm (or counter-propose) before it takes
+// effect on the shared court schedule.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/propose", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const u = req.session.user;
+  if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only a team captain can propose this." });
+  const side = u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
+  if (!side) return res.status(403).json({ error: "You're not in this match." });
+
+  const result = validateCourtOrderAssignments(league, f, req.body.assignments);
+  if (result.error) return res.status(result.error === "That spot isn't part of your match." ? 403 : 400).json({ error: result.error });
+
+  f.courtOrderProposal = { by: side, assignments: req.body.assignments };
+  const label = fixtureLabel(league, f);
+  const proposerTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamA : f.teamB));
+  const oppTeamId = side === "A" ? f.teamB : f.teamA;
+  notify(league, oppTeamId, "timeslot", `${proposerTeam ? proposerTeam.name : "Your opponent"} proposed a court/playing order change for ${label} — review it.`);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/confirm", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.courtOrderProposal) return res.status(400).json({ error: "There's no proposal to confirm." });
+  const admin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
+  if (!admin && (!side || side === f.courtOrderProposal.by)) return res.status(403).json({ error: "Only the other captain can confirm this." });
+
+  const { assignments, by } = f.courtOrderProposal;
+  // Re-validate — the reserved spots could have changed (e.g. admin
+  // re-ran the rotation) since this was proposed.
+  const result = validateCourtOrderAssignments(league, f, assignments);
+  if (result.error) {
+    f.courtOrderProposal = null;
+    store.saveLeague(league.id, league);
+    return res.status(400).json({ error: "The court schedule changed since this was proposed — ask them to propose again." });
+  }
+  applyCourtOrderAssignments(league, f, assignments, result.grid);
+  const proposerTeamId = by === "A" ? f.teamA : f.teamB;
+  notify(league, proposerTeamId, "timeslot", `Your proposed court/playing order for ${fixtureLabel(league, f)} was confirmed.`);
+  f.courtOrderProposal = null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

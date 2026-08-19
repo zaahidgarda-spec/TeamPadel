@@ -19,13 +19,8 @@ function emptyFixtureExtras() {
     rubbers: [emptyRubber(), emptyRubber(), emptyRubber(), emptyRubber()],
     finalized: false,
     slotOrder: null, // once agreed: [seedIndex, seedIndex, seedIndex, seedIndex] = play order for the night
-    slotProposal: null, // { by: 'A'|'B', order: [...] } awaiting the other captain's response
+    courtOrderProposal: null, // { by: 'A'|'B', assignments: [{slot,court,seed}] } awaiting the other captain's response
   };
-}
-function isValidSlotOrder(order) {
-  if (!Array.isArray(order) || order.length !== 4) return false;
-  const seen = new Set(order);
-  return seen.size === 4 && [0, 1, 2, 3].every((i) => seen.has(i));
 }
 
 function generateRoundRobin(teams, doubleRound) {
@@ -380,7 +375,6 @@ module.exports = {
   matchWinner,
   computeStandings,
   validateSelection,
-  isValidSlotOrder,
   playerMatchHistory,
   computeLeagueStats,
 };

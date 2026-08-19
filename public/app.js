@@ -1162,7 +1162,8 @@ function timeSlotPanel(f, teamA, teamB) {
   const ownedCells = [];
   savedGrid.forEach((row, s) => row.forEach((cell, c) => { if (cell && cell.fixtureId === f.id) ownedCells.push({ slot: s, court: c, seed: cell.seed }); }));
 
-  const canEdit = myRole === "admin" || (myRole === "captain" && (myTeamId === f.teamA || myTeamId === f.teamB));
+  const myTeamSide = myRole === "captain" ? (myTeamId === f.teamA ? "A" : myTeamId === f.teamB ? "B" : null) : null;
+  const canEdit = myRole === "admin" || !!myTeamSide;
 
   if (ownedCells.length === 0) {
     wrap.appendChild(Object.assign(document.createElement("p"), {
@@ -1180,81 +1181,139 @@ function timeSlotPanel(f, teamA, teamB) {
   const roundFixtures = league.fixtures.filter((x) => x.round === f.round);
   const color = fixtureColor(f.id, roundFixtures);
 
-  const table = document.createElement("table");
-  table.className = "timeslot-order-table";
-  table.innerHTML = "<thead><tr><th></th>" + usedCourts.map((c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr></thead>";
-  const tbody = document.createElement("tbody");
+  const seedAtFromCells = (cells) => {
+    const m = {};
+    cells.forEach((c) => { m[c.slot + ":" + c.court] = c.seed; });
+    return m;
+  };
+  const assignmentsFrom = (seedAt) => Object.keys(seedAt).map((key) => {
+    const [slot, court] = key.split(":").map(Number);
+    return { slot, court, seed: seedAt[key] };
+  });
 
-  const localSeedAt = {};
-  ownedCells.forEach((c) => { localSeedAt[c.slot + ":" + c.court] = c.seed; });
-  const selectsByKey = {};
-  // Every spot always holds one of the 4 seeds, so picking a seed that's
-  // currently sitting somewhere else swaps the two spots rather than
-  // leaving a duplicate or a gap.
-  function refreshOptions() {
-    Object.keys(selectsByKey).forEach((key) => {
-      const select = selectsByKey[key];
-      const current = localSeedAt[key];
-      select.innerHTML = [0, 1, 2, 3].map((i) => `<option value="${i}" ${i === current ? "selected" : ""}>${escapeHtml(seedLabel(i))}</option>`).join("");
+  // Renders the courts-as-columns grid. `seedAt` maps "slot:court" -> seed.
+  // When `editable`, cells are selects wired to swap-on-pick (every spot
+  // always holds one of the 4 seeds, so picking a seed that's sitting
+  // elsewhere swaps the two rather than leaving a duplicate or a gap).
+  function renderGrid(seedAt, editable) {
+    const table = document.createElement("table");
+    table.className = "timeslot-order-table";
+    table.innerHTML = "<thead><tr><th></th>" + usedCourts.map((c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr></thead>";
+    const tbody = document.createElement("tbody");
+    const selectsByKey = {};
+    function refreshOptions() {
+      Object.keys(selectsByKey).forEach((key) => {
+        const select = selectsByKey[key];
+        const current = seedAt[key];
+        select.innerHTML = [0, 1, 2, 3].map((i) => `<option value="${i}" ${i === current ? "selected" : ""}>${escapeHtml(seedLabel(i))}</option>`).join("");
+      });
+    }
+    usedSlots.forEach((s) => {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th");
+      th.textContent = "Match " + (s + 1);
+      tr.appendChild(th);
+      const rowCount = ownedCells.filter((oc) => oc.slot === s).length;
+      usedCourts.forEach((c) => {
+        const key = s + ":" + c;
+        const td = document.createElement("td");
+        if (!(key in seedAt)) { td.textContent = "—"; tr.appendChild(td); return; }
+        td.style.cssText = `background:${color.bg};`;
+        if (rowCount > 1) {
+          const badge = document.createElement("div");
+          badge.className = "cs-double-badge";
+          badge.textContent = "2 courts";
+          td.appendChild(badge);
+        }
+        if (editable) {
+          const select = document.createElement("select");
+          selectsByKey[key] = select;
+          select.onchange = () => {
+            const newSeed = Number(select.value);
+            const oldSeed = seedAt[key];
+            const swapKey = Object.keys(seedAt).find((k) => k !== key && seedAt[k] === newSeed);
+            seedAt[key] = newSeed;
+            if (swapKey) seedAt[swapKey] = oldSeed;
+            refreshOptions();
+          };
+          td.appendChild(select);
+        } else {
+          td.appendChild(document.createTextNode(seedLabel(seedAt[key])));
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
     });
+    table.appendChild(tbody);
+    if (editable) refreshOptions();
+    return table;
   }
 
-  usedSlots.forEach((s) => {
-    const tr = document.createElement("tr");
-    const th = document.createElement("th");
-    th.textContent = "Match " + (s + 1);
-    tr.appendChild(th);
-    const rowCount = ownedCells.filter((oc) => oc.slot === s).length;
-    usedCourts.forEach((c) => {
-      const key = s + ":" + c;
-      const td = document.createElement("td");
-      if (!(key in localSeedAt)) { td.textContent = "—"; tr.appendChild(td); return; }
-      td.style.cssText = `background:${color.bg};`;
-      if (rowCount > 1) {
-        const badge = document.createElement("div");
-        badge.className = "cs-double-badge";
-        badge.textContent = "2 courts";
-        td.appendChild(badge);
-      }
-      if (canEdit) {
-        const select = document.createElement("select");
-        selectsByKey[key] = select;
-        select.onchange = () => {
-          const newSeed = Number(select.value);
-          const oldSeed = localSeedAt[key];
-          const swapKey = Object.keys(localSeedAt).find((k) => k !== key && localSeedAt[k] === newSeed);
-          localSeedAt[key] = newSeed;
-          if (swapKey) localSeedAt[swapKey] = oldSeed;
-          refreshOptions();
-        };
-        td.appendChild(select);
-      } else {
-        td.appendChild(document.createTextNode(seedLabel(localSeedAt[key])));
-      }
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  refreshOptions();
-
-  if (canEdit) {
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "primary"; saveBtn.style.marginTop = "10px"; saveBtn.textContent = "Save order";
+  // Editable grid + a save/propose button. Admin applies straight away
+  // (they already have unilateral control from the Fixtures tab); a
+  // captain's click sends it to their opponent to confirm instead.
+  function renderProposeUI(initialSeedAt) {
+    const box = document.createElement("div");
+    const seedAt = Object.assign({}, initialSeedAt);
+    box.appendChild(renderGrid(seedAt, true));
     const err = document.createElement("div"); err.className = "error";
-    saveBtn.onclick = async () => {
-      const assignments = Object.keys(localSeedAt).map((key) => {
-        const [slot, court] = key.split(":").map(Number);
-        return { slot, court, seed: localSeedAt[key] };
-      });
+    const btn = document.createElement("button");
+    btn.className = "primary"; btn.style.marginTop = "10px";
+    btn.textContent = myRole === "admin" ? "Save order" : "Propose this order";
+    btn.onclick = async () => {
+      const endpoint = myRole === "admin" ? "court-order" : "court-order/propose";
       try {
-        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/court-order`, { method: "POST", body: { assignments } });
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/${endpoint}`, { method: "POST", body: { assignments: assignmentsFrom(seedAt) } });
         await refreshLeague(); renderAll();
       } catch (e) { err.textContent = e.message; }
     };
-    wrap.appendChild(saveBtn); wrap.appendChild(err);
+    box.appendChild(btn); box.appendChild(err);
+    return box;
   }
+
+  const proposal = f.courtOrderProposal;
+
+  if (proposal && proposal.by !== myTeamSide) {
+    // Someone else proposed a change (for admin, "someone else" is always
+    // true since admin isn't on either side) — show it and let the other
+    // side respond.
+    const proposerTeam = proposal.by === "A" ? teamA : teamB;
+    wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-bottom:10px;", textContent: (proposerTeam ? proposerTeam.name : "Your opponent") + " proposed this order:" }));
+    wrap.appendChild(renderGrid(seedAtFromCells(proposal.assignments), false));
+
+    const canRespond = myRole === "admin" || (myTeamSide && myTeamSide !== proposal.by);
+    if (canRespond) {
+      const row = document.createElement("div"); row.className = "row"; row.style.marginTop = "10px";
+      const confirmBtn = document.createElement("button");
+      confirmBtn.className = "primary"; confirmBtn.textContent = "Confirm this order";
+      confirmBtn.onclick = async () => {
+        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/court-order/confirm`, { method: "POST" }); await refreshLeague(); renderAll(); }
+        catch (e) { alert(e.message); }
+      };
+      row.appendChild(confirmBtn);
+      if (myTeamSide) {
+        const counterBtn = document.createElement("button");
+        counterBtn.className = "secondary"; counterBtn.textContent = "Propose a different order";
+        counterBtn.onclick = () => { wrap.innerHTML = ""; wrap.appendChild(title); wrap.appendChild(renderProposeUI(seedAtFromCells(proposal.assignments))); };
+        row.appendChild(counterBtn);
+      }
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+
+  if (proposal && proposal.by === myTeamSide) {
+    wrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-bottom:10px;", textContent: "Waiting for the other captain to confirm or counter." }));
+    wrap.appendChild(renderGrid(seedAtFromCells(proposal.assignments), false));
+    return wrap;
+  }
+
+  if (!canEdit) {
+    wrap.appendChild(renderGrid(seedAtFromCells(ownedCells), false));
+    return wrap;
+  }
+
+  wrap.appendChild(renderProposeUI(seedAtFromCells(ownedCells)));
   return wrap;
 }
 function selectionReveal(f, team, sel, side) {
