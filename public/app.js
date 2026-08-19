@@ -1326,9 +1326,9 @@ function selectionReveal(f, team, sel, side) {
   const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
   if (myRole === "admin") {
     const reset = document.createElement("button");
-    reset.className = "link"; reset.style.marginTop = "6px"; reset.textContent = "Reset lineup";
+    reset.className = "link"; reset.style.marginTop = "6px"; reset.textContent = "Unlock to edit";
     reset.onclick = async () => {
-      if (!confirm(`Reset ${team.name}'s lineup? They'll need to resubmit their pairs. If match scores have already been entered for this fixture, they'll stay tied to the seed number, not the specific players — so changing the pairing afterward changes who gets credit.`)) return;
+      if (!confirm(`Unlock ${team.name}'s lineup so they can make changes? Their current pairs stay in place, ready to edit — nothing is wiped. If match scores have already been entered for this fixture, they'll stay tied to the seed number, not the specific players — so changing the pairing afterward changes who gets credit.`)) return;
       try {
         await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock`, { method: "POST", body: { side } });
         await refreshLeague(); renderAll();
@@ -1430,7 +1430,7 @@ function selectionForm(f, team, side) {
   // also submitted, so there's nothing unfair about editing it right up to
   // that point — no admin unlock needed here. It only truly locks once
   // both sides are in, at which point this whole form is replaced by the
-  // read-only reveal view (with its own admin "Reset lineup" control).
+  // read-only reveal view (with its own admin "Unlock to edit" control).
   if (already) {
     div.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-bottom:8px;", textContent: "Submitted — you can still make changes until the other team submits too." }));
   }
