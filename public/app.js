@@ -1659,6 +1659,14 @@ function renderCourtScheduleGrid(fixtures) {
   }).join("");
   wrap.appendChild(legend);
 
+  if (myRole === "admin") {
+    const hint = document.createElement("p");
+    hint.className = "note";
+    hint.style.cssText = "margin:0 0 10px;";
+    hint.textContent = "Tip: drag a match onto another court or slot to move it — drop it on an occupied one to swap the two.";
+    wrap.appendChild(hint);
+  }
+
   const scroll = document.createElement("div");
   scroll.className = "court-schedule-scroll hscroll";
   const table = document.createElement("table");
@@ -1749,9 +1757,42 @@ function renderCourtScheduleGrid(fixtures) {
           const preview = document.createElement("div");
           preview.className = "cs-cell-preview";
           preview.innerHTML = `${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}`;
+          // Dragging is a shortcut on top of the dropdown above, not a
+          // replacement for it — the dropdown still covers touch devices,
+          // where native drag-and-drop mostly doesn't fire. Only the small
+          // preview is the drag handle, so grabbing it can't be confused
+          // with opening the <select> right below it.
+          preview.draggable = true;
+          preview.title = "Drag to move — drop on another court to swap";
+          preview.ondragstart = (e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", JSON.stringify({ slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed }));
+            td.classList.add("cs-dragging");
+          };
+          preview.ondragend = () => td.classList.remove("cs-dragging");
           td.appendChild(preview);
         }
         td.appendChild(select);
+        // Every admin cell is a drop target, occupied or not — dropping
+        // onto an occupied cell swaps the two instead of silently erasing
+        // whatever was already there.
+        td.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("cs-drop-target"); };
+        td.ondragleave = () => td.classList.remove("cs-drop-target");
+        td.ondrop = async (e) => {
+          e.preventDefault();
+          td.classList.remove("cs-drop-target");
+          let dragged;
+          try { dragged = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
+          if (!dragged || (dragged.slot === s && dragged.court === c)) return;
+          const victim = savedGrid[s] && savedGrid[s][c];
+          try {
+            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: c, fixtureId: dragged.fixtureId, seed: dragged.seed } });
+            if (victim && !(victim.fixtureId === dragged.fixtureId && victim.seed === dragged.seed)) {
+              await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: dragged.slot, court: dragged.court, fixtureId: victim.fixtureId, seed: victim.seed } });
+            }
+            await refreshLeague(); renderAll();
+          } catch (err) { alert(err.message); }
+        };
       } else {
         const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
         if (opt) {

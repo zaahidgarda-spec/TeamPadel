@@ -227,6 +227,12 @@ table.court-schedule-table .court-name-input:focus{border-color:var(--accent);ba
 table.court-schedule-table tr:nth-child(even) td{background:var(--panel-2);}
 table.court-schedule-table .avatar,table.court-schedule-table .avatar-fb,.cs-legend .avatar,.cs-legend .avatar-fb{width:18px;height:18px;font-size:9px;}
 .cs-cell-teams,.cs-cell-preview{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:3px;}
+/* Only the small avatar-vs-avatar preview is the drag handle (not the whole
+   cell) so grabbing it never fights with opening the <select> below it. */
+table.court-schedule-table td .cs-cell-preview[draggable]{cursor:grab;border-radius:4px;}
+table.court-schedule-table td .cs-cell-preview[draggable]:active{cursor:grabbing;}
+table.court-schedule-table td.cs-dragging{opacity:.35;}
+table.court-schedule-table td.cs-drop-target{outline:2px dashed var(--accent);outline-offset:-3px;background-color:var(--accent-soft) !important;}
 .cs-vs{font-size:9px;color:var(--text-dim);text-transform:uppercase;}
 .cs-cell-label{font-size:11px;color:var(--text-dim);line-height:1.25;}
 .cs-double-badge{font-family:var(--font-display);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--clay);margin-bottom:3px;}
