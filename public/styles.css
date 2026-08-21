@@ -196,6 +196,13 @@ ul.plain li:last-child{border-bottom:none;}
    real callout instead of a gray tip line easy to skim past. */
 .cs-captain-hint{background:var(--accent-soft);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5;color:var(--text);}
 .cs-captain-hint strong{color:var(--accent);}
+/* Flashes green in place of the usual blue tip right after a swap actually
+   lands, so completing a move has a visible confirmation instead of the
+   grid just quietly redrawing. Reverts to the normal tip a couple seconds
+   later (see courtSwapNotice in app.js). */
+.cs-captain-hint.cs-hint-success{background:var(--success-soft);border-color:rgba(23,138,76,.3);}
+.cs-captain-hint.cs-hint-success strong{color:var(--success);}
+.note.cs-hint-success{color:var(--success);font-weight:600;}
 
 /* Horizontally-scrollable tables (court schedule, league table, tie-break
    record) had no visual cue that there was more to scroll to — on a

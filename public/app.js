@@ -11,6 +11,10 @@ let isOwner = false;
 // is tapped again to cancel. Always cleared on re-render (round switch,
 // tab switch, or a completed swap) so it never points at stale cells.
 let courtTapSelection = null;
+// A short-lived "✓ done" message shown in the court schedule hint area
+// right after a swap completes, then auto-reverts to the normal tip a
+// couple seconds later (see performCourtSwap / renderCourtScheduleGrid).
+let courtSwapNotice = null;
 
 function el(id) { return document.getElementById(id); }
 function escapeHtml(str) { const d = document.createElement("div"); d.textContent = str == null ? "" : str; return d.innerHTML; }
@@ -1639,12 +1643,18 @@ async function performCourtSwap(round, posA, posB) {
   let from = posA, to = posB;
   if (!from.fixtureId && to.fixtureId) { from = posB; to = posA; }
   if (!from.fixtureId) return;
+  const wasSwap = to.fixtureId && !(to.fixtureId === from.fixtureId && to.seed === from.seed);
   try {
     await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: to.slot, court: to.court, fixtureId: from.fixtureId, seed: from.seed } });
-    if (to.fixtureId && !(to.fixtureId === from.fixtureId && to.seed === from.seed)) {
+    if (wasSwap) {
       await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: from.slot, court: from.court, fixtureId: to.fixtureId, seed: to.seed } });
     }
+    // Shown once in the hint area on the very next render, then cleared —
+    // the render that follows a successful swap is the confirmation, not a
+    // silent grid refresh a captain has to notice on their own.
+    courtSwapNotice = wasSwap ? "Swapped — schedule updated." : "Moved — schedule updated.";
     await refreshLeague(); renderAll();
+    setTimeout(() => { courtSwapNotice = null; renderFixtures(); }, 2200);
   } catch (err) { alert(err.message); }
 }
 function renderCourtScheduleGrid(fixtures) {
@@ -1677,23 +1687,36 @@ function renderCourtScheduleGrid(fixtures) {
   }).join("");
   wrap.appendChild(legend);
 
-  if (myRole === "admin") {
-    const hint = document.createElement("p");
-    hint.className = "note";
-    hint.style.cssText = "margin:0 0 10px;";
-    hint.textContent = "Tip: tap a match to see where it can go, then tap a court or slot to move or swap it — you can also drag it with a mouse.";
-    wrap.appendChild(hint);
-  } else if (myRole === "captain") {
-    // A plain gray tip line is easy to skim past on a screen this busy, and
-    // this is new functionality a captain has no other way of discovering —
-    // so it gets the same "actually notice this" treatment as the install
-    // banner, not just a muted note.
-    const hint = document.createElement("div");
-    hint.className = "cs-captain-hint";
-    hint.innerHTML = "<strong>You can rearrange your own matches:</strong> tap one, then tap a court or slot to move or swap it. Only your team's blocks respond to this — everyone else's are locked to you.";
-    wrap.appendChild(hint);
+  // The hint area doubles as a status line: it starts on a plain "here's
+  // how this works" tip, switches to naming exactly what's selected and
+  // what to do next the moment a cell is tapped, and flashes a "✓ done"
+  // confirmation once a swap actually lands — instead of the only sign
+  // anything happened being the grid quietly redrawing itself.
+  let hintEl = null;
+  const defaultHint = myRole === "admin"
+    ? { text: "Tip: tap a match to see where it can go, then tap a court or slot to move or swap it — you can also drag it with a mouse.", success: false }
+    : { text: "<strong>You can rearrange your own matches:</strong> tap one, then tap a court or slot to move or swap it. Only your team's blocks respond to this — everyone else's are locked to you.", success: false };
+  const setHint = (html, success) => {
+    if (!hintEl) return;
+    hintEl.innerHTML = html;
+    hintEl.classList.toggle("cs-hint-success", !!success);
+  };
+  if (myRole === "admin" || myRole === "captain") {
+    hintEl = document.createElement("div");
+    hintEl.className = myRole === "captain" ? "cs-captain-hint" : "note";
+    if (myRole === "admin") hintEl.style.cssText = "margin:0 0 10px;";
+    setHint(courtSwapNotice ? "<strong>✓ " + escapeHtml(courtSwapNotice) + "</strong>" : defaultHint.text, !!courtSwapNotice);
+    wrap.appendChild(hintEl);
   }
 
+  // A human-readable name for a cell's match, so the status line can say
+  // exactly what's selected instead of just "a match".
+  const describeCell = (cell) => {
+    if (!cell) return "This empty court";
+    const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
+    if (!opt) return "This match";
+    return (opt.teamA ? opt.teamA.name : "TBD") + " vs " + (opt.teamB ? opt.teamB.name : "TBD") + " (Seed " + (cell.seed + 1) + ")";
+  };
   // Ownership gate for tap-to-swap: admin can touch any cell; a captain
   // only their own team's matches (an empty cell is always fair game, since
   // there's nothing to "own" there yet).
@@ -1720,12 +1743,14 @@ function renderCourtScheduleGrid(fixtures) {
         courtTapSelection = { slot: s, court: c, fixtureId: cell ? cell.fixtureId : null, seed: cell ? cell.seed : null, el: td };
         td.classList.add("cs-selected");
         tapCells.forEach((tc) => { if (tc.td !== td) tc.td.classList.add("cs-swap-target"); });
+        setHint("<strong>" + escapeHtml(describeCell(cell)) + " selected</strong> — tap a highlighted court or slot to move it there, or tap it again to cancel.", false);
         return;
       }
       clearSwapTargets();
       if (courtTapSelection.slot === s && courtTapSelection.court === c) {
         td.classList.remove("cs-selected");
         courtTapSelection = null;
+        setHint(defaultHint.text, false);
         return;
       }
       const from = courtTapSelection;
