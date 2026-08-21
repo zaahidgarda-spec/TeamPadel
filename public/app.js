@@ -6,6 +6,11 @@ let myTeamId = null;
 let viewingKey = null;
 let myNotifications = [];
 let isOwner = false;
+// Tap-to-swap state for the court schedule grid: the first tapped cell,
+// held until a second tap (elsewhere) completes the swap or the same cell
+// is tapped again to cancel. Always cleared on re-render (round switch,
+// tab switch, or a completed swap) so it never points at stale cells.
+let courtTapSelection = null;
 
 function el(id) { return document.getElementById(id); }
 function escapeHtml(str) { const d = document.createElement("div"); d.textContent = str == null ? "" : str; return d.innerHTML; }
@@ -1628,10 +1633,30 @@ function courtBalanceStrip() {
   wrap.appendChild(tableWrap.firstElementChild);
   return wrap;
 }
+// Shared by both drag-and-drop and tap-to-swap: moves `from`'s match onto
+// `to`'s position, and if `to` already held something else, sends it back
+// to swap into `from`'s (now-vacated) spot. `from`/`to` are
+// {slot, court, fixtureId, seed} with fixtureId null for an empty cell.
+// Placing a fixture+seed anywhere auto-clears wherever it previously sat
+// (server-side), so the source cell needs no separate "clear" call.
+async function performCourtSwap(round, posA, posB) {
+  if (posA.slot === posB.slot && posA.court === posB.court) return;
+  let from = posA, to = posB;
+  if (!from.fixtureId && to.fixtureId) { from = posB; to = posA; }
+  if (!from.fixtureId) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: to.slot, court: to.court, fixtureId: from.fixtureId, seed: from.seed } });
+    if (to.fixtureId && !(to.fixtureId === from.fixtureId && to.seed === from.seed)) {
+      await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: from.slot, court: from.court, fixtureId: to.fixtureId, seed: to.seed } });
+    }
+    await refreshLeague(); renderAll();
+  } catch (err) { alert(err.message); }
+}
 function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
   card.style.display = "block";
+  courtTapSelection = null;
   el("court-schedule-poster-row").style.display = myRole === "admin" ? "flex" : "none";
   el("court-schedule-generate-row").style.display = myRole === "admin" ? "flex" : "none";
 
@@ -1659,13 +1684,51 @@ function renderCourtScheduleGrid(fixtures) {
   }).join("");
   wrap.appendChild(legend);
 
-  if (myRole === "admin") {
+  if (myRole === "admin" || myRole === "captain") {
     const hint = document.createElement("p");
     hint.className = "note";
     hint.style.cssText = "margin:0 0 10px;";
-    hint.textContent = "Tip: drag a match onto another court or slot to move it — drop it on an occupied one to swap the two.";
+    hint.textContent = myRole === "admin"
+      ? "Tip: tap a match then tap another court or slot to move or swap it — you can also drag it with a mouse."
+      : "Tip: tap one of your matches, then tap another court or slot to move or swap it. You can only rearrange your own team's matches.";
     wrap.appendChild(hint);
   }
+
+  // Ownership gate for tap-to-swap: admin can touch any cell; a captain
+  // only their own team's matches (an empty cell is always fair game, since
+  // there's nothing to "own" there yet).
+  const canTapCell = (cell) => {
+    if (myRole === "admin") return true;
+    if (myRole !== "captain") return false;
+    if (!cell) return true;
+    const f = fixtures.find((x) => x.id === cell.fixtureId);
+    return !!f && (f.teamA === myTeamId || f.teamB === myTeamId);
+  };
+  // Wires up the shared tap-to-swap interaction on a cell — a no-op if this
+  // user isn't allowed to touch it, so an ineligible cell (an opponent's
+  // block, for a captain) simply never responds to taps at all.
+  const attachCourtTap = (td, cell, s, c) => {
+    if (!canTapCell(cell)) return;
+    td.classList.add("cs-tappable");
+    td.addEventListener("click", (e) => {
+      if (e.target.tagName === "SELECT" || e.target.tagName === "OPTION") return;
+      if (!courtTapSelection) {
+        courtTapSelection = { slot: s, court: c, fixtureId: cell ? cell.fixtureId : null, seed: cell ? cell.seed : null, el: td };
+        td.classList.add("cs-selected");
+        return;
+      }
+      if (courtTapSelection.slot === s && courtTapSelection.court === c) {
+        td.classList.remove("cs-selected");
+        courtTapSelection = null;
+        return;
+      }
+      const from = courtTapSelection;
+      const to = { slot: s, court: c, fixtureId: cell ? cell.fixtureId : null, seed: cell ? cell.seed : null };
+      from.el.classList.remove("cs-selected");
+      courtTapSelection = null;
+      performCourtSwap(round, from, to);
+    });
+  };
 
   const scroll = document.createElement("div");
   scroll.className = "court-schedule-scroll hscroll";
@@ -1778,21 +1841,16 @@ function renderCourtScheduleGrid(fixtures) {
         // whatever was already there.
         td.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("cs-drop-target"); };
         td.ondragleave = () => td.classList.remove("cs-drop-target");
-        td.ondrop = async (e) => {
+        td.ondrop = (e) => {
           e.preventDefault();
           td.classList.remove("cs-drop-target");
           let dragged;
           try { dragged = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
-          if (!dragged || (dragged.slot === s && dragged.court === c)) return;
+          if (!dragged) return;
           const victim = savedGrid[s] && savedGrid[s][c];
-          try {
-            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: c, fixtureId: dragged.fixtureId, seed: dragged.seed } });
-            if (victim && !(victim.fixtureId === dragged.fixtureId && victim.seed === dragged.seed)) {
-              await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: dragged.slot, court: dragged.court, fixtureId: victim.fixtureId, seed: victim.seed } });
-            }
-            await refreshLeague(); renderAll();
-          } catch (err) { alert(err.message); }
+          performCourtSwap(round, dragged, { slot: s, court: c, fixtureId: victim ? victim.fixtureId : null, seed: victim ? victim.seed : null });
         };
+        attachCourtTap(td, cell, s, c);
       } else {
         const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
         if (opt) {
@@ -1802,6 +1860,7 @@ function renderCourtScheduleGrid(fixtures) {
         } else {
           td.appendChild(document.createTextNode("—"));
         }
+        attachCourtTap(td, cell, s, c);
       }
       tr.appendChild(td);
     }

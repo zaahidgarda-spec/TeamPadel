@@ -910,16 +910,37 @@ router.put("/leagues/:leagueId/court-names", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-router.post("/leagues/:leagueId/court-schedule/:round/assign", requireAdmin, (req, res) => {
+router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const round = Number(req.params.round);
   if (!Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
+
+  // Admins can rearrange any block; a captain can tap-swap blocks too, but
+  // only ones that are already theirs — enforced below, not just hidden
+  // client-side, since this is the same endpoint either role calls.
+  const isAdmin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  const isCaptain = !isAdmin && !!u && u.leagueId === league.id && u.role === "captain";
+  if (!isAdmin && !isCaptain) return res.status(403).json({ error: "Not allowed." });
+
   const { slot, court, fixtureId, seed } = req.body || {};
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   if (!Number.isInteger(slot) || slot < 0 || slot >= slots) return res.status(400).json({ error: "Invalid slot." });
   if (!Number.isInteger(court) || court < 0 || court >= courts) return res.status(400).json({ error: "Invalid court." });
 
   const grid = getCourtGrid(league, round);
+
+  if (isCaptain) {
+    const ownsFixture = (fxId) => {
+      if (!fxId) return true;
+      const f = league.fixtures.find((x) => x.id === fxId && x.round === round);
+      return !!f && (f.teamA === u.teamId || f.teamB === u.teamId);
+    };
+    const existing = grid[slot] && grid[slot][court];
+    if (!ownsFixture(fixtureId) || (existing && !ownsFixture(existing.fixtureId))) {
+      return res.status(403).json({ error: "You can only rearrange your own team's matches." });
+    }
+  }
 
   if (fixtureId) {
     const f = league.fixtures.find((x) => x.id === fixtureId && x.round === round);
