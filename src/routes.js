@@ -1018,7 +1018,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   // up until the opponent submits — it only locks once both sides have
   // gone (a real reveal happened), after which only admin can reopen it.
   if (f[selKey].submitted && f[oppKey].submitted) {
-    return res.status(400).json({ error: "Both line-ups are already in — ask the admin to unlock it." });
+    return res.status(400).json({ error: "Both line-ups are already in — ask the admin to unlock it, or request it in Selection Room (needs the other captain's approval)." });
   }
 
   const pairs = req.body.pairs;
@@ -1052,6 +1052,68 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock", requireAd
   const side = req.body.side;
   const selKey = side === "A" ? "selectionA" : "selectionB";
   f[selKey].submitted = false;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// A captain can also get their own line-up reopened without going through
+// admin — but only with the other captain's consent, same propose/confirm
+// shape as the court-order negotiation above. A team can't just unilaterally
+// reopen after seeing the reveal.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/propose", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const u = req.session.user;
+  if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only a team captain can request this." });
+  const side = u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
+  if (!side) return res.status(403).json({ error: "You're not in this match." });
+  if (!(f.selectionA.submitted && f.selectionB.submitted)) return res.status(400).json({ error: "Both line-ups need to be in before either can be reopened." });
+  if (f.selectionUnlockRequest) return res.status(400).json({ error: "There's already a pending request for this match." });
+
+  f.selectionUnlockRequest = { by: side };
+  const label = fixtureLabel(league, f);
+  const myTeam = league.teams.find((t) => t.id === u.teamId);
+  const oppTeamId = side === "A" ? f.teamB : f.teamA;
+  notify(league, oppTeamId, "selection_unlock", `${myTeam ? myTeam.name : "Your opponent"} wants to revise their line-up for ${label} — approve or decline in Selection Room.`, { round: f.round });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/confirm", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.selectionUnlockRequest) return res.status(400).json({ error: "There's no request to approve." });
+  const admin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
+  if (!admin && (!side || side === f.selectionUnlockRequest.by)) return res.status(403).json({ error: "Only the other captain can approve this." });
+
+  const { by } = f.selectionUnlockRequest;
+  const selKey = by === "A" ? "selectionA" : "selectionB";
+  f[selKey].submitted = false;
+  f.selectionUnlockRequest = null;
+  const requesterTeamId = by === "A" ? f.teamA : f.teamB;
+  notify(league, requesterTeamId, "selection_unlock", `Your request to revise your line-up for ${fixtureLabel(league, f)} was approved — you can resubmit now.`, { round: f.round });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/decline", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.selectionUnlockRequest) return res.status(400).json({ error: "There's no request to decline." });
+  const admin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
+  if (!admin && (!side || side === f.selectionUnlockRequest.by)) return res.status(403).json({ error: "Only the other captain can decline this." });
+
+  const { by } = f.selectionUnlockRequest;
+  f.selectionUnlockRequest = null;
+  const requesterTeamId = by === "A" ? f.teamA : f.teamB;
+  notify(league, requesterTeamId, "selection_unlock", `Your request to revise your line-up for ${fixtureLabel(league, f)} was declined.`, { round: f.round });
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

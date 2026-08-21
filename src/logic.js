@@ -20,6 +20,7 @@ function emptyFixtureExtras() {
     finalized: false,
     slotOrder: null, // once agreed: [seedIndex, seedIndex, seedIndex, seedIndex] = play order for the night
     courtOrderProposal: null, // { by: 'A'|'B', assignments: [{slot,court,seed}] } awaiting the other captain's response
+    selectionUnlockRequest: null, // { by: 'A'|'B' } — that side asked to reopen their own (already-submitted) line-up, awaiting the other captain's (or admin's) approval
   };
 }
 

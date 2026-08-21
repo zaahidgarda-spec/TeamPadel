@@ -1107,8 +1107,10 @@ function renderNotificationsList() {
     const row = document.createElement("div");
     // Pair of the Week notifications carry the round they're about — clicking
     // one jumps straight to that round's Awards page instead of leaving the
-    // captain to go find it themselves.
-    const goToRound = n.type === "potw" && Number.isInteger(n.round) ? getRoundsList().find((k) => k.stage === "regular" && k.round === n.round) : null;
+    // captain to go find it themselves. A line-up unlock request/response is
+    // the same idea, but jumps to Selection Room, where it's actionable.
+    const jumpTab = n.type === "potw" ? "awards" : n.type === "selection_unlock" ? "selection" : null;
+    const goToRound = jumpTab && Number.isInteger(n.round) ? getRoundsList().find((k) => k.stage === "regular" && k.round === n.round) : null;
     row.className = "notif-row" + (n.read ? "" : " unread") + (goToRound ? " notif-clickable" : "");
     row.innerHTML = `<span class="notif-msg">${escapeHtml(n.message)}</span><time class="notif-time">${new Date(n.createdAt).toLocaleString()}</time>`;
     if (!n.read || goToRound) {
@@ -1119,7 +1121,7 @@ function renderNotificationsList() {
         }
         if (goToRound) {
           viewingKey = goToRound;
-          switchTab("awards");
+          switchTab(jumpTab);
           renderAll();
         } else {
           renderNotificationsList();
@@ -1162,6 +1164,8 @@ function selectionCard(f) {
     grid.appendChild(selectionReveal(f, teamA, f.selectionA, "A"));
     grid.appendChild(selectionReveal(f, teamB, f.selectionB, "B"));
     card.appendChild(grid);
+    const unlockPanel = selectionUnlockPanel(f, teamA, teamB);
+    if (unlockPanel) card.appendChild(unlockPanel);
     card.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:10px;", textContent: "Both line-ups are in — agree a playing order below, then head to Results to enter scores." }));
     card.appendChild(timeSlotPanel(f, teamA, teamB));
   } else {
@@ -1348,6 +1352,68 @@ function timeSlotPanel(f, teamA, teamB) {
   }
 
   wrap.appendChild(renderProposeUI(seedAtFromCells(ownedCells)));
+  return wrap;
+}
+// Lets a captain ask to reopen their own already-revealed line-up — but
+// only with the other captain's (or admin's) consent, so seeing the
+// opponent's pairs first doesn't give a free redo. Mirrors the court-order
+// propose/confirm negotiation in timeSlotPanel, just for the selection
+// itself. Admin already has a direct "Unlock to edit" button per side (in
+// selectionReveal), so this panel has nothing to add for them unless a
+// captain has an active request — bypassing the propose/confirm dance for
+// admin follows the same logic as the court-order feature.
+function selectionUnlockPanel(f, teamA, teamB) {
+  const myTeamSide = myRole === "captain" ? (myTeamId === f.teamA ? "A" : myTeamId === f.teamB ? "B" : null) : null;
+  const request = f.selectionUnlockRequest;
+
+  if (!request) {
+    if (!myTeamSide) return null;
+    const wrap = document.createElement("div");
+    wrap.className = "info-callout"; wrap.style.marginTop = "10px";
+    wrap.innerHTML = "<strong>Made a mistake in your line-up?</strong> You can ask to reopen it — your opponent has to approve first.<br>";
+    const btn = document.createElement("button");
+    btn.className = "secondary"; btn.style.marginTop = "8px";
+    btn.textContent = "Request to unlock my line-up";
+    btn.onclick = async () => {
+      try {
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock/propose`, { method: "POST" });
+        await refreshLeague(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "info-callout"; wrap.style.marginTop = "10px";
+
+  if (request.by === myTeamSide) {
+    const oppTeam = request.by === "A" ? teamB : teamA;
+    wrap.innerHTML = "<strong>Waiting for approval:</strong> you asked to reopen your line-up — " + escapeHtml(oppTeam ? oppTeam.name : "the other captain") + " needs to approve it first.";
+    return wrap;
+  }
+
+  const requesterTeam = request.by === "A" ? teamA : teamB;
+  wrap.innerHTML = `<strong>${escapeHtml(requesterTeam ? requesterTeam.name : "Your opponent")} wants to revise their line-up</strong> for this match.`;
+  const canRespond = myRole === "admin" || (myTeamSide && myTeamSide !== request.by);
+  if (canRespond) {
+    const row = document.createElement("div");
+    row.className = "row"; row.style.marginTop = "8px";
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "primary"; approveBtn.textContent = "Approve";
+    approveBtn.onclick = async () => {
+      try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock/confirm`, { method: "POST" }); await refreshLeague(); renderAll(); }
+      catch (e) { alert(e.message); }
+    };
+    const declineBtn = document.createElement("button");
+    declineBtn.className = "secondary"; declineBtn.textContent = "Decline";
+    declineBtn.onclick = async () => {
+      try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection/unlock/decline`, { method: "POST" }); await refreshLeague(); renderAll(); }
+      catch (e) { alert(e.message); }
+    };
+    row.appendChild(approveBtn); row.appendChild(declineBtn);
+    wrap.appendChild(row);
+  }
   return wrap;
 }
 function selectionReveal(f, team, sel, side) {
@@ -1699,11 +1765,11 @@ function renderCourtScheduleGrid(fixtures) {
   const setHint = (html, success) => {
     if (!hintEl) return;
     hintEl.innerHTML = html;
-    hintEl.classList.toggle("cs-hint-success", !!success);
+    hintEl.classList.toggle("info-callout-success", !!success);
   };
   if (myRole === "admin" || myRole === "captain") {
     hintEl = document.createElement("div");
-    hintEl.className = myRole === "captain" ? "cs-captain-hint" : "note";
+    hintEl.className = myRole === "captain" ? "info-callout" : "note";
     if (myRole === "admin") hintEl.style.cssText = "margin:0 0 10px;";
     setHint(courtSwapNotice ? "<strong>✓ " + escapeHtml(courtSwapNotice) + "</strong>" : defaultHint.text, !!courtSwapNotice);
     wrap.appendChild(hintEl);

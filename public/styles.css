@@ -191,18 +191,19 @@ ul.plain li:last-child{border-bottom:none;}
 .cs-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--line);}
 .cs-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;}
 .cs-swatch{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
-/* Same "actually notice this" treatment as the install banner — a captain
-   has no other way of finding out this interaction exists, so it gets a
-   real callout instead of a gray tip line easy to skim past. */
-.cs-captain-hint{background:var(--accent-soft);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5;color:var(--text);}
-.cs-captain-hint strong{color:var(--accent);}
-/* Flashes green in place of the usual blue tip right after a swap actually
-   lands, so completing a move has a visible confirmation instead of the
-   grid just quietly redrawing. Reverts to the normal tip a couple seconds
+/* Same "actually notice this" treatment as the install banner — used
+   wherever a captain has no other way of finding out an interaction exists
+   (court schedule tap-to-swap, selection-unlock requests), so it's a real
+   callout instead of a gray tip line easy to skim past. */
+.info-callout{background:var(--accent-soft);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5;color:var(--text);}
+.info-callout strong{color:var(--accent);}
+/* Flashes green in place of the usual blue tone right after an action
+   actually completes, so it has a visible confirmation instead of the
+   view just quietly redrawing. Reverts to the normal tint a couple seconds
    later (see courtSwapNotice in app.js). */
-.cs-captain-hint.cs-hint-success{background:var(--success-soft);border-color:rgba(23,138,76,.3);}
-.cs-captain-hint.cs-hint-success strong{color:var(--success);}
-.note.cs-hint-success{color:var(--success);font-weight:600;}
+.info-callout.info-callout-success{background:var(--success-soft);border-color:rgba(23,138,76,.3);}
+.info-callout.info-callout-success strong{color:var(--success);}
+.note.info-callout-success{color:var(--success);font-weight:600;}
 
 /* Horizontally-scrollable tables (court schedule, league table, tie-break
    record) had no visual cue that there was more to scroll to — on a
