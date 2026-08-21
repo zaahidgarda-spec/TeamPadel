@@ -2159,7 +2159,7 @@ function fitText(ctx, text, maxWidth, startSize, weight, family, floor) {
   while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) { out = out.slice(0, -1); }
   return out.length < text.length ? out + "…" : out;
 }
-async function drawTeamLogo(ctx, team, cx, cy, radius) {
+async function drawTeamLogo(ctx, team, cx, cy, radius, ringColor) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -2176,7 +2176,7 @@ async function drawTeamLogo(ctx, team, cx, cy, radius) {
   }
   ctx.restore();
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "#2563EB";
+  ctx.strokeStyle = ringColor || "#2563EB";
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.stroke();
@@ -2189,7 +2189,27 @@ async function drawTeamLogo(ctx, team, cx, cy, radius) {
     ctx.textBaseline = "alphabetic";
   }
 }
-async function generatePosterCanvas(mode) {
+// Each poster picks one of these at generation time so consecutive posters
+// don't all come out identically blue — hues are drawn from colors already
+// used elsewhere in the app (the court-schedule fixture palette, the clay
+// court accent, the premier-league gold) rather than invented from scratch,
+// so a themed poster still reads as "this app" rather than a random skin.
+const POSTER_THEMES = [
+  { name: "blue", bgTop: "#0B1730", bgBottom: "#16294D", accent: "#2563EB", win: "#5B9CFF" },
+  { name: "clay", bgTop: "#241008", bgBottom: "#3D1D0E", accent: "#E2432F", win: "#FF8A6B" },
+  { name: "teal", bgTop: "#031F1C", bgBottom: "#0B3B34", accent: "#0D9488", win: "#5EEAD4" },
+  { name: "purple", bgTop: "#170B2E", bgBottom: "#2A1454", accent: "#7C3AED", win: "#B794F6" },
+  { name: "gold", bgTop: "#241A03", bgBottom: "#3D2B08", accent: "#D4AF37", win: "#F5D876" },
+  { name: "crimson", bgTop: "#2B0714", bgBottom: "#4A0F26", accent: "#DB2777", win: "#F472B6" },
+];
+let lastPosterThemeIdx = -1;
+function pickPosterTheme() {
+  let idx;
+  do { idx = Math.floor(Math.random() * POSTER_THEMES.length); } while (POSTER_THEMES.length > 1 && idx === lastPosterThemeIdx);
+  lastPosterThemeIdx = idx;
+  return POSTER_THEMES[idx];
+}
+async function generatePosterCanvas(mode, theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey).slice(0, 8);
   const sponsors = (league.sponsors || []).slice(0, 5);
@@ -2228,13 +2248,13 @@ async function generatePosterCanvas(mode) {
   const ctx = canvas.getContext("2d");
 
   const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#0B1730");
-  bg.addColorStop(1, "#16294D");
+  bg.addColorStop(0, theme.bgTop);
+  bg.addColorStop(1, theme.bgBottom);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = "#2563EB";
+  ctx.fillStyle = theme.accent;
   ctx.font = "700 32px Oswald, sans-serif";
   ctx.fillText((league.name || "").toUpperCase(), W / 2, 96);
 
@@ -2268,8 +2288,8 @@ async function generatePosterCanvas(mode) {
 
     const headerMidY = y + headerBlockH / 2;
     const logoCenterOffset = sz(40) + logoRadius;
-    await drawTeamLogo(ctx, teamA, 56 + logoCenterOffset, headerMidY, logoRadius);
-    await drawTeamLogo(ctx, teamB, W - 56 - logoCenterOffset, headerMidY, logoRadius);
+    await drawTeamLogo(ctx, teamA, 56 + logoCenterOffset, headerMidY, logoRadius, theme.accent);
+    await drawTeamLogo(ctx, teamB, W - 56 - logoCenterOffset, headerMidY, logoRadius, theme.accent);
 
     // Name starts past the logo's far edge (center offset + radius again),
     // plus a small gap — has to be recomputed from the actual scaled logo
@@ -2291,7 +2311,7 @@ async function generatePosterCanvas(mode) {
     ctx.textAlign = "center";
     if (mode === "results" && f.finalized) {
       const { winsA, winsB } = fixtureScoreClient(f);
-      ctx.fillStyle = "#2563EB";
+      ctx.fillStyle = theme.accent;
       ctx.font = "700 " + sz(42) + "px Oswald, sans-serif";
       ctx.fillText(winsA + " - " + winsB, W / 2, headerMidY + sz(15));
     } else {
@@ -2316,12 +2336,12 @@ async function generatePosterCanvas(mode) {
         const winner = f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
 
         ctx.textAlign = "left";
-        ctx.fillStyle = winner === "A" ? "#5B9CFF" : "#C6D2E3";
+        ctx.fillStyle = winner === "A" ? theme.win : "#C6D2E3";
         const fittedA = fitText(ctx, namesA, pairMaxWidth, sz(20), winner === "A" ? "700" : "400", "Inter, sans-serif", Math.max(11, sz(12)));
         ctx.fillText(fittedA, 90, py + sz(6));
 
         ctx.textAlign = "right";
-        ctx.fillStyle = winner === "B" ? "#5B9CFF" : "#C6D2E3";
+        ctx.fillStyle = winner === "B" ? theme.win : "#C6D2E3";
         const fittedB = fitText(ctx, namesB, pairMaxWidth, sz(20), winner === "B" ? "700" : "400", "Inter, sans-serif", Math.max(11, sz(12)));
         ctx.fillText(fittedB, W - 90, py + sz(6));
 
@@ -2388,7 +2408,7 @@ function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
-async function generateCourtSchedulePosterCanvas() {
+async function generateCourtSchedulePosterCanvas(theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey);
   const sponsors = (league.sponsors || []).slice(0, 5);
@@ -2445,13 +2465,13 @@ async function generateCourtSchedulePosterCanvas() {
   const ctx = canvas.getContext("2d");
 
   const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#0B1730");
-  bg.addColorStop(1, "#16294D");
+  bg.addColorStop(0, theme.bgTop);
+  bg.addColorStop(1, theme.bgBottom);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = "#2563EB";
+  ctx.fillStyle = theme.accent;
   ctx.font = "700 32px Oswald, sans-serif";
   ctx.fillText((league.name || "").toUpperCase(), W / 2, 96);
 
@@ -2485,8 +2505,8 @@ async function generateCourtSchedulePosterCanvas() {
       ctx.fillStyle = color.border;
       roundRectPath(ctx, marginX, ly - sz(8), sz(16), sz(16), sz(4));
       ctx.fill();
-      await drawTeamLogo(ctx, teamA, marginX + sz(42), ly, sz(14));
-      await drawTeamLogo(ctx, teamB, marginX + sz(78), ly, sz(14));
+      await drawTeamLogo(ctx, teamA, marginX + sz(42), ly, sz(14), theme.accent);
+      await drawTeamLogo(ctx, teamB, marginX + sz(78), ly, sz(14), theme.accent);
       ctx.textAlign = "left";
       ctx.fillStyle = "#DCE3F0";
       const label = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD");
@@ -2532,12 +2552,12 @@ async function generateCourtSchedulePosterCanvas() {
         const revealed = fixture && fixture.selectionA.submitted && fixture.selectionB.submitted;
         const midX = cellX + cellW / 2;
         const logoR = csz(15);
-        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - logoR * 1.6, cellY + cellH * 0.16, logoR);
+        await drawTeamLogo(ctx, opt ? opt.teamA : null, midX - logoR * 1.6, cellY + cellH * 0.16, logoR, theme.accent);
         ctx.textAlign = "center";
         ctx.fillStyle = "#8FA9B4";
         ctx.font = "500 " + csz(13) + "px Oswald, sans-serif";
         ctx.fillText("v", midX, cellY + cellH * 0.16 + csz(5));
-        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + logoR * 1.6, cellY + cellH * 0.16, logoR);
+        await drawTeamLogo(ctx, opt ? opt.teamB : null, midX + logoR * 1.6, cellY + cellH * 0.16, logoR, theme.accent);
 
         if (revealed && opt) {
           // Each pair gets its own full-width line — showing every player's
@@ -2601,7 +2621,7 @@ async function generateCourtSchedulePosterCanvas() {
 
   return canvas;
 }
-async function generateTablePosterCanvas() {
+async function generateTablePosterCanvas(theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const rows = computeStandingsClient();
   const sponsors = (league.sponsors || []).slice(0, 5);
@@ -2634,13 +2654,13 @@ async function generateTablePosterCanvas() {
   const ctx = canvas.getContext("2d");
 
   const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#0B1730");
-  bg.addColorStop(1, "#16294D");
+  bg.addColorStop(0, theme.bgTop);
+  bg.addColorStop(1, theme.bgBottom);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = "#2563EB";
+  ctx.fillStyle = theme.accent;
   ctx.font = "700 32px Oswald, sans-serif";
   ctx.fillText((league.name || "").toUpperCase(), W / 2, 96);
 
@@ -2670,11 +2690,11 @@ async function generateTablePosterCanvas() {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const isLeader = i === 0 && r.played > 0;
-    ctx.fillStyle = isLeader ? "rgba(37,99,235,0.16)" : "rgba(255,255,255,0.06)";
+    ctx.fillStyle = isLeader ? hexToRgba(theme.accent, 0.16) : "rgba(255,255,255,0.06)";
     roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, sz(14));
     ctx.fill();
     if (isLeader) {
-      ctx.strokeStyle = "#2563EB";
+      ctx.strokeStyle = theme.accent;
       ctx.lineWidth = 2;
       roundRectPath(ctx, marginX, y, W - marginX * 2, rowH, sz(14));
       ctx.stroke();
@@ -2683,11 +2703,11 @@ async function generateTablePosterCanvas() {
     const midY = y + rowH / 2;
 
     ctx.textAlign = "center";
-    ctx.fillStyle = isLeader ? "#2563EB" : "#8FA9B4";
+    ctx.fillStyle = isLeader ? theme.accent : "#8FA9B4";
     ctx.font = "700 " + hz(26) + "px Oswald, sans-serif";
     ctx.fillText(String(i + 1), marginX + rankColW / 2, midY + hz(9));
 
-    await drawTeamLogo(ctx, r, marginX + rankColW + hz(20) + logoR, midY, logoR);
+    await drawTeamLogo(ctx, r, marginX + rankColW + hz(20) + logoR, midY, logoR, theme.accent);
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#FFFFFF";
@@ -2697,7 +2717,7 @@ async function generateTablePosterCanvas() {
     const values = [r.played, r.rubbersWon, r.rubbersLost, (r.diff > 0 ? "+" : "") + r.diff, r.points];
     ctx.textAlign = "center";
     values.forEach((v, ci) => {
-      ctx.fillStyle = ci === 4 ? "#2563EB" : "#DCE3F0";
+      ctx.fillStyle = ci === 4 ? theme.accent : "#DCE3F0";
       ctx.font = (ci === 4 ? "700 " : "500 ") + hz(ci === 4 ? 26 : 22) + "px Oswald, sans-serif";
       ctx.fillText(String(v), statsStartX + ci * statColW + statColW / 2, midY + hz(8));
     });
@@ -2746,7 +2766,8 @@ async function openPosterModal(mode) {
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
   el("poster-modal-backdrop").classList.add("open");
-  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas() : mode === "table" ? await generateTablePosterCanvas() : await generatePosterCanvas(mode);
+  const theme = pickPosterTheme();
+  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas(theme) : mode === "table" ? await generateTablePosterCanvas(theme) : await generatePosterCanvas(mode, theme);
   const dataUrl = canvas.toDataURL("image/png");
   el("poster-preview-img").src = dataUrl;
   el("poster-preview-img").style.display = "inline-block";
