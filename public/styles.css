@@ -191,6 +191,11 @@ ul.plain li:last-child{border-bottom:none;}
 .cs-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--line);}
 .cs-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;}
 .cs-swatch{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+/* Same "actually notice this" treatment as the install banner — a captain
+   has no other way of finding out this interaction exists, so it gets a
+   real callout instead of a gray tip line easy to skim past. */
+.cs-captain-hint{background:var(--accent-soft);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5;color:var(--text);}
+.cs-captain-hint strong{color:var(--accent);}
 
 /* Horizontally-scrollable tables (court schedule, league table, tie-break
    record) had no visual cue that there was more to scroll to — on a
@@ -226,11 +231,13 @@ table.court-schedule-table .court-name-input:hover{border-color:var(--line);}
 table.court-schedule-table .court-name-input:focus{border-color:var(--accent);background:var(--panel);outline:none;}
 table.court-schedule-table tr:nth-child(even) td{background:var(--panel-2);}
 table.court-schedule-table .avatar,table.court-schedule-table .avatar-fb,.cs-legend .avatar,.cs-legend .avatar-fb{width:18px;height:18px;font-size:9px;}
-.cs-cell-teams,.cs-cell-preview{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:3px;}
-/* Only the small avatar-vs-avatar preview is the drag handle (not the whole
-   cell) so grabbing it never fights with opening the <select> below it. */
-table.court-schedule-table td .cs-cell-preview[draggable]{cursor:grab;border-radius:4px;}
-table.court-schedule-table td .cs-cell-preview[draggable]:active{cursor:grabbing;}
+.cs-cell-teams{display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:3px;}
+/* The cell's whole content box is the drag handle for admin (there's no
+   dropdown anymore — tap-to-swap and drag are the only ways to rearrange
+   the grid), so grabbing it never fights with the tap handler on the <td>
+   itself since drag and a stationary click are distinct browser gestures. */
+table.court-schedule-table td .cs-cell-content[draggable]{cursor:grab;border-radius:4px;}
+table.court-schedule-table td .cs-cell-content[draggable]:active{cursor:grabbing;}
 table.court-schedule-table td.cs-dragging{opacity:.35;}
 table.court-schedule-table td.cs-drop-target{outline:2px dashed var(--accent);outline-offset:-3px;background-color:var(--accent-soft) !important;}
 /* Tap-to-swap: works identically for mouse and touch, unlike drag, so it's
@@ -239,6 +246,10 @@ table.court-schedule-table td.cs-drop-target{outline:2px dashed var(--accent);ou
    allowed to touch it (see canTapCell in app.js). */
 table.court-schedule-table td.cs-tappable{cursor:pointer;}
 table.court-schedule-table td.cs-selected{outline:2px solid var(--accent);outline-offset:-3px;background-color:var(--accent-soft) !important;}
+/* Once a cell is selected, every other cell it could legally swap with
+   lights up with a lighter dashed ring — so the valid options are visible
+   before the second tap, not just the current pick. */
+table.court-schedule-table td.cs-swap-target{outline:2px dashed var(--accent);outline-offset:-3px;}
 .cs-vs{font-size:9px;color:var(--text-dim);text-transform:uppercase;}
 .cs-cell-label{font-size:11px;color:var(--text-dim);line-height:1.25;}
 .cs-double-badge{font-family:var(--font-display);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--clay);margin-bottom:3px;}

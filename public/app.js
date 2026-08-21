@@ -1553,15 +1553,10 @@ function courtScheduleOptions(fixtures) {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
     for (let seed = 0; seed < 4; seed++) {
-      // Once revealed, still keep the team names + seed number in the select
-      // option (not just the player pair) — otherwise, with two fixtures'
-      // lineups both revealed, the dropdown is just a flat list of player
-      // names with no way to tell which match each one belongs to.
       const pairLabel = revealed
         ? playerNamesForGold(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[seed])
         : null;
-      const label = "Seed " + (seed + 1) + " — " + (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + (pairLabel ? " (" + pairLabel + ")" : "");
-      options.push({ fixtureId: f.id, seed, label, teamA, teamB, shortLabel: pairLabel || ("Seed " + (seed + 1)) });
+      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || ("Seed " + (seed + 1)) });
     }
   });
   return options;
@@ -1669,8 +1664,6 @@ function renderCourtScheduleGrid(fixtures) {
   const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
   const savedGrid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) => (rawGrid[s] && rawGrid[s][c]) || null));
   const options = courtScheduleOptions(fixtures);
-  const usedKeys = new Set();
-  savedGrid.forEach((row) => (row || []).forEach((cell) => { if (cell) usedKeys.add(cell.fixtureId + ":" + cell.seed); }));
 
   const wrap = el("court-schedule-grid");
   wrap.innerHTML = "";
@@ -1684,13 +1677,20 @@ function renderCourtScheduleGrid(fixtures) {
   }).join("");
   wrap.appendChild(legend);
 
-  if (myRole === "admin" || myRole === "captain") {
+  if (myRole === "admin") {
     const hint = document.createElement("p");
     hint.className = "note";
     hint.style.cssText = "margin:0 0 10px;";
-    hint.textContent = myRole === "admin"
-      ? "Tip: tap a match then tap another court or slot to move or swap it — you can also drag it with a mouse."
-      : "Tip: tap one of your matches, then tap another court or slot to move or swap it. You can only rearrange your own team's matches.";
+    hint.textContent = "Tip: tap a match to see where it can go, then tap a court or slot to move or swap it — you can also drag it with a mouse.";
+    wrap.appendChild(hint);
+  } else if (myRole === "captain") {
+    // A plain gray tip line is easy to skim past on a screen this busy, and
+    // this is new functionality a captain has no other way of discovering —
+    // so it gets the same "actually notice this" treatment as the install
+    // banner, not just a muted note.
+    const hint = document.createElement("div");
+    hint.className = "cs-captain-hint";
+    hint.innerHTML = "<strong>You can rearrange your own matches:</strong> tap one, then tap a court or slot to move or swap it. Only your team's blocks respond to this — everyone else's are locked to you.";
     wrap.appendChild(hint);
   }
 
@@ -1704,19 +1704,25 @@ function renderCourtScheduleGrid(fixtures) {
     const f = fixtures.find((x) => x.id === cell.fixtureId);
     return !!f && (f.teamA === myTeamId || f.teamB === myTeamId);
   };
+  // Every cell that supports tap-to-swap, so picking one can light up every
+  // other valid target at once (and clear them again on cancel or swap).
+  const tapCells = [];
+  const clearSwapTargets = () => tapCells.forEach((tc) => tc.td.classList.remove("cs-swap-target"));
   // Wires up the shared tap-to-swap interaction on a cell — a no-op if this
   // user isn't allowed to touch it, so an ineligible cell (an opponent's
   // block, for a captain) simply never responds to taps at all.
   const attachCourtTap = (td, cell, s, c) => {
     if (!canTapCell(cell)) return;
     td.classList.add("cs-tappable");
-    td.addEventListener("click", (e) => {
-      if (e.target.tagName === "SELECT" || e.target.tagName === "OPTION") return;
+    tapCells.push({ td, s, c });
+    td.addEventListener("click", () => {
       if (!courtTapSelection) {
         courtTapSelection = { slot: s, court: c, fixtureId: cell ? cell.fixtureId : null, seed: cell ? cell.seed : null, el: td };
         td.classList.add("cs-selected");
+        tapCells.forEach((tc) => { if (tc.td !== td) tc.td.classList.add("cs-swap-target"); });
         return;
       }
+      clearSwapTargets();
       if (courtTapSelection.slot === s && courtTapSelection.court === c) {
         td.classList.remove("cs-selected");
         courtTapSelection = null;
@@ -1800,42 +1806,30 @@ function renderCourtScheduleGrid(fixtures) {
         td.style.cssText = `border-radius:8px;background:${color.bg};`;
       }
       if (isDouble(cell)) td.appendChild(doubleBadge("2 courts"));
-      if (myRole === "admin") {
-        const select = document.createElement("select");
-        const usable = options.filter((o) => !usedKeys.has(o.fixtureId + ":" + o.seed) || (cell && cell.fixtureId === o.fixtureId && cell.seed === o.seed));
-        select.innerHTML = '<option value="">— empty —</option>' + usable
-          .map((o) => `<option value="${o.fixtureId}:${o.seed}" ${cell && cell.fixtureId === o.fixtureId && cell.seed === o.seed ? "selected" : ""}>${escapeHtml(o.label)}</option>`)
-          .join("");
-        select.onchange = async () => {
-          const val = select.value;
-          const body = val ? { slot: s, court: c, fixtureId: val.split(":")[0], seed: Number(val.split(":")[1]) } : { slot: s, court: c, fixtureId: null };
-          try {
-            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body });
-            await refreshLeague(); renderAll();
-          } catch (e) { alert(e.message); }
-        };
-        if (cell) select.style.background = "transparent";
-        const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
-        if (opt) {
-          const preview = document.createElement("div");
-          preview.className = "cs-cell-preview";
-          preview.innerHTML = `${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}`;
-          // Dragging is a shortcut on top of the dropdown above, not a
-          // replacement for it — the dropdown still covers touch devices,
-          // where native drag-and-drop mostly doesn't fire. Only the small
-          // preview is the drag handle, so grabbing it can't be confused
-          // with opening the <select> right below it.
-          preview.draggable = true;
-          preview.title = "Drag to move — drop on another court to swap";
-          preview.ondragstart = (e) => {
+      // Content renders the same way for every role now — the admin-only
+      // dropdown that let you directly re-pick a cell's match is gone;
+      // tap-to-swap (below) and, for a mouse, drag are the only ways to
+      // rearrange the grid.
+      const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
+      if (opt) {
+        const box = document.createElement("div");
+        box.className = "cs-cell-content";
+        box.innerHTML = `<div class="cs-cell-teams">${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}</div><div class="cs-cell-label">${escapeHtml(opt.shortLabel)}</div>`;
+        if (myRole === "admin") {
+          box.draggable = true;
+          box.title = "Drag to move — drop on another court to swap";
+          box.ondragstart = (e) => {
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("text/plain", JSON.stringify({ slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed }));
             td.classList.add("cs-dragging");
           };
-          preview.ondragend = () => td.classList.remove("cs-dragging");
-          td.appendChild(preview);
+          box.ondragend = () => td.classList.remove("cs-dragging");
         }
-        td.appendChild(select);
+        td.appendChild(box);
+      } else {
+        td.appendChild(document.createTextNode("—"));
+      }
+      if (myRole === "admin") {
         // Every admin cell is a drop target, occupied or not — dropping
         // onto an occupied cell swaps the two instead of silently erasing
         // whatever was already there.
@@ -1850,18 +1844,8 @@ function renderCourtScheduleGrid(fixtures) {
           const victim = savedGrid[s] && savedGrid[s][c];
           performCourtSwap(round, dragged, { slot: s, court: c, fixtureId: victim ? victim.fixtureId : null, seed: victim ? victim.seed : null });
         };
-        attachCourtTap(td, cell, s, c);
-      } else {
-        const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
-        if (opt) {
-          const box = document.createElement("div");
-          box.innerHTML = `<div class="cs-cell-teams">${avatarHtml(opt.teamA)}<span class="cs-vs">v</span>${avatarHtml(opt.teamB)}</div><div class="cs-cell-label">${escapeHtml(opt.shortLabel)}</div>`;
-          td.appendChild(box);
-        } else {
-          td.appendChild(document.createTextNode("—"));
-        }
-        attachCourtTap(td, cell, s, c);
       }
+      attachCourtTap(td, cell, s, c);
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
