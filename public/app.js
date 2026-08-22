@@ -144,11 +144,17 @@ function leagueCardHtml(l) {
   const nameHtml = brand
     ? `<img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">`
     : `<span class="league-card-name">${escapeHtml(l.name)}</span>`;
+  // Admin-set 0-5 rating of how competitive the league is — 0 means nobody's
+  // rated it yet, so the row just doesn't show rather than reading as "no bars".
+  const strengthHtml = l.strength > 0
+    ? `<div class="strength-row" title="League strength: ${l.strength}/5"><span class="strength-label">Strength</span><span class="strength-bars">${Array.from({ length: 5 }, (_, i) => `<span class="bar${i < l.strength ? " filled" : ""}"></span>`).join("")}</span></div>`
+    : "";
   return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}>
     <div class="league-card-top">
       ${nameHtml}
       <span class="tag league-status-${l.status}">${statusLabel}</span>
     </div>
+    ${strengthHtml}
     ${logos}
     <div class="league-card-meta">
       <span>${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span>
@@ -696,6 +702,41 @@ function renderRulesCard() {
       }
     };
   }
+
+  // Purely descriptive — how competitive this league is, shown as a bar
+  // rating on its card on the homepage. Not tied to season phase (unlike
+  // playoff format above), so it's editable any time, in setup or live.
+  const strengthWrap = document.createElement("div");
+  strengthWrap.className = "row";
+  strengthWrap.style.cssText = "align-items:center;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);";
+  const strengthLabel = document.createElement("span");
+  strengthLabel.className = "note"; strengthLabel.style.width = "150px";
+  strengthLabel.textContent = "League strength";
+  const strengthBars = document.createElement("span");
+  strengthBars.className = "strength-bars strength-bars-editable";
+  const currentStrength = league.strength || 0;
+  for (let i = 1; i <= 5; i++) {
+    const bar = document.createElement("span");
+    bar.className = "bar" + (i <= currentStrength ? " filled" : "");
+    bar.title = "Set strength to " + i;
+    bar.onclick = async () => {
+      try { await api(`/leagues/${currentLeagueId}/strength`, { method: "PUT", body: { strength: i } }); await refreshLeague(); renderAll(); }
+      catch (e) { alert(e.message); }
+    };
+    strengthBars.appendChild(bar);
+  }
+  const strengthClear = document.createElement("button");
+  strengthClear.className = "link"; strengthClear.textContent = "Not set";
+  strengthClear.style.marginLeft = "10px";
+  strengthClear.onclick = async () => {
+    try { await api(`/leagues/${currentLeagueId}/strength`, { method: "PUT", body: { strength: 0 } }); await refreshLeague(); renderAll(); }
+    catch (e) { alert(e.message); }
+  };
+  strengthWrap.appendChild(strengthLabel);
+  strengthWrap.appendChild(strengthBars);
+  strengthWrap.appendChild(strengthClear);
+  c.appendChild(strengthWrap);
+  c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: "Tap a bar to set it — shown as a rating on this league's card on the homepage." }));
 
   const actionsWrap = document.createElement("div");
   actionsWrap.className = "row";

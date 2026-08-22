@@ -296,6 +296,25 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .league-card-top .tag{white-space:nowrap;flex-shrink:0;}
 .league-card-name{font-family:var(--font-display);font-size:17px;text-transform:uppercase;letter-spacing:.01em;}
 .league-status-active{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);}
+/* League strength: an admin-set 0-5 rating shown as ascending signal bars
+   (the universal "how strong" shape — signal, battery, wifi) rather than a
+   number or star row, since a card in a grid is scanned, not read. */
+.strength-row{display:flex;align-items:center;gap:8px;margin-top:10px;}
+.strength-label{font-family:var(--font-display);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);}
+.strength-bars{display:flex;align-items:flex-end;gap:3px;height:14px;}
+.strength-bars .bar{width:5px;background:var(--line);border-radius:1.5px;}
+.strength-bars .bar:nth-child(1){height:35%;}
+.strength-bars .bar:nth-child(2){height:52%;}
+.strength-bars .bar:nth-child(3){height:68%;}
+.strength-bars .bar:nth-child(4){height:84%;}
+.strength-bars .bar:nth-child(5){height:100%;}
+.strength-bars .bar.filled{background:var(--accent);}
+/* The admin-panel version is click-to-set, so its bars are bigger targets
+   and show a hand cursor + hover feedback the read-only card version doesn't. */
+.strength-bars-editable{height:22px;gap:5px;cursor:pointer;}
+.strength-bars-editable .bar{width:9px;}
+.strength-bars-editable .bar:hover{background:var(--accent-soft);}
+.strength-bars-editable .bar.filled:hover{filter:brightness(1.15);}
 .league-card-logos{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
 .league-card-meta{display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text-dim);}
 .league-card-logo{height:24px;width:auto;display:block;}

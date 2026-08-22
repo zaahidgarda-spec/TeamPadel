@@ -76,6 +76,7 @@ function newLeagueObj(name, adminEmail) {
     courtNames: [], // keyed by court index -> custom label; falls back to "Court N" when blank
     tieringEnabled: false, // gold-tier seeding — off by default, admin opts in
     goldTierCount: 0, // how many players per team must be tagged "gold" once enabled
+    strength: 0, // 0-5 rating admin sets to describe how competitive the league is; 0 = not rated, hidden on the league card
     // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
     // which match (a specific seed within a fixture) is assigned to that court at that time.
     courtSchedule: {},
@@ -300,6 +301,7 @@ router.get("/leagues", (req, res) => {
       ...entry,
       status: league ? leagueStatus(league) : "setup",
       teamCount: league ? league.teams.length : 0,
+      strength: league ? (league.strength || 0) : 0,
       // Just enough for a logo strip on the league card — never codes/emails.
       teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
     };
@@ -386,6 +388,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.courtSchedule) league.courtSchedule = {};
   if (league.tieringEnabled === undefined) league.tieringEnabled = false;
   if (!league.goldTierCount) league.goldTierCount = 0;
+  if (league.strength === undefined) league.strength = 0;
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -741,6 +744,18 @@ router.put("/leagues/:leagueId/playoff-format", requireAdmin, (req, res) => {
     league.playoffs = null; // bracket was built for the old format and hasn't been played — clear it so it regenerates correctly
   }
   league.playoffFormat = format;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// A 0-5 rating admin sets to describe how competitive the league is —
+// purely descriptive, shown as a bar rating on the league's card on the
+// homepage. 0 means "not rated" and hides the bars there.
+router.put("/leagues/:leagueId/strength", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const strength = Number(req.body.strength);
+  if (!Number.isInteger(strength) || strength < 0 || strength > 5) return res.status(400).json({ error: "Strength must be between 0 and 5." });
+  league.strength = strength;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
