@@ -232,6 +232,7 @@ function playerMatchHistory(league, playerId) {
         partner: partner ? partner.name : null,
         result: winner === mySide ? "W" : "L",
         score: setsStr,
+        seed: idx + 1,
       });
     });
   });

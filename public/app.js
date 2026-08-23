@@ -3175,6 +3175,16 @@ function potwWinCountForPlayer(playerId) {
   if (!league.potwByRound) return 0;
   return Object.values(league.potwByRound).filter((d) => (d.winners || []).some((w) => w.playerAId === playerId || w.playerBId === playerId)).length;
 }
+// Which seed number this player has lined up at most across the season —
+// ties break toward the lower (higher-ranked) seed, since that's the more
+// useful read of "where do they usually play" than an arbitrary pick.
+function mostCommonSeed(rows) {
+  const counts = {};
+  rows.forEach((r) => { if (r.seed) counts[r.seed] = (counts[r.seed] || 0) + 1; });
+  const seeds = Object.keys(counts).map(Number);
+  if (!seeds.length) return null;
+  return seeds.reduce((best, s) => (counts[s] > counts[best] || (counts[s] === counts[best] && s < best) ? s : best));
+}
 async function openPlayerHistory(playerId, playerName) {
   el("player-modal-name").textContent = playerName;
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
@@ -3184,9 +3194,11 @@ async function openPlayerHistory(playerId, playerName) {
   const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
   if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + '<p class="empty">No completed matches yet.</p>'; return; }
   const wins = rows.filter((r) => r.result === "W").length;
-  let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L</p>`;
+  const commonSeed = mostCommonSeed(rows);
+  const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
+  let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L${seedTag}</p>`;
   rows.forEach((r) => {
-    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${r.result === "W" ? "win" : "loss"}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${r.result === "W" ? "win" : "loss"}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
   });
   el("player-modal-body").innerHTML = html;
 }
