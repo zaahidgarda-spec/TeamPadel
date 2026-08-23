@@ -664,7 +664,44 @@ function renderAdmin() {
   if (league.teams.length === 0) list.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No teams yet.</li>';
   league.teams.forEach((t) => {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="name-tag">${avatarHtml(t)}${escapeHtml(t.name)}</span>`;
+    li.style.cssText = "flex-wrap:wrap;gap:8px;";
+    const left = document.createElement("span");
+    left.className = "name-tag";
+    left.style.cssText = "flex-direction:column;align-items:flex-start;gap:4px;";
+    const nameRow = document.createElement("span");
+    nameRow.style.cssText = "display:flex;align-items:center;gap:6px;";
+    nameRow.innerHTML = avatarHtml(t);
+    const nameInput = document.createElement("input");
+    nameInput.type = "text"; nameInput.value = t.name; nameInput.className = "inline-edit";
+    nameInput.style.cssText = "font-weight:600;min-width:170px;";
+    nameInput.onkeydown = (e) => { if (e.key === "Enter") nameInput.blur(); };
+    nameInput.onblur = async () => {
+      const val = nameInput.value.trim();
+      if (!val || val === t.name) { nameInput.value = t.name; return; }
+      try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { name: val } }); await refreshLeague(); renderAll(); }
+      catch (e) { alert(e.message); nameInput.value = t.name; }
+    };
+    nameRow.appendChild(nameInput);
+    left.appendChild(nameRow);
+    if (isPairs) {
+      const playersRow = document.createElement("span");
+      playersRow.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
+      t.players.forEach((p) => {
+        const pInput = document.createElement("input");
+        pInput.type = "text"; pInput.value = p.name; pInput.className = "inline-edit";
+        pInput.style.cssText = "font-size:13px;color:var(--text-dim);min-width:120px;";
+        pInput.onkeydown = (e) => { if (e.key === "Enter") pInput.blur(); };
+        pInput.onblur = async () => {
+          const val = pInput.value.trim();
+          if (!val || val === p.name) { pInput.value = p.name; return; }
+          try { await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}`, { method: "PUT", body: { name: val } }); await refreshLeague(); renderAll(); }
+          catch (e) { alert(e.message); pInput.value = p.name; }
+        };
+        playersRow.appendChild(pInput);
+      });
+      left.appendChild(playersRow);
+    }
+    li.appendChild(left);
     const right = document.createElement("span");
     right.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
     if (isPairs && league.groups && league.groups.length > 0) {

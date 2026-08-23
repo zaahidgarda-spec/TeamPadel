@@ -596,9 +596,36 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
   if (req.body.logo !== undefined) team.logo = req.body.logo;
+  if (req.body.name !== undefined) {
+    const name = req.body.name.trim();
+    if (!name) return res.status(400).json({ error: "Name is required." });
+    if (league.teams.some((t) => t.id !== team.id && t.name.toLowerCase() === name.toLowerCase()))
+      return res.status(400).json({ error: "A team with that name already exists." });
+    team.name = name;
+  }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
+
+// Fixes a typo in a player's name after the fact — add/delete already cover
+// swapping who's on a team, this just corrects the name of someone already
+// there without disturbing their match history (same player id throughout).
+router.put(
+  "/leagues/:leagueId/teams/:teamId/players/:playerId",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const player = team.players.find((p) => p.id === req.params.playerId);
+    if (!player) return res.status(404).json({ error: "Player not found." });
+    const name = (req.body.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Player name is required." });
+    player.name = name;
+    store.saveLeague(league.id, league);
+    res.json({ ok: true });
+  }
+);
 
 router.put(
   "/leagues/:leagueId/teams/:teamId/notify-email",
