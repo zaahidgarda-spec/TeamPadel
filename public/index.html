@@ -180,12 +180,27 @@
 
       <nav class="tabs" id="tabs"></nav>
 
+      <div class="row" id="group-selector-row" style="display:none;align-items:center;gap:8px;margin-bottom:12px;">
+        <label class="note" for="group-selector" style="white-space:nowrap;">Group</label>
+        <select id="group-selector" style="flex:1;max-width:320px;"></select>
+      </div>
+
       <section class="view" id="view-admin">
         <div class="card">
           <h2 class="section-title">League rules</h2>
           <div id="rules-body"></div>
         </div>
         <div class="card" id="season-card"></div>
+        <div class="card" id="groups-card" style="display:none;">
+          <h2 class="section-title">Divisions &amp; groups</h2>
+          <p class="note">Each group runs its own round-robin, independent of every other group. Group a pair into one, e.g. "Wimbledon" within "Division 1".</p>
+          <ul class="plain" id="admin-groups-list" style="margin-top:10px;"></ul>
+          <div class="row" id="add-group-row" style="margin-top:12px;flex-wrap:wrap;">
+            <input type="text" id="new-group-division" placeholder="Division, e.g. Division 1" style="flex:1;min-width:160px;">
+            <input type="text" id="new-group-name" placeholder="Group name, e.g. Wimbledon" style="flex:1;min-width:160px;">
+            <button class="primary" id="add-group-btn">Add group</button>
+          </div>
+        </div>
         <div class="card">
           <h2 class="section-title"><span id="teams-section-title">Teams</span><button class="secondary" id="copy-all-codes-btn">Copy all codes</button></h2>
           <ul class="plain" id="admin-team-list"></ul>
@@ -197,6 +212,7 @@
             <input type="text" id="new-pair-player1" placeholder="First player" style="flex:1;min-width:130px;">
             <input type="text" id="new-pair-player2" placeholder="Second player" style="flex:1;min-width:130px;">
             <input type="text" id="new-pair-nickname" placeholder="Nickname (optional)" style="flex:1;min-width:130px;">
+            <select id="new-pair-group" style="display:none;flex:1;min-width:160px;"></select>
             <button class="primary" id="add-pair-btn">Add pair</button>
           </div>
           <details style="margin-top:10px;" id="bulk-add-details">

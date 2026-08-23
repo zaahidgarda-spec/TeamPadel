@@ -4,6 +4,9 @@ let league = null;
 let myRole = "guest";
 let myTeamId = null;
 let viewingKey = null;
+// Which Vibora group's fixtures/table/stats/pairs are on screen — null when
+// the league has no groups (a plain flat pairs or team league).
+let viewingGroupId = null;
 let myNotifications = [];
 let isOwner = false;
 // Tap-to-swap state for the court schedule grid: the first tapped cell,
@@ -436,11 +439,27 @@ function buildTabs() {
     logoFlag.style.display = "none";
   }
 }
+// Tabs where "which group" is meaningless (admin manages every group at
+// once; news isn't scoped to one) — the selector only makes sense on the
+// tabs that actually show one group's fixtures/table/stats/pairs.
+const GROUP_SCOPED_TABS = ["fixtures", "results", "table", "stats", "roster"];
 function switchTab(key) {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
   document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
   const v = el("view-" + key);
   if (v) v.classList.add("active");
+  el("group-selector-row").style.display = league && league.groups && league.groups.length > 0 && GROUP_SCOPED_TABS.includes(key) ? "flex" : "none";
+}
+function renderGroupSelector() {
+  if (!league.groups || league.groups.length === 0) return;
+  syncViewingGroup();
+  const sel = el("group-selector");
+  const divisions = [...new Set(league.groups.map((g) => g.division))];
+  sel.innerHTML = divisions.map((d) =>
+    `<optgroup label="${escapeHtml(d)}">${league.groups.filter((g) => g.division === d).map((g) => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join("")}</optgroup>`
+  ).join("");
+  sel.value = viewingGroupId;
+  sel.onchange = () => { viewingGroupId = sel.value; initViewingKey(); renderAll(); };
 }
 
 /* ---------- Round navigation ---------- */
@@ -449,8 +468,14 @@ function roundLabel(r) {
   const meta = league.roundMeta && league.roundMeta[r];
   return (meta && meta.label) || "Round " + r;
 }
+// Fixtures belonging to the group currently on screen — or every fixture,
+// for a league that has no groups at all. Round numbers restart at 1 within
+// each group, so this must be filtered before rounds are ever counted.
+function groupScopedFixtures() {
+  return viewingGroupId ? league.fixtures.filter((f) => f.groupId === viewingGroupId) : league.fixtures;
+}
 function getRoundsList() {
-  const regRounds = [...new Set(league.fixtures.map((f) => f.round))].sort((a, b) => a - b);
+  const regRounds = [...new Set(groupScopedFixtures().map((f) => f.round))].sort((a, b) => a - b);
   const list = regRounds.map((r) => ({ key: "r" + r, label: roundLabel(r), stage: "regular", round: r }));
   if (league.playoffs) {
     if (league.playoffs.format === "position") {
@@ -464,7 +489,7 @@ function getRoundsList() {
 }
 function fixturesForKey(key) {
   if (!key) return [];
-  if (key.stage === "regular") return league.fixtures.filter((f) => f.round === key.round);
+  if (key.stage === "regular") return groupScopedFixtures().filter((f) => f.round === key.round);
   if (key.stage === "semi") return league.playoffs ? league.playoffs.semis : [];
   if (key.stage === "final") return league.playoffs ? [league.playoffs.final] : [];
   if (key.stage === "position") return league.playoffs ? league.playoffs.matches : [];
@@ -481,12 +506,21 @@ function isRoundOpen(key) {
   if (key.stage === "final") { const f = league.playoffs && league.playoffs.final; return !!(f && f.teamA && f.teamB); }
   return false;
 }
+// Keeps the current group if it's still valid, otherwise falls back to the
+// first one — the same "don't fight the user's navigation" rule used for
+// the round pointer below.
+function syncViewingGroup() {
+  if (!league.groups || league.groups.length === 0) { viewingGroupId = null; return; }
+  if (!viewingGroupId || !league.groups.some((g) => g.id === viewingGroupId)) viewingGroupId = league.groups[0].id;
+}
 function initViewingKey() {
+  syncViewingGroup();
   const list = getRoundsList();
   if (list.length === 0) { viewingKey = null; return; }
   viewingKey = list.find((k) => fixturesForKey(k).some((f) => !f.finalized)) || list[list.length - 1];
 }
 function syncViewingKey() {
+  syncViewingGroup();
   const list = getRoundsList();
   if (list.length === 0) { viewingKey = null; return; }
   if (!viewingKey || !list.find((k) => k.key === viewingKey.key)) viewingKey = list[0];
@@ -519,7 +553,7 @@ function renderRoundNav(containerId) {
     c.appendChild(banner);
   }
   if (viewingKey.stage === "regular") {
-    const byes = (league.byes || []).filter((b) => b.round === viewingKey.round);
+    const byes = (league.byes || []).filter((b) => b.round === viewingKey.round && (!viewingGroupId || b.groupId === viewingGroupId));
     if (byes.length) {
       const note = document.createElement("div"); note.className = "bye-note";
       note.textContent = "Bye: " + byes.map((b) => { const t = teamById(b.teamId); return t ? t.name : "?"; }).join(", ");
@@ -532,6 +566,9 @@ function renderRoundNav(containerId) {
 
 function renderAll() {
   syncViewingKey();
+  renderGroupSelector();
+  const activeTabBtn = document.querySelector("#tabs button.active");
+  el("group-selector-row").style.display = league.groups && league.groups.length > 0 && activeTabBtn && GROUP_SCOPED_TABS.includes(activeTabBtn.dataset.view) ? "flex" : "none";
   el("league-name").value = league.name;
   el("league-name").disabled = myRole !== "admin";
   const brand = leagueBrand(league.name);
@@ -577,9 +614,10 @@ function renderAdmin() {
   const status = league.status;
   const isPairs = league.format === "pairs";
   const seasonCard = el("season-card");
+  const hasGroups = isPairs && league.groups && league.groups.length > 0;
   if (status === "setup") {
     seasonCard.innerHTML = isPairs
-      ? `<h2 class="section-title">Start season</h2><p class="note">Every pair plays every other pair once, one match a night — no weekly line-up picking. Add pairs below first — at least 3.</p>
+      ? `<h2 class="section-title">Start season</h2><p class="note">${hasGroups ? "Every pair plays every other pair in its own group once, one match a night — no weekly line-up picking. Add groups and pairs below first — at least 3 pairs per group." : "Every pair plays every other pair once, one match a night — no weekly line-up picking. Add pairs below first — at least 3."}</p>
       <div class="row" style="margin-top:14px;"><button class="primary" id="start-season-btn">Start season</button></div>`
       : `<h2 class="section-title">Start season</h2><p class="note">Every team plays every other team, 4 pairs a side. Add teams and rosters below, and set your rules in League Rules above, first — at least 3 teams.</p>
       <div class="row" style="margin-top:14px;"><button class="primary" id="start-season-btn">Start season</button></div>`;
@@ -598,8 +636,18 @@ function renderAdmin() {
   el("tiering-count-row").style.display = league.tieringEnabled ? "flex" : "none";
   el("gold-tier-count-input").value = league.goldTierCount || 1;
   el("teams-section-title").textContent = isPairs ? "Pairs" : "Teams";
+  el("groups-card").style.display = isPairs ? "block" : "none";
+  el("add-group-row").style.display = status === "setup" ? "flex" : "none";
+  if (isPairs) renderAdminGroups();
   el("add-team-row").style.display = status === "setup" && !isPairs ? "flex" : "none";
   el("add-pair-row").style.display = status === "setup" && isPairs ? "flex" : "none";
+  el("new-pair-group").style.display = status === "setup" && isPairs && league.groups && league.groups.length > 0 ? "block" : "none";
+  if (isPairs && league.groups && league.groups.length > 0) {
+    const divisions = [...new Set(league.groups.map((g) => g.division))];
+    el("new-pair-group").innerHTML = '<option value="">Choose a group…</option>' + divisions.map((d) =>
+      `<optgroup label="${escapeHtml(d)}">${league.groups.filter((g) => g.division === d).map((g) => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join("")}</optgroup>`
+    ).join("");
+  }
   el("bulk-add-details").style.display = status === "setup" && !isPairs ? "block" : "none";
   // None of these apply to a Vibora League: gold-tier seeding needs more
   // than one seed to rank, court rotation needs more than one match a
@@ -619,6 +667,23 @@ function renderAdmin() {
     li.innerHTML = `<span class="name-tag">${avatarHtml(t)}${escapeHtml(t.name)}</span>`;
     const right = document.createElement("span");
     right.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
+    if (isPairs && league.groups && league.groups.length > 0) {
+      if (status === "setup") {
+        const groupSelect = document.createElement("select");
+        groupSelect.innerHTML = '<option value="">No group</option>' + league.groups.map((g) => `<option value="${g.id}">${escapeHtml(g.division)} — ${escapeHtml(g.name)}</option>`).join("");
+        groupSelect.value = t.groupId || "";
+        groupSelect.onchange = async () => {
+          try { await api(`/leagues/${currentLeagueId}/teams/${t.id}/group`, { method: "PUT", body: { groupId: groupSelect.value || null } }); await refreshLeague(); renderAll(); }
+          catch (e) { alert(e.message); }
+        };
+        right.appendChild(groupSelect);
+      } else {
+        const g = league.groups.find((gr) => gr.id === t.groupId);
+        const groupTag = document.createElement("span");
+        groupTag.className = "tag"; groupTag.textContent = g ? g.division + " — " + g.name : "No group";
+        right.appendChild(groupTag);
+      }
+    }
     const codeTag = document.createElement("span");
     codeTag.className = "tag"; codeTag.textContent = "Code: " + (t.code || "—");
     right.appendChild(codeTag);
@@ -651,6 +716,50 @@ function renderAdmin() {
   renderAdminFixtures();
   renderAdminSponsors();
 }
+function renderAdminGroups() {
+  const list = el("admin-groups-list");
+  const groups = league.groups || [];
+  if (groups.length === 0) { list.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No groups yet — add one below.</li>'; return; }
+  list.innerHTML = "";
+  const divisions = [...new Set(groups.map((g) => g.division))];
+  divisions.forEach((division) => {
+    const header = document.createElement("li");
+    header.style.cssText = "border:none;padding-top:10px;";
+    header.innerHTML = `<strong>${escapeHtml(division)}</strong>`;
+    list.appendChild(header);
+    groups.filter((g) => g.division === division).forEach((g) => {
+      const count = league.teams.filter((t) => t.groupId === g.id).length;
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="name-tag">${escapeHtml(g.name)}</span>`;
+      const right = document.createElement("span");
+      right.style.cssText = "display:flex;align-items:center;gap:8px;";
+      const countTag = document.createElement("span");
+      countTag.className = "tag"; countTag.textContent = count + " pair" + (count === 1 ? "" : "s");
+      right.appendChild(countTag);
+      if (league.status === "setup") {
+        const del = document.createElement("button");
+        del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove group";
+        del.onclick = async () => {
+          if (!confirm("Remove " + g.name + "?")) return;
+          try { await api(`/leagues/${currentLeagueId}/groups/${g.id}`, { method: "DELETE" }); await refreshLeague(); renderAll(); }
+          catch (e) { alert(e.message); }
+        };
+        right.appendChild(del);
+      }
+      li.appendChild(right); list.appendChild(li);
+    });
+  });
+}
+el("add-group-btn").onclick = async () => {
+  const division = el("new-group-division").value.trim();
+  const name = el("new-group-name").value.trim();
+  if (!division || !name) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/groups`, { method: "POST", body: { division, name } });
+    el("new-group-division").value = ""; el("new-group-name").value = "";
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+};
 el("copy-all-codes-btn").onclick = () => {
   if (league.teams.length === 0) return;
   const text = league.teams.map((t) => t.name + ": " + (t.code || "—")).join("\n");
@@ -675,13 +784,14 @@ el("add-pair-btn").onclick = async () => {
   const p1 = el("new-pair-player1").value.trim();
   const p2 = el("new-pair-player2").value.trim();
   const nickname = el("new-pair-nickname").value.trim();
+  const groupId = el("new-pair-group").value || undefined;
   if (!p1 || !p2) return alert("Enter both players' names.");
   const name = nickname || `${p1} & ${p2}`;
   try {
-    const { id, code } = await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name } });
+    const { id, code } = await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name, groupId } });
     await api(`/leagues/${currentLeagueId}/teams/${id}/players`, { method: "POST", body: { name: p1 } });
     await api(`/leagues/${currentLeagueId}/teams/${id}/players`, { method: "POST", body: { name: p2 } });
-    el("new-pair-player1").value = ""; el("new-pair-player2").value = ""; el("new-pair-nickname").value = "";
+    el("new-pair-player1").value = ""; el("new-pair-player2").value = ""; el("new-pair-nickname").value = ""; el("new-pair-group").value = "";
     await refreshLeague(); renderAll();
     alert(name + " added — their code is " + code + ". You can copy it any time from the Pairs list below.");
   } catch (e) { alert(e.message); }
@@ -3076,7 +3186,8 @@ function roundCountsToTable(round) {
 }
 function computeStandingsClient() {
   const isPairs = league.format === "pairs";
-  const rows = league.teams.map((t) => {
+  const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
+  const rows = scopedTeams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
     league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
       const isA = f.teamA === t.id;
@@ -3169,10 +3280,11 @@ function matchCardHtml(label, teamAId, teamBId, f) {
 
 function renderRoster() {
   const c = el("roster-container");
-  if (league.teams.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No teams yet.</p></div>'; return; }
+  const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
+  if (scopedTeams.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No teams yet.</p></div>'; return; }
   const grid = document.createElement("div");
   grid.className = "roster-grid";
-  league.teams.forEach((t) => {
+  scopedTeams.forEach((t) => {
     const card = document.createElement("div");
     card.className = "roster-card";
     const avatar = t.logo
@@ -3316,7 +3428,8 @@ el("player-modal-backdrop").addEventListener("click", (e) => { if (e.target.id =
 /* ---------- Stats ---------- */
 
 async function renderStats() {
-  const stats = await api(`/leagues/${currentLeagueId}/stats`).catch(() => null);
+  const groupQuery = viewingGroupId ? `?groupId=${viewingGroupId}` : "";
+  const stats = await api(`/leagues/${currentLeagueId}/stats${groupQuery}`).catch(() => null);
   if (!stats) return;
   const t = stats.totals;
   const isPairs = league.format === "pairs";

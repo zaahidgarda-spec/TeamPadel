@@ -389,6 +389,22 @@ function nightsPlayed(league) {
   return Object.values(groups).filter((g) => g.every((f) => f.finalized)).length;
 }
 
+// A lightweight view of the league scoped to one Vibora group. Every
+// standings/stats function already just operates on "the league's teams and
+// fixtures" — scoping to a group means handing them a copy with only that
+// group's teams and fixtures, rather than threading a groupId through each
+// of them individually. Playoffs are never used by a pairs league, so
+// filtering league.fixtures alone is enough — no separate playoffs field to
+// restrict.
+function restrictToGroup(league, groupId) {
+  if (!groupId) return league;
+  return {
+    ...league,
+    teams: league.teams.filter((t) => t.groupId === groupId),
+    fixtures: league.fixtures.filter((f) => f.groupId === groupId),
+  };
+}
+
 function computeLeagueStats(league) {
   const allF = allFixturesOf(league);
   const finalized = allF.filter((f) => f.finalized);
@@ -436,4 +452,5 @@ module.exports = {
   validateSelection,
   playerMatchHistory,
   computeLeagueStats,
+  restrictToGroup,
 };

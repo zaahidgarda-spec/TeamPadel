@@ -64,6 +64,10 @@ function newLeagueObj(name, adminEmail, format) {
     adminPasswordHash: null,
     status: "setup",
     teams: [],
+    // Vibora-only: optional groups a pair can be assigned to (e.g. "Wimbledon"
+    // within "Division 1"), each running its own independent round-robin.
+    // Empty means the league is one flat group, same as before this existed.
+    groups: [], // [{ id, name, division }]
     fixtures: [],
     byes: [],
     playoffs: null,
@@ -397,6 +401,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.goldTierCount) league.goldTierCount = 0;
   if (league.strength === undefined) league.strength = 0;
   if (!league.format) league.format = "teams";
+  if (!league.groups) league.groups = [];
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -555,13 +560,14 @@ router.post("/logout", (req, res) => {
 
 router.post("/leagues/:leagueId/teams", requireAdmin, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  const { name } = req.body || {};
+  const { name, groupId } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "Team name is required." });
   if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams are locked once the season has started." });
   if (league.teams.some((t) => t.name.toLowerCase() === name.trim().toLowerCase()))
     return res.status(400).json({ error: "A team with that name already exists." });
+  if (groupId && !(league.groups || []).some((g) => g.id === groupId)) return res.status(400).json({ error: "Group not found." });
   const code = genTeamCode(league);
-  const team = { id: logic.uid(), name: name.trim(), code, logo: "", notifyEmail: "", players: [] };
+  const team = { id: logic.uid(), name: name.trim(), code, logo: "", notifyEmail: "", players: [], groupId: groupId || null };
   league.teams.push(team);
   store.saveLeague(league.id, league);
   res.json({ id: team.id, code: team.code });
@@ -622,6 +628,69 @@ router.delete("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams are locked once the season has started." });
   league.teams = league.teams.filter((t) => t.id !== req.params.teamId);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+/* ---------- Groups (Vibora only): each runs its own independent round-robin,
+   tagged with a division so several groups can later feed one cross-group
+   knockout bracket per division. Team leagues don't use this. */
+
+router.post("/leagues/:leagueId/groups", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (league.format !== "pairs") return res.status(400).json({ error: "Groups are only available for a Vibora League." });
+  if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Groups are locked once the season has started." });
+  const name = (req.body.name || "").trim();
+  const division = (req.body.division || "").trim();
+  if (!name) return res.status(400).json({ error: "Group name is required." });
+  if (!division) return res.status(400).json({ error: "Division is required." });
+  if (!league.groups) league.groups = [];
+  if (league.groups.some((g) => g.name.toLowerCase() === name.toLowerCase() && g.division.toLowerCase() === division.toLowerCase()))
+    return res.status(400).json({ error: "A group with that name already exists in this division." });
+  const group = { id: logic.uid(), name, division };
+  league.groups.push(group);
+  store.saveLeague(league.id, league);
+  res.json({ id: group.id });
+});
+
+router.put("/leagues/:leagueId/groups/:groupId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const group = (league.groups || []).find((g) => g.id === req.params.groupId);
+  if (!group) return res.status(404).json({ error: "Group not found." });
+  if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Groups are locked once the season has started." });
+  if (req.body.name !== undefined) {
+    const name = req.body.name.trim();
+    if (!name) return res.status(400).json({ error: "Group name is required." });
+    group.name = name;
+  }
+  if (req.body.division !== undefined) {
+    const division = req.body.division.trim();
+    if (!division) return res.status(400).json({ error: "Division is required." });
+    group.division = division;
+  }
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.delete("/leagues/:leagueId/groups/:groupId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const group = (league.groups || []).find((g) => g.id === req.params.groupId);
+  if (!group) return res.status(404).json({ error: "Group not found." });
+  if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Groups are locked once the season has started." });
+  if (league.teams.some((t) => t.groupId === group.id)) return res.status(400).json({ error: "Move or remove this group's pairs first." });
+  league.groups = league.groups.filter((g) => g.id !== group.id);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.put("/leagues/:leagueId/teams/:teamId/group", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Groups are locked once the season has started." });
+  const { groupId } = req.body || {};
+  if (groupId && !(league.groups || []).some((g) => g.id === groupId)) return res.status(400).json({ error: "Group not found." });
+  team.groupId = groupId || null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -722,14 +791,36 @@ router.put(
 
 router.post("/leagues/:leagueId/season/start", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  if (league.teams.length < 3) return res.status(400).json({ error: "Add at least 3 teams first." });
+  const isPairs = league.format === "pairs";
+  const groups = league.groups || [];
+  const hasGroups = isPairs && groups.length > 0;
   const playoffFormat = req.body.playoffFormat;
   if (playoffFormat && !["none", "semis_final", "position"].includes(playoffFormat)) return res.status(400).json({ error: "Unknown playoff format." });
-  const isPairs = league.format === "pairs";
   if (isPairs && league.teams.some((t) => t.players.length !== 2)) {
     return res.status(400).json({ error: "Every pair needs exactly 2 players before starting the season." });
   }
-  const { fixtures, byes } = logic.generateRoundRobin(league.teams, !!req.body.doubleRound, isPairs ? 1 : 4);
+
+  let fixtures = [], byes = [];
+  if (hasGroups) {
+    // Every group runs its own independent round-robin — round numbers
+    // start fresh at 1 within each group, same as a standalone league would.
+    if (league.teams.some((t) => !t.groupId)) return res.status(400).json({ error: "Every pair needs a group before starting the season." });
+    for (const group of groups) {
+      const groupTeams = league.teams.filter((t) => t.groupId === group.id);
+      if (groupTeams.length < 3) return res.status(400).json({ error: `"${group.name}" needs at least 3 pairs before starting.` });
+      const gen = logic.generateRoundRobin(groupTeams, !!req.body.doubleRound, 1);
+      gen.fixtures.forEach((f) => { f.groupId = group.id; });
+      gen.byes.forEach((b) => { b.groupId = group.id; });
+      fixtures = fixtures.concat(gen.fixtures);
+      byes = byes.concat(gen.byes);
+    }
+  } else {
+    if (league.teams.length < 3) return res.status(400).json({ error: "Add at least 3 teams first." });
+    const gen = logic.generateRoundRobin(league.teams, !!req.body.doubleRound, isPairs ? 1 : 4);
+    fixtures = gen.fixtures;
+    byes = gen.byes;
+  }
+
   if (isPairs) {
     // A pair IS the line-up — there's nothing to pick weekly, so both sides
     // are pre-filled and locked the moment the fixture exists, skipping the
@@ -1467,7 +1558,8 @@ router.delete("/leagues/:leagueId/news/:postId", requireAdmin, (req, res) => {
 router.get("/leagues/:leagueId/stats", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  res.json(logic.computeLeagueStats(league));
+  const scoped = logic.restrictToGroup(league, req.query.groupId);
+  res.json(logic.computeLeagueStats(scoped));
 });
 router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
