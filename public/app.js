@@ -149,15 +149,16 @@ function leagueCardHtml(l) {
   const strengthHtml = l.strength > 0
     ? `<div class="strength-row" title="League strength: ${l.strength}/5"><span class="strength-label">Strength</span><span class="strength-bars">${Array.from({ length: 5 }, (_, i) => `<span class="bar${i < l.strength ? " filled" : ""}"></span>`).join("")}</span></div>`
     : "";
+  const viboraTag = l.format === "pairs" ? '<span class="tag vibora-tag">Vibora</span>' : "";
   return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}>
     <div class="league-card-top">
       ${nameHtml}
-      <span class="tag league-status-${l.status}">${statusLabel}</span>
+      <div class="row" style="gap:6px;">${viboraTag}<span class="tag league-status-${l.status}">${statusLabel}</span></div>
     </div>
     ${strengthHtml}
     ${logos}
     <div class="league-card-meta">
-      <span>${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span>
+      <span>${l.teamCount} ${l.format === "pairs" ? "pair" : "team"}${l.teamCount === 1 ? "" : "s"}</span>
       <span>Created ${new Date(l.createdAt).toLocaleDateString()}</span>
     </div>
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
@@ -202,11 +203,12 @@ function renderHub() {
 el("create-league-btn").onclick = async () => {
   const name = el("new-league-name").value.trim();
   const email = el("new-league-admin-email").value.trim();
+  const format = el("new-league-format").value;
   if (!name) return alert("Give the league a name.");
   if (!email || !email.includes("@")) return alert("Enter a valid email.");
   try {
-    const { id } = await api("/leagues", { method: "POST", body: { name, adminEmail: email } });
-    el("new-league-name").value = ""; el("new-league-admin-email").value = "";
+    const { id } = await api("/leagues", { method: "POST", body: { name, adminEmail: email, format } });
+    el("new-league-name").value = ""; el("new-league-admin-email").value = ""; el("new-league-format").value = "teams";
     leaguesIndex = await api("/leagues");
     await openLeague(id);
   } catch (e) { alert(e.message); }
@@ -319,7 +321,8 @@ async function openLeague(id) {
   await refreshMe();
   await refreshLeague();
   buildTabs();
-  switchTab(myRole === "admin" ? "admin" : myRole === "captain" ? "selection" : "fixtures");
+  const isPairs = league.format === "pairs";
+  switchTab(myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : "fixtures");
   initViewingKey();
   renderAll();
 }
@@ -364,7 +367,7 @@ el("captain-login-btn").onclick = async () => {
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("captain-code").value = ""; el("captain-email").value = "";
-    await refreshLeague(); buildTabs(); switchTab("selection"); renderAll();
+    await refreshLeague(); buildTabs(); switchTab(league.format === "pairs" ? "fixtures" : "selection"); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 el("login-btn").onclick = async () => {
@@ -375,7 +378,7 @@ el("login-btn").onclick = async () => {
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("login-email").value = ""; el("login-password").value = "";
-    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : "selection"); renderAll();
+    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : league.format === "pairs" ? "fixtures" : "selection"); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 el("register-btn").onclick = async () => {
@@ -386,7 +389,7 @@ el("register-btn").onclick = async () => {
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("login-email").value = ""; el("login-password").value = "";
-    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : "selection"); renderAll();
+    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : league.format === "pairs" ? "fixtures" : "selection"); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 
@@ -394,14 +397,18 @@ el("register-btn").onclick = async () => {
 
 function tabDefs() {
   const defs = [];
+  const isPairs = league.format === "pairs";
   if (myRole === "admin") defs.push({ key: "admin", label: "Admin" });
-  if (myRole === "admin" || myRole === "captain") defs.push({ key: "selection", label: "Selection room" });
+  // A pair IS the line-up, every week — there's nothing to blind-pick, so
+  // Selection Room doesn't exist for a Vibora League. Pair of the Week
+  // (under Awards) is similarly redundant when the "team" never re-pairs.
+  if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
   defs.push({ key: "fixtures", label: "Fixtures" });
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
   defs.push({ key: "stats", label: "Stats" });
-  defs.push({ key: "awards", label: "Awards" });
-  defs.push({ key: "roster", label: "Team roster" });
+  if (!isPairs) defs.push({ key: "awards", label: "Awards" });
+  defs.push({ key: "roster", label: isPairs ? "Pairs" : "Team roster" });
   defs.push({ key: "news", label: "News room" });
   if (myRole === "captain") {
     const unread = myNotifications.filter((n) => !n.read).length;
@@ -419,7 +426,7 @@ function buildTabs() {
     nav.appendChild(btn);
   });
   el("role-flag").style.display = myRole === "guest" ? "none" : "inline-block";
-  el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? "Captain view" : "";
+  el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? (league.format === "pairs" ? "Player view" : "Captain view") : "";
   const myTeam = myRole === "captain" ? teamById(myTeamId) : null;
   const logoFlag = el("team-logo-flag");
   if (myTeam && myTeam.logo) {
@@ -536,7 +543,10 @@ function renderAll() {
   const status = league.status;
   const auth = el("auth-status");
   if (myRole === "admin") auth.textContent = "Signed in as Admin";
-  else if (myRole === "captain") { const t = teamById(myTeamId); auth.textContent = "Signed in as " + (t ? t.name : "captain") + " captain"; }
+  else if (myRole === "captain") {
+    const t = teamById(myTeamId);
+    auth.textContent = league.format === "pairs" ? "Signed in as " + (t ? t.name : "your pair") : "Signed in as " + (t ? t.name : "captain") + " captain";
+  }
   else auth.textContent = "Viewing only — log in to enter scores";
   el("auth-toggle").textContent = myRole === "guest" ? "Log in" : "Log out";
 
@@ -552,7 +562,8 @@ function renderAll() {
   renderSponsorStrip();
   renderNotificationsList();
   refreshNotifications().then(() => { updateNotifTabLabel(); renderNotificationsList(); });
-  el("team-count-label").textContent = `${league.teams.length} team${league.teams.length === 1 ? "" : "s"} · ${league.fixtures.length} fixture${league.fixtures.length === 1 ? "" : "s"}`;
+  const unit = league.format === "pairs" ? "pair" : "team";
+  el("team-count-label").textContent = `${league.teams.length} ${unit}${league.teams.length === 1 ? "" : "s"} · ${league.fixtures.length} fixture${league.fixtures.length === 1 ? "" : "s"}`;
 }
 el("league-name").addEventListener("change", async (e) => {
   if (myRole !== "admin") return;
@@ -564,27 +575,41 @@ el("league-name").addEventListener("change", async (e) => {
 
 function renderAdmin() {
   const status = league.status;
+  const isPairs = league.format === "pairs";
   const seasonCard = el("season-card");
   if (status === "setup") {
-    seasonCard.innerHTML = `<h2 class="section-title">Start season</h2><p class="note">Every team plays every other team, 4 pairs a side. Add teams and rosters below, and set your rules in League Rules above, first — at least 3 teams.</p>
+    seasonCard.innerHTML = isPairs
+      ? `<h2 class="section-title">Start season</h2><p class="note">Every pair plays every other pair once, one match a night — no weekly line-up picking. Add pairs below first — at least 3.</p>
+      <div class="row" style="margin-top:14px;"><button class="primary" id="start-season-btn">Start season</button></div>`
+      : `<h2 class="section-title">Start season</h2><p class="note">Every team plays every other team, 4 pairs a side. Add teams and rosters below, and set your rules in League Rules above, first — at least 3 teams.</p>
       <div class="row" style="margin-top:14px;"><button class="primary" id="start-season-btn">Start season</button></div>`;
     el("start-season-btn").onclick = async () => {
       try {
-        await api(`/leagues/${currentLeagueId}/season/start`, { method: "POST", body: { doubleRound: el("double-round-toggle").checked, playoffFormat: el("playoff-format-select").value } });
+        const playoffFormat = isPairs ? "none" : el("playoff-format-select").value;
+        await api(`/leagues/${currentLeagueId}/season/start`, { method: "POST", body: { doubleRound: el("double-round-toggle").checked, playoffFormat } });
         await refreshLeague(); initViewingKey(); renderAll();
       } catch (e) { alert(e.message); }
     };
   } else {
-    seasonCard.innerHTML = `<h2 class="section-title">Season in progress</h2><p class="note">Team list is locked. Head to League Rules above to reset the season or delete this league.</p>`;
+    seasonCard.innerHTML = `<h2 class="section-title">Season in progress</h2><p class="note">${isPairs ? "Pair list is locked." : "Team list is locked."} Head to League Rules above to reset the season or delete this league.</p>`;
   }
   renderRulesCard();
   el("tiering-enabled-toggle").checked = !!league.tieringEnabled;
   el("tiering-count-row").style.display = league.tieringEnabled ? "flex" : "none";
   el("gold-tier-count-input").value = league.goldTierCount || 1;
-  el("add-team-row").style.display = status === "setup" ? "flex" : "none";
-  el("bulk-add-details").style.display = status === "setup" ? "block" : "none";
-  el("add-round-card").style.display = status === "setup" ? "none" : "block";
-  if (status !== "setup") renderNewRoundMatches();
+  el("teams-section-title").textContent = isPairs ? "Pairs" : "Teams";
+  el("add-team-row").style.display = status === "setup" && !isPairs ? "flex" : "none";
+  el("add-pair-row").style.display = status === "setup" && isPairs ? "flex" : "none";
+  el("bulk-add-details").style.display = status === "setup" && !isPairs ? "block" : "none";
+  // None of these apply to a Vibora League: gold-tier seeding needs more
+  // than one seed to rank, court rotation needs more than one match a
+  // night to juggle, and an extra round's knockout option isn't supported
+  // for pairs yet.
+  el("tiering-card").style.display = isPairs ? "none" : "block";
+  el("rosters-card").style.display = isPairs ? "none" : "block";
+  el("court-settings-row").style.display = isPairs ? "none" : "flex";
+  el("add-round-card").style.display = status !== "setup" && !isPairs ? "block" : "none";
+  if (status !== "setup" && !isPairs) renderNewRoundMatches();
 
   const list = el("admin-team-list");
   list.innerHTML = "";
@@ -646,6 +671,21 @@ el("add-team-btn").onclick = async () => {
     alert(name + " added — their code is " + code + ". You can copy it any time from the Teams list below.");
   } catch (e) { alert(e.message); }
 };
+el("add-pair-btn").onclick = async () => {
+  const p1 = el("new-pair-player1").value.trim();
+  const p2 = el("new-pair-player2").value.trim();
+  const nickname = el("new-pair-nickname").value.trim();
+  if (!p1 || !p2) return alert("Enter both players' names.");
+  const name = nickname || `${p1} & ${p2}`;
+  try {
+    const { id, code } = await api(`/leagues/${currentLeagueId}/teams`, { method: "POST", body: { name } });
+    await api(`/leagues/${currentLeagueId}/teams/${id}/players`, { method: "POST", body: { name: p1 } });
+    await api(`/leagues/${currentLeagueId}/teams/${id}/players`, { method: "POST", body: { name: p2 } });
+    el("new-pair-player1").value = ""; el("new-pair-player2").value = ""; el("new-pair-nickname").value = "";
+    await refreshLeague(); renderAll();
+    alert(name + " added — their code is " + code + ". You can copy it any time from the Pairs list below.");
+  } catch (e) { alert(e.message); }
+};
 el("bulk-add-btn").onclick = async () => {
   const text = el("bulk-team-input").value;
   if (!text.trim()) return;
@@ -660,12 +700,10 @@ let draftPlayoffFormat = "none";
 function renderRulesCard() {
   const c = el("rules-body");
   const status = league.status;
-  if (status === "setup") {
-    c.innerHTML = `
-      <div class="row" style="align-items:center;">
-        <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="double-round-toggle"> Home and away (double round)</label>
-      </div>
-      <div class="row" style="align-items:center;margin-top:10px;">
+  const isPairs = league.format === "pairs";
+  const playoffBlock = isPairs
+    ? `<p class="note" style="margin-top:10px;">Playoffs aren't available for a Vibora League yet — the table decides the winner.</p>`
+    : `<div class="row" style="align-items:center;margin-top:10px;">
         <label class="note" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Playoffs after the season:
           <select id="playoff-format-select" style="flex:1;min-width:220px;">
             <option value="none">None — the table decides the winner</option>
@@ -674,10 +712,20 @@ function renderRulesCard() {
           </select>
         </label>
       </div>`;
+  if (status === "setup") {
+    c.innerHTML = `
+      <div class="row" style="align-items:center;">
+        <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="double-round-toggle"> Home and away (double round)</label>
+      </div>
+      ${playoffBlock}`;
     el("double-round-toggle").checked = draftDoubleRound;
     el("double-round-toggle").onchange = () => { draftDoubleRound = el("double-round-toggle").checked; };
-    el("playoff-format-select").value = draftPlayoffFormat;
-    el("playoff-format-select").onchange = () => { draftPlayoffFormat = el("playoff-format-select").value; };
+    if (!isPairs) {
+      el("playoff-format-select").value = draftPlayoffFormat;
+      el("playoff-format-select").onchange = () => { draftPlayoffFormat = el("playoff-format-select").value; };
+    }
+  } else if (isPairs) {
+    c.innerHTML = playoffBlock;
   } else {
     c.innerHTML = `
       <div class="row" style="align-items:center;">
@@ -1180,6 +1228,11 @@ el("mark-all-read-btn").onclick = async () => {
 
 function renderSelection() {
   if (myRole !== "admin" && myRole !== "captain") return;
+  // A pair IS the line-up — nothing to blind-pick, and no per-seed court
+  // order to agree on since there's only ever one match. The tab is hidden
+  // for this format too; this guard also keeps timeSlotPanel (which
+  // assumes 4 seed slots) from ever running against a 1-seed fixture.
+  if (league.format === "pairs") return;
   renderRoundNav("round-nav-selection");
   const c = el("selection-container");
   c.innerHTML = "";
@@ -1766,7 +1819,10 @@ async function performCourtSwap(round, posA, posB) {
 }
 function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
-  if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
+  // A Vibora fixture is already just one match — there's nothing to
+  // schedule across multiple courts/slots the way a 4-seed team fixture
+  // needs to be.
+  if (league.format === "pairs" || !viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
   card.style.display = "block";
   courtTapSelection = null;
   el("court-schedule-poster-row").style.display = myRole === "admin" ? "flex" : "none";
@@ -1992,7 +2048,7 @@ function renderFixtures() {
   const c = el("fixtures-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
-  el("fixtures-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
+  el("fixtures-poster-row").style.display = myRole === "admin" && fixtures.length > 0 && league.format !== "pairs" ? "flex" : "none";
   renderCourtScheduleGrid(fixtures);
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => {
@@ -2000,7 +2056,8 @@ function renderFixtures() {
     const card = document.createElement("div"); card.className = "fixture-card";
     const { winsA, winsB } = fixtureScoreClient(f);
     const both = f.selectionA.submitted && f.selectionB.submitted;
-    let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : "Pending"}</span></div></div>`;
+    const headline = f.rubbers.length === 1 ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
+    let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : "Pending"}</span></div></div>`;
     const sched = scheduleFor(stageKeyFor(f));
     const venue = effectiveVenue(stageKeyFor(f));
     if (sched.date || sched.time || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${sched.time ? "<span>" + fmtTime(sched.time) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
@@ -2013,7 +2070,7 @@ function renderFixtures() {
           const nameB = pairNamesGoldHtml(teamB, pairB);
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
-          const seedLbl = "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
+          const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
           html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span class="rubber-vs">vs</span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
         });
         html += "</div>";
@@ -2053,11 +2110,22 @@ function tiebreakWinnerClient(tb) {
   return av > bv ? "A" : "B";
 }
 function rubberWinnerClient(r) {
+  if (r.sets.length >= 3) {
+    // Vibora (pairs): best of 3 real sets, first to 2 — no match tie-break.
+    let winsA = 0, winsB = 0;
+    r.sets.forEach((s) => { const w = setWinnerClient(s); if (w === "A") winsA++; else if (w === "B") winsB++; });
+    if (winsA >= 2) return "A";
+    if (winsB >= 2) return "B";
+    return null;
+  }
   const s1 = setWinnerClient(r.sets[0]), s2 = setWinnerClient(r.sets[1]);
   if (!s1 || !s2) return null;
   if (s1 === s2) return s1;
   return tiebreakWinnerClient(r.tb);
 }
+// Whether the first two sets split — the trigger for a team rubber's match
+// tie-break, and for a pairs rubber's optional 3rd set. Name is a holdover
+// from the team-only original; the check itself doesn't care about format.
 function needsTiebreakClient(r) {
   const s1 = setWinnerClient(r.sets[0]), s2 = setWinnerClient(r.sets[1]);
   return !!(s1 && s2 && s1 !== s2);
@@ -2067,15 +2135,14 @@ function fixtureScoreClient(f) {
   f.rubbers.slice(0, 4).forEach((r) => { const w = rubberWinnerClient(r); if (w) { decided++; if (w === "A") winsA++; else winsB++; } });
   return { winsA, winsB, decided };
 }
-// e.g. "6-3, 6-4" or "6-4, 3-6, [10-7]" for a split needing a super
-// tie-break — same "6-0 to 6-4, 7-5, or 7-6" notation used everywhere else.
+// e.g. "6-3, 6-4" or "6-4, 3-6, [10-7]" for a team split needing a super
+// tie-break, or "6-4, 3-6, 6-2" for a pairs 3rd set — same "6-0 to 6-4,
+// 7-5, or 7-6" notation used everywhere else. Blank/unplayed sets (a
+// pairs draw's skipped 3rd set) are left out rather than shown as "?-?".
 function rubberScoreText(r) {
-  const parts = [];
   const setText = (s) => (s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "") ? s[0] + "-" + s[1] : null;
-  const s0 = setText(r.sets[0]), s1 = setText(r.sets[1]);
-  if (s0) parts.push(s0);
-  if (s1) parts.push(s1);
-  if (needsTiebreakClient(r)) {
+  const parts = r.sets.map(setText).filter(Boolean);
+  if (r.sets.length < 3 && needsTiebreakClient(r) && tiebreakWinnerClient(r.tb)) {
     const tb = setText(r.tb);
     if (tb) parts.push("[" + tb + "]");
   }
@@ -2087,7 +2154,10 @@ function renderResults() {
   const c = el("results-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
-  el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
+  el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 && league.format !== "pairs" ? "flex" : "none";
+  el("results-scoring-note").textContent = league.format === "pairs"
+    ? "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 and leave it there for a draw, or play a 3rd set to decide it."
+    : "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).";
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
 }
@@ -2160,11 +2230,23 @@ function renderPotwCard(fixtures) {
     card.appendChild(voteWrap);
   }
 }
+// A pairs fixture is a single match — its "score" is the sets won within
+// that one rubber (e.g. "2-1"), not how many rubbers were won (always
+// trivially 1-0 or 0-1 once decided), so it needs its own headline number.
+function pairMatchSetScore(rubber) {
+  let a = 0, b = 0;
+  rubber.sets.forEach((s) => { const w = setWinnerClient(s); if (w === "A") a++; else if (w === "B") b++; });
+  return { a, b };
+}
 function resultsCard(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
   const card = document.createElement("div"); card.className = "fixture-card";
   const { winsA, winsB, decided } = fixtureScoreClient(f);
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${winsA} - ${winsB}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : decided + "/4 matches"}</span></div></div>`;
+  const isSingleMatch = f.rubbers.length === 1;
+  const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
+  const splitNoDecider = isSingleMatch && needsTiebreakClient(f.rubbers[0]) && !rubberWinnerClient(f.rubbers[0]);
+  const statusText = f.finalized ? "Final" : isSingleMatch ? (splitNoDecider ? "1 set each — 3rd set optional" : decided > 0 ? "In progress" : "Pending") : decided + "/4 matches";
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${statusText}</span></div></div>`;
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
   if (!(f.selectionA.submitted && f.selectionB.submitted)) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for both teams to submit their line-up in Selection Room." })); return card; }
 
@@ -2178,7 +2260,7 @@ function resultsCard(f) {
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-    seedTag.textContent = isDecider ? "Decider" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    seedTag.textContent = isDecider ? "Decider" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
     const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[idx]);
     const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[idx]);
     const potwWinners = (league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winners) || [];
@@ -2221,49 +2303,62 @@ function resultsCard(f) {
   card.appendChild(footer);
   return card;
 }
-// Scorecard-style entry: one column per set (plus a Super TB column once
-// sets are split), one row per pair, real number cells you tap and type
-// into. Edits are staged locally until Save so one PUT covers sets +
-// tie-break together instead of firing per keystroke. Cells commit on
-// blur/change rather than on every keystroke — re-rendering on each
-// keypress would rebuild the DOM and kick focus out of the field, making
-// it impossible to type a 2-digit tie-break score.
+// Scorecard-style entry: one column per set, one row per pair, real number
+// cells you tap and type into. A team rubber (2 sets) reveals a Super TB
+// column once split; a Vibora (pairs) rubber (3 sets) instead reveals a
+// real Set 3 column — no match tie-break there. Edits are staged locally
+// until Save so one PUT covers the whole rubber instead of firing per
+// keystroke. Cells commit on blur/change rather than on every keystroke —
+// re-rendering on each keypress would rebuild the DOM and kick focus out
+// of the field, making it impossible to type a 2-digit tie-break score.
 function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml) {
+  const isPairsRubber = rubber.sets.length >= 3;
   const state = {
     sets: rubber.sets.map((s) => [s[0] === null || s[0] === "" ? null : Number(s[0]), s[1] === null || s[1] === "" ? null : Number(s[1])]),
     tb: [rubber.tb[0] === null || rubber.tb[0] === "" ? 0 : Number(rubber.tb[0]), rubber.tb[1] === null || rubber.tb[1] === "" ? 0 : Number(rubber.tb[1])],
   };
   const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-  el("score-modal-title").textContent = isDecider ? "Decider score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  el("score-modal-title").textContent = isDecider ? "Decider score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
   const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
   const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
-  const needsTb = () => {
+  const splitAfterTwo = () => {
     const s1 = setWinnerClient(state.sets[0]), s2 = setWinnerClient(state.sets[1]);
     return !!(s1 && s2 && s1 !== s2);
   };
+  const showThirdSet = () => isPairsRubber && splitAfterTwo();
+  const showTb = () => !isPairsRubber && splitAfterTwo();
   function render() {
     const body = el("score-modal-body");
-    const tb = needsTb();
-    const cols = tb ? 4 : 3;
+    const thirdSet = showThirdSet();
+    const tb = showTb();
+    const cols = (thirdSet || tb) ? 4 : 3;
     const w0 = setWinnerClient(state.sets[0]), w1 = setWinnerClient(state.sets[1]);
+    const w2 = thirdSet ? setWinnerClient(state.sets[2]) : null;
     const wtb = tb ? tiebreakWinnerClient(state.tb) : null;
     const winCls = (won) => won ? " won" : "";
     let html = `<div class="score-table" style="grid-template-columns:1fr repeat(${cols - 1},var(--score-col-w,48px));">`;
-    html += `<div class="score-th"></div><div class="score-th">Set 1</div><div class="score-th">Set 2</div>${tb ? '<div class="score-th">Super TB</div>' : ""}`;
+    html += `<div class="score-th"></div><div class="score-th">Set 1</div><div class="score-th">Set 2</div>${thirdSet ? '<div class="score-th">Set 3</div>' : tb ? '<div class="score-th">Super TB</div>' : ""}`;
     html += `<div class="score-team-cell">${avatarHtml(teamA)}<span>${nameA}</span></div>`;
     html += `<input class="score-cell-input${winCls(w0 === "A")}" type="text" inputmode="numeric" data-set="0" data-side="0" value="${state.sets[0][0] === null ? "" : state.sets[0][0]}">`;
     html += `<input class="score-cell-input${winCls(w1 === "A")}" type="text" inputmode="numeric" data-set="1" data-side="0" value="${state.sets[1][0] === null ? "" : state.sets[1][0]}">`;
+    if (thirdSet) html += `<input class="score-cell-input${winCls(w2 === "A")}" type="text" inputmode="numeric" data-set="2" data-side="0" value="${state.sets[2][0] === null ? "" : state.sets[2][0]}">`;
     if (tb) html += `<input class="score-cell-input tb${winCls(wtb === "A")}" type="text" inputmode="numeric" data-tb="0" value="${state.tb[0]}">`;
     html += `<div class="score-row-divider" style="grid-column:1/-1;"></div>`;
     html += `<div class="score-team-cell">${avatarHtml(teamB)}<span>${nameB}</span></div>`;
     html += `<input class="score-cell-input${winCls(w0 === "B")}" type="text" inputmode="numeric" data-set="0" data-side="1" value="${state.sets[0][1] === null ? "" : state.sets[0][1]}">`;
     html += `<input class="score-cell-input${winCls(w1 === "B")}" type="text" inputmode="numeric" data-set="1" data-side="1" value="${state.sets[1][1] === null ? "" : state.sets[1][1]}">`;
+    if (thirdSet) html += `<input class="score-cell-input${winCls(w2 === "B")}" type="text" inputmode="numeric" data-set="2" data-side="1" value="${state.sets[2][1] === null ? "" : state.sets[2][1]}">`;
     if (tb) html += `<input class="score-cell-input tb${winCls(wtb === "B")}" type="text" inputmode="numeric" data-tb="1" value="${state.tb[1]}">`;
     html += `</div>`;
-    const warnings = [0, 1]
+    const setIndexes = thirdSet ? [0, 1, 2] : [0, 1];
+    const warnings = setIndexes
       .filter((si) => isValidSetClient(state.sets[si][0], state.sets[si][1]) === false)
       .map((si) => `<div class="warn">Set ${si + 1}: not a real padel score</div>`);
     if (warnings.length) html += `<div class="score-warnings">${warnings.join("")}</div>`;
+    // Once the first two sets split, a pairs match can be settled either way:
+    // play the 3rd set above, or tap this to leave it unplayed and stand as
+    // a draw — an explicit choice instead of just quietly leaving it blank.
+    if (thirdSet) html += `<div class="row" style="margin-top:12px;"><button type="button" class="secondary" id="score-draw-btn">Call it a draw — skip the 3rd set</button></div>`;
     body.innerHTML = html;
     body.querySelectorAll(".score-cell-input[data-set]").forEach((inp) => {
       inp.onchange = () => {
@@ -2281,19 +2376,22 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
         render();
       };
     });
+    const drawBtn = document.getElementById("score-draw-btn");
+    if (drawBtn) drawBtn.onclick = () => { state.sets[2] = [null, null]; saveScore(); };
   }
-  render();
-  el("score-modal-backdrop").classList.add("open");
-  el("score-modal-clear").onclick = () => { state.sets = [[null, null], [null, null]]; state.tb = [0, 0]; render(); };
-  el("score-modal-save").onclick = async () => {
+  async function saveScore() {
     const body = { sets: state.sets };
-    if (needsTb()) body.tb = state.tb;
+    if (showTb()) body.tb = state.tb;
     try {
       await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body });
       el("score-modal-backdrop").classList.remove("open");
       await refreshLeague(); renderResults();
     } catch (e) { alert(e.message); }
-  };
+  }
+  render();
+  el("score-modal-backdrop").classList.add("open");
+  el("score-modal-clear").onclick = () => { state.sets = state.sets.map(() => [null, null]); state.tb = [0, 0]; render(); };
+  el("score-modal-save").onclick = saveScore;
 }
 el("score-modal-close").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-cancel").onclick = () => el("score-modal-backdrop").classList.remove("open");
@@ -2977,6 +3075,7 @@ function roundCountsToTable(round) {
   return !meta || meta.type !== "knockout";
 }
 function computeStandingsClient() {
+  const isPairs = league.format === "pairs";
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
     league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
@@ -2986,7 +3085,7 @@ function computeStandingsClient() {
       played++; rubbersWon += myWins; rubbersLost += oppWins;
       if (myWins > oppWins) nightsWon++; else if (myWins < oppWins) nightsLost++; else nightsDrawn++;
     });
-    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, diff: rubbersWon - rubbersLost, points: rubbersWon };
+    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, diff: rubbersWon - rubbersLost, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
   return rows;
@@ -3000,12 +3099,13 @@ function matchWinnerClient(f) {
 function renderTable() {
   const rows = computeStandingsClient();
   const c = el("log-container");
-  el("table-poster-row").style.display = myRole === "admin" && league.teams.length > 0 ? "flex" : "none";
+  el("table-poster-row").style.display = myRole === "admin" && league.teams.length > 0 && league.format !== "pairs" ? "flex" : "none";
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
-    let html = `<table class="log"><thead><tr><th>#</th><th>Team</th><th class="num">P</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Diff</th><th class="num">Pts</th></tr></thead><tbody>`;
+    const isPairs = league.format === "pairs";
+    let html = `<table class="log"><thead><tr><th>#</th><th>${isPairs ? "Pair" : "Team"}</th><th class="num">P</th><th class="num">Won</th>${isPairs ? '<th class="num">Drawn</th>' : ""}<th class="num">Lost</th><th class="num">Diff</th><th class="num">Pts</th></tr></thead><tbody>`;
     rows.forEach((r, i) => {
-      html += `<tr class="${i === 0 && r.played > 0 ? "rank1" : ""}"><td>${i + 1}</td><td><div class="team-cell">${avatarHtml(r)}${escapeHtml(r.name)}</div></td><td class="num">${r.played}</td><td class="num">${r.rubbersWon}</td><td class="num">${r.rubbersLost}</td><td class="num">${r.diff > 0 ? "+" : ""}${r.diff}</td><td class="num pts">${r.points}</td></tr>`;
+      html += `<tr class="${i === 0 && r.played > 0 ? "rank1" : ""}"><td>${i + 1}</td><td><div class="team-cell">${avatarHtml(r)}${escapeHtml(r.name)}</div></td><td class="num">${r.played}</td><td class="num">${r.rubbersWon}</td>${isPairs ? `<td class="num">${r.nightsDrawn}</td>` : ""}<td class="num">${r.rubbersLost}</td><td class="num">${r.diff > 0 ? "+" : ""}${r.diff}</td><td class="num pts">${r.points}</td></tr>`;
     });
     html += "</tbody></table>";
     c.innerHTML = html;
@@ -3194,11 +3294,19 @@ async function openPlayerHistory(playerId, playerName) {
   const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
   if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + '<p class="empty">No completed matches yet.</p>'; return; }
   const wins = rows.filter((r) => r.result === "W").length;
-  const commonSeed = mostCommonSeed(rows);
+  const draws = rows.filter((r) => r.result === "D").length;
+  const losses = rows.length - wins - draws;
+  // A Vibora (pairs) fixture has no seeding — a pair just plays whichever
+  // pair is next, not a ranked line-up slot — so the seed badge and tag are
+  // team-league-only.
+  const isPairs = league.format === "pairs";
+  const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
-  let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${rows.length - wins}L${seedTag}</p>`;
+  let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
   rows.forEach((r) => {
-    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${r.result === "W" ? "win" : "loss"}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+    const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
+    const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
+    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
   });
   el("player-modal-body").innerHTML = html;
 }
@@ -3211,27 +3319,38 @@ async function renderStats() {
   const stats = await api(`/leagues/${currentLeagueId}/stats`).catch(() => null);
   if (!stats) return;
   const t = stats.totals;
+  const isPairs = league.format === "pairs";
   el("stats-totals").innerHTML = `
-    <div class="stat-tile"><div class="stat-num">${t.teams}</div><div class="stat-lbl">Teams</div></div>
+    <div class="stat-tile"><div class="stat-num">${t.teams}</div><div class="stat-lbl">${isPairs ? "Pairs" : "Teams"}</div></div>
     <div class="stat-tile"><div class="stat-num">${t.players}</div><div class="stat-lbl">Players</div></div>
     <div class="stat-tile"><div class="stat-num">${t.nightsPlayed}</div><div class="stat-lbl">Nights played</div></div>
     <div class="stat-tile"><div class="stat-num">${t.totalRubbers}</div><div class="stat-lbl">Matches played</div></div>
-    <div class="stat-tile"><div class="stat-num">${t.totalTiebreaks}</div><div class="stat-lbl">Super tie-breaks</div></div>
+    ${isPairs ? "" : `<div class="stat-tile"><div class="stat-num">${t.totalTiebreaks}</div><div class="stat-lbl">Super tie-breaks</div></div>`}
   `;
 
-  const tb = el("stats-tiebreaks");
-  tb.innerHTML = stats.tiebreaks.length === 0 ? '<p class="empty">No super tie-breaks played yet.</p>' :
-    `<table class="log"><thead><tr><th>Team</th><th class="num">Played</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Win%</th></tr></thead><tbody>${
-      stats.tiebreaks.map((r) => `<tr><td>${escapeHtml(r.name)}</td><td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td><td class="num pts">${r.winPct}%</td></tr>`).join("")
-    }</tbody></table>`;
+  // No match tie-break in a Vibora League — a split there is settled by a
+  // real 3rd set instead, so this record is meaningless for pairs.
+  el("tiebreaks-card").style.display = isPairs ? "none" : "block";
+  if (!isPairs) {
+    const tb = el("stats-tiebreaks");
+    tb.innerHTML = stats.tiebreaks.length === 0 ? '<p class="empty">No super tie-breaks played yet.</p>' :
+      `<table class="log"><thead><tr><th>Team</th><th class="num">Played</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Win%</th></tr></thead><tbody>${
+        stats.tiebreaks.map((r) => `<tr><td>${escapeHtml(r.name)}</td><td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td><td class="num pts">${r.winPct}%</td></tr>`).join("")
+      }</tbody></table>`;
+  }
 
   const sc = el("stats-scorers");
   sc.innerHTML = stats.topScorers.length === 0 ? '<p class="empty">No results yet.</p>' :
-    stats.topScorers.map((p, i) => `<div class="stat-row"><span>${i + 1}. ${escapeHtml(p.name)} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.wins}W ${p.losses}L</span></div>`).join("");
+    stats.topScorers.map((p, i) => `<div class="stat-row"><span>${i + 1}. ${escapeHtml(p.name)} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.wins}W ${p.draws ? p.draws + "D " : ""}${p.losses}L</span></div>`).join("");
 
-  const pt = el("stats-partnerships");
-  pt.innerHTML = stats.partnerships.length === 0 ? '<p class="empty">Need at least 2 matches together to qualify.</p>' :
-    stats.partnerships.map((p) => `<div class="stat-row"><span>${escapeHtml(p.names.join(" & "))} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.won}/${p.played}</span></div>`).join("");
+  // Meaningless for a Vibora League — the only "partnership" a pair has is
+  // itself, always at 100% together, so the whole card is hidden instead.
+  el("partnerships-card").style.display = isPairs ? "none" : "block";
+  if (!isPairs) {
+    const pt = el("stats-partnerships");
+    pt.innerHTML = stats.partnerships.length === 0 ? '<p class="empty">Need at least 2 matches together to qualify.</p>' :
+      stats.partnerships.map((p) => `<div class="stat-row"><span>${escapeHtml(p.names.join(" & "))} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.won}/${p.played}</span></div>`).join("");
+  }
 
   const st = el("stats-streaks");
   st.innerHTML = stats.streaks.length === 0 ? '<p class="empty">No active streaks of 2+ yet.</p>' :

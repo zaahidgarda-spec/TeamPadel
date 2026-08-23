@@ -4,27 +4,37 @@ function uid() {
   return crypto.randomUUID();
 }
 
-function emptyRubber() {
-  return { sets: [[null, null], [null, null]], tb: [null, null] };
+// A team rubber is 2 sets plus a match tie-break decider if they split. A
+// Vibora (pairs) rubber instead plays a real 3rd set to decide a split —
+// tb is unused there but kept present so shared code doesn't need to guard
+// its existence.
+function emptyRubber(setCount) {
+  const n = setCount || 2;
+  return { sets: Array.from({ length: n }, () => [null, null]), tb: [null, null] };
 }
-function emptySelection() {
-  return { submitted: false, pairs: [[null, null], [null, null], [null, null], [null, null]] };
+// seedCount is 4 for a team fixture (4 sub-matches/seeds a night) and 1 for
+// a Vibora (pairs) fixture — a pair IS the line-up, so there's only ever
+// one match to play.
+function emptySelection(seedCount) {
+  const n = seedCount || 4;
+  return { submitted: false, pairs: Array.from({ length: n }, () => [null, null]) };
 }
-function emptyFixtureExtras() {
+function emptyFixtureExtras(seedCount) {
+  const n = seedCount || 4;
   return {
     date: "",
     venue: "",
-    selectionA: emptySelection(),
-    selectionB: emptySelection(),
-    rubbers: [emptyRubber(), emptyRubber(), emptyRubber(), emptyRubber()],
+    selectionA: emptySelection(n),
+    selectionB: emptySelection(n),
+    rubbers: Array.from({ length: n }, () => emptyRubber(n === 1 ? 3 : 2)),
     finalized: false,
-    slotOrder: null, // once agreed: [seedIndex, seedIndex, seedIndex, seedIndex] = play order for the night
+    slotOrder: null, // once agreed: [seedIndex, ...] = play order for the night (team leagues only)
     courtOrderProposal: null, // { by: 'A'|'B', assignments: [{slot,court,seed}] } awaiting the other captain's response
     selectionUnlockRequest: null, // { by: 'A'|'B' } — that side asked to reopen their own (already-submitted) line-up, awaiting the other captain's (or admin's) approval
   };
 }
 
-function generateRoundRobin(teams, doubleRound) {
+function generateRoundRobin(teams, doubleRound, seedCount) {
   let list = teams.map((t) => t.id);
   const hasBye = list.length % 2 !== 0;
   if (hasBye) list.push("BYE");
@@ -38,7 +48,7 @@ function generateRoundRobin(teams, doubleRound) {
     for (let i = 0; i < half; i++) {
       const a = arr[i], b = arr[n - 1 - i];
       if (a !== "BYE" && b !== "BYE") {
-        fixtures.push(Object.assign({ id: uid(), round: r + 1, stage: "regular", teamA: a, teamB: b }, emptyFixtureExtras()));
+        fixtures.push(Object.assign({ id: uid(), round: r + 1, stage: "regular", teamA: a, teamB: b }, emptyFixtureExtras(seedCount)));
       } else if (a === "BYE") {
         byes.push({ round: r + 1, teamId: b });
       } else if (b === "BYE") {
@@ -52,7 +62,7 @@ function generateRoundRobin(teams, doubleRound) {
   }
   if (doubleRound) {
     const second = fixtures.map((f) =>
-      Object.assign({ id: uid(), round: f.round + rounds, stage: "regular", teamA: f.teamB, teamB: f.teamA }, emptyFixtureExtras())
+      Object.assign({ id: uid(), round: f.round + rounds, stage: "regular", teamA: f.teamB, teamB: f.teamA }, emptyFixtureExtras(seedCount))
     );
     fixtures.push(...second);
     byes.push(...byes.map((b) => ({ round: b.round + rounds, teamId: b.teamId })));
@@ -93,6 +103,18 @@ function tiebreakWinner(tb) {
   return av > bv ? "A" : "B";
 }
 function rubberWinner(rubber) {
+  if (rubber.sets.length >= 3) {
+    // Vibora (pairs): best of 3 real sets, first to 2 — no match tie-break.
+    let winsA = 0, winsB = 0;
+    rubber.sets.forEach((s) => {
+      const w = setWinner(s);
+      if (w === "A") winsA++;
+      else if (w === "B") winsB++;
+    });
+    if (winsA >= 2) return "A";
+    if (winsB >= 2) return "B";
+    return null;
+  }
   const s1 = setWinner(rubber.sets[0]);
   const s2 = setWinner(rubber.sets[1]);
   if (!s1 || !s2) return null;
@@ -116,9 +138,26 @@ function fixtureScore(f) {
   });
   return { winsA, winsB, decided };
 }
-function requiredRubbersOk(f) {
+function requiredRubbersOk(f, allowDraw) {
   const { winsA, winsB, decided } = fixtureScore(f);
-  if (decided < 4) return false;
+  // Regulation is 4 rubbers for a team fixture, 1 for a pairs fixture — a
+  // knockout decider (only ever appended to team fixtures) sits beyond that,
+  // so this stays correct for both without needing the league's format here.
+  const regulation = f.rubbers.length > 4 ? 4 : f.rubbers.length;
+  if (decided < regulation) {
+    // A Vibora (pairs) match that splits its first two sets is allowed to
+    // stand as a draw instead of being forced to a decider — playing the
+    // 3rd set is optional there, unlike a team fixture's knockout decider.
+    // A half-entered 3rd set doesn't count as "left unplayed" — that's an
+    // incomplete score, not a settled draw.
+    if (allowDraw && f.rubbers.length === 1) {
+      const r = f.rubbers[0];
+      const s1 = setWinner(r.sets[0]), s2 = setWinner(r.sets[1]);
+      const thirdUntouched = r.sets.length < 3 || (r.sets[2][0] === null && r.sets[2][1] === null);
+      if (s1 && s2 && s1 !== s2 && thirdUntouched) return true;
+    }
+    return false;
+  }
   if (f.rubbers.length > 4 && winsA === winsB) return rubberWinner(f.rubbers[4]) !== null;
   return true;
 }
@@ -139,6 +178,7 @@ function roundCountsToTable(league, round) {
 }
 
 function computeStandings(league) {
+  const isPairs = league.format === "pairs";
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
     league.fixtures
@@ -165,7 +205,11 @@ function computeStandings(league) {
       rubbersWon,
       rubbersLost,
       diff: rubbersWon - rubbersLost,
-      points: rubbersWon,
+      // A Vibora league scores like a round-robin table: 2 points for a win,
+      // 1 for a draw. A team league instead awards a point per rubber won —
+      // there's no such thing as a drawn night once the knockout decider
+      // forces a winner.
+      points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon,
     };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
@@ -180,7 +224,7 @@ function validateSelection(pairs, confirmDoubleUp) {
   let doubleUp = false;
   for (let i = 0; i < pairs.length; i++) {
     const [a, b] = pairs[i];
-    if (!a || !b) return { error: "All 4 seeds need two players selected." };
+    if (!a || !b) return { error: "Every seed needs two players selected." };
     if (a === b) return { error: "A player can't be paired with themselves (seed " + (i + 1) + ")." };
     if (seen.has(a) || seen.has(b)) doubleUp = true;
     seen.add(a);
@@ -223,14 +267,23 @@ function playerMatchHistory(league, playerId) {
       const oppNames = oppPair.map((pid) => { const p = oppTeam && oppTeam.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
       const rubber = f.rubbers[idx];
       const winner = rubberWinner(rubber);
-      if (!winner) return;
-      const setsStr = rubber.sets.map((s) => (s[0] ?? "?") + "-" + (s[1] ?? "?")).join(", ");
+      // A finalized team-league rubber always has a winner (finalize
+      // requires it). A finalized pairs match can stand as a draw instead
+      // — the split sets are real, played data, so it still belongs here.
+      const played = setWinner(rubber.sets[0]) && setWinner(rubber.sets[1]);
+      if (!winner && !played) return;
+      // Filters out a pairs match's unplayed 3rd set (left blank on a draw)
+      // rather than printing it as a phantom "?-?".
+      const setsStr = rubber.sets
+        .filter((s) => s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "")
+        .map((s) => s[0] + "-" + s[1])
+        .join(", ");
       rows.push({
         label: stageLabel(league, f),
         opponentTeam: oppTeam ? oppTeam.name : "?",
         opponentPlayers: oppNames,
         partner: partner ? partner.name : null,
-        result: winner === mySide ? "W" : "L",
+        result: winner === null ? "D" : winner === mySide ? "W" : "L",
         score: setsStr,
         seed: idx + 1,
       });
@@ -269,7 +322,9 @@ function topScorers(league, limit) {
       const hist = playerMatchHistory(league, p.id);
       if (hist.length === 0) return;
       const wins = hist.filter((h) => h.result === "W").length;
-      rows.push({ id: p.id, name: p.name, team: t.name, played: hist.length, wins, losses: hist.length - wins });
+      const losses = hist.filter((h) => h.result === "L").length;
+      const draws = hist.length - wins - losses;
+      rows.push({ id: p.id, name: p.name, team: t.name, played: hist.length, wins, losses, draws });
     });
   });
   rows.sort((a, b) => b.wins - a.wins || b.wins / b.played - a.wins / a.played);
@@ -340,8 +395,10 @@ function computeLeagueStats(league) {
   let totalRubbers = 0, totalTiebreaks = 0;
   finalized.forEach((f) => {
     f.rubbers.forEach((r) => {
-      if (rubberWinner(r)) totalRubbers++;
       const s1 = setWinner(r.sets[0]), s2 = setWinner(r.sets[1]);
+      // Both sets decided means the match was played, whether or not it
+      // ended with an outright winner — a Vibora draw still counts.
+      if (s1 && s2) totalRubbers++;
       if (s1 && s2 && s1 !== s2 && tiebreakWinner(r.tb)) totalTiebreaks++;
     });
   });

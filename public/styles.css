@@ -296,6 +296,9 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .league-card-top .tag{white-space:nowrap;flex-shrink:0;}
 .league-card-name{font-family:var(--font-display);font-size:17px;text-transform:uppercase;letter-spacing:.01em;}
 .league-status-active{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);}
+/* Distinct from the blue status tag next to it — a Vibora (pairs) league is
+   a different format, not a different status, so it gets its own color. */
+.vibora-tag{color:var(--success);border-color:var(--success);background:var(--success-soft);font-family:var(--font-display);letter-spacing:.04em;}
 /* League strength: an admin-set 0-5 rating shown as ascending signal bars
    (the universal "how strong" shape — signal, battery, wifi) rather than a
    number or star row, since a card in a grid is scanned, not read. */
@@ -480,6 +483,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .history-badge{font-family:var(--font-display);font-size:11px;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .history-badge.win{background:var(--success-soft);color:var(--success);}
 .history-badge.loss{background:var(--clay-soft);color:var(--clay);}
+.history-badge.draw{background:var(--panel-2);color:var(--text-dim);}
 .history-label{font-size:13px;font-weight:600;}
 .history-detail{font-size:12px;color:var(--text-dim);margin-top:3px;margin-left:28px;}
 

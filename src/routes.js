@@ -51,10 +51,15 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-function newLeagueObj(name, adminEmail) {
+function newLeagueObj(name, adminEmail, format) {
   return {
     id: logic.uid(),
     name,
+    // "teams" (the original format: rosters of many players, a weekly
+    // blind pair-selection, 4 sub-matches a night) or "pairs" (a Vibora
+    // League: each entrant is a fixed 2-player pair, one match a night, no
+    // weekly selection at all since the pair already is the line-up).
+    format: format === "pairs" ? "pairs" : "teams",
     adminEmail: (adminEmail || "").trim(),
     adminPasswordHash: null,
     status: "setup",
@@ -302,6 +307,7 @@ router.get("/leagues", (req, res) => {
       status: league ? leagueStatus(league) : "setup",
       teamCount: league ? league.teams.length : 0,
       strength: league ? (league.strength || 0) : 0,
+      format: league ? (league.format || "teams") : "teams",
       // Just enough for a logo strip on the league card — never codes/emails.
       teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
     };
@@ -360,10 +366,11 @@ router.get("/owner/me", (req, res) => {
 
 router.post("/leagues", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Only the site admin can create leagues. Log in first." });
-  const { name, adminEmail } = req.body || {};
+  const { name, adminEmail, format } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "League name is required." });
   if (!adminEmail || !adminEmail.includes("@")) return res.status(400).json({ error: "A valid admin email is required." });
-  const league = newLeagueObj(name.trim(), adminEmail);
+  if (format && !["teams", "pairs"].includes(format)) return res.status(400).json({ error: "Unknown league format." });
+  const league = newLeagueObj(name.trim(), adminEmail, format);
   store.saveLeague(league.id, league);
   const index = store.getIndex();
   index.push({ id: league.id, name: league.name, createdAt: league.createdAt });
@@ -389,6 +396,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (league.tieringEnabled === undefined) league.tieringEnabled = false;
   if (!league.goldTierCount) league.goldTierCount = 0;
   if (league.strength === undefined) league.strength = 0;
+  if (!league.format) league.format = "teams";
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -715,12 +723,28 @@ router.put(
 router.post("/leagues/:leagueId/season/start", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (league.teams.length < 3) return res.status(400).json({ error: "Add at least 3 teams first." });
-  const format = req.body.playoffFormat;
-  if (format && !["none", "semis_final", "position"].includes(format)) return res.status(400).json({ error: "Unknown playoff format." });
-  const { fixtures, byes } = logic.generateRoundRobin(league.teams, !!req.body.doubleRound);
+  const playoffFormat = req.body.playoffFormat;
+  if (playoffFormat && !["none", "semis_final", "position"].includes(playoffFormat)) return res.status(400).json({ error: "Unknown playoff format." });
+  const isPairs = league.format === "pairs";
+  if (isPairs && league.teams.some((t) => t.players.length !== 2)) {
+    return res.status(400).json({ error: "Every pair needs exactly 2 players before starting the season." });
+  }
+  const { fixtures, byes } = logic.generateRoundRobin(league.teams, !!req.body.doubleRound, isPairs ? 1 : 4);
+  if (isPairs) {
+    // A pair IS the line-up — there's nothing to pick weekly, so both sides
+    // are pre-filled and locked the moment the fixture exists, skipping the
+    // whole blind-selection dance the team format needs.
+    const teamsById = {};
+    league.teams.forEach((t) => { teamsById[t.id] = t; });
+    fixtures.forEach((f) => {
+      const teamA = teamsById[f.teamA], teamB = teamsById[f.teamB];
+      if (teamA) f.selectionA = { submitted: true, pairs: [[teamA.players[0].id, teamA.players[1].id]] };
+      if (teamB) f.selectionB = { submitted: true, pairs: [[teamB.players[0].id, teamB.players[1].id]] };
+    });
+  }
   league.fixtures = fixtures;
   league.byes = byes;
-  league.playoffFormat = format || "none";
+  league.playoffFormat = isPairs ? "none" : (playoffFormat || "none");
   league.status = "active";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -735,6 +759,7 @@ router.put("/leagues/:leagueId/playoff-format", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const format = req.body.format;
   if (!["none", "semis_final", "position"].includes(format)) return res.status(400).json({ error: "Unknown playoff format." });
+  if (league.format === "pairs" && format !== "none") return res.status(400).json({ error: "Playoffs aren't available for a Vibora League yet." });
   if (league.playoffs) {
     const hasResults =
       league.playoffs.format === "position"
@@ -1037,7 +1062,12 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   }
 
   const pairs = req.body.pairs;
-  if (!Array.isArray(pairs) || pairs.length !== 4) return res.status(400).json({ error: "Send exactly 4 seed pairs." });
+  // Expected count comes from the fixture's own seed slots (4 for a team
+  // fixture, 1 for a Vibora/pairs fixture) rather than a hardcoded number —
+  // though in practice a pairs fixture's selection is pre-filled at season
+  // start and never goes through this route at all.
+  const expectedSeeds = f[selKey].pairs.length;
+  if (!Array.isArray(pairs) || pairs.length !== expectedSeeds) return res.status(400).json({ error: `Send exactly ${expectedSeeds} seed pair${expectedSeeds === 1 ? "" : "s"}.` });
   const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp);
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
 
@@ -1224,14 +1254,14 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
-  if (!logic.requiredRubbersOk(f)) return res.status(400).json({ error: "All matches need a decided winner first." });
+  if (!logic.requiredRubbersOk(f, league.format === "pairs")) return res.status(400).json({ error: "Enter a full score before finalizing." });
   f.finalized = true;
   syncPlayoffs(league);
 
   // Once every regular-round fixture for this round is in, Pair of the Week
   // voting for that week becomes meaningful — let every captain know, once,
   // per round.
-  if (f.stage === "regular") {
+  if (f.stage === "regular" && league.format !== "pairs") {
     const roundFixtures = league.fixtures.filter((x) => x.round === f.round);
     const roundComplete = roundFixtures.length > 0 && roundFixtures.every((x) => x.finalized);
     if (roundComplete) {

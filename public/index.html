@@ -118,9 +118,13 @@
           <div class="row">
             <input type="text" id="new-league-name" placeholder="League name">
             <input type="email" id="new-league-admin-email" placeholder="Your email (this is how you log in)" style="width:260px;">
+            <select id="new-league-format">
+              <option value="teams">Team League</option>
+              <option value="pairs">Vibora League (Pairs)</option>
+            </select>
             <button class="primary" id="create-league-btn">Create league</button>
           </div>
-          <p class="note" style="margin-top:10px;">You'll register a password for this email the first time you log in.</p>
+          <p class="note" style="margin-top:10px;">You'll register a password for this email the first time you log in. A Vibora League is fixed pairs playing each other directly — one match a night, no weekly line-up selection.</p>
         </div>
         <div class="card" id="interest-signups-card" style="display:none;">
           <h2 class="section-title">League interest signups</h2>
@@ -183,11 +187,17 @@
         </div>
         <div class="card" id="season-card"></div>
         <div class="card">
-          <h2 class="section-title">Teams<button class="secondary" id="copy-all-codes-btn">Copy all codes</button></h2>
+          <h2 class="section-title"><span id="teams-section-title">Teams</span><button class="secondary" id="copy-all-codes-btn">Copy all codes</button></h2>
           <ul class="plain" id="admin-team-list"></ul>
           <div class="row" id="add-team-row" style="margin-top:12px;">
             <input type="text" id="new-team-name" placeholder="Team name">
             <button class="primary" id="add-team-btn">Add team</button>
+          </div>
+          <div class="row" id="add-pair-row" style="margin-top:12px;display:none;flex-wrap:wrap;">
+            <input type="text" id="new-pair-player1" placeholder="First player" style="flex:1;min-width:130px;">
+            <input type="text" id="new-pair-player2" placeholder="Second player" style="flex:1;min-width:130px;">
+            <input type="text" id="new-pair-nickname" placeholder="Nickname (optional)" style="flex:1;min-width:130px;">
+            <button class="primary" id="add-pair-btn">Add pair</button>
           </div>
           <details style="margin-top:10px;" id="bulk-add-details">
             <summary class="note" style="cursor:pointer;">Add several teams at once</summary>
@@ -196,7 +206,7 @@
             <button class="secondary" id="bulk-add-btn" style="margin-top:8px;">Add these teams</button>
           </details>
         </div>
-        <div class="card">
+        <div class="card" id="tiering-card">
           <h2 class="section-title">Player tiering</h2>
           <p class="note">Mark each team's strongest player(s) as Gold — captains will see gold names flagged in the Selection Room to help keep seeding fair.</p>
           <div class="row" style="align-items:center;margin-top:12px;">
@@ -207,7 +217,7 @@
             <input type="number" id="gold-tier-count-input" min="1" max="20" style="width:70px;">
           </div>
         </div>
-        <div class="card">
+        <div class="card" id="rosters-card">
           <h2 class="section-title">Player rosters</h2>
           <div id="admin-roster"></div>
         </div>
@@ -218,7 +228,7 @@
             <span class="note" style="width:110px;">Default venue</span>
             <input type="text" id="default-venue-input" placeholder="e.g. Riverside Padel Club">
           </div>
-          <div class="row" style="align-items:center;margin-top:10px;">
+          <div class="row" id="court-settings-row" style="align-items:center;margin-top:10px;">
             <span class="note" style="width:110px;">Courts / slots</span>
             <input type="number" id="court-count-input" min="1" max="12" style="width:70px;">
             <span class="note">×</span>
@@ -287,7 +297,7 @@
 
       <section class="view" id="view-results">
         <div class="card" style="margin-bottom:16px;">
-          <p class="note">Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).</p>
+          <p class="note" id="results-scoring-note">Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).</p>
         </div>
         <div id="round-nav-results"></div>
         <div class="row" id="results-poster-row" style="display:none;margin-bottom:12px;justify-content:flex-end;">
@@ -312,7 +322,7 @@
           <h2 class="section-title">Season at a glance</h2>
           <div id="stats-totals" class="stats-grid"></div>
         </div>
-        <div class="card">
+        <div class="card" id="tiebreaks-card">
           <h2 class="section-title">Super tie-break record</h2>
           <div class="hscroll"><div id="stats-tiebreaks"></div></div>
         </div>
@@ -320,7 +330,7 @@
           <h2 class="section-title">Top scorers</h2>
           <div id="stats-scorers"></div>
         </div>
-        <div class="card">
+        <div class="card" id="partnerships-card">
           <h2 class="section-title">Best partnerships</h2>
           <div id="stats-partnerships"></div>
         </div>
