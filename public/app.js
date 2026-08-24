@@ -478,6 +478,7 @@ function renderGroupSelector() {
       btn.className = d === currentDivision ? "active" : "";
       btn.onclick = () => {
         viewingGroupId = league.groups.find((g) => g.division === d).id;
+        stillToPlayTeamId = null;
         initViewingKey(); renderAll();
       };
       divTabs.appendChild(btn);
@@ -490,7 +491,7 @@ function renderGroupSelector() {
     const btn = document.createElement("button");
     btn.textContent = g.name;
     btn.className = g.id === viewingGroupId ? "active" : "";
-    btn.onclick = () => { viewingGroupId = g.id; initViewingKey(); renderAll(); };
+    btn.onclick = () => { viewingGroupId = g.id; stillToPlayTeamId = null; initViewingKey(); renderAll(); };
     groupTabs.appendChild(btn);
   });
 }
@@ -2414,6 +2415,54 @@ function openScoreModalFor(f) {
 // instead of a round nav, this shows every unplayed matchup as a tappable
 // opponent card (yours to enter if it's your pair, everyone else's just to
 // see what's left), plus every result already in for the group.
+// Everyone who isn't looking at their own pending matches sees "Still to
+// play" as a pick-a-pair list instead of every remaining matchup at once
+// (which can be 60+ cards in a 12-pair group) — pick a pair, see just their
+// own remaining opponents, same tap-to-enter cards "Your matches" uses.
+let stillToPlayTeamId = null;
+function renderStillToPlayPicker(container, pending) {
+  const teamIds = [...new Set(pending.flatMap((f) => [f.teamA, f.teamB]))];
+  if (stillToPlayTeamId && !teamIds.includes(stillToPlayTeamId)) stillToPlayTeamId = null;
+
+  if (!stillToPlayTeamId) {
+    const grid = document.createElement("div");
+    grid.className = "opponent-grid";
+    teamIds.map((id) => teamById(id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name)).forEach((t) => {
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.className = "opponent-card";
+      btn.innerHTML = `${avatarHtml(t)}<span>${escapeHtml(t.name)}</span>`;
+      btn.onclick = () => { stillToPlayTeamId = t.id; renderResults(); };
+      grid.appendChild(btn);
+    });
+    container.appendChild(grid);
+    return;
+  }
+
+  const team = teamById(stillToPlayTeamId);
+  const backBtn = document.createElement("button");
+  backBtn.type = "button"; backBtn.className = "link"; backBtn.style.marginBottom = "10px";
+  backBtn.textContent = "← All pairs";
+  backBtn.onclick = () => { stillToPlayTeamId = null; renderResults(); };
+  container.appendChild(backBtn);
+
+  const heading = document.createElement("p");
+  heading.className = "note"; heading.style.marginBottom = "8px";
+  heading.textContent = (team ? team.name : "This pair") + "'s remaining matches:";
+  container.appendChild(heading);
+
+  const grid = document.createElement("div");
+  grid.className = "opponent-grid";
+  pending.filter((f) => f.teamA === stillToPlayTeamId || f.teamB === stillToPlayTeamId).forEach((f) => {
+    const opp = teamById(f.teamA === stillToPlayTeamId ? f.teamB : f.teamA);
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "opponent-card";
+    btn.innerHTML = `${opp ? avatarHtml(opp) : ""}<span>${escapeHtml(opp ? opp.name : "TBD")}</span>`;
+    if (myRole === "admin") btn.onclick = () => openScoreModalFor(f);
+    else btn.disabled = true;
+    grid.appendChild(btn);
+  });
+  container.appendChild(grid);
+}
 function renderPairsResults() {
   const groupFixtures = groupScopedFixtures();
   const pendingCard = el("results-pending-card");
@@ -2427,29 +2476,24 @@ function renderPairsResults() {
     pendingCard.style.display = "none";
   } else {
     pendingCard.style.display = "block";
-    const grid = document.createElement("div");
-    grid.className = "opponent-grid";
     const mine = myTeamInGroup ? pending.filter((f) => f.teamA === myTeam.id || f.teamB === myTeam.id) : [];
     el("results-pending-title").textContent = myTeamInGroup ? "Your matches — tap an opponent to enter a score" : "Still to play";
     if (myTeamInGroup && mine.length === 0) {
       pendingContainer.innerHTML = '<p class="empty">You\'ve played every pair in your group.</p>';
-    } else {
-      (myTeamInGroup ? mine : pending).forEach((f) => {
+    } else if (myTeamInGroup) {
+      const grid = document.createElement("div");
+      grid.className = "opponent-grid";
+      mine.forEach((f) => {
+        const opp = teamById(f.teamA === myTeam.id ? f.teamB : f.teamA);
         const btn = document.createElement("button");
         btn.type = "button"; btn.className = "opponent-card";
-        if (myTeamInGroup) {
-          const opp = teamById(f.teamA === myTeam.id ? f.teamB : f.teamA);
-          btn.innerHTML = `${opp ? avatarHtml(opp) : ""}<span>${escapeHtml(opp ? opp.name : "TBD")}</span>`;
-          btn.onclick = () => openScoreModalFor(f);
-        } else {
-          const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-          btn.innerHTML = `<span>${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")}</span>`;
-          if (myRole === "admin") btn.onclick = () => openScoreModalFor(f);
-          else btn.disabled = true;
-        }
+        btn.innerHTML = `${opp ? avatarHtml(opp) : ""}<span>${escapeHtml(opp ? opp.name : "TBD")}</span>`;
+        btn.onclick = () => openScoreModalFor(f);
         grid.appendChild(btn);
       });
       pendingContainer.appendChild(grid);
+    } else {
+      renderStillToPlayPicker(pendingContainer, pending);
     }
   }
 
