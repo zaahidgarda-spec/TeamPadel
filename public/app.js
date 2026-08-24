@@ -3480,14 +3480,26 @@ function computeStandingsClient() {
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
   const rows = scopedTeams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
+    let setsWon = 0, setsLost = 0;
     league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
       const isA = f.teamA === t.id;
       const { winsA, winsB } = fixtureScoreClient(f);
       const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
       played++; rubbersWon += myWins; rubbersLost += oppWins;
       if (myWins > oppWins) nightsWon++; else if (myWins < oppWins) nightsLost++; else nightsDrawn++;
+      // A pairs match is decided over real sets (2-0 vs 2-1 both count as
+      // one win in the table), so the tiebreaker needs the actual set
+      // score, not just "won this match or not".
+      if (isPairs) {
+        f.rubbers[0].sets.forEach((s) => {
+          const w = setWinnerClient(s);
+          if (!w) return;
+          if ((w === "A") === isA) setsWon++; else setsLost++;
+        });
+      }
     });
-    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, diff: rubbersWon - rubbersLost, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
+    const diff = isPairs ? setsWon - setsLost : rubbersWon - rubbersLost;
+    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, setsWon, setsLost, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
   return rows;
@@ -3505,7 +3517,7 @@ function renderTable() {
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
     const isPairs = league.format === "pairs";
-    let html = `<table class="log"><thead><tr><th>#</th><th>${isPairs ? "Pair" : "Team"}</th><th class="num">P</th><th class="num">Won</th>${isPairs ? '<th class="num">Drawn</th>' : ""}<th class="num">Lost</th><th class="num">Diff</th><th class="num">Pts</th></tr></thead><tbody>`;
+    let html = `<table class="log"><thead><tr><th>#</th><th>${isPairs ? "Pair" : "Team"}</th><th class="num">P</th><th class="num">Won</th>${isPairs ? '<th class="num">Drawn</th>' : ""}<th class="num">Lost</th><th class="num">${isPairs ? "Set Diff" : "Diff"}</th><th class="num">Pts</th></tr></thead><tbody>`;
     rows.forEach((r, i) => {
       html += `<tr class="${i === 0 && r.played > 0 ? "rank1" : ""}"><td>${i + 1}</td><td><div class="team-cell">${avatarHtml(r)}${escapeHtml(r.name)}</div></td><td class="num">${r.played}</td><td class="num">${r.rubbersWon}</td>${isPairs ? `<td class="num">${r.nightsDrawn}</td>` : ""}<td class="num">${r.rubbersLost}</td><td class="num">${r.diff > 0 ? "+" : ""}${r.diff}</td><td class="num pts">${r.points}</td></tr>`;
     });

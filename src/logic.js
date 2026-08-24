@@ -181,6 +181,7 @@ function computeStandings(league) {
   const isPairs = league.format === "pairs";
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
+    let setsWon = 0, setsLost = 0;
     league.fixtures
       .filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(league, f.round))
       .forEach((f) => {
@@ -193,6 +194,16 @@ function computeStandings(league) {
         if (myWins > oppWins) nightsWon++;
         else if (myWins < oppWins) nightsLost++;
         else nightsDrawn++;
+        // A pairs match is decided over real sets (2-0 vs 2-1 both count as
+        // one win in the table), so the table's tiebreaker needs the actual
+        // set score, not just "won this match or not".
+        if (isPairs) {
+          f.rubbers[0].sets.forEach((s) => {
+            const w = setWinner(s);
+            if (!w) return;
+            if ((w === "A") === isA) setsWon++; else setsLost++;
+          });
+        }
       });
     return {
       id: t.id,
@@ -204,7 +215,9 @@ function computeStandings(league) {
       nightsLost,
       rubbersWon,
       rubbersLost,
-      diff: rubbersWon - rubbersLost,
+      setsWon,
+      setsLost,
+      diff: isPairs ? setsWon - setsLost : rubbersWon - rubbersLost,
       // A Vibora league scores like a round-robin table: 2 points for a win,
       // 1 for a draw. A team league instead awards a point per rubber won —
       // there's no such thing as a drawn night once the knockout decider
@@ -212,6 +225,8 @@ function computeStandings(league) {
       points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon,
     };
   });
+  // Points first, then the tiebreaker (set difference for pairs, rubber
+  // difference for team leagues), then name as a last-resort stable order.
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
   return rows;
 }
