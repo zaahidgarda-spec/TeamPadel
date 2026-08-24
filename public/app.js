@@ -416,6 +416,7 @@ function tabDefs() {
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
   defs.push({ key: "stats", label: "Stats" });
+  if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
   defs.push({ key: "roster", label: isPairs ? "Pairs" : "Team roster" });
   defs.push({ key: "news", label: "News room" });
@@ -637,6 +638,7 @@ function renderAll() {
   renderTable();
   renderRoster();
   renderStats();
+  renderHallOfFame();
   renderAwards();
   renderNews();
   renderSponsorStrip();
@@ -682,6 +684,7 @@ function renderAdmin() {
   el("groups-card").style.display = isPairs ? "block" : "none";
   el("add-group-row").style.display = status === "setup" ? "flex" : "none";
   if (isPairs) renderAdminGroups();
+  renderAdminHallOfFame();
   el("add-team-row").style.display = status === "setup" && !isPairs ? "flex" : "none";
   el("add-pair-row").style.display = status === "setup" && isPairs ? "flex" : "none";
   el("new-pair-group").style.display = status === "setup" && isPairs && league.groups && league.groups.length > 0 ? "block" : "none";
@@ -837,6 +840,65 @@ el("add-group-btn").onclick = async () => {
   try {
     await api(`/leagues/${currentLeagueId}/groups`, { method: "POST", body: { division, name } });
     el("new-group-division").value = ""; el("new-group-name").value = "";
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+};
+function renderAdminHallOfFame() {
+  const list = el("admin-hof-list");
+  const entries = league.hallOfFame || [];
+  if (entries.length === 0) { list.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No entries yet — add one below.</li>'; return; }
+  list.innerHTML = "";
+  const seasons = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
+  seasons.forEach((s) => {
+    const header = document.createElement("li");
+    header.style.cssText = "border:none;padding-top:10px;";
+    header.innerHTML = `<strong>Season ${s}</strong>`;
+    list.appendChild(header);
+    entries.filter((e) => e.season === s).forEach((e) => {
+      const li = document.createElement("li");
+      const left = document.createElement("span");
+      left.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;flex:1;";
+      const labelInput = document.createElement("input");
+      labelInput.type = "text"; labelInput.value = e.label; labelInput.className = "inline-edit";
+      labelInput.style.cssText = "min-width:160px;";
+      labelInput.onkeydown = (ev) => { if (ev.key === "Enter") labelInput.blur(); };
+      labelInput.onblur = async () => {
+        const val = labelInput.value.trim();
+        if (!val || val === e.label) { labelInput.value = e.label; return; }
+        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { label: val } }); await refreshLeague(); renderAll(); }
+        catch (err) { alert(err.message); labelInput.value = e.label; }
+      };
+      const winnerInput = document.createElement("input");
+      winnerInput.type = "text"; winnerInput.value = e.winner; winnerInput.className = "inline-edit";
+      winnerInput.style.cssText = "min-width:200px;font-weight:600;";
+      winnerInput.onkeydown = (ev) => { if (ev.key === "Enter") winnerInput.blur(); };
+      winnerInput.onblur = async () => {
+        const val = winnerInput.value.trim();
+        if (!val || val === e.winner) { winnerInput.value = e.winner; return; }
+        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { winner: val } }); await refreshLeague(); renderAll(); }
+        catch (err) { alert(err.message); winnerInput.value = e.winner; }
+      };
+      left.appendChild(labelInput); left.appendChild(winnerInput);
+      const del = document.createElement("button");
+      del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove entry";
+      del.onclick = async () => {
+        if (!confirm(`Remove "${e.label}" for Season ${s}?`)) return;
+        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "DELETE" }); await refreshLeague(); renderAll(); }
+        catch (err) { alert(err.message); }
+      };
+      li.appendChild(left); li.appendChild(del);
+      list.appendChild(li);
+    });
+  });
+}
+el("add-hof-btn").onclick = async () => {
+  const season = el("new-hof-season").value;
+  const label = el("new-hof-label").value.trim();
+  const winner = el("new-hof-winner").value.trim();
+  if (!season || !label || !winner) return alert("Enter a season, title, and winner.");
+  try {
+    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winner } });
+    el("new-hof-season").value = ""; el("new-hof-label").value = ""; el("new-hof-winner").value = "";
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };
@@ -3622,6 +3684,21 @@ async function renderStats() {
   const st = el("stats-streaks");
   st.innerHTML = stats.streaks.length === 0 ? '<p class="empty">No active streaks of 2+ yet.</p>' :
     stats.streaks.map((s) => `<div class="stat-row"><span>${escapeHtml(s.name)}</span><span class="pts">${s.streak} in a row</span></div>`).join("");
+}
+
+/* ---------- Hall of Fame ---------- */
+
+function renderHallOfFame() {
+  const c = el("hof-container");
+  if (!c) return;
+  const entries = league.hallOfFame || [];
+  if (entries.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No past champions recorded yet.</p></div>'; return; }
+  const seasons = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
+  c.innerHTML = seasons.map((s) => `
+    <div class="card" style="margin-bottom:16px;">
+      <h2 class="section-title">Season ${s}</h2>
+      ${entries.filter((e) => e.season === s).map((e) => `<div class="stat-row"><span>${escapeHtml(e.label)}</span><span class="pts">${escapeHtml(e.winner)}</span></div>`).join("")}
+    </div>`).join("");
 }
 
 /* ---------- Awards ---------- */

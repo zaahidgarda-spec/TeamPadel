@@ -281,6 +281,17 @@
           </div>
           <button class="primary" id="add-sponsor-btn" style="margin-top:10px;">Add sponsor</button>
         </div>
+        <div class="card">
+          <h2 class="section-title">Hall of Fame</h2>
+          <p class="note">Past season champions — free text, not tied to any current pair record.</p>
+          <ul class="plain" id="admin-hof-list" style="margin-top:10px;"></ul>
+          <div class="row" id="add-hof-row" style="margin-top:12px;flex-wrap:wrap;">
+            <input type="number" id="new-hof-season" placeholder="Season #" min="1" style="width:100px;">
+            <input type="text" id="new-hof-label" placeholder="Title, e.g. Champions" style="flex:1;min-width:180px;">
+            <input type="text" id="new-hof-winner" placeholder="Winner, e.g. Ahmed Khota &amp; Hussein Mohamedy" style="flex:1;min-width:220px;">
+            <button class="primary" id="add-hof-btn">Add</button>
+          </div>
+        </div>
       </section>
 
       <section class="view" id="view-selection">
@@ -358,6 +369,10 @@
           <h2 class="section-title">Current win streaks</h2>
           <div id="stats-streaks"></div>
         </div>
+      </section>
+
+      <section class="view" id="view-halloffame">
+        <div id="hof-container"></div>
       </section>
 
       <section class="view" id="view-awards">

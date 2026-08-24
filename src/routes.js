@@ -68,6 +68,11 @@ function newLeagueObj(name, adminEmail, format) {
     // within "Division 1"), each running its own independent round-robin.
     // Empty means the league is one flat group, same as before this existed.
     groups: [], // [{ id, name, division }]
+    // Past-season champions, admin-entered — free text, not tied to any
+    // current pair/player record (the app's own season history may not
+    // reach back that far, and a name here doesn't have to match one
+    // exactly). Grouped and displayed by season on the Hall of Fame tab.
+    hallOfFame: [], // [{ id, season, label, winner }]
     fixtures: [],
     byes: [],
     playoffs: null,
@@ -402,6 +407,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (league.strength === undefined) league.strength = 0;
   if (!league.format) league.format = "teams";
   if (!league.groups) league.groups = [];
+  if (!league.hallOfFame) league.hallOfFame = [];
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -718,6 +724,54 @@ router.put("/leagues/:leagueId/teams/:teamId/group", requireAdmin, (req, res) =>
   const { groupId } = req.body || {};
   if (groupId && !(league.groups || []).some((g) => g.id === groupId)) return res.status(400).json({ error: "Group not found." });
   team.groupId = groupId || null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+/* ---------- Hall of Fame: past-season champions, admin-entered free text —
+   not tied to any current pair/player record. ---------- */
+
+router.post("/leagues/:leagueId/hall-of-fame", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const season = Number(req.body.season);
+  const label = (req.body.label || "").trim();
+  const winner = (req.body.winner || "").trim();
+  if (!Number.isInteger(season) || season < 1) return res.status(400).json({ error: "Enter a valid season number." });
+  if (!label) return res.status(400).json({ error: "Title is required." });
+  if (!winner) return res.status(400).json({ error: "Winner is required." });
+  if (!league.hallOfFame) league.hallOfFame = [];
+  const entry = { id: logic.uid(), season, label, winner };
+  league.hallOfFame.push(entry);
+  store.saveLeague(league.id, league);
+  res.json({ id: entry.id });
+});
+
+router.put("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const entry = (league.hallOfFame || []).find((e) => e.id === req.params.entryId);
+  if (!entry) return res.status(404).json({ error: "Entry not found." });
+  if (req.body.season !== undefined) {
+    const season = Number(req.body.season);
+    if (!Number.isInteger(season) || season < 1) return res.status(400).json({ error: "Enter a valid season number." });
+    entry.season = season;
+  }
+  if (req.body.label !== undefined) {
+    const label = req.body.label.trim();
+    if (!label) return res.status(400).json({ error: "Title is required." });
+    entry.label = label;
+  }
+  if (req.body.winner !== undefined) {
+    const winner = req.body.winner.trim();
+    if (!winner) return res.status(400).json({ error: "Winner is required." });
+    entry.winner = winner;
+  }
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.delete("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  league.hallOfFame = (league.hallOfFame || []).filter((e) => e.id !== req.params.entryId);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
