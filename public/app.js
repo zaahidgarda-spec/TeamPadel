@@ -3620,7 +3620,16 @@ async function openPlayerHistory(playerId, playerName) {
   const rows = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => []);
   const potwWins = potwWinCountForPlayer(playerId);
   const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
-  if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + '<p class="empty">No completed matches yet.</p>'; return; }
+  // Hall of Fame winners are free text (season history can predate this
+  // app's own data), so matching is just "does their name appear in the
+  // winner string" — a plain substring check, not tied to any team/player id.
+  const titles = (league.hallOfFame || [])
+    .filter((e) => e.winner.toLowerCase().includes(playerName.toLowerCase()))
+    .sort((a, b) => b.season - a.season);
+  const titlesBlock = titles.length
+    ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${titles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
+    : "";
+  if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + titlesBlock + '<p class="empty">No completed matches yet.</p>'; return; }
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;
   const losses = rows.length - wins - draws;
@@ -3630,7 +3639,7 @@ async function openPlayerHistory(playerId, playerName) {
   const isPairs = league.format === "pairs";
   const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
-  let html = crownLine + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
+  let html = crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
   rows.forEach((r) => {
     const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
     const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
