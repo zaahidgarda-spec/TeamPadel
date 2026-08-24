@@ -1577,10 +1577,17 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/confirm", (req, 
   res.json({ ok: true });
 });
 
-router.post("/leagues/:leagueId/fixtures/:fixtureId/unlock", requireAdmin, (req, res) => {
+router.post("/leagues/:leagueId/fixtures/:fixtureId/unlock", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const isAdmin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  // A pairs match has no captain hierarchy to mediate a re-open through —
+  // either pair that actually played it can unlock their own result. Team
+  // leagues keep this admin-only, since a "night" involves several pairs.
+  const isPlayer = league.format === "pairs" && u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
+  if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
   f.finalized = false;
   store.saveLeague(league.id, league);
   res.json({ ok: true });

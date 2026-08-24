@@ -2613,10 +2613,17 @@ function resultsCard(f) {
       catch (e) { alert(e.message); }
     };
     footer.appendChild(saveBtn);
-  } else if (myRole === "admin" && f.finalized) {
-    const unlockBtn = document.createElement("button"); unlockBtn.className = "secondary"; unlockBtn.textContent = "Unlock to edit";
-    unlockBtn.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/unlock`, { method: "POST" }); await refreshLeague(); renderAll(); };
-    footer.appendChild(unlockBtn);
+  } else {
+    // A pairs match has no captain hierarchy to mediate a re-open through —
+    // either pair that actually played it can unlock their own result, same
+    // as admin. Team leagues stay admin-only, since a night involves several
+    // pairs.
+    const canUnlock = myRole === "admin" || (league.format === "pairs" && myRole === "captain" && (myTeamId === f.teamA || myTeamId === f.teamB));
+    if (canUnlock && f.finalized) {
+      const unlockBtn = document.createElement("button"); unlockBtn.className = "secondary"; unlockBtn.textContent = "Unlock to edit";
+      unlockBtn.onclick = async () => { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/unlock`, { method: "POST" }); await refreshLeague(); renderAll(); };
+      footer.appendChild(unlockBtn);
+    }
   }
   card.appendChild(footer);
   return card;
