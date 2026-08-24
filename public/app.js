@@ -44,6 +44,7 @@ function leagueBrand(name) {
   const n = (name || "").toLowerCase();
   if (n.includes("premier league")) return { logo: "/images/league-premier-league.png", theme: "league-theme-premier", alt: "Team Padel Premier League" };
   if (n.includes("business class")) return { logo: "/images/league-business-class.png", theme: "league-theme-business", alt: "Team Padel Business Class" };
+  if (n.includes("50+")) return { logo: "/images/league-vibora-50.png", theme: "league-theme-vibora50", alt: "Vibora 50+ Padel League" };
   return null;
 }
 function avatarHtml(t) {
@@ -611,7 +612,7 @@ function renderAll() {
   el("league-name").disabled = myRole !== "admin";
   const brand = leagueBrand(league.name);
   const brandHeader = document.querySelector("#view-league .site-header");
-  brandHeader.classList.remove("league-theme-premier", "league-theme-business");
+  brandHeader.classList.remove("league-theme-premier", "league-theme-business", "league-theme-vibora50");
   const brandLogo = el("league-brand-logo");
   if (brand) { brandHeader.classList.add(brand.theme); brandLogo.src = brand.logo; brandLogo.alt = brand.alt; }
   else { brandLogo.src = "/images/logo-dark.png"; brandLogo.alt = "Team Padel"; }
@@ -620,7 +621,11 @@ function renderAll() {
   if (myRole === "admin") auth.textContent = "Signed in as Admin";
   else if (myRole === "captain") {
     const t = teamById(myTeamId);
-    auth.textContent = league.format === "pairs" ? "Signed in as " + (t ? t.name : "your pair") : "Signed in as " + (t ? t.name : "captain") + " captain";
+    // For pairs, always the two real player names — not the pair's display
+    // name, which an admin may have renamed to a nickname that no longer
+    // says who's actually signed in.
+    const pairNames = t && t.players.length ? t.players.map((p) => p.name).join(" & ") : "your pair";
+    auth.textContent = league.format === "pairs" ? "Signed in as " + pairNames : "Signed in as " + (t ? t.name : "captain") + " captain";
   }
   else auth.textContent = "Viewing only — log in to enter scores";
   el("auth-toggle").textContent = myRole === "guest" ? "Log in" : "Log out";

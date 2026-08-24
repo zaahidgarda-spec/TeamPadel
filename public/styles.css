@@ -335,6 +335,9 @@ header.site-header.league-theme-business{background:linear-gradient(180deg,rgba(
 .league-card.league-theme-business{border-color:#D4AF37;background:linear-gradient(165deg,rgba(212,175,55,.14),var(--panel) 60%);}
 .league-card.league-theme-premier:hover,
 .league-card.league-theme-business:hover{border-color:#D4AF37;}
+header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(37,99,235,.12),rgba(37,99,235,0) 75%);margin:0 -20px 24px;padding-left:20px;padding-right:20px;border-bottom-color:#2563EB;}
+.league-card.league-theme-vibora50{border-color:#2563EB;background:linear-gradient(165deg,rgba(37,99,235,.12),var(--panel) 60%);}
+.league-card.league-theme-vibora50:hover{border-color:#2563EB;}
 .league-copy-codes-btn{margin-top:10px;}
 
 .news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
