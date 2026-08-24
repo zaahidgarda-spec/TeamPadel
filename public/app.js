@@ -264,6 +264,7 @@ el("hub-captain-login-btn").onclick = async () => {
   try {
     const { leagueId } = await api("/captain-login", { method: "POST", body: { code, email } });
     el("hub-captain-code").value = ""; el("hub-captain-email").value = ""; el("hub-captain-error").textContent = "";
+    viewingGroupId = null; // land on this captain's own group, not whatever a prior guest view defaulted to
     await openLeague(leagueId);
   } catch (e) { el("hub-captain-error").textContent = e.message; }
 };
@@ -325,7 +326,7 @@ async function openLeague(id) {
   await refreshLeague();
   buildTabs();
   const isPairs = league.format === "pairs";
-  switchTab(myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : "fixtures");
+  switchTab(myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : isPairs ? "results" : "fixtures");
   initViewingKey();
   renderAll();
 }
@@ -345,7 +346,7 @@ el("auth-toggle").onclick = async () => {
     await api("/logout", { method: "POST" });
     myRole = "guest"; myTeamId = null;
     document.body.className = "role-guest";
-    buildTabs(); switchTab("fixtures"); renderAll();
+    buildTabs(); switchTab(league.format === "pairs" ? "results" : "fixtures"); renderAll();
     return;
   }
   el("auth-panel").classList.toggle("open");
@@ -370,7 +371,8 @@ el("captain-login-btn").onclick = async () => {
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("captain-code").value = ""; el("captain-email").value = "";
-    await refreshLeague(); buildTabs(); switchTab(league.format === "pairs" ? "fixtures" : "selection"); renderAll();
+    viewingGroupId = null; // a guest browsing before logging in may have already defaulted to some other group
+    await refreshLeague(); buildTabs(); switchTab(league.format === "pairs" ? "results" : "selection"); initViewingKey(); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 el("login-btn").onclick = async () => {
@@ -381,7 +383,7 @@ el("login-btn").onclick = async () => {
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("login-email").value = ""; el("login-password").value = "";
-    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : league.format === "pairs" ? "fixtures" : "selection"); renderAll();
+    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : league.format === "pairs" ? "results" : "selection"); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 el("register-btn").onclick = async () => {
@@ -392,7 +394,7 @@ el("register-btn").onclick = async () => {
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("login-email").value = ""; el("login-password").value = "";
-    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : league.format === "pairs" ? "fixtures" : "selection"); renderAll();
+    await refreshLeague(); buildTabs(); switchTab(myRole === "admin" ? "admin" : league.format === "pairs" ? "results" : "selection"); renderAll();
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 
@@ -406,7 +408,10 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
-  defs.push({ key: "fixtures", label: "Fixtures" });
+  // A Vibora pair can play any opponent in any order — there's no fixed
+  // weekly schedule to browse, so Fixtures collapses into Results: what's
+  // been played, and who's left to play.
+  if (!isPairs) defs.push({ key: "fixtures", label: "Fixtures" });
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
   defs.push({ key: "stats", label: "Stats" });
@@ -450,16 +455,42 @@ function switchTab(key) {
   if (v) v.classList.add("active");
   el("group-selector-row").style.display = league && league.groups && league.groups.length > 0 && GROUP_SCOPED_TABS.includes(key) ? "flex" : "none";
 }
+// Two tab rows instead of a dropdown — a division tab row (only shown when
+// there's more than one division) and a group tab row scoped to whichever
+// division is currently selected. Clicking a division jumps to its first
+// group; clicking a group jumps straight to it.
 function renderGroupSelector() {
   if (!league.groups || league.groups.length === 0) return;
   syncViewingGroup();
-  const sel = el("group-selector");
   const divisions = [...new Set(league.groups.map((g) => g.division))];
-  sel.innerHTML = divisions.map((d) =>
-    `<optgroup label="${escapeHtml(d)}">${league.groups.filter((g) => g.division === d).map((g) => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join("")}</optgroup>`
-  ).join("");
-  sel.value = viewingGroupId;
-  sel.onchange = () => { viewingGroupId = sel.value; initViewingKey(); renderAll(); };
+  const currentGroup = league.groups.find((g) => g.id === viewingGroupId);
+  const currentDivision = currentGroup ? currentGroup.division : divisions[0];
+
+  const divTabs = el("division-tabs");
+  divTabs.style.display = divisions.length > 1 ? "flex" : "none";
+  divTabs.innerHTML = "";
+  if (divisions.length > 1) {
+    divisions.forEach((d) => {
+      const btn = document.createElement("button");
+      btn.textContent = d;
+      btn.className = d === currentDivision ? "active" : "";
+      btn.onclick = () => {
+        viewingGroupId = league.groups.find((g) => g.division === d).id;
+        initViewingKey(); renderAll();
+      };
+      divTabs.appendChild(btn);
+    });
+  }
+
+  const groupTabs = el("group-tabs");
+  groupTabs.innerHTML = "";
+  league.groups.filter((g) => g.division === currentDivision).forEach((g) => {
+    const btn = document.createElement("button");
+    btn.textContent = g.name;
+    btn.className = g.id === viewingGroupId ? "active" : "";
+    btn.onclick = () => { viewingGroupId = g.id; initViewingKey(); renderAll(); };
+    groupTabs.appendChild(btn);
+  });
 }
 
 /* ---------- Round navigation ---------- */
@@ -511,7 +542,14 @@ function isRoundOpen(key) {
 // the round pointer below.
 function syncViewingGroup() {
   if (!league.groups || league.groups.length === 0) { viewingGroupId = null; return; }
-  if (!viewingGroupId || !league.groups.some((g) => g.id === viewingGroupId)) viewingGroupId = league.groups[0].id;
+  if (!viewingGroupId || !league.groups.some((g) => g.id === viewingGroupId)) {
+    // A signed-in pair lands on their own group by default — everyone else
+    // (guests, admin) just gets the first one. Other groups are still one
+    // tab away either way.
+    const myTeam = myRole === "captain" && myTeamId ? teamById(myTeamId) : null;
+    const myGroupId = myTeam && myTeam.groupId;
+    viewingGroupId = (myGroupId && league.groups.some((g) => g.id === myGroupId)) ? myGroupId : league.groups[0].id;
+  }
 }
 function initViewingKey() {
   syncViewingGroup();
@@ -2296,15 +2334,81 @@ function rubberScoreText(r) {
   return parts.join(", ");
 }
 
+// Opens the score modal straight from an opponent card — a pairs fixture
+// always has exactly one rubber (idx 0) and is never a knockout decider.
+function openScoreModalFor(f) {
+  const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+  const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[0]);
+  const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[0]);
+  openScoreModal(f, 0, f.rubbers[0], teamA, teamB, false, pairAHtml, pairBHtml);
+}
+// A Vibora pair plays every other pair in its group in whatever order suits
+// them — there's no fixed weekly schedule to browse round by round. So
+// instead of a round nav, this shows every unplayed matchup as a tappable
+// opponent card (yours to enter if it's your pair, everyone else's just to
+// see what's left), plus every result already in for the group.
+function renderPairsResults() {
+  const groupFixtures = groupScopedFixtures();
+  const pendingCard = el("results-pending-card");
+  const pendingContainer = el("results-pending-container");
+  const pending = groupFixtures.filter((f) => !f.finalized);
+  const myTeam = myRole === "captain" && myTeamId ? teamById(myTeamId) : null;
+  const myTeamInGroup = myTeam && (!league.groups || league.groups.length === 0 || myTeam.groupId === viewingGroupId);
+
+  pendingContainer.innerHTML = "";
+  if (pending.length === 0) {
+    pendingCard.style.display = "none";
+  } else {
+    pendingCard.style.display = "block";
+    const grid = document.createElement("div");
+    grid.className = "opponent-grid";
+    const mine = myTeamInGroup ? pending.filter((f) => f.teamA === myTeam.id || f.teamB === myTeam.id) : [];
+    el("results-pending-title").textContent = myTeamInGroup ? "Your matches — tap an opponent to enter a score" : "Still to play";
+    if (myTeamInGroup && mine.length === 0) {
+      pendingContainer.innerHTML = '<p class="empty">You\'ve played every pair in your group.</p>';
+    } else {
+      (myTeamInGroup ? mine : pending).forEach((f) => {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "opponent-card";
+        if (myTeamInGroup) {
+          const opp = teamById(f.teamA === myTeam.id ? f.teamB : f.teamA);
+          btn.innerHTML = `${opp ? avatarHtml(opp) : ""}<span>${escapeHtml(opp ? opp.name : "TBD")}</span>`;
+          btn.onclick = () => openScoreModalFor(f);
+        } else {
+          const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+          btn.innerHTML = `<span>${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")}</span>`;
+          if (myRole === "admin") btn.onclick = () => openScoreModalFor(f);
+          else btn.disabled = true;
+        }
+        grid.appendChild(btn);
+      });
+      pendingContainer.appendChild(grid);
+    }
+  }
+
+  const c = el("results-container");
+  c.innerHTML = "";
+  const finals = groupFixtures.filter((f) => f.finalized);
+  if (finals.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No results yet.</p></div>'; return; }
+  finals.forEach((f) => c.appendChild(resultsCard(f)));
+}
 function renderResults() {
+  el("results-scoring-note").textContent = league.format === "pairs"
+    ? "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 and leave it there for a draw, or play a 3rd set to decide it."
+    : "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).";
+  el("results-poster-row").style.display = "none";
+  if (league.format === "pairs") {
+    el("round-nav-results").style.display = "none";
+    renderPairsResults();
+    return;
+  }
+  el("round-nav-results").style.display = "block";
+  el("results-pending-card").style.display = "none";
   renderRoundNav("round-nav-results");
   const c = el("results-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
-  el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 && league.format !== "pairs" ? "flex" : "none";
-  el("results-scoring-note").textContent = league.format === "pairs"
-    ? "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 and leave it there for a draw, or play a 3rd set to decide it."
-    : "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).";
+  el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
 }
@@ -2531,6 +2635,14 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     if (showTb()) body.tb = state.tb;
     try {
       await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body });
+      if (isPairsRubber) {
+        // A pairs fixture is exactly one rubber, so a decisive score IS the
+        // whole result — finalize right away instead of making the pair
+        // come back for a separate step. If it's not decided yet (a
+        // half-entered score, or a draw still waiting on an optional 3rd
+        // set), the server just says so and this is a no-op.
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" }).catch(() => {});
+      }
       el("score-modal-backdrop").classList.remove("open");
       await refreshLeague(); renderResults();
     } catch (e) { alert(e.message); }

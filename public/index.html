@@ -180,9 +180,9 @@
 
       <nav class="tabs" id="tabs"></nav>
 
-      <div class="row" id="group-selector-row" style="display:none;align-items:center;gap:8px;margin-bottom:12px;">
-        <label class="note" for="group-selector" style="white-space:nowrap;">Group</label>
-        <select id="group-selector" style="flex:1;max-width:320px;"></select>
+      <div id="group-selector-row" style="display:none;flex-direction:column;gap:8px;margin-bottom:16px;">
+        <nav class="tabs tabs-sub" id="division-tabs" style="display:none;"></nav>
+        <nav class="tabs tabs-sub" id="group-tabs"></nav>
       </div>
 
       <section class="view" id="view-admin">
@@ -318,6 +318,10 @@
         <div id="round-nav-results"></div>
         <div class="row" id="results-poster-row" style="display:none;margin-bottom:12px;justify-content:flex-end;">
           <button class="secondary" id="generate-results-poster-btn">Generate poster</button>
+        </div>
+        <div class="card" id="results-pending-card" style="display:none;margin-bottom:16px;">
+          <h2 class="section-title" id="results-pending-title">Play a match</h2>
+          <div id="results-pending-container"></div>
         </div>
         <div id="results-container"></div>
       </section>
