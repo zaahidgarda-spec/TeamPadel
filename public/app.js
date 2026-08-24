@@ -1039,6 +1039,30 @@ function renderRulesCard() {
   c.appendChild(strengthWrap);
   c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: "Tap a bar to set it — shown as a rating on this league's card on the homepage." }));
 
+  // The "League admin login" panel on this page (Register/Log in) is a
+  // single email+password slot scoped to just this league — separate from
+  // the site owner, who can admin every league. Changing it here resets the
+  // password, so whoever it's for registers a fresh one on their first visit.
+  const adminLoginWrap = document.createElement("div");
+  adminLoginWrap.className = "row"; adminLoginWrap.style.cssText = "align-items:center;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);flex-wrap:wrap;";
+  const adminLoginLabel = document.createElement("span");
+  adminLoginLabel.className = "note"; adminLoginLabel.style.width = "150px";
+  adminLoginLabel.textContent = "League admin login";
+  const adminLoginInput = document.createElement("input");
+  adminLoginInput.type = "text"; adminLoginInput.value = league.adminEmail || ""; adminLoginInput.style.cssText = "flex:1;min-width:200px;";
+  const adminLoginBtn = document.createElement("button");
+  adminLoginBtn.className = "secondary"; adminLoginBtn.textContent = "Update";
+  adminLoginBtn.onclick = async () => {
+    const email = adminLoginInput.value.trim();
+    if (!email || email === league.adminEmail) return;
+    if (!confirm(`Change this league's admin login to "${email}"? Whoever used the old login ("${league.adminEmail}") will need the new one instead, and it'll need a password registered again on first use.`)) return;
+    try { await api(`/leagues/${currentLeagueId}/admin-email`, { method: "PUT", body: { email } }); await refreshLeague(); renderAll(); }
+    catch (e) { alert(e.message); }
+  };
+  adminLoginWrap.appendChild(adminLoginLabel); adminLoginWrap.appendChild(adminLoginInput); adminLoginWrap.appendChild(adminLoginBtn);
+  c.appendChild(adminLoginWrap);
+  c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: "Used to log in from this league's own page (not the site owner login) — needs a password set the first time it's used." }));
+
   const actionsWrap = document.createElement("div");
   actionsWrap.className = "row";
   actionsWrap.style.cssText = "margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);";

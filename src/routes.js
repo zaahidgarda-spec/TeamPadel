@@ -957,6 +957,21 @@ router.put("/leagues/:leagueId/strength", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// League admin login is a single email+password slot (Register/Log in on the
+// league page) — this changes who that is. Not required to look like a real
+// email (register/login below never validated that either, only creation
+// did), just a unique login. Resets the password, since a new identity
+// shouldn't inherit whatever hash was set for the old one.
+router.put("/leagues/:leagueId/admin-email", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const email = (req.body.email || "").trim();
+  if (!email) return res.status(400).json({ error: "Enter an admin login." });
+  league.adminEmail = email;
+  league.adminPasswordHash = null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   league.fixtures = [];
