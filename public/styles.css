@@ -12,9 +12,6 @@
   /* 4px base spacing scale — used by new rules below so rhythm stays
      consistent instead of one-off pixel values sprinkled per component. */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px; --sp-8:40px;
-  /* Leaderboard rank medals — separate from --accent so a top-3 badge
-     reads as "placement" rather than just another blue highlight. */
-  --gold:#D4AF37; --silver:#9AA5B1; --bronze:#C08552;
 }
 /* Role themes: one standard blue accent everywhere (buttons, links, highlights).
    Roles are told apart only by a subtly different outline shade. */
@@ -315,9 +312,6 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .rank-row:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);}
 .rank-row.leader{background:linear-gradient(90deg,var(--accent-soft),var(--panel) 68%);border-color:var(--accent);}
 .rank-badge{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
-.rank-badge.gold{background:rgba(212,175,55,.16);border-color:var(--gold);color:#8A6508;}
-.rank-badge.silver{background:rgba(154,165,177,.2);border-color:var(--silver);color:#5B6672;}
-.rank-badge.bronze{background:rgba(192,133,82,.18);border-color:var(--bronze);color:#8A4F26;}
 .rank-name{display:flex;align-items:center;gap:10px;min-width:0;font-size:14.5px;font-weight:600;}
 .rank-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .rank-name .avatar,.rank-name .avatar-fb{width:32px;height:32px;flex-shrink:0;}

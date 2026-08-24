@@ -3571,7 +3571,6 @@ function renderTable() {
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
     const isPairs = league.format === "pairs";
-    const medal = (i) => i === 0 ? " gold" : i === 1 ? " silver" : i === 2 ? " bronze" : "";
     let html = '<div class="leaderboard">';
     rows.forEach((r, i) => {
       const isLeader = i === 0 && r.played > 0;
@@ -3585,7 +3584,7 @@ function renderTable() {
       ];
       const summary = `${r.played} played · ${stats.slice(1).map((s) => `${s.v} ${s.l.toLowerCase()}`).join(" · ")}`;
       html += `<div class="rank-row${isLeader ? " leader" : ""}">
-        <div class="rank-badge${medal(i)}">${i + 1}</div>
+        <div class="rank-badge">${i + 1}</div>
         <div class="rank-name">${avatarHtml(r)}<span>${escapeHtml(r.name)}</span></div>
         <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
         <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
