@@ -3793,7 +3793,7 @@ function renderHallOfFame() {
   c.innerHTML = seasons.map((s) => `
     <div class="card" style="margin-bottom:16px;">
       <h2 class="section-title">Season ${s}</h2>
-      ${entries.filter((e) => e.season === s).map((e) => `<div class="stat-row"><span>${escapeHtml(e.label)}</span><span class="pts">${escapeHtml(e.winner)}</span></div>`).join("")}
+      ${entries.filter((e) => e.season === s).map((e) => `<div class="hof-row"><span>${escapeHtml(e.label)}</span><span class="pts">${escapeHtml(e.winner)}</span></div>`).join("")}
     </div>`).join("");
 }
 

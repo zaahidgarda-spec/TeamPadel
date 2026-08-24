@@ -427,6 +427,14 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
      truncating names into unreadable mush. */
   .seed-row{flex-wrap:wrap;}
   .seed-row select{flex:1 1 100%;min-width:0;}
+  /* Was only wrapping once a team's/pair's name got too long for the row,
+     so otherwise-identical cards rendered inconsistently depending on name
+     length — always stack instead, so every card reads the same way. */
+  .fixture-head{flex-direction:column;align-items:flex-start;gap:6px;}
+  /* Right-aligned multi-line text reads badly (ragged left edge, no clear
+     line to scan down) — stack title above winner, both left-aligned. */
+  .hof-row{flex-direction:column;align-items:flex-start;gap:2px;}
+  .hof-row .pts{text-align:left;}
 }
 
 /* Hide the scrollbar on the tab strip so it reads as a clean pill row on touch devices */
@@ -465,6 +473,13 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .stat-tile .stat-lbl{font-size:11px;color:var(--text-dim);margin-top:4px;}
 .stat-row{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px;}
 .stat-row:last-child{border-bottom:none;}
+/* Own class rather than reusing .stat-row — a title like "Division Two
+   Challenge Cup Winners" next to a name like "Rashid Haffejee & Farouk
+   Bhabha" is much longer than anything else using that row style, so it
+   needs its own wrap/stack behavior instead of inheriting stat-row's. */
+.hof-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px;}
+.hof-row:last-child{border-bottom:none;}
+.hof-row .pts{text-align:right;}
 
 /* ---------- Player chips (now clickable buttons) ---------- */
 .opponent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
