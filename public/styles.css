@@ -12,6 +12,9 @@
   /* 4px base spacing scale — used by new rules below so rhythm stays
      consistent instead of one-off pixel values sprinkled per component. */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px; --sp-8:40px;
+  /* Leaderboard rank medals — separate from --accent so a top-3 badge
+     reads as "placement" rather than just another blue highlight. */
+  --gold:#D4AF37; --silver:#9AA5B1; --bronze:#C08552;
 }
 /* Role themes: one standard blue accent everywhere (buttons, links, highlights).
    Roles are told apart only by a subtly different outline shade. */
@@ -42,6 +45,13 @@ a{color:inherit;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 
 header.site-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0 22px;border-bottom:1px solid var(--line);margin-bottom:24px;flex-wrap:wrap;}
+/* Homepage-only wash behind the header — the same bleed-to-edge trick the
+   branded league themes use (see .league-theme-* below), just with the
+   site's own accent instead of a specific league's color, so the hub reads
+   as a considered landing area rather than the same bar every league page
+   reuses for its title. */
+header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(--accent-soft),rgba(37,99,235,0) 65%);margin:0 -20px 6px;padding:22px 20px 24px;}
+.hub-tagline{font-size:14.5px;color:var(--text-dim);margin:0 0 22px;}
 .brand-link{display:flex;align-items:center;flex-shrink:0;}
 .logo-img{height:26px;width:auto;display:block;}
 .brand-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;row-gap:6px;}
@@ -58,7 +68,7 @@ header.site-header{display:flex;align-items:center;justify-content:space-between
 .auth-panel.open{display:block;}
 .auth-panel input{width:100%;}
 
-nav.tabs{position:relative;display:flex;gap:4px;margin-bottom:20px;background:var(--panel);padding:4px;border-radius:var(--radius);width:fit-content;overflow-x:auto;max-width:100%;border:1px solid var(--line);}
+nav.tabs{position:relative;display:flex;gap:4px;margin-bottom:20px;background:var(--panel);padding:4px;border-radius:var(--radius);width:fit-content;overflow-x:auto;max-width:100%;border:1px solid var(--line);box-shadow:var(--shadow-sm);}
 nav.tabs button{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:12.5px;background:transparent;border:none;color:var(--text-dim);padding:9px 14px;border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap;}
 nav.tabs button:hover{color:var(--text);}
 nav.tabs button.active{background:var(--accent);color:var(--accent-ink);font-weight:600;}
@@ -130,11 +140,13 @@ ul.plain li:last-child{border-bottom:none;}
 .matchday-venue::before{content:"·";margin-right:10px;color:var(--line);}
 .bye-note{font-size:11px;color:var(--text-dim);text-align:center;margin:10px 0 14px;}
 
-.fixture-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:12px;box-shadow:var(--shadow-sm);}
+.fixture-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:18px 20px;margin-bottom:12px;box-shadow:var(--shadow-sm);}
 .fixture-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px;}
 .fixture-title{font-family:var(--font-display);font-size:17px;display:flex;align-items:center;gap:10px;}
-.vs{color:var(--text-faint);font-size:12px;text-transform:uppercase;letter-spacing:.06em;}
-.night-score{font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--accent);}
+.fx-name{transition:color .15s ease;}
+.fx-name.winner{color:var(--success);font-weight:700;}
+.vs{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:20px;padding:0 7px;border-radius:var(--radius-full);border:1px solid var(--line);background:var(--panel-2);color:var(--text-dim);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.night-score{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:var(--radius-full);display:inline-block;}
 .badge{font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:4px 9px;border-radius:var(--radius-sm);font-family:var(--font-display);font-weight:500;}
 .badge.done{background:var(--success-soft);color:var(--success);}
 .badge.pending{background:var(--panel-2);color:var(--text-dim);border:1px solid var(--line);}
@@ -290,11 +302,48 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .team-cell{display:flex;align-items:center;gap:8px;}
 .pts{font-family:var(--font-display);font-weight:600;color:var(--accent);}
 
+/* ---------- League table (leaderboard) ---------- */
+/* A real leaderboard list instead of an HTML <table> — each stat
+   self-labels (number over a tiny caption), the same idiom .stat-tile
+   already uses on the Stats page, so there's no separate header row that
+   has to stay pixel-aligned with the columns below it. This also sidesteps
+   the table's horizontal-scroll problem on phones entirely: the mobile
+   breakpoint reflows each row onto two lines instead of shrinking columns
+   or requiring a sideways swipe. */
+.leaderboard{display:flex;flex-direction:column;gap:8px;}
+.rank-row{display:grid;grid-template-columns:34px 1fr auto 64px;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;transition:border-color .15s ease,box-shadow .15s ease;}
+.rank-row:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);}
+.rank-row.leader{background:linear-gradient(90deg,var(--accent-soft),var(--panel) 68%);border-color:var(--accent);}
+.rank-badge{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
+.rank-badge.gold{background:rgba(212,175,55,.16);border-color:var(--gold);color:#8A6508;}
+.rank-badge.silver{background:rgba(154,165,177,.2);border-color:var(--silver);color:#5B6672;}
+.rank-badge.bronze{background:rgba(192,133,82,.18);border-color:var(--bronze);color:#8A4F26;}
+.rank-name{display:flex;align-items:center;gap:10px;min-width:0;font-size:14.5px;font-weight:600;}
+.rank-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rank-name .avatar,.rank-name .avatar-fb{width:32px;height:32px;flex-shrink:0;}
+.rank-name .avatar-fb{font-size:13px;}
+.rank-stats{display:flex;gap:22px;}
+.rank-stat{display:flex;flex-direction:column;align-items:center;min-width:24px;}
+.rank-stat .v{font-family:var(--font-display);font-weight:600;font-size:14px;color:var(--text);font-variant-numeric:tabular-nums;}
+.rank-stat .l{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
+.rank-pts{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--accent-soft);border-radius:var(--radius-sm);padding:6px 4px;}
+.rank-pts .n{font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums;}
+.rank-pts .l{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-top:3px;}
+.rank-summary{display:none;}
+@media (max-width:640px){
+  .rank-row{grid-template-columns:30px 1fr auto;grid-template-areas:"badge name pts" "summary summary summary";row-gap:8px;padding:11px 14px;}
+  .rank-badge{grid-area:badge;width:28px;height:28px;font-size:12.5px;}
+  .rank-name{grid-area:name;}
+  .rank-pts{grid-area:pts;}
+  .rank-stats{display:none;}
+  .rank-summary{display:block;grid-area:summary;font-size:11.5px;color:var(--text-dim);padding-left:40px;}
+}
+
 .league-group + .league-group{margin-top:22px;}
 .league-group-title{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:13px;color:var(--text-dim);margin:0 0 12px;}
-.league-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
-.league-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;cursor:pointer;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;box-shadow:var(--shadow-sm);}
-.league-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md);}
+.league-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;}
+.league-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px 22px;cursor:pointer;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;box-shadow:var(--shadow-sm);}
+.league-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:var(--shadow-md);}
 .league-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .league-card-top .tag{white-space:nowrap;flex-shrink:0;}
 .league-card-name{font-family:var(--font-display);font-size:17px;text-transform:uppercase;letter-spacing:.01em;}
@@ -321,8 +370,15 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .strength-bars-editable .bar{width:9px;}
 .strength-bars-editable .bar:hover{background:var(--accent-soft);}
 .strength-bars-editable .bar.filled:hover{filter:brightness(1.15);}
-.league-card-logos{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
-.league-card-meta{display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text-dim);}
+/* Overlapping "who's in this league" stack instead of a loose row of
+   separate circles — a white ring on each avatar is what sells the overlap
+   as intentional layering rather than clipped-looking collisions. */
+.league-card-logos{display:flex;margin-top:12px;}
+.league-card-logos .avatar,.league-card-logos .avatar-fb{margin-left:-9px;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);}
+.league-card-logos .avatar:first-child,.league-card-logos .avatar-fb:first-child{margin-left:0;}
+.league-card-meta{display:flex;gap:14px;margin-top:10px;font-size:12px;color:var(--text-dim);}
+.league-card-meta .meta-item{display:flex;align-items:center;gap:5px;}
+.league-card-meta svg{flex-shrink:0;opacity:.75;}
 .league-card-logo{height:24px;width:auto;display:block;}
 .league-card-locked{cursor:default;opacity:.7;}
 .league-card-locked:hover{border-color:var(--line);transform:none;box-shadow:var(--shadow-sm);}

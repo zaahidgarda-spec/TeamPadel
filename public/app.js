@@ -132,6 +132,8 @@ function showHub() {
   refreshOwnerStatus();
   renderHub();
 }
+const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
 function leagueCardHtml(l) {
   // Setup-phase leagues are a teaser for the public — visible, but only the
   // owner (who's actually building it) can click through.
@@ -162,8 +164,8 @@ function leagueCardHtml(l) {
     ${strengthHtml}
     ${logos}
     <div class="league-card-meta">
-      <span>${l.teamCount} ${l.format === "pairs" ? "pair" : "team"}${l.teamCount === 1 ? "" : "s"}</span>
-      <span>Created ${new Date(l.createdAt).toLocaleDateString()}</span>
+      <span class="meta-item">${ICON_PEOPLE}${l.teamCount} ${l.format === "pairs" ? "pair" : "team"}${l.teamCount === 1 ? "" : "s"}</span>
+      <span class="meta-item">${ICON_CALENDAR}Created ${new Date(l.createdAt).toLocaleDateString()}</span>
     </div>
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
@@ -2632,7 +2634,8 @@ function resultsCard(f) {
   const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
   const splitNoDecider = isSingleMatch && needsTiebreakClient(f.rubbers[0]) && !rubberWinnerClient(f.rubbers[0]);
   const statusText = f.finalized ? "Final" : isSingleMatch ? (splitNoDecider ? "1 set each — 3rd set optional" : decided > 0 ? "In progress" : "Pending") : decided + "/4 matches";
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${statusText}</span></div></div>`;
+  const matchWinner = f.finalized && headline.a !== headline.b ? (headline.a > headline.b ? "A" : "B") : null;
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} <span class="fx-name${matchWinner === "A" ? " winner" : ""}">${escapeHtml(teamA ? teamA.name : "TBD")}</span> <span class="vs">vs</span> <span class="fx-name${matchWinner === "B" ? " winner" : ""}">${escapeHtml(teamB ? teamB.name : "TBD")}</span> ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${statusText}</span></div></div>`;
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
   if (!(f.selectionA.submitted && f.selectionB.submitted)) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for both teams to submit their line-up in Selection Room." })); return card; }
 
@@ -3568,11 +3571,28 @@ function renderTable() {
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
     const isPairs = league.format === "pairs";
-    let html = `<table class="log"><thead><tr><th>#</th><th>${isPairs ? "Pair" : "Team"}</th><th class="num">P</th><th class="num">Won</th>${isPairs ? '<th class="num">Drawn</th>' : ""}<th class="num">Lost</th><th class="num">${isPairs ? "Set Diff" : "Diff"}</th><th class="num">Pts</th></tr></thead><tbody>`;
+    const medal = (i) => i === 0 ? " gold" : i === 1 ? " silver" : i === 2 ? " bronze" : "";
+    let html = '<div class="leaderboard">';
     rows.forEach((r, i) => {
-      html += `<tr class="${i === 0 && r.played > 0 ? "rank1" : ""}"><td>${i + 1}</td><td><div class="team-cell">${avatarHtml(r)}${escapeHtml(r.name)}</div></td><td class="num">${r.played}</td><td class="num">${r.rubbersWon}</td>${isPairs ? `<td class="num">${r.nightsDrawn}</td>` : ""}<td class="num">${r.rubbersLost}</td><td class="num">${r.diff > 0 ? "+" : ""}${r.diff}</td><td class="num pts">${r.points}</td></tr>`;
+      const isLeader = i === 0 && r.played > 0;
+      const diffText = (r.diff > 0 ? "+" : "") + r.diff;
+      const stats = [
+        { v: r.played, l: "P" },
+        { v: r.rubbersWon, l: "Won" },
+        ...(isPairs ? [{ v: r.nightsDrawn, l: "Drawn" }] : []),
+        { v: r.rubbersLost, l: "Lost" },
+        { v: diffText, l: isPairs ? "Set diff" : "Diff" },
+      ];
+      const summary = `${r.played} played · ${stats.slice(1).map((s) => `${s.v} ${s.l.toLowerCase()}`).join(" · ")}`;
+      html += `<div class="rank-row${isLeader ? " leader" : ""}">
+        <div class="rank-badge${medal(i)}">${i + 1}</div>
+        <div class="rank-name">${avatarHtml(r)}<span>${escapeHtml(r.name)}</span></div>
+        <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
+        <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
+        <div class="rank-summary">${escapeHtml(summary)}</div>
+      </div>`;
     });
-    html += "</tbody></table>";
+    html += "</div>";
     c.innerHTML = html;
   }
   const koCard = el("knockout-card");
