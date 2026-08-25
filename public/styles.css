@@ -390,6 +390,15 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.league-theme-vibora50:hover{border-color:#2563EB;}
 .league-copy-codes-btn{margin-top:10px;}
 
+/* ---------- Home page: Next matches ---------- */
+.next-match-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-sm);}
+.next-match-card + .next-match-card{margin-top:10px;}
+.next-match-league{margin-bottom:9px;}
+.matchup-row{display:flex;align-items:center;gap:7px;margin-bottom:9px;}
+.matchup-row .fx-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-display);font-size:13px;color:var(--text);}
+.matchup-row .fx-name.right{text-align:right;}
+.next-match-card .avatar,.next-match-card .avatar-fb{width:24px;height:24px;font-size:10.5px;flex-shrink:0;}
+
 .news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
 .news-post:last-child{border-bottom:none;}
 .news-post h3{font-family:var(--font-display);font-size:15px;margin:0 0 4px;}

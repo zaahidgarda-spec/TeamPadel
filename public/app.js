@@ -170,8 +170,34 @@ function leagueCardHtml(l) {
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
 }
+async function renderNextMatches() {
+  const card = el("next-matches-card");
+  const data = await api("/next-matches").catch(() => null);
+  if (!data || data.matches.length === 0) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  const scopeTag = el("next-matches-scope-tag");
+  if (data.scopedTo) {
+    scopeTag.textContent = data.scopedTo.name;
+    scopeTag.style.display = "inline-block";
+  } else {
+    scopeTag.style.display = "none";
+  }
+  el("next-matches-list").innerHTML = data.matches.map((m) => {
+    const when = m.date ? fmtDate(m.date) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
+    return `<div class="next-match-card">
+      <div class="next-match-league"><span class="tag">${escapeHtml(m.leagueName)}</span></div>
+      <div class="matchup-row">
+        ${avatarHtml(m.teamA)}<span class="fx-name">${escapeHtml(m.teamA.name)}</span>
+        <span class="vs">vs</span>
+        <span class="fx-name right">${escapeHtml(m.teamB.name)}</span>${avatarHtml(m.teamB)}
+      </div>
+      <span class="badge pending">${escapeHtml(when)}</span>
+    </div>`;
+  }).join("");
+}
 function renderHub() {
   renderInterestLeagueOptions();
+  renderNextMatches();
   const list = el("league-list");
   list.innerHTML = "";
   if (leaguesIndex.length === 0) { list.innerHTML = '<p class="empty">No leagues yet — create one above.</p>'; return; }

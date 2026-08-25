@@ -256,6 +256,14 @@ function allFixturesOf(league) {
   if (league.playoffs.format === "position") return league.fixtures.concat(league.playoffs.matches || []);
   return league.fixtures.concat([league.playoffs.semis[0], league.playoffs.semis[1], league.playoffs.final]);
 }
+// The schedule (date/venue/time) is keyed by this same string on
+// league.schedule — mirrors the client's stageKeyFor in app.js exactly.
+function stageKeyFor(f) {
+  if (f.stage === "semi") return "semis";
+  if (f.stage === "final") return "final";
+  if (f.stage === "position") return "positions";
+  return "r" + f.round;
+}
 function stageLabel(league, f) {
   if (f.stage === "semi") return "Semi finals";
   if (f.stage === "final") return "Final";
@@ -468,4 +476,6 @@ module.exports = {
   playerMatchHistory,
   computeLeagueStats,
   restrictToGroup,
+  allFixturesOf,
+  stageKeyFor,
 };

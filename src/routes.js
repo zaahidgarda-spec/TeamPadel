@@ -324,6 +324,59 @@ router.get("/leagues", (req, res) => {
   res.json(enriched);
 });
 
+// Home-page teaser: upcoming matches with lineups already set, across every
+// active team league. Vibora (pairs) leagues are excluded — a pair plays any
+// opponent on any night, so there's no fixed "next match" to feature. A
+// signed-in captain or admin narrows this to just their own league; a guest,
+// or a captain whose own league is a Vibora league (nothing to scope to),
+// sees the full cross-league feed instead.
+router.get("/next-matches", (req, res) => {
+  const myLeagueId = req.session.user && req.session.user.leagueId;
+  const index = store.getIndex();
+  let leagues = index
+    .map((entry) => store.getLeague(entry.id))
+    .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
+
+  let scopedTo = null;
+  if (myLeagueId) {
+    const mine = leagues.find((l) => l.id === myLeagueId);
+    if (mine) { leagues = [mine]; scopedTo = { id: mine.id, name: mine.name }; }
+  }
+
+  const matches = [];
+  leagues.forEach((league) => {
+    logic.allFixturesOf(league).forEach((f) => {
+      if (f.finalized || !f.teamA || !f.teamB) return;
+      if (!(f.selectionA.submitted && f.selectionB.submitted)) return;
+      const teamA = league.teams.find((t) => t.id === f.teamA);
+      const teamB = league.teams.find((t) => t.id === f.teamB);
+      if (!teamA || !teamB) return;
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      matches.push({
+        leagueId: league.id,
+        leagueName: league.name,
+        fixtureId: f.id,
+        teamA: { id: teamA.id, name: teamA.name, logo: teamA.logo || null },
+        teamB: { id: teamB.id, name: teamB.name, logo: teamB.logo || null },
+        date: sched.date || "",
+        time: sched.time || "",
+        venue: sched.venue || league.defaultVenue || "",
+      });
+    });
+  });
+
+  // Soonest scheduled first; anything without a date sinks to the bottom
+  // rather than sorting arbitrarily.
+  matches.sort((a, b) => {
+    if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return 0;
+  });
+
+  res.json({ scopedTo, matches: matches.slice(0, 6) });
+});
+
 /* ---------- "Interested to join a league" signups ---------- */
 
 router.post("/interest", (req, res) => {
