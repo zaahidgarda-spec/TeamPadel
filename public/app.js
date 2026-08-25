@@ -3869,6 +3869,29 @@ function mostCommonSeed(rows) {
   if (!seeds.length) return null;
   return seeds.reduce((best, s) => (counts[s] > counts[best] || (counts[s] === counts[best] && s < best) ? s : best));
 }
+// Groups a player's match history by a key derived from each row (partner
+// name, or the joined opponent-pair name) into a W/L/D record — used for
+// both "Best partners" and "Head-to-head", the same shape either way.
+function groupedRecords(rows, keyFn) {
+  const byKey = {};
+  rows.forEach((r) => {
+    const key = keyFn(r);
+    if (!key) return;
+    if (!byKey[key]) byKey[key] = { name: key, played: 0, won: 0, lost: 0, drawn: 0 };
+    const s = byKey[key];
+    s.played++;
+    if (r.result === "W") s.won++;
+    else if (r.result === "L") s.lost++;
+    else s.drawn++;
+  });
+  return Object.values(byKey).map((s) => ({ ...s, winPct: Math.round((s.won / s.played) * 100) }));
+}
+function insightRowsHtml(records) {
+  return records.map((r) => {
+    const wl = `${r.won}W${r.drawn ? " " + r.drawn + "D" : ""} ${r.lost}L`;
+    return `<div class="stat-row"><span>${escapeHtml(r.name)}</span><span class="pts">${wl} &middot; ${r.winPct}%</span></div>`;
+  }).join("");
+}
 async function openPlayerHistory(playerId, playerName) {
   el("player-modal-name").textContent = playerName;
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
@@ -3896,6 +3919,29 @@ async function openPlayerHistory(playerId, playerName) {
   const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
   let html = crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
+
+  // Best partners / toughest opponents — a minimum of 2 meetings so a
+  // single fluke result doesn't crown a "100%" partner or a "0%" nemesis
+  // off one match. Best partners is meaningless for a Vibora pair — their
+  // "partner" is the same one person for every match, always at their
+  // overall win rate — so it's team-league only, same as the Stats page's
+  // partnerships card.
+  const MIN_MEETINGS = 2;
+  if (!isPairs) {
+    const partners = groupedRecords(rows, (r) => r.partner)
+      .filter((s) => s.played >= MIN_MEETINGS)
+      .sort((a, b) => b.winPct - a.winPct || b.played - a.played)
+      .slice(0, 3);
+    if (partners.length) html += `<p class="modal-subhead">Best partners</p>${insightRowsHtml(partners)}`;
+  }
+
+  const opponents = groupedRecords(rows, (r) => (r.opponentPlayers && r.opponentPlayers.length ? r.opponentPlayers.join(" & ") : null))
+    .filter((s) => s.played >= MIN_MEETINGS)
+    .sort((a, b) => a.winPct - b.winPct || b.played - a.played)
+    .slice(0, 3);
+  if (opponents.length) html += `<p class="modal-subhead">Head-to-head</p>${insightRowsHtml(opponents)}`;
+
+  html += `<p class="modal-subhead">Match history</p>`;
   rows.forEach((r) => {
     const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
     const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;

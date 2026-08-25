@@ -593,6 +593,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .inline-edit:focus{border-color:var(--accent);background:var(--panel-2);outline:none;}
 .history-label{font-size:13px;font-weight:600;}
 .history-detail{font-size:12px;color:var(--text-dim);margin-top:3px;margin-left:28px;}
+.modal-subhead{font-family:var(--font-display);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin:14px 0 4px;padding-top:12px;border-top:1px dashed var(--line);}
 
 /* ---------- Install (PWA) banner ---------- */
 .install-banner{display:flex;align-items:center;gap:12px;background:var(--accent-soft);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);padding:12px 14px;margin:14px 0;}
