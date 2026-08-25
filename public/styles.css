@@ -104,9 +104,21 @@ button.ghost:hover:not(:disabled){color:var(--clay);background:var(--clay-soft);
 button.link{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;text-decoration:underline;text-underline-offset:2px;}
 button.link:hover:not(:disabled){color:var(--text);}
 
-ul.plain{list-style:none;margin:0;padding:0;}
-ul.plain li{display:flex;align-items:center;justify-content:space-between;padding:11px 4px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap;}
-ul.plain li:last-child{border-bottom:none;}
+/* Each row is its own card rather than a line in a bordered list — the
+   same "row card" recipe as .rank-row/.next-match-card elsewhere, so the
+   admin lists (teams, groups, rosters, Hall of Fame) read as the same
+   product as the pages built on that pattern instead of a plain form.
+   :not(.empty) leaves the dashed "nothing here yet" placeholder row (see
+   .empty) alone — it already defines its own tray styling and would
+   otherwise be overridden by this rule's higher selector specificity. */
+ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}
+ul.plain li:not(.empty):not(.plain-list-header){display:flex;align-items:center;justify-content:space-between;padding:12px 14px;gap:10px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);transition:border-color .15s ease;}
+ul.plain li:not(.empty):not(.plain-list-header):hover{border-color:var(--accent);}
+/* A group label inside the list (Hall of Fame's "Season 5"), not a row —
+   same visual language as .league-group-title rather than the row-card
+   treatment above. */
+ul.plain li.plain-list-header{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:12px;font-weight:600;color:var(--text-dim);padding:14px 2px 2px;}
+ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .name-tag{display:flex;align-items:center;gap:10px;}
 .tag{font-size:12px;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:3px 8px;}
 .potw-tally{display:flex;flex-direction:column;gap:6px;}
@@ -551,6 +563,14 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .stat-tile .stat-lbl{font-size:11px;color:var(--text-dim);margin-top:4px;}
 .stat-row{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px;}
 .stat-row:last-child{border-bottom:none;}
+/* Top Scorers / Best Partnerships / Win Streaks — the same row-card and
+   rank-badge language as the League Table, instead of bare text rows next
+   to a table that now has real hierarchy. */
+.stat-rank-row{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px;box-shadow:var(--shadow-sm);}
+.stat-rank-row + .stat-rank-row{margin-top:8px;}
+.stat-rank-name{flex:1;min-width:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.stat-rank-name .note{font-weight:400;}
+.stat-rank-value{font-family:var(--font-display);font-weight:700;font-size:13px;color:var(--accent);background:var(--accent-soft);padding:5px 10px;border-radius:var(--radius-sm);white-space:nowrap;flex-shrink:0;}
 /* Own class rather than reusing .stat-row — a title like "Division Two
    Challenge Cup Winners" next to a name like "Rashid Haffejee & Farouk
    Bhabha" is much longer than anything else using that row style, so it

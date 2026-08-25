@@ -926,8 +926,8 @@ function renderAdminGroups() {
   const divisions = [...new Set(groups.map((g) => g.division))];
   divisions.forEach((division) => {
     const header = document.createElement("li");
-    header.style.cssText = "border:none;padding-top:10px;";
-    header.innerHTML = `<strong>${escapeHtml(division)}</strong>`;
+    header.className = "plain-list-header";
+    header.textContent = division;
     list.appendChild(header);
     groups.filter((g) => g.division === division).forEach((g) => {
       const count = league.teams.filter((t) => t.groupId === g.id).length;
@@ -970,8 +970,8 @@ function renderAdminHallOfFame() {
   const seasons = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
   seasons.forEach((s) => {
     const header = document.createElement("li");
-    header.style.cssText = "border:none;padding-top:10px;";
-    header.innerHTML = `<strong>Season ${s}</strong>`;
+    header.className = "plain-list-header";
+    header.textContent = `Season ${s}`;
     list.appendChild(header);
     entries.filter((e) => e.season === s).forEach((e) => {
       const li = document.createElement("li");
@@ -4010,7 +4010,8 @@ async function renderStats() {
 
   const sc = el("stats-scorers");
   sc.innerHTML = stats.topScorers.length === 0 ? '<p class="empty">No results yet.</p>' :
-    stats.topScorers.map((p, i) => `<div class="stat-row"><span>${i + 1}. ${escapeHtml(p.name)} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.wins}W ${p.draws ? p.draws + "D " : ""}${p.losses}L</span></div>`).join("");
+    stats.topScorers.map((p, i) => `<div class="stat-rank-row"><div class="rank-badge">${i + 1}</div><div class="stat-rank-name">${playerLinkHtml(p)} <span class="note">${escapeHtml(p.team)}</span></div><div class="stat-rank-value">${p.wins}W ${p.draws ? p.draws + "D " : ""}${p.losses}L</div></div>`).join("");
+  bindPlayerLinks(sc);
 
   // Meaningless for a Vibora League — the only "partnership" a pair has is
   // itself, always at 100% together, so the whole card is hidden instead.
@@ -4018,12 +4019,12 @@ async function renderStats() {
   if (!isPairs) {
     const pt = el("stats-partnerships");
     pt.innerHTML = stats.partnerships.length === 0 ? '<p class="empty">Need at least 2 matches together to qualify.</p>' :
-      stats.partnerships.map((p) => `<div class="stat-row"><span>${escapeHtml(p.names.join(" & "))} <span class="note">(${escapeHtml(p.team)})</span></span><span class="pts">${p.won}/${p.played}</span></div>`).join("");
+      stats.partnerships.map((p, i) => `<div class="stat-rank-row"><div class="rank-badge">${i + 1}</div><div class="stat-rank-name">${escapeHtml(p.names.join(" & "))} <span class="note">${escapeHtml(p.team)}</span></div><div class="stat-rank-value">${p.won}/${p.played}</div></div>`).join("");
   }
 
   const st = el("stats-streaks");
   st.innerHTML = stats.streaks.length === 0 ? '<p class="empty">No active streaks of 2+ yet.</p>' :
-    stats.streaks.map((s) => `<div class="stat-row"><span>${escapeHtml(s.name)}</span><span class="pts">${s.streak} in a row</span></div>`).join("");
+    stats.streaks.map((s, i) => `<div class="stat-rank-row"><div class="rank-badge">${i + 1}</div><div class="stat-rank-name">${escapeHtml(s.name)}</div><div class="stat-rank-value">${s.streak} in a row</div></div>`).join("");
 }
 
 /* ---------- Hall of Fame ---------- */
