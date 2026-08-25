@@ -173,6 +173,18 @@ function leagueCardHtml(l) {
 let nextMatchesPairings = [];
 let nextMatchesIdx = 0;
 let nextMatchesTimer = null;
+// Long enough to actually read two full names plus the team/date line
+// before it moves on — 4.5s (the original pace) was tuned for a short
+// "Team A vs Team B" line, not full player names.
+const NEXT_MATCHES_ROTATE_MS = 8000;
+function startNextMatchesTimer() {
+  if (nextMatchesTimer) clearInterval(nextMatchesTimer);
+  if (nextMatchesPairings.length <= 1) { nextMatchesTimer = null; return; }
+  nextMatchesTimer = setInterval(() => {
+    nextMatchesIdx = (nextMatchesIdx + 1) % nextMatchesPairings.length;
+    renderNextMatchSlide();
+  }, NEXT_MATCHES_ROTATE_MS);
+}
 
 // "Tonight"/"Tomorrow" reads better than a bare date for the very thing
 // this carousel exists to create urgency around — matches in this app are
@@ -209,12 +221,7 @@ async function renderNextMatches() {
   el("next-matches-title").textContent = soonestLabel ? `Matches ${soonestLabel}` : "Next matches";
   nextMatchesIdx = 0;
   renderNextMatchSlide();
-  if (nextMatchesPairings.length > 1) {
-    nextMatchesTimer = setInterval(() => {
-      nextMatchesIdx = (nextMatchesIdx + 1) % nextMatchesPairings.length;
-      renderNextMatchSlide();
-    }, 4500);
-  }
+  startNextMatchesTimer();
 }
 function renderNextMatchSlide() {
   const m = nextMatchesPairings[nextMatchesIdx];
@@ -242,13 +249,9 @@ function renderNextMatchSlide() {
     dot.onclick = () => {
       nextMatchesIdx = Number(dot.dataset.idx);
       renderNextMatchSlide();
-      if (nextMatchesTimer) {
-        clearInterval(nextMatchesTimer);
-        nextMatchesTimer = setInterval(() => {
-          nextMatchesIdx = (nextMatchesIdx + 1) % nextMatchesPairings.length;
-          renderNextMatchSlide();
-        }, 4500);
-      }
+      // Only reset the clock if it was already running — a manual pick
+      // shouldn't start auto-rotation on a single-match card that never had it.
+      if (nextMatchesTimer) startNextMatchesTimer();
     };
   });
 }
