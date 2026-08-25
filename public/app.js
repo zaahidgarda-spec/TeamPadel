@@ -174,6 +174,20 @@ let nextMatchesPairings = [];
 let nextMatchesIdx = 0;
 let nextMatchesTimer = null;
 
+// "Tonight"/"Tomorrow" reads better than a bare date for the very thing
+// this carousel exists to create urgency around — matches in this app are
+// always an evening fixture, so "today" is fairly said as "Tonight".
+function relativeDayLabel(iso) {
+  if (!iso) return null;
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((d - today) / 86400000);
+  if (diffDays === 0) return "Tonight";
+  if (diffDays === 1) return "Tomorrow";
+  return null;
+}
+
 async function renderNextMatches() {
   const card = el("next-matches-card");
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
@@ -188,6 +202,11 @@ async function renderNextMatches() {
   } else {
     scopeTag.style.display = "none";
   }
+  // Soonest match sets the headline — "Matches Tonight" reads as an
+  // invitation, "Next matches" is the neutral fallback once nothing's
+  // imminent.
+  const soonestLabel = relativeDayLabel(nextMatchesPairings[0].date);
+  el("next-matches-title").textContent = soonestLabel ? `Matches ${soonestLabel}` : "Next matches";
   nextMatchesIdx = 0;
   renderNextMatchSlide();
   if (nextMatchesPairings.length > 1) {
@@ -200,7 +219,7 @@ async function renderNextMatches() {
 function renderNextMatchSlide() {
   const m = nextMatchesPairings[nextMatchesIdx];
   if (!m) return;
-  const when = m.date ? fmtDate(m.date) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
+  const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
   const slide = el("next-matches-slide");
   slide.innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>

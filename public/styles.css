@@ -398,9 +398,12 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mc-slide{padding:2px 0 14px;animation:mc-fade-in .35s ease;}
 @keyframes mc-fade-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:translateY(0);}}
 .mc-league{font-family:var(--font-display);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:10px;}
-.mc-pairing{display:flex;align-items:center;justify-content:center;gap:10px;}
-.mc-pair{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--text);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Full names, never truncated — stacked with "vs" between rather than a
+   tight side-by-side row, so a long name wraps onto a second line instead
+   of being cut off. */
+.mc-pairing{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.mc-pair{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--text);line-height:1.3;max-width:320px;}
+.mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:10px;}
 .mc-dots{display:flex;align-items:center;justify-content:center;gap:6px;}
 .mc-dot{width:6px;height:6px;padding:0;border:none;border-radius:50%;background:var(--line);cursor:pointer;transition:width .2s ease,border-radius .2s ease,background-color .2s ease;}
 .mc-dot.active{background:var(--accent);width:16px;border-radius:3px;}
