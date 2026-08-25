@@ -519,50 +519,6 @@ el("register-btn").onclick = async () => {
 
 /* ---------- Tabs ---------- */
 
-// The bottom nav (mobile only) surfaces just these three plus a "More"
-// button for everything else in tabDefs() — a phone-width bottom bar can't
-// fit up to ten tabs the way the top tab row's horizontal scroll can.
-const BOTTOM_NAV_PRIMARY = ["results", "table", "stats"];
-const BOTTOM_NAV_ICONS = {
-  results: '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
-  table: '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
-  stats: '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
-  more: '<svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
-};
-function buildBottomNav() {
-  const defs = tabDefs();
-  const nav = el("bottom-nav");
-  nav.innerHTML = "";
-  BOTTOM_NAV_PRIMARY.filter((key) => defs.some((d) => d.key === key)).forEach((key) => {
-    const d = defs.find((x) => x.key === key);
-    const btn = document.createElement("button");
-    btn.dataset.view = key;
-    btn.innerHTML = `${BOTTOM_NAV_ICONS[key]}<span>${d.label}</span>`;
-    btn.onclick = () => switchTab(key);
-    nav.appendChild(btn);
-  });
-  const overflow = defs.filter((d) => !BOTTOM_NAV_PRIMARY.includes(d.key));
-  if (overflow.length) {
-    const unread = myNotifications.filter((n) => !n.read).length;
-    const moreBtn = document.createElement("button");
-    moreBtn.dataset.view = "__more";
-    moreBtn.innerHTML = `${BOTTOM_NAV_ICONS.more}<span>More</span>${unread ? '<span class="bn-badge"></span>' : ""}`;
-    moreBtn.onclick = () => openMoreSheet(overflow);
-    nav.appendChild(moreBtn);
-  }
-}
-function openMoreSheet(overflow) {
-  el("more-modal-body").innerHTML = overflow.map((d) =>
-    `<button type="button" class="more-sheet-row" data-view="${d.key}">${escapeHtml(d.label)}</button>`
-  ).join("");
-  el("more-modal-body").querySelectorAll(".more-sheet-row").forEach((btn) => {
-    btn.onclick = () => { switchTab(btn.dataset.view); el("more-modal-backdrop").classList.remove("open"); };
-  });
-  el("more-modal-backdrop").classList.add("open");
-}
-el("more-modal-close").onclick = () => el("more-modal-backdrop").classList.remove("open");
-el("more-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "more-modal-backdrop") el("more-modal-backdrop").classList.remove("open"); });
-
 function tabDefs() {
   const defs = [];
   const isPairs = league.format === "pairs";
@@ -597,7 +553,6 @@ function buildTabs() {
     btn.onclick = () => switchTab(d.key);
     nav.appendChild(btn);
   });
-  buildBottomNav();
   el("role-flag").style.display = myRole === "guest" ? "none" : "inline-block";
   el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? (league.format === "pairs" ? "Player view" : "Captain view") : "";
   const myTeam = myRole === "captain" ? teamById(myTeamId) : null;
@@ -615,11 +570,6 @@ function buildTabs() {
 const GROUP_SCOPED_TABS = ["fixtures", "results", "table", "stats", "roster"];
 function switchTab(key) {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
-  // The bottom nav only has direct buttons for BOTTOM_NAV_PRIMARY — any
-  // other tab (Admin, Fixtures, Roster, …) lives behind "More", so that
-  // button lights up instead when one of those is the active view.
-  const bottomKey = BOTTOM_NAV_PRIMARY.includes(key) ? key : "__more";
-  document.querySelectorAll("#bottom-nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === bottomKey));
   document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
   const v = el("view-" + key);
   if (v) v.classList.add("active");

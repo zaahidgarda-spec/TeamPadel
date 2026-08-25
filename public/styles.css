@@ -73,21 +73,6 @@ nav.tabs.tabs-sub{padding:3px;}
 nav.tabs.tabs-sub button{font-size:11px;padding:7px 12px;}
 nav.tabs.tabs-sub button.active{background:var(--accent-soft);color:var(--accent);}
 
-/* Mobile bottom nav — hidden by default (desktop keeps the top tab row);
-   shown in its place on phones, matching the thumb-reachable bottom-tab
-   convention most native and mobile-first apps use instead of a bar
-   stretched across the top of the screen. Only the three most-checked
-   tabs get a direct button; everything else lives behind "More" (see
-   .more-sheet-row) since a phone-width bar can't fit up to ten tabs the
-   way the top row's horizontal scroll can. */
-.bottom-nav{display:none;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--panel);border-top:1px solid var(--line);box-shadow:0 -2px 10px rgba(18,32,58,.06);padding:6px 4px calc(6px + env(safe-area-inset-bottom));}
-.bottom-nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--text-dim);padding:6px 2px;font-family:var(--font-body);font-size:10.5px;cursor:pointer;position:relative;}
-.bottom-nav button.active{color:var(--accent);}
-.bn-badge{position:absolute;top:2px;right:24%;width:8px;height:8px;border-radius:50%;background:var(--clay);border:2px solid var(--panel);}
-.more-sheet-row{display:block;width:100%;text-align:left;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:13px 16px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer;font-family:var(--font-body);}
-.more-sheet-row + .more-sheet-row{margin-top:8px;}
-.more-sheet-row:hover{border-color:var(--accent);color:var(--accent);}
-
 .view{display:none;}
 .view.active{display:block;}
 .hub-view{display:none;}
@@ -493,14 +478,6 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
 /* ---------- Mobile ---------- */
 @media (max-width:640px){
   .wrap{padding:16px 14px 60px;}
-  /* League pages get a bottom nav instead of the top tab row — #tabs is
-     hub-page-only styling untouched (the hub uses its own .hub-nav), so
-     this only ever hides the league view's top tabs. Extra bottom
-     clearance keeps the fixed bar from covering the last card on any
-     page (harmless unused space on the hub, which has no bottom nav). */
-  .wrap{padding-bottom:90px;}
-  #tabs{display:none;}
-  .bottom-nav{display:flex;}
   header.site-header{padding:10px 0 16px;gap:10px 16px;}
   .brand-row{gap:12px;}
   .logo-img{height:24px;}
