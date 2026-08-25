@@ -754,6 +754,7 @@ function renderAll() {
   else auth.textContent = "Viewing only — log in to enter scores";
   el("auth-toggle").textContent = myRole === "guest" ? "Log in" : "Log out";
 
+  renderPendingScoreBanner();
   if (myRole === "admin") renderAdmin();
   renderSelection();
   renderFixtures();
@@ -769,6 +770,41 @@ function renderAll() {
   refreshNotifications().then(() => { updateNotifTabLabel(); renderNotificationsList(); });
   const unit = league.format === "pairs" ? "pair" : "team";
   el("team-count-label").textContent = `${league.teams.length} ${unit}${league.teams.length === 1 ? "" : "s"} · ${league.fixtures.length} fixture${league.fixtures.length === 1 ? "" : "s"}`;
+}
+// A captain's own overdue-but-unscored match, surfaced above whichever tab
+// they land on — not just inside Results, since a team captain's default
+// landing tab is Selection Room, not Results. "Overdue" means lineups are
+// revealed (both sides submitted — nothing to score before that) and the
+// scheduled date is today or in the past, or was never set at all (so a
+// league that skips scheduling doesn't just never show this).
+function renderPendingScoreBanner() {
+  const banner = el("pending-score-banner");
+  if (myRole !== "captain" || !myTeamId || league.format === "pairs") { banner.style.display = "none"; return; }
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const candidates = league.fixtures
+    .filter((f) => !f.finalized && (f.teamA === myTeamId || f.teamB === myTeamId) && f.selectionA.submitted && f.selectionB.submitted)
+    .filter((f) => { const sched = scheduleFor(stageKeyFor(f)); return !sched.date || sched.date <= todayStr; })
+    .sort((a, b) => a.round - b.round);
+  const f = candidates[0];
+  if (!f) { banner.style.display = "none"; return; }
+  const opp = teamById(f.teamA === myTeamId ? f.teamB : f.teamA);
+  banner.style.display = "flex";
+  el("pending-score-text").textContent = `${roundLabel(f.round)} vs ${opp ? opp.name : "TBD"} — enter it now.`;
+  el("pending-score-btn").onclick = () => {
+    const key = getRoundsList().find((k) => k.stage === "regular" && k.round === f.round);
+    if (key) viewingKey = key;
+    switchTab("results");
+    renderAll();
+    const goToCard = () => {
+      const c = document.querySelector(`#results-container .fixture-card[data-fixture-id="${f.id}"]`);
+      if (!c) return;
+      c.scrollIntoView({ behavior: "smooth", block: "center" });
+      c.style.transition = "box-shadow .3s ease";
+      c.style.boxShadow = "0 0 0 2px var(--accent)";
+      setTimeout(() => { c.style.boxShadow = ""; }, 2000);
+    };
+    setTimeout(goToCard, 50);
+  };
 }
 el("league-name").addEventListener("change", async (e) => {
   if (myRole !== "admin") return;
@@ -2753,7 +2789,7 @@ function pairMatchSetScore(rubber) {
 }
 function resultsCard(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-  const card = document.createElement("div"); card.className = "fixture-card";
+  const card = document.createElement("div"); card.className = "fixture-card"; card.dataset.fixtureId = f.id;
   const { winsA, winsB, decided } = fixtureScoreClient(f);
   const isSingleMatch = f.rubbers.length === 1;
   const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
