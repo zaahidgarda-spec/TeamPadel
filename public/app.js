@@ -2095,15 +2095,32 @@ function selectionForm(f, team, side) {
 // drops out after selection closes. Staged locally like the score modal;
 // only committed to the server on Confirm.
 function openSubModal(f, team, side, sel) {
-  const state = { outPlayerId: "", mode: "existing", inPlayerId: "", newName: "" };
+  const state = { outSeedIdx: null, outPlayerId: "", mode: "existing", inPlayerId: "", newName: "" };
   el("sub-modal-title").textContent = "Substitute a player — " + team.name;
   el("sub-modal-error").textContent = "";
-  const usedIds = new Set(sel.pairs.flat().filter(Boolean));
-  const usedPlayers = Array.from(usedIds).map((id) => playerById(team, id)).filter(Boolean);
+  // One entry per SEAT, not per player — a double-booked player holds two
+  // seats tonight, and "who's coming out" has to say which specific seed,
+  // or subbing them out of one match pulls them out of both (that's the
+  // bug this shape fixes: the old version kept only a player id, so the
+  // server had no way to tell the two seats apart).
+  const occurrences = [];
+  sel.pairs.forEach((pair, seedIdx) => { pair.forEach((pid) => { if (pid) occurrences.push({ seedIdx, pid }); }); });
+  const usedIds = new Set(occurrences.map((o) => o.pid));
+  const countByPid = {};
+  occurrences.forEach((o) => { countByPid[o.pid] = (countByPid[o.pid] || 0) + 1; });
   function render() {
     const body = el("sub-modal-body");
     let html = `<div class="row" style="flex-direction:column;align-items:stretch;gap:10px;">`;
-    html += `<label class="note">Player going out<select id="sub-out-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${usedPlayers.map((p) => `<option value="${p.id}" ${state.outPlayerId === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>`;
+    const outOptions = occurrences.map((o) => {
+      const p = playerById(team, o.pid);
+      if (!p) return "";
+      // Only label the seed when it's actually ambiguous (double-booked)
+      // — otherwise this looks identical to the old single-list-per-player version.
+      const seedNote = countByPid[o.pid] > 1 ? ` — Seed ${o.seedIdx + 1}` : "";
+      const selected = state.outSeedIdx === o.seedIdx && state.outPlayerId === o.pid ? "selected" : "";
+      return `<option value="${o.seedIdx}:${o.pid}" ${selected}>${escapeHtml(p.name)}${seedNote}</option>`;
+    }).join("");
+    html += `<label class="note">Player going out<select id="sub-out-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${outOptions}</select></label>`;
     html += `<label class="note">Bringing in<select id="sub-mode-select" style="width:100%;margin-top:4px;">
       <option value="existing" ${state.mode === "existing" ? "selected" : ""}>An existing player on this team</option>
       <option value="new" ${state.mode === "new" ? "selected" : ""}>A new player</option>
@@ -2113,19 +2130,22 @@ function openSubModal(f, team, side, sel) {
       // deliberate double-up (one player covering two pairs), not a
       // mistake, so it's offered rather than hidden — just labelled
       // clearly so it's an informed choice. The one exception: whoever's
-      // already partnering the outgoing player can't come in for them —
-      // that'd pair that seed with itself.
-      const partnersOfOut = new Set(
-        sel.pairs.filter((pair) => pair.includes(state.outPlayerId)).map((pair) => pair.find((pid) => pid !== state.outPlayerId)).filter(Boolean)
-      );
-      const inOptions = team.players.filter((p) => p.id !== state.outPlayerId && !partnersOfOut.has(p.id));
+      // already partnering the outgoing player in THIS seed can't come in
+      // for them — that'd pair that seed with itself.
+      const partner = state.outSeedIdx !== null ? sel.pairs[state.outSeedIdx].find((pid) => pid !== state.outPlayerId) : null;
+      const inOptions = team.players.filter((p) => p.id !== state.outPlayerId && p.id !== partner);
       html += `<label class="note">Player coming in<select id="sub-in-select" style="width:100%;margin-top:4px;"><option value="">Choose…</option>${inOptions.map((p) => `<option value="${p.id}" ${state.inPlayerId === p.id ? "selected" : ""}>${escapeHtml(p.name)}${usedIds.has(p.id) ? " (double up)" : ""}</option>`).join("")}</select></label>`;
     } else {
       html += `<label class="note">New player's name<input type="text" id="sub-new-name" value="${escapeHtml(state.newName)}" placeholder="Full name" style="width:100%;margin-top:4px;"></label>`;
     }
     html += `</div>`;
     body.innerHTML = html;
-    el("sub-out-select").onchange = (e) => { state.outPlayerId = e.target.value; state.inPlayerId = ""; render(); };
+    el("sub-out-select").onchange = (e) => {
+      if (!e.target.value) { state.outSeedIdx = null; state.outPlayerId = ""; }
+      else { const [seedIdxStr, pid] = e.target.value.split(":"); state.outSeedIdx = Number(seedIdxStr); state.outPlayerId = pid; }
+      state.inPlayerId = "";
+      render();
+    };
     el("sub-mode-select").onchange = (e) => { state.mode = e.target.value; render(); };
     if (state.mode === "existing") el("sub-in-select").onchange = (e) => { state.inPlayerId = e.target.value; };
     else el("sub-new-name").oninput = (e) => { state.newName = e.target.value; };
@@ -2133,8 +2153,8 @@ function openSubModal(f, team, side, sel) {
   render();
   el("sub-modal-backdrop").classList.add("open");
   el("sub-modal-save").onclick = async () => {
-    if (!state.outPlayerId) { el("sub-modal-error").textContent = "Choose who's coming out."; return; }
-    const body = { side, outPlayerId: state.outPlayerId };
+    if (!state.outPlayerId || state.outSeedIdx === null) { el("sub-modal-error").textContent = "Choose who's coming out."; return; }
+    const body = { side, outPlayerId: state.outPlayerId, seedIdx: state.outSeedIdx };
     if (state.mode === "existing") {
       if (!state.inPlayerId) { el("sub-modal-error").textContent = "Choose who's coming in."; return; }
       body.inPlayerId = state.inPlayerId;

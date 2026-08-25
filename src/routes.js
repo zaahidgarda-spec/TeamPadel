@@ -1451,9 +1451,19 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req,
   const team = league.teams.find((t) => t.id === teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
 
-  const { outPlayerId, inPlayerId, newPlayerName } = req.body || {};
+  const { outPlayerId, inPlayerId, newPlayerName, seedIdx } = req.body || {};
   const usedIds = new Set(sel.pairs.flat().filter(Boolean));
   if (!outPlayerId || !usedIds.has(outPlayerId)) return res.status(400).json({ error: "Choose who's coming out." });
+
+  // A double-booked player can hold a seat in more than one seed tonight —
+  // seedIdx pins down exactly which seat this substitution replaces, so
+  // subbing them out of one match doesn't also pull them out of the other.
+  // Falls back to the first (only, for anyone not double-booked) match if
+  // an older client doesn't send it.
+  const idx = Number.isInteger(seedIdx) ? seedIdx : sel.pairs.findIndex((pair) => pair.includes(outPlayerId));
+  if (idx < 0 || idx >= sel.pairs.length || !sel.pairs[idx].includes(outPlayerId)) {
+    return res.status(400).json({ error: "Couldn't find that player in the selected match." });
+  }
 
   let incomingId = inPlayerId;
   if (!incomingId) {
@@ -1467,15 +1477,16 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req,
     // Someone already playing tonight is allowed in — a deliberate
     // double-up, same as the main selection form supports — so this
     // isn't rejected, just surfaced clearly in the UI's option label.
-    // But if they're already the outgoing player's partner in some seed,
-    // swapping would pair them with themselves in that seed — that's
-    // never valid, double-up or not.
-    if (sel.pairs.some((pair) => pair.includes(outPlayerId) && pair.includes(incomingId))) {
+    // But if they're already the outgoing player's partner in THIS seed,
+    // swapping would pair them with themselves — that's never valid.
+    if (sel.pairs[idx].includes(incomingId)) {
       return res.status(400).json({ error: "That player already partners the outgoing player — pick someone else, or a different seed." });
     }
   }
 
-  sel.pairs = sel.pairs.map((pair) => pair.map((pid) => (pid === outPlayerId ? incomingId : pid)));
+  // Only the targeted seed's pair is touched — a double-booked player's
+  // other seat (a different pair, elsewhere in sel.pairs) is untouched.
+  sel.pairs = sel.pairs.map((pair, i) => (i === idx ? pair.map((pid) => (pid === outPlayerId ? incomingId : pid)) : pair));
 
   const outName = (team.players.find((p) => p.id === outPlayerId) || {}).name || "A player";
   const inName = (team.players.find((p) => p.id === incomingId) || {}).name || "Substitute";
