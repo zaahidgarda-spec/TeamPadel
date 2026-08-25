@@ -63,6 +63,23 @@ function pairNamesGoldHtml(team, pair) {
   const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldNameHtml(p)).join(" & ");
   return html || "—";
 }
+function playerLinkHtml(p) {
+  return `<button type="button" class="player-link" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${goldNameHtml(p)}</button>`;
+}
+// Same look as pairNamesGoldHtml, but each name is its own clickable link
+// to that player's profile — only used where the result actually gets
+// wired up with click handlers afterward (a static innerHTML use, like the
+// score modal's title, would render buttons that visibly do nothing).
+function pairNamesClickableHtml(team, pair) {
+  if (!pair) return "—";
+  const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map(playerLinkHtml).join(" &amp; ");
+  return html || "—";
+}
+function bindPlayerLinks(root) {
+  root.querySelectorAll(".player-link").forEach((btn) => {
+    btn.onclick = (e) => { e.stopPropagation(); openPlayerHistory(btn.dataset.pid, btn.dataset.pname); };
+  });
+}
 function playerNamesForGold(team, pair) {
   if (!pair) return "—";
   const names = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldPrefix(p) + p.name).join(" & ");
@@ -2749,12 +2766,16 @@ function resultsCard(f) {
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
     seedTag.textContent = isDecider ? "Decider" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    // Plain (non-clickable) versions still feed the score modal's title,
+    // which is a one-shot innerHTML use with no click handlers wired up
+    // afterward — clickable-looking buttons there would just do nothing.
     const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[idx]);
     const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[idx]);
     const potwWinners = (league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winners) || [];
     const isPotwPair = (side) => !isDecider && potwWinners.some((w) => w.key === `${f.id}:${side}:${idx}`);
-    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairAHtml;
-    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairBHtml;
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairNamesClickableHtml(teamA, f.selectionA.pairs[idx]);
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairNamesClickableHtml(teamB, f.selectionB.pairs[idx]);
+    bindPlayerLinks(pairADisplay); bindPlayerLinks(pairBDisplay);
 
     const scores = document.createElement("div"); scores.className = "score-summary-wrap";
     const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
@@ -3682,9 +3703,16 @@ function renderTable() {
         { v: diffText, l: isPairs ? "Set diff" : "Diff" },
       ];
       const summary = `${r.played} played · ${stats.slice(1).map((s) => `${s.v} ${s.l.toLowerCase()}`).join(" · ")}`;
+      // A pair's row IS two people — link each one to their own profile,
+      // same real names either way, whether or not the pair's been given a
+      // nickname (see the "signed in as" precedent elsewhere in the app).
+      // A team-league row is a whole roster, not two people, so it isn't.
+      const nameHtml = isPairs && r.players && r.players.length
+        ? r.players.map(playerLinkHtml).join(" / ")
+        : escapeHtml(r.name);
       html += `<div class="rank-row${isLeader ? " leader" : ""}">
         <div class="rank-badge">${i + 1}</div>
-        <div class="rank-name">${avatarHtml(r)}<span>${escapeHtml(r.name)}</span></div>
+        <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span></div>
         <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
         <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
         <div class="rank-summary">${escapeHtml(summary)}</div>
@@ -3692,6 +3720,7 @@ function renderTable() {
     });
     html += "</div>";
     c.innerHTML = html;
+    bindPlayerLinks(c);
   }
   const koCard = el("knockout-card");
   const allDone = league.fixtures.length > 0 && league.fixtures.every((f) => f.finalized);

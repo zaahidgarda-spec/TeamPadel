@@ -573,6 +573,13 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .player-chip.gold-chip:hover{border-color:#B8860B;color:#8a6508;}
 .gold-name{color:#B8860B;font-weight:600;}
 .gold-toggle{white-space:nowrap;}
+/* A player's name wherever it appears inline (a match's seed pairing, a
+   pair's row in the table) — display:inline rather than a button's default
+   inline-block so it still truncates with the surrounding text-overflow
+   ellipsis instead of breaking that layout. Styled to read as text until
+   hovered, not as an always-blue hyperlink in an already dense row. */
+.player-link{display:inline;background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-decoration:none;}
+.player-link:hover{text-decoration:underline;text-underline-offset:2px;color:var(--accent);}
 
 /* ---------- Player history modal ---------- */
 .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(18,32,58,.5);z-index:100;align-items:center;justify-content:center;padding:20px;}
