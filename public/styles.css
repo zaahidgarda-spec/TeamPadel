@@ -217,6 +217,12 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
 .seed-row-amp{font-family:var(--font-display);color:var(--text-faint);font-size:13px;flex-shrink:0;}
 
+/* Admin > Schedule — one row per week (date/time/venue), same row-card
+   language as everywhere else instead of a bare bordered line. */
+.schedule-row{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);flex-wrap:wrap;}
+.schedule-row + .schedule-row{margin-top:8px;}
+.schedule-row .label{flex:1;min-width:100px;font-family:var(--font-display);text-transform:uppercase;font-size:12px;color:var(--text-dim);}
+
 .cs-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--line);}
 .cs-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;}
 .cs-swatch{width:10px;height:10px;border-radius:3px;flex-shrink:0;}

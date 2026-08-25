@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Team Padel</title>
+<meta name="description" content="Run and follow padel leagues — fixtures, results, live standings, and player stats for every team.">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#2563EB">
 <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
@@ -68,6 +69,10 @@
         </div>
         <div class="card">
           <h2 class="section-title">Leagues</h2>
+          <div class="row" style="margin-bottom:14px;">
+            <label class="sr-only" for="hub-league-search">Search leagues</label>
+            <input type="text" id="hub-league-search" placeholder="Search leagues…" style="flex:1;min-width:160px;">
+          </div>
           <div id="league-list"></div>
         </div>
       </section>

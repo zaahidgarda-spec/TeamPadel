@@ -291,12 +291,15 @@ function renderHub() {
   list.innerHTML = "";
   if (leaguesIndex.length === 0) { list.innerHTML = '<p class="empty">No leagues yet — create one above.</p>'; return; }
   const sorted = leaguesIndex.slice().sort((a, b) => b.createdAt - a.createdAt);
+  const query = (el("hub-league-search").value || "").trim().toLowerCase();
+  const filtered = query ? sorted.filter((l) => l.name.toLowerCase().includes(query)) : sorted;
+  if (query && filtered.length === 0) { list.innerHTML = `<p class="empty">No leagues match “${escapeHtml(el("hub-league-search").value.trim())}”.</p>`; return; }
   const groups = [
     { key: "active", label: "Active leagues" },
     { key: "setup", label: isOwner ? "In setup" : "Coming soon" },
   ];
   groups.forEach((g) => {
-    const items = sorted.filter((l) => l.status === g.key);
+    const items = filtered.filter((l) => l.status === g.key);
     if (items.length === 0) return;
     const section = document.createElement("div");
     section.className = "league-group";
@@ -321,6 +324,7 @@ function renderHub() {
     }
   });
 }
+el("hub-league-search").oninput = () => renderHub();
 el("create-league-btn").onclick = async () => {
   const name = el("new-league-name").value.trim();
   const email = el("new-league-admin-email").value.trim();
@@ -1437,9 +1441,9 @@ function renderAdminFixtures() {
   weeks.forEach((w) => {
     const sched = scheduleFor(w.key);
     const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap;";
+    row.className = "schedule-row";
     const label = document.createElement("span");
-    label.style.cssText = "flex:1;min-width:100px;font-family:'Oswald',sans-serif;text-transform:uppercase;font-size:12px;color:var(--text-dim);";
+    label.className = "label";
     label.textContent = w.label;
     const dateInput = document.createElement("input");
     dateInput.type = "date"; dateInput.value = sched.date || ""; dateInput.style.cssText = "font-size:12px;padding:6px 8px;";
