@@ -2009,6 +2009,11 @@ function selectionForm(f, team, side) {
       };
       selects.push(select);
       row.appendChild(select);
+      if (slot === 0) {
+        const amp = document.createElement("span");
+        amp.className = "seed-row-amp"; amp.textContent = "&";
+        row.appendChild(amp);
+      }
     });
     div.appendChild(row);
   }

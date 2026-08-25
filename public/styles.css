@@ -208,9 +208,14 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 @media (max-width:640px){.selection-grid{grid-template-columns:1fr;}}
 .selection-side{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;}
 .selection-side h3{font-family:var(--font-display);font-size:14px;margin:0 0 10px;}
-.seed-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
-.seed-row .num{font-family:var(--font-display);font-size:11px;color:var(--text-dim);width:44px;flex-shrink:0;}
+/* Each seed reads as its own card — the same row-card language as the
+   admin lists and match cards — instead of a bare label next to two plain
+   selects with no visual grouping. */
+.seed-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow-sm);}
+.seed-row + .seed-row{margin-top:10px;}
+.seed-row .num{font-family:var(--font-display);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);width:44px;flex-shrink:0;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
+.seed-row-amp{font-family:var(--font-display);color:var(--text-faint);font-size:13px;flex-shrink:0;}
 
 .cs-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed var(--line);}
 .cs-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);white-space:nowrap;}
