@@ -324,8 +324,13 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .rank-row:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);}
 .rank-row.leader{background:linear-gradient(90deg,var(--accent-soft),var(--panel) 68%);border-color:var(--accent);}
 .rank-badge{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
+/* Full names, never truncated — the row grows taller instead of cutting a
+   pair down to one name and an ellipsis (same fix as the Next Matches
+   carousel). Most rows are one line, so the avatar stays vertically
+   centered for that common case rather than top-aligned for the rarer
+   wrapped one. */
 .rank-name{display:flex;align-items:center;gap:10px;min-width:0;font-size:14.5px;font-weight:600;}
-.rank-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rank-name span{white-space:normal;line-height:1.3;}
 .rank-name .avatar,.rank-name .avatar-fb{width:32px;height:32px;flex-shrink:0;}
 .rank-name .avatar-fb{font-size:13px;}
 .rank-stats{display:flex;gap:22px;}
