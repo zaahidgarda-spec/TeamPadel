@@ -170,10 +170,16 @@ function leagueCardHtml(l) {
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
 }
+let nextMatchesPairings = [];
+let nextMatchesIdx = 0;
+let nextMatchesTimer = null;
+
 async function renderNextMatches() {
   const card = el("next-matches-card");
+  if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
   const data = await api("/next-matches").catch(() => null);
-  if (!data || data.matches.length === 0) { card.style.display = "none"; return; }
+  nextMatchesPairings = (data && data.matches) || [];
+  if (nextMatchesPairings.length === 0) { card.style.display = "none"; return; }
   card.style.display = "block";
   const scopeTag = el("next-matches-scope-tag");
   if (data.scopedTo) {
@@ -182,18 +188,50 @@ async function renderNextMatches() {
   } else {
     scopeTag.style.display = "none";
   }
-  el("next-matches-list").innerHTML = data.matches.map((m) => {
-    const when = m.date ? fmtDate(m.date) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
-    return `<div class="next-match-card">
-      <div class="next-match-league"><span class="tag">${escapeHtml(m.leagueName)}</span></div>
-      <div class="matchup-row">
-        ${avatarHtml(m.teamA)}<span class="fx-name">${escapeHtml(m.teamA.name)}</span>
-        <span class="vs">vs</span>
-        <span class="fx-name right">${escapeHtml(m.teamB.name)}</span>${avatarHtml(m.teamB)}
-      </div>
-      <span class="badge pending">${escapeHtml(when)}</span>
-    </div>`;
-  }).join("");
+  nextMatchesIdx = 0;
+  renderNextMatchSlide();
+  if (nextMatchesPairings.length > 1) {
+    nextMatchesTimer = setInterval(() => {
+      nextMatchesIdx = (nextMatchesIdx + 1) % nextMatchesPairings.length;
+      renderNextMatchSlide();
+    }, 4500);
+  }
+}
+function renderNextMatchSlide() {
+  const m = nextMatchesPairings[nextMatchesIdx];
+  if (!m) return;
+  const when = m.date ? fmtDate(m.date) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
+  const slide = el("next-matches-slide");
+  slide.innerHTML = `
+    <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
+    <div class="mc-pairing">
+      <span class="mc-pair">${escapeHtml(m.pairA.join(" & "))}</span>
+      <span class="vs">vs</span>
+      <span class="mc-pair">${escapeHtml(m.pairB.join(" & "))}</span>
+    </div>
+    <div class="mc-meta">${escapeHtml(m.teamAName)} vs ${escapeHtml(m.teamBName)} &middot; ${escapeHtml(when)}</div>
+  `;
+  // Re-trigger the slide-in animation on every rotation, not just the first
+  // render — swapping innerHTML alone doesn't replay a CSS animation
+  // already attached to the (unchanged) element.
+  slide.classList.remove("mc-slide");
+  void slide.offsetWidth;
+  slide.classList.add("mc-slide");
+
+  el("next-matches-dots").innerHTML = nextMatchesPairings.map((_, i) => `<button type="button" class="mc-dot${i === nextMatchesIdx ? " active" : ""}" data-idx="${i}" aria-label="Match ${i + 1}"></button>`).join("");
+  el("next-matches-dots").querySelectorAll(".mc-dot").forEach((dot) => {
+    dot.onclick = () => {
+      nextMatchesIdx = Number(dot.dataset.idx);
+      renderNextMatchSlide();
+      if (nextMatchesTimer) {
+        clearInterval(nextMatchesTimer);
+        nextMatchesTimer = setInterval(() => {
+          nextMatchesIdx = (nextMatchesIdx + 1) % nextMatchesPairings.length;
+          renderNextMatchSlide();
+        }, 4500);
+      }
+    };
+  });
 }
 function renderHub() {
   renderInterestLeagueOptions();
@@ -347,6 +385,7 @@ el("owner-logout-btn").onclick = async () => {
 };
 
 async function openLeague(id) {
+  if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
   currentLeagueId = id;
   window.location.hash = "league/" + id;
   el("view-hub").style.display = "none";

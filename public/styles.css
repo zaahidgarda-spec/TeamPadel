@@ -390,14 +390,20 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.league-theme-vibora50:hover{border-color:#2563EB;}
 .league-copy-codes-btn{margin-top:10px;}
 
-/* ---------- Home page: Next matches ---------- */
-.next-match-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow-sm);}
-.next-match-card + .next-match-card{margin-top:10px;}
-.next-match-league{margin-bottom:9px;}
-.matchup-row{display:flex;align-items:center;gap:7px;margin-bottom:9px;}
-.matchup-row .fx-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-display);font-size:13px;color:var(--text);}
-.matchup-row .fx-name.right{text-align:right;}
-.next-match-card .avatar,.next-match-card .avatar-fb{width:24px;height:24px;font-size:10.5px;flex-shrink:0;}
+/* ---------- Home page: Next matches carousel ---------- */
+/* One real pairing at a time (not the team names) — auto-rotating, so it
+   stays compact instead of a stacked list that pushes the rest of the
+   homepage down as more leagues submit lineups. */
+.mc-carousel{max-width:380px;margin:0 auto;text-align:center;}
+.mc-slide{padding:2px 0 14px;animation:mc-fade-in .35s ease;}
+@keyframes mc-fade-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:translateY(0);}}
+.mc-league{font-family:var(--font-display);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:10px;}
+.mc-pairing{display:flex;align-items:center;justify-content:center;gap:10px;}
+.mc-pair{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--text);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mc-dots{display:flex;align-items:center;justify-content:center;gap:6px;}
+.mc-dot{width:6px;height:6px;padding:0;border:none;border-radius:50%;background:var(--line);cursor:pointer;transition:width .2s ease,border-radius .2s ease,background-color .2s ease;}
+.mc-dot.active{background:var(--accent);width:16px;border-radius:3px;}
 
 .news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
 .news-post:last-child{border-bottom:none;}

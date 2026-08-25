@@ -324,12 +324,14 @@ router.get("/leagues", (req, res) => {
   res.json(enriched);
 });
 
-// Home-page teaser: upcoming matches with lineups already set, across every
-// active team league. Vibora (pairs) leagues are excluded — a pair plays any
-// opponent on any night, so there's no fixed "next match" to feature. A
-// signed-in captain or admin narrows this to just their own league; a guest,
-// or a captain whose own league is a Vibora league (nothing to scope to),
-// sees the full cross-league feed instead.
+// Home-page teaser: the actual pairs playing, across every active team
+// league — not just "Team A vs Team B". Only fixtures with both lineups
+// already submitted are eligible (before that, who's actually playing isn't
+// decided yet), and Vibora (pairs) leagues are excluded entirely — a pair
+// plays any opponent on any night, so there's no fixed "next match" to
+// feature. A signed-in captain or admin narrows this to just their own
+// league; a guest, or a captain whose own league is a Vibora league
+// (nothing to scope to), sees the full cross-league feed instead.
 router.get("/next-matches", (req, res) => {
   const myLeagueId = req.session.user && req.session.user.leagueId;
   const index = store.getIndex();
@@ -343,7 +345,12 @@ router.get("/next-matches", (req, res) => {
     if (mine) { leagues = [mine]; scopedTo = { id: mine.id, name: mine.name }; }
   }
 
-  const matches = [];
+  const playerName = (team, id) => {
+    const p = team && team.players.find((pl) => pl.id === id);
+    return p ? p.name : null;
+  };
+
+  const fixtures = [];
   leagues.forEach((league) => {
     logic.allFixturesOf(league).forEach((f) => {
       if (f.finalized || !f.teamA || !f.teamB) return;
@@ -352,12 +359,35 @@ router.get("/next-matches", (req, res) => {
       const teamB = league.teams.find((t) => t.id === f.teamB);
       if (!teamA || !teamB) return;
       const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
-      matches.push({
-        leagueId: league.id,
+      fixtures.push({ league, f, teamA, teamB, sched });
+    });
+  });
+
+  // Soonest scheduled first; anything without a date sinks to the bottom
+  // rather than sorting arbitrarily.
+  fixtures.sort((a, b) => {
+    if (a.sched.date && b.sched.date) return (a.sched.date + " " + a.sched.time).localeCompare(b.sched.date + " " + b.sched.time);
+    if (a.sched.date) return -1;
+    if (b.sched.date) return 1;
+    return 0;
+  });
+
+  // Flatten to one entry per seed pairing (up to 4 per fixture) — this is
+  // what actually gets featured, not the fixture itself.
+  const pairings = [];
+  fixtures.forEach(({ league, f, teamA, teamB, sched }) => {
+    f.selectionA.pairs.forEach((pairA, i) => {
+      const pairB = f.selectionB.pairs[i];
+      const namesA = [playerName(teamA, pairA[0]), playerName(teamA, pairA[1])].filter(Boolean);
+      const namesB = [playerName(teamB, pairB[0]), playerName(teamB, pairB[1])].filter(Boolean);
+      if (namesA.length !== 2 || namesB.length !== 2) return;
+      pairings.push({
         leagueName: league.name,
-        fixtureId: f.id,
-        teamA: { id: teamA.id, name: teamA.name, logo: teamA.logo || null },
-        teamB: { id: teamB.id, name: teamB.name, logo: teamB.logo || null },
+        teamAName: teamA.name,
+        teamBName: teamB.name,
+        seed: i + 1,
+        pairA: namesA,
+        pairB: namesB,
         date: sched.date || "",
         time: sched.time || "",
         venue: sched.venue || league.defaultVenue || "",
@@ -365,16 +395,7 @@ router.get("/next-matches", (req, res) => {
     });
   });
 
-  // Soonest scheduled first; anything without a date sinks to the bottom
-  // rather than sorting arbitrarily.
-  matches.sort((a, b) => {
-    if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
-    if (a.date) return -1;
-    if (b.date) return 1;
-    return 0;
-  });
-
-  res.json({ scopedTo, matches: matches.slice(0, 6) });
+  res.json({ scopedTo, matches: pairings.slice(0, 10) });
 });
 
 /* ---------- "Interested to join a league" signups ---------- */
