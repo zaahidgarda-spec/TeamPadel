@@ -246,8 +246,12 @@ async function renderNextMatches() {
 function renderNextMatchSlide() {
   const m = nextMatchesPairings[nextMatchesIdx];
   if (!m) return;
-  const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
-  const meta = [m.teamAName + " vs " + m.teamBName, when, m.venue].filter(Boolean).join(" · ");
+  // Every seed pairing within one fixture shares the same round-level
+  // time, so showing the clock time here just repeats itself across that
+  // fixture's slides — "Match N" (the seed number) actually tells them
+  // apart instead.
+  const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
+  const meta = [m.teamAName + " vs " + m.teamBName, when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   const slide = el("next-matches-slide");
   slide.innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
