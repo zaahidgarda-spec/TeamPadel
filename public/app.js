@@ -173,10 +173,7 @@ function leagueCardHtml(l) {
 let nextMatchesPairings = [];
 let nextMatchesIdx = 0;
 let nextMatchesTimer = null;
-// Long enough to actually read two full names plus the team/date line
-// before it moves on — 4.5s (the original pace) was tuned for a short
-// "Team A vs Team B" line, not full player names.
-const NEXT_MATCHES_ROTATE_MS = 8000;
+const NEXT_MATCHES_ROTATE_MS = 4500;
 function startNextMatchesTimer() {
   if (nextMatchesTimer) clearInterval(nextMatchesTimer);
   if (nextMatchesPairings.length <= 1) { nextMatchesTimer = null; return; }
@@ -219,6 +216,7 @@ async function renderNextMatches() {
   // imminent.
   const soonestLabel = relativeDayLabel(nextMatchesPairings[0].date);
   el("next-matches-title").textContent = soonestLabel ? `Matches ${soonestLabel}` : "Next matches";
+  card.classList.toggle("urgent", !!soonestLabel);
   nextMatchesIdx = 0;
   renderNextMatchSlide();
   startNextMatchesTimer();
@@ -244,10 +242,19 @@ function renderNextMatchSlide() {
   void slide.offsetWidth;
   slide.classList.add("mc-slide");
 
-  el("next-matches-dots").innerHTML = nextMatchesPairings.map((_, i) => `<button type="button" class="mc-dot${i === nextMatchesIdx ? " active" : ""}" data-idx="${i}" aria-label="Match ${i + 1}"></button>`).join("");
-  el("next-matches-dots").querySelectorAll(".mc-dot").forEach((dot) => {
-    dot.onclick = () => {
-      nextMatchesIdx = Number(dot.dataset.idx);
+  const progress = el("next-matches-progress");
+  if (nextMatchesPairings.length <= 1) { progress.innerHTML = ""; return; }
+  // Stories-style segmented progress instead of plain dots — each bar fills
+  // over the rotation interval so the countdown itself is visible, not just
+  // which slide is active.
+  progress.innerHTML = nextMatchesPairings.map((_, i) => {
+    const state = i < nextMatchesIdx ? "done" : i === nextMatchesIdx ? "active" : "";
+    const dur = i === nextMatchesIdx && nextMatchesTimer ? ` style="animation-duration:${NEXT_MATCHES_ROTATE_MS}ms"` : "";
+    return `<button type="button" class="mc-progress-seg ${state}" data-idx="${i}" aria-label="Match ${i + 1}"><span class="fill"${dur}></span></button>`;
+  }).join("");
+  progress.querySelectorAll(".mc-progress-seg").forEach((seg) => {
+    seg.onclick = () => {
+      nextMatchesIdx = Number(seg.dataset.idx);
       renderNextMatchSlide();
       // Only reset the clock if it was already running — a manual pick
       // shouldn't start auto-rotation on a single-match card that never had it.
