@@ -131,6 +131,11 @@ function showHub() {
   document.body.className = "role-guest";
   refreshOwnerStatus();
   renderHub();
+  // Not tied to owner status like the rest of the hub, so it doesn't need
+  // to re-run when refreshOwnerStatus's renderHub() call lands a moment
+  // later — that would restart the carousel from its first slide and
+  // double up the /api/next-matches request on every hub visit.
+  renderNextMatches();
 }
 const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
@@ -225,6 +230,7 @@ function renderNextMatchSlide() {
   const m = nextMatchesPairings[nextMatchesIdx];
   if (!m) return;
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) + (m.time ? " · " + fmtTime(m.time) : "") : "Time TBC";
+  const meta = [m.teamAName + " vs " + m.teamBName, when, m.venue].filter(Boolean).join(" · ");
   const slide = el("next-matches-slide");
   slide.innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
@@ -233,7 +239,7 @@ function renderNextMatchSlide() {
       <span class="vs">vs</span>
       <span class="mc-pair">${escapeHtml(m.pairB.join(" & "))}</span>
     </div>
-    <div class="mc-meta">${escapeHtml(m.teamAName)} vs ${escapeHtml(m.teamBName)} &middot; ${escapeHtml(when)}</div>
+    <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   // Re-trigger the slide-in animation on every rotation, not just the first
   // render — swapping innerHTML alone doesn't replay a CSS animation
@@ -264,7 +270,6 @@ function renderNextMatchSlide() {
 }
 function renderHub() {
   renderInterestLeagueOptions();
-  renderNextMatches();
   const list = el("league-list");
   list.innerHTML = "";
   if (leaguesIndex.length === 0) { list.innerHTML = '<p class="empty">No leagues yet — create one above.</p>'; return; }
