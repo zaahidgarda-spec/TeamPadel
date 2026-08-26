@@ -507,15 +507,6 @@
         </div>
       </section>
 
-      <div id="player-modal-backdrop" class="modal-backdrop">
-        <div class="modal-box">
-          <button class="modal-close" id="player-modal-close" aria-label="Close">&times;</button>
-          <h3 id="player-modal-name" class="modal-title"></h3>
-          <nav class="tabs tabs-sub" id="player-modal-league-tabs" style="display:none;margin-bottom:14px;"></nav>
-          <div id="player-modal-body"></div>
-        </div>
-      </div>
-
       <div id="poster-modal-backdrop" class="modal-backdrop">
         <div class="modal-box" style="max-width:460px;text-align:center;">
           <button class="modal-close" id="poster-modal-close" aria-label="Close">&times;</button>
@@ -594,6 +585,18 @@
         <span id="team-count-label"></span>
       </footer>
     </section>
+
+    <!-- Top-level (not nested in view-league) so it can be opened from the
+         hub too — e.g. the Search players tab and admin combine, which
+         have no league open at all. -->
+    <div id="player-modal-backdrop" class="modal-backdrop">
+      <div class="modal-box">
+        <button class="modal-close" id="player-modal-close" aria-label="Close">&times;</button>
+        <h3 id="player-modal-name" class="modal-title"></h3>
+        <nav class="tabs tabs-sub" id="player-modal-league-tabs" style="display:none;margin-bottom:14px;"></nav>
+        <div id="player-modal-body"></div>
+      </div>
+    </div>
 
   </div>
 </div>
