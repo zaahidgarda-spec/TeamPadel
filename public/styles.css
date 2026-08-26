@@ -484,6 +484,9 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    pair gets the same checkmark/success treatment as the results list. */
 .mc-pair.won{color:var(--success);}
 .mc-pair.won::before{content:"✓ ";}
+.mc-pair-row{display:flex;align-items:center;justify-content:center;gap:8px;}
+.mc-team-logo{width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--panel-2);border:1px solid var(--line);}
+.floodlit.urgent .mc-team-logo{border-color:rgba(255,255,255,.3);}
 .vs.mc-score{min-width:auto;padding:3px 10px;font-size:11px;text-transform:none;letter-spacing:0;font-weight:700;color:var(--success);background:var(--success-soft);border-color:var(--success);}
 .floodlit.urgent .mc-pair.won{color:#6EE7A8;}
 .floodlit.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}

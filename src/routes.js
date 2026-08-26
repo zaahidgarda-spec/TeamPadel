@@ -347,6 +347,8 @@ router.get("/next-matches", (req, res) => {
         leagueName: league.name,
         teamAName: teamA.name,
         teamBName: teamB.name,
+        teamALogo: teamA.logo || "",
+        teamBLogo: teamB.logo || "",
         seed: i + 1,
         pairA: namesA,
         pairB: namesB,
