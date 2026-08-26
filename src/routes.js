@@ -372,11 +372,20 @@ router.get("/next-matches", (req, res) => {
     return 0;
   });
 
+  // The card's title ("Matches Tonight"/"Tomorrow") is set once from the
+  // very first match and applies to the whole carousel — so every fixture
+  // shown here has to share that same date, or a later night's match
+  // (from a league with nothing on sooner) would ride along under the
+  // wrong heading. Anything past the soonest scheduled date is left for
+  // its own night's carousel instead.
+  const referenceDate = fixtures.length ? fixtures[0].sched.date || "" : "";
+  const sameNight = fixtures.filter((x) => (x.sched.date || "") === referenceDate);
+
   // Flatten to one entry per seed pairing (up to 4 per fixture), grouped
   // by league — this is what actually gets featured, not the fixture
   // itself.
   const byLeague = new Map();
-  fixtures.forEach(({ league, f, teamA, teamB, sched }) => {
+  sameNight.forEach(({ league, f, teamA, teamB, sched }) => {
     f.selectionA.pairs.forEach((pairA, i) => {
       const pairB = f.selectionB.pairs[i];
       const namesA = [playerName(teamA, pairA[0]), playerName(teamA, pairA[1])].filter(Boolean);
