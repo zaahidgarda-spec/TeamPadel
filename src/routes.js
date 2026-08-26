@@ -372,9 +372,10 @@ router.get("/next-matches", (req, res) => {
     return 0;
   });
 
-  // Flatten to one entry per seed pairing (up to 4 per fixture) — this is
-  // what actually gets featured, not the fixture itself.
-  const pairings = [];
+  // Flatten to one entry per seed pairing (up to 4 per fixture), grouped
+  // by league — this is what actually gets featured, not the fixture
+  // itself.
+  const byLeague = new Map();
   fixtures.forEach(({ league, f, teamA, teamB, sched }) => {
     f.selectionA.pairs.forEach((pairA, i) => {
       const pairB = f.selectionB.pairs[i];
@@ -386,7 +387,8 @@ router.get("/next-matches", (req, res) => {
       // it is, the card shows that result instead of a bare "vs".
       const rubber = f.rubbers[i];
       const winner = rubber ? logic.rubberWinner(rubber) : null;
-      pairings.push({
+      if (!byLeague.has(league.id)) byLeague.set(league.id, []);
+      byLeague.get(league.id).push({
         leagueName: league.name,
         teamAName: teamA.name,
         teamBName: teamB.name,
@@ -402,7 +404,24 @@ router.get("/next-matches", (req, res) => {
     });
   });
 
-  res.json({ scopedTo, matches: pairings.slice(0, 10) });
+  // Round-robin across leagues (in the order their soonest fixture
+  // sorted to above) rather than taking the first 10 pairings outright —
+  // otherwise one league with a busy night fills the whole card before a
+  // quieter league's match ever gets a turn.
+  const queues = Array.from(byLeague.values());
+  const pairings = [];
+  let tookOne = true;
+  while (tookOne && pairings.length < 10) {
+    tookOne = false;
+    for (const q of queues) {
+      if (!q.length) continue;
+      pairings.push(q.shift());
+      tookOne = true;
+      if (pairings.length >= 10) break;
+    }
+  }
+
+  res.json({ scopedTo, matches: pairings });
 });
 
 /* ---------- "Interested to join a league" signups ---------- */
