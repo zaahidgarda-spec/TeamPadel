@@ -103,8 +103,6 @@ button.ghost{background:transparent;border:none;color:var(--text-dim);cursor:poi
 button.ghost:hover:not(:disabled){color:var(--clay);background:var(--clay-soft);}
 button.link{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;text-decoration:underline;text-underline-offset:2px;}
 button.link:hover:not(:disabled){color:var(--text);}
-.other-league-link{color:var(--accent);text-decoration:underline;text-underline-offset:2px;}
-.other-league-link:hover{color:var(--text);}
 
 /* Each row is its own card rather than a line in a bordered list — the
    same "row card" recipe as .rank-row/.next-match-card elsewhere, so the

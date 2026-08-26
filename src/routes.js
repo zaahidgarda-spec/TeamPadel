@@ -1887,18 +1887,37 @@ router.get("/leagues/:leagueId/stats", (req, res) => {
   const scoped = logic.restrictToGroup(league, req.query.groupId);
   res.json(logic.computeLeagueStats(scoped));
 });
+// Fully self-contained — every field the player-history modal needs to
+// render, computed server-side, so the client never has to have this
+// league's full object loaded to show it (that's what makes the "Also
+// plays in" tabs able to switch leagues without navigating away: each
+// tab is just another call to this same route with a different
+// leagueId/playerId, re-rendered from scratch).
 router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
+  const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
+  const player = team && team.players.find((p) => p.id === req.params.playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
   const rows = logic.playerMatchHistory(league, req.params.playerId);
+  const rounds = [...new Set(league.fixtures.map((f) => f.round))];
+  const potwWins = rounds
+    .flatMap((r) => logic.potwTallyForRound(league, r).winners)
+    .filter((w) => w.playerAId === player.id || w.playerBId === player.id).length;
+  // Hall of Fame winners are free text (season history can predate this
+  // app's own data), so matching is just "does their name appear in the
+  // winner string" — a plain substring check, not tied to any player id.
+  const hallOfFameTitles = (league.hallOfFame || [])
+    .filter((e) => e.winner.toLowerCase().includes(player.name.toLowerCase()))
+    .sort((a, b) => b.season - a.season)
+    .map((e) => ({ season: e.season, label: e.label }));
   // If this player record has been claimed (see the player-accounts
   // feature), surface which other leagues that same real person plays
   // in — so a captain/admin browsing one league's roster can see this
-  // isn't the only team this player is on.
+  // isn't the only team this player is on, and can switch straight to
+  // that league's record for the same player without leaving the modal.
   let otherLeagues = [];
-  const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
-  const player = team && team.players.find((p) => p.id === req.params.playerId);
-  if (player && player.claimedByUserId) {
+  if (player.claimedByUserId) {
     const user = store.getUser(player.claimedByUserId);
     if (user) {
       otherLeagues = user.claims
@@ -1906,13 +1925,25 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
         .map((c) => {
           const otherLeague = store.getLeague(c.leagueId);
           const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
-          if (!otherLeague || !otherTeam) return null;
-          return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name };
+          const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
+          if (!otherLeague || !otherTeam || !otherPlayer) return null;
+          return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name, playerId: otherPlayer.id, playerName: otherPlayer.name };
         })
         .filter(Boolean);
     }
   }
-  res.json({ rows, otherLeagues });
+  res.json({
+    leagueId: league.id,
+    leagueName: league.name,
+    teamName: team.name,
+    playerId: player.id,
+    playerName: player.name,
+    isPairs: league.format === "pairs",
+    rows,
+    potwWins,
+    hallOfFameTitles,
+    otherLeagues,
+  });
 });
 
 /* ---------- Notifications ---------- */

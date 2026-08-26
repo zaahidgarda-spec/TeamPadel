@@ -80,7 +80,7 @@ function pairNamesClickableHtml(team, pair) {
 }
 function bindPlayerLinks(root) {
   root.querySelectorAll(".player-link").forEach((btn) => {
-    btn.onclick = (e) => { e.stopPropagation(); openPlayerHistory(btn.dataset.pid, btn.dataset.pname); };
+    btn.onclick = (e) => { e.stopPropagation(); openPlayerHistory(currentLeagueId, btn.dataset.pid); };
   });
 }
 function playerNamesForGold(team, pair) {
@@ -4091,7 +4091,7 @@ function renderRoster() {
   grid.querySelectorAll(".player-chip").forEach((btn) => {
     btn.onclick = (e) => {
       if (e.target.dataset.removePid || e.target.dataset.editPid) return;
-      openPlayerHistory(btn.dataset.pid, btn.dataset.pname);
+      openPlayerHistory(currentLeagueId, btn.dataset.pid);
     };
   });
   grid.querySelectorAll(".chip-edit").forEach((span) => {
@@ -4193,10 +4193,6 @@ function ownRosterEditControls(t) {
 
 /* ---------- Player match history modal ---------- */
 
-function potwWinCountForPlayer(playerId) {
-  if (!league.potwByRound) return 0;
-  return Object.values(league.potwByRound).filter((d) => (d.winners || []).some((w) => w.playerAId === playerId || w.playerBId === playerId)).length;
-}
 // Which seed number this player has lined up at most across the season —
 // ties break toward the lower (higher-ranked) seed, since that's the more
 // useful read of "where do they usually play" than an arbitrary pick.
@@ -4230,43 +4226,64 @@ function insightRowsHtml(records) {
     return `<div class="stat-row"><span>${escapeHtml(r.name)}</span><span class="pts">${wl} &middot; ${r.winPct}%</span></div>`;
   }).join("");
 }
-async function openPlayerHistory(playerId, playerName) {
-  el("player-modal-name").textContent = playerName;
+// The modal is one player's record, but that record can span several
+// leagues once claimed (see the player-accounts feature) — a tab per
+// league lets you flip between Sandton's and Killarney's copy of the
+// same person without leaving the modal or navigating pages. Each tab
+// re-fetches from scratch (the route returns everything self-contained),
+// so this never depends on some other league being loaded globally.
+async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
+  el("player-modal-league-tabs").style.display = "none";
+  el("player-modal-league-tabs").innerHTML = "";
   el("player-modal-backdrop").classList.add("open");
-  const { rows, otherLeagues } = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => ({ rows: [], otherLeagues: [] }));
-  const potwWins = potwWinCountForPlayer(playerId);
-  const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
-  // Hall of Fame winners are free text (season history can predate this
-  // app's own data), so matching is just "does their name appear in the
-  // winner string" — a plain substring check, not tied to any team/player id.
-  const titles = (league.hallOfFame || [])
-    .filter((e) => e.winner.toLowerCase().includes(playerName.toLowerCase()))
-    .sort((a, b) => b.season - a.season);
-  const titlesBlock = titles.length
-    ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${titles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
-    : "";
-  // Only shows up once this player's record has been claimed via the
-  // player-accounts feature — otherwise there's no way to know two roster
-  // entries in different leagues are the same real person.
-  const otherLeaguesBlock = (otherLeagues || []).length
-    ? `<p class="note" style="margin-bottom:10px;">Also plays in: ${otherLeagues.map((o) => `<a href="#" class="other-league-link" data-league="${o.leagueId}">${escapeHtml(o.leagueName)} (${escapeHtml(o.teamName)})</a>`).join(", ")}</p>`
-    : "";
-  if (rows.length === 0) {
-    el("player-modal-body").innerHTML = crownLine + titlesBlock + otherLeaguesBlock + '<p class="empty">No completed matches yet.</p>';
-    bindOtherLeagueLinks();
-    return;
+  await loadPlayerHistoryTab(leagueId, playerId);
+}
+async function loadPlayerHistoryTab(leagueId, playerId) {
+  const data = await api(`/leagues/${leagueId}/players/${playerId}/history`).catch(() => null);
+  if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
+  el("player-modal-name").textContent = data.playerName;
+  // Sorted by name, not "current league first" — otherwise the tab order
+  // reshuffles every time you switch (whichever league you just picked
+  // becomes "current" and jumps to the front), so the same visual
+  // position wouldn't reliably mean the same league from click to click.
+  const allLeagues = [{ leagueId: data.leagueId, leagueName: data.leagueName, playerId: data.playerId }]
+    .concat(data.otherLeagues)
+    .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  const tabsEl = el("player-modal-league-tabs");
+  if (allLeagues.length > 1) {
+    tabsEl.style.display = "flex";
+    tabsEl.innerHTML = allLeagues.map((l) => `<button type="button" class="player-league-tab${l.leagueId === leagueId ? " active" : ""}" data-league="${l.leagueId}" data-player="${l.playerId}">${escapeHtml(l.leagueName)}</button>`).join("");
+    tabsEl.querySelectorAll(".player-league-tab").forEach((btn) => {
+      btn.onclick = () => {
+        tabsEl.querySelectorAll(".player-league-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
+        loadPlayerHistoryTab(btn.dataset.league, btn.dataset.player);
+      };
+    });
+  } else {
+    tabsEl.style.display = "none";
+    tabsEl.innerHTML = "";
   }
+  el("player-modal-body").innerHTML = renderPlayerHistoryBody(data);
+}
+function renderPlayerHistoryBody(data) {
+  const { rows, isPairs, potwWins, hallOfFameTitles } = data;
+  const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
+  const titlesBlock = hallOfFameTitles.length
+    ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
+    : "";
+  if (rows.length === 0) return crownLine + titlesBlock + '<p class="empty">No completed matches yet.</p>';
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;
   const losses = rows.length - wins - draws;
   // A Vibora (pairs) fixture has no seeding — a pair just plays whichever
   // pair is next, not a ranked line-up slot — so the seed badge and tag are
   // team-league-only.
-  const isPairs = league.format === "pairs";
   const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
-  let html = crownLine + titlesBlock + otherLeaguesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
+  let html = crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
 
   // Best partners / toughest opponents — a minimum of 2 meetings so a
   // single fluke result doesn't crown a "100%" partner or a "0%" nemesis
@@ -4295,17 +4312,7 @@ async function openPlayerHistory(playerId, playerName) {
     const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
     html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
   });
-  el("player-modal-body").innerHTML = html;
-  bindOtherLeagueLinks();
-}
-function bindOtherLeagueLinks() {
-  document.querySelectorAll(".other-league-link").forEach((a) => {
-    a.onclick = (e) => {
-      e.preventDefault();
-      el("player-modal-backdrop").classList.remove("open");
-      openLeague(a.dataset.league);
-    };
-  });
+  return html;
 }
 el("player-modal-close").onclick = () => el("player-modal-backdrop").classList.remove("open");
 el("player-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "player-modal-backdrop") el("player-modal-backdrop").classList.remove("open"); });
