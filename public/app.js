@@ -1315,9 +1315,21 @@ function adminRosterBlock(t) {
   if (t.players.length === 0) ul.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No players yet.</li>';
   t.players.forEach((p) => {
     const li = document.createElement("li");
-    const nameSpan = document.createElement("span");
-    nameSpan.innerHTML = goldNameHtml(p);
-    li.appendChild(nameSpan);
+    const nameWrap = document.createElement("span");
+    nameWrap.style.cssText = "display:flex;align-items:center;gap:4px;";
+    if (isGoldPlayer(p)) nameWrap.appendChild(Object.assign(document.createElement("span"), { className: "gold-name", textContent: "★" }));
+    const nameInput = document.createElement("input");
+    nameInput.type = "text"; nameInput.value = p.name; nameInput.className = "inline-edit";
+    nameInput.style.cssText = "min-width:130px;";
+    nameInput.onkeydown = (e) => { if (e.key === "Enter") nameInput.blur(); };
+    nameInput.onblur = async () => {
+      const val = nameInput.value.trim();
+      if (!val || val === p.name) { nameInput.value = p.name; return; }
+      try { await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}`, { method: "PUT", body: { name: val } }); await refreshLeague(); renderAdminRoster(); }
+      catch (e) { alert(e.message); nameInput.value = p.name; }
+    };
+    nameWrap.appendChild(nameInput);
+    li.appendChild(nameWrap);
     if (league.tieringEnabled) {
       const goldBtn = document.createElement("button");
       goldBtn.className = "link gold-toggle"; goldBtn.style.marginLeft = "8px";
@@ -3846,7 +3858,7 @@ function renderRoster() {
       : `<span class="avatar-big-fb">${escapeHtml(t.name.charAt(0).toUpperCase())}</span>`;
     const canManage = myRole === "captain" && myTeamId === t.id;
     let chips = t.players.length
-      ? t.players.map((p) => `<button class="player-chip${isGoldPlayer(p) ? " gold-chip" : ""}" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${isGoldPlayer(p) ? "★ " : ""}${escapeHtml(p.name)}${canManage ? ' <span class="chip-remove" data-remove-pid="' + p.id + '">&times;</span>' : ""}</button>`).join("")
+      ? t.players.map((p) => `<button class="player-chip${isGoldPlayer(p) ? " gold-chip" : ""}" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${isGoldPlayer(p) ? "★ " : ""}${escapeHtml(p.name)}${canManage ? ' <span class="chip-edit" data-edit-pid="' + p.id + '">&#9998;</span> <span class="chip-remove" data-remove-pid="' + p.id + '">&times;</span>' : ""}</button>`).join("")
       : '<span class="note">No players added yet.</span>';
     card.innerHTML = `${avatar}<div class="team-name-wrap"><div class="team-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}${league.tieringEnabled ? " · Gold: " + t.players.filter((p) => p.gold).length + "/" + league.goldTierCount : ""}</div></div><div class="player-chips">${chips}</div>`;
     if (canManage) card.appendChild(ownRosterEditControls(t));
@@ -3856,8 +3868,30 @@ function renderRoster() {
   c.appendChild(grid);
   grid.querySelectorAll(".player-chip").forEach((btn) => {
     btn.onclick = (e) => {
-      if (e.target.dataset.removePid) return;
+      if (e.target.dataset.removePid || e.target.dataset.editPid) return;
       openPlayerHistory(btn.dataset.pid, btn.dataset.pname);
+    };
+  });
+  grid.querySelectorAll(".chip-edit").forEach((span) => {
+    span.onclick = (e) => {
+      e.stopPropagation();
+      const pid = span.dataset.editPid;
+      const btn = span.closest(".player-chip");
+      const current = btn.dataset.pname;
+      btn.innerHTML = "";
+      const input = document.createElement("input");
+      input.type = "text"; input.value = current; input.className = "inline-edit";
+      input.style.cssText = "width:110px;";
+      input.onclick = (ev) => ev.stopPropagation();
+      input.onkeydown = (ev) => { if (ev.key === "Enter") input.blur(); if (ev.key === "Escape") renderRoster(); };
+      input.onblur = async () => {
+        const val = input.value.trim();
+        if (!val || val === current) { renderRoster(); return; }
+        try { await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/players/${pid}`, { method: "PUT", body: { name: val } }); await refreshLeague(); renderRoster(); }
+        catch (err) { alert(err.message); renderRoster(); }
+      };
+      btn.appendChild(input);
+      input.focus(); input.select();
     };
   });
   grid.querySelectorAll(".chip-remove").forEach((span) => {

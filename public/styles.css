@@ -627,6 +627,8 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .player-chip:hover{border-color:var(--accent);color:var(--accent);}
 .chip-remove{color:var(--text-dim);margin-left:4px;}
 .chip-remove:hover{color:var(--clay);}
+.chip-edit{color:var(--text-dim);margin-left:4px;}
+.chip-edit:hover{color:var(--accent);}
 .player-chip.gold-chip{border-color:#B8860B;background:rgba(184,134,11,.12);color:#8a6508;}
 .player-chip.gold-chip:hover{border-color:#B8860B;color:#8a6508;}
 .gold-name{color:#B8860B;font-weight:600;}
