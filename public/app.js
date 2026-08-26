@@ -392,12 +392,13 @@ el("hub-captain-login-btn").onclick = async () => {
 // dashboard rather than jumping straight into the league, so the new
 // "Captain" status actually shows up somewhere before they navigate away —
 // they can click through to the league themselves from the leagues list.
+// Already signed in, so we already know their email — no need to ask again.
 el("account-captain-login-btn").onclick = async () => {
   const code = el("account-captain-code").value;
-  const email = el("account-captain-email").value;
+  const email = playerAccount ? playerAccount.email : "";
   try {
     await api("/captain-login", { method: "POST", body: { code, email } });
-    el("account-captain-code").value = ""; el("account-captain-email").value = "";
+    el("account-captain-code").value = "";
     el("account-captain-error").textContent = "";
     await refreshAccountStatus();
   } catch (e) { el("account-captain-error").textContent = e.message; }
