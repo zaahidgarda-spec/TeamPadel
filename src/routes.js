@@ -480,7 +480,19 @@ router.post("/players/logout", (req, res) => {
 router.get("/players/me", (req, res) => {
   const pu = req.session.playerUser;
   const user = pu && store.getUser(pu.id);
-  res.json(user ? { id: user.id, name: user.name, email: user.email } : null);
+  if (!user) return res.json(null);
+  // The per-league captain session (req.session.user) is a completely
+  // separate axis from this player account — surfaced here only so the
+  // profile can reflect "you're currently logged in as captain of X,"
+  // not stored as part of the account itself.
+  let captainOf = null;
+  const cu = req.session.user;
+  if (cu && cu.role === "captain") {
+    const league = store.getLeague(cu.leagueId);
+    const team = league && league.teams.find((t) => t.id === cu.teamId);
+    if (league && team) captainOf = { leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name };
+  }
+  res.json({ id: user.id, name: user.name, email: user.email, captainOf });
 });
 
 // Cross-league name search — any league, any format, any status, since a

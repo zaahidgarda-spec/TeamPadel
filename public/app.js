@@ -361,13 +361,14 @@ el("interest-submit-btn").onclick = async () => {
 
 /* ---------- Hub tabs (Leagues / Admin) ---------- */
 
+function switchHubTab(name) {
+  document.querySelectorAll(".hub-tab-btn").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".hub-view").forEach((v) => v.classList.remove("active"));
+  document.querySelector(`.hub-tab-btn[data-hubview="${name}"]`).classList.add("active");
+  el("hub-view-" + name).classList.add("active");
+}
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
-  btn.onclick = () => {
-    document.querySelectorAll(".hub-tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".hub-view").forEach((v) => v.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById("hub-view-" + btn.dataset.hubview).classList.add("active");
-  };
+  btn.onclick = () => switchHubTab(btn.dataset.hubview);
 });
 
 /* ---------- Captain login from the home page (no need to find your league first) ---------- */
@@ -385,15 +386,18 @@ el("hub-captain-login-btn").onclick = async () => {
 
 // Same login, same session/privileges — just reachable from a player's own
 // dashboard too, so being a captain of one of their teams doesn't require
-// leaving their profile to go find the league first.
+// leaving their profile to go find the league first. Stays on the
+// dashboard rather than jumping straight into the league, so the new
+// "Captain" status actually shows up somewhere before they navigate away —
+// they can click through to the league themselves from the leagues list.
 el("account-captain-login-btn").onclick = async () => {
   const code = el("account-captain-code").value;
   const email = el("account-captain-email").value;
   try {
-    const { leagueId } = await api("/captain-login", { method: "POST", body: { code, email } });
-    el("account-captain-code").value = ""; el("account-captain-email").value = ""; el("account-captain-error").textContent = "";
-    viewingGroupId = null;
-    await openLeague(leagueId);
+    await api("/captain-login", { method: "POST", body: { code, email } });
+    el("account-captain-code").value = ""; el("account-captain-email").value = "";
+    el("account-captain-error").textContent = "";
+    await refreshAccountStatus();
   } catch (e) { el("account-captain-error").textContent = e.message; }
 };
 
@@ -462,6 +466,9 @@ async function refreshAccountStatus() {
     el("account-search-results").innerHTML = "";
     el("account-search-input").value = "";
     renderAccountProfile();
+    // A signed-in player lands on their own dashboard first, not the
+    // generic leagues browser everyone else sees.
+    switchHubTab("account");
   }
 }
 el("show-account-signup").onclick = () => {
@@ -567,12 +574,33 @@ function renderAccountTeamLogos(cards) {
     : `<span class="avatar-big-fb" title="${escapeHtml(c.teamName)}">${escapeHtml(c.teamName.charAt(0).toUpperCase())}</span>`
   ).join("");
 }
+// Whichever seed number shows up most often across a card's played and
+// upcoming matches — "Killarney Seed 1," not a bare league name — so a
+// player who's mostly a fixed seed sees that reflected at a glance.
+function mostCommonCardSeed(card) {
+  const seeds = card.results.map((r) => r.seed).concat(card.upcoming.map((r) => r.seed));
+  if (!seeds.length) return null;
+  const counts = {};
+  seeds.forEach((s) => { counts[s] = (counts[s] || 0) + 1; });
+  return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+}
 function renderAccountLeaguesList(cards) {
   const seen = new Set();
   const uniq = cards.filter((c) => (seen.has(c.leagueId) ? false : (seen.add(c.leagueId), true)));
-  el("account-leagues-list").innerHTML = uniq.length
-    ? uniq.map((c) => `<span class="tag" style="margin:0 6px 6px 0;display:inline-block;">${escapeHtml(c.leagueName)}</span>`).join("")
-    : '<p class="empty">No leagues yet — claim a player record below to see your leagues here.</p>';
+  if (uniq.length === 0) { el("account-leagues-list").innerHTML = '<p class="empty">No leagues yet — claim a player record below to see your leagues here.</p>'; return; }
+  const c = el("account-leagues-list");
+  c.innerHTML = uniq.map((card) => {
+    const seed = mostCommonCardSeed(card);
+    const isCaptain = !!(playerAccount.captainOf && playerAccount.captainOf.leagueId === card.leagueId);
+    const captainTag = isCaptain ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span>' : "";
+    return `<div class="notif-row account-league-row" data-league="${card.leagueId}" style="cursor:pointer;">
+      <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
+      <span class="link">Open &rarr;</span>
+    </div>`;
+  }).join("");
+  c.querySelectorAll(".account-league-row").forEach((row) => {
+    row.onclick = () => openLeague(row.dataset.league);
+  });
 }
 // The single soonest upcoming match across every claimed record — "your
 // next match," personalized, rather than the generic per-league carousel
