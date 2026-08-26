@@ -1732,7 +1732,7 @@ function adminRosterBlock(t) {
   wrap.appendChild(bulkDetails);
   return wrap;
 }
-function resizeImageToDataUrl(file, maxSize, cb) {
+function resizeImageToDataUrl(file, maxSize, cb, quality) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
@@ -1743,10 +1743,12 @@ function resizeImageToDataUrl(file, maxSize, cb) {
       else { if (h > maxSize) { w = Math.round((w * maxSize) / h); h = maxSize; } }
       canvas.width = w; canvas.height = h;
       canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      cb(canvas.toDataURL("image/jpeg", 0.82));
+      cb(canvas.toDataURL("image/jpeg", quality || 0.82));
     };
+    img.onerror = () => cb(null);
     img.src = e.target.result;
   };
+  reader.onerror = () => cb(null);
   reader.readAsDataURL(file);
 }
 function stageKeyFor(f) {
@@ -1769,12 +1771,28 @@ el("default-venue-input").addEventListener("change", async (e) => {
 el("court-photo-input").addEventListener("change", () => {
   const file = el("court-photo-input").files[0];
   if (!file) return;
+  const errEl = el("court-photo-error");
+  errEl.textContent = "";
+  el("court-photo-label").textContent = "Uploading…";
   // Wider than a team logo (128px) — this is stretched across a whole
-  // card's background, not shown as a small circle.
+  // card's background, not shown as a small circle. Compressed a bit
+  // harder than a logo (0.7 vs 0.82) since some hosts reject large
+  // request bodies — a silent failure with no feedback otherwise.
   resizeImageToDataUrl(file, 800, async (dataUrl) => {
-    await api(`/leagues/${currentLeagueId}/court-photo`, { method: "PUT", body: { photo: dataUrl } });
-    await refreshLeague(); renderAll();
-  });
+    if (!dataUrl) {
+      errEl.textContent = "Couldn't read that image — try a different file.";
+      el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
+      return;
+    }
+    try {
+      await api(`/leagues/${currentLeagueId}/court-photo`, { method: "PUT", body: { photo: dataUrl } });
+      await refreshLeague(); renderAll();
+    } catch (e) {
+      errEl.textContent = e.message || "Upload failed — try a smaller photo.";
+      el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
+    }
+    el("court-photo-input").value = "";
+  }, 0.7);
 });
 async function saveCourtSettings() {
   const courtCount = Number(el("court-count-input").value);

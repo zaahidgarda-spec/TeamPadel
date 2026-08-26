@@ -37,6 +37,16 @@ app.use(
 );
 
 app.use("/api", routes);
+// Without this, a body over the 6mb limit above (or a host-imposed cap in
+// front of this app) trips express.json's own error handler, which returns
+// an HTML error page — res.json() in the client can't parse that, so the
+// real cause gets lost behind a generic "Something went wrong."
+app.use("/api", (err, req, res, next) => {
+  if (err && err.type === "entity.too.large") {
+    return res.status(413).json({ error: "That file is too large — try a smaller photo." });
+  }
+  next(err);
+});
 // no-cache (not no-store) still lets the browser cache these, but forces a
 // revalidation request on every load — so a stale service worker or CDN
 // layer can't be the only thing standing between a deploy and what users
