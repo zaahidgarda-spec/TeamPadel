@@ -526,11 +526,25 @@ async function renderCombineAccounts() {
   if (accounts.length === 0) { c.innerHTML = '<p class="empty">No player accounts yet.</p>'; return; }
   c.innerHTML = accounts.map((a) => `
     <div class="notif-row">
-      <div><strong>${escapeHtml(a.name)}</strong> <span class="note">${escapeHtml(a.email)}</span>
-        <div class="note">${a.claims.length ? a.claims.map((c) => escapeHtml(c.teamName) + " · " + escapeHtml(c.leagueName)).join(", ") : "No linked records"}</div>
+      <div style="flex:1;">
+        <strong>${escapeHtml(a.name)}</strong> <span class="note">${escapeHtml(a.email)}</span>
+        ${a.claims.length ? `<div class="combine-claim-list">${a.claims.map((cl) => `
+          <div class="combine-claim-row" data-user="${a.id}" data-league="${cl.leagueId}" data-team="${cl.teamId}" data-player="${cl.playerId}">
+            <span class="note">${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>
+            <button class="link combine-unlink-btn" type="button" title="Undo this link">Undo</button>
+          </div>
+        `).join("")}</div>` : '<div class="note">No linked records</div>'}
       </div>
     </div>
   `).join("");
+  c.querySelectorAll(".combine-unlink-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest(".combine-claim-row");
+      const { user, league, team, player } = row.dataset;
+      await api(`/admin/players/${user}/claims/${league}/${team}/${player}`, { method: "DELETE" }).catch(() => {});
+      renderCombineAccounts();
+    };
+  });
 }
 
 /* ---------- Player accounts (sign up, claim player records, see profile) ----------

@@ -615,6 +615,10 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .notif-msg{font-size:14px;color:var(--text-dim);flex:1;}
 .notif-time{font-size:11px;color:var(--text-dim);white-space:nowrap;}
 
+.combine-claim-list{margin-top:6px;}
+.combine-claim-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;}
+.combine-claim-row .note{margin:0;}
+
 /* ---------- Stats page ---------- */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
 .stat-tile{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;}

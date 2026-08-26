@@ -628,12 +628,30 @@ router.get("/admin/players/accounts", (req, res) => {
         const team = league && league.teams.find((t) => t.id === c.teamId);
         const player = team && team.players.find((p) => p.id === c.playerId);
         if (!league || !team || !player) return null;
-        return { leagueName: league.name, teamName: team.name, playerName: player.name };
+        return { leagueId: c.leagueId, teamId: c.teamId, playerId: c.playerId, leagueName: league.name, teamName: team.name, playerName: player.name };
       })
       .filter(Boolean);
     return { id: user.id, name: user.name, email: user.email, claims };
   });
   res.json(accounts);
+});
+// Undo one link from an admin combine (or a self-claim) — lets the owner
+// fix a mis-combine without needing to log in as that player.
+router.delete("/admin/players/:userId/claims/:leagueId/:teamId/:playerId", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { userId, leagueId, teamId, playerId } = req.params;
+  const user = store.getUser(userId);
+  if (!user) return res.status(404).json({ error: "Account not found." });
+  user.claims = (user.claims || []).filter((c) => !(c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId));
+  store.saveUser(user.id, user);
+  const league = store.getLeague(leagueId);
+  const team = league && league.teams.find((t) => t.id === teamId);
+  const player = team && team.players.find((p) => p.id === playerId);
+  if (player && player.claimedByUserId === user.id) {
+    player.claimedByUserId = null;
+    store.saveLeague(league.id, league);
+  }
+  res.json({ ok: true });
 });
 
 router.get("/players/profile", requirePlayerUser, (req, res) => {
