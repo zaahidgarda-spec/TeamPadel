@@ -536,36 +536,31 @@ async function renderAccountProfile() {
   renderAccountLeaguesList(cards);
   const c = el("account-profile-list");
   if (cards.length === 0) { c.innerHTML = '<p class="empty">Search for your name above and claim your player record to see your matches, results, and awards here.</p>'; return; }
-  c.innerHTML = cards.map((card) => {
-    const logo = card.teamLogo ? `<img class="avatar" src="${card.teamLogo}" alt="">` : `<span class="avatar-fb">${escapeHtml(card.teamName.charAt(0).toUpperCase())}</span>`;
-    const upcomingHtml = card.upcoming.length
-      ? card.upcoming.map((r) => `<div class="history-row"><div class="history-top"><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")}${r.date ? " · " + escapeHtml(r.date) : ""}</div></div>`).join("")
-      : '<p class="empty" style="border:none;">No upcoming selected matches.</p>';
-    const resultsHtml = card.results.length
-      ? card.results.map((r) => {
-          const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
-          return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
-        }).join("")
-      : '<p class="empty" style="border:none;">No results yet.</p>';
-    // Awards only show up at all when this player has actually won one —
-    // unlike Upcoming/Results, there's no "No awards yet" placeholder.
-    const awardsHtml = card.awards.length ? `<p class="modal-subhead">Awards</p><p class="note">👑 Pair of the Week × ${card.awards.length}</p>` : "";
-    return `
-      <div class="roster-team" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
-        <div class="roster-head">${logo}<div><div style="font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;">${escapeHtml(card.playerName)}</div><div class="note">${escapeHtml(card.teamName)} · ${escapeHtml(card.leagueName)}</div></div><button class="link account-unclaim-btn" style="margin-left:auto;">Remove</button></div>
-        <p class="modal-subhead">Upcoming</p>${upcomingHtml}
-        <p class="modal-subhead">Results</p>${resultsHtml}
-        ${awardsHtml}
-      </div>
-    `;
-  }).join("");
-  c.querySelectorAll(".account-unclaim-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      const wrap = btn.closest(".roster-team");
-      await api(`/players/claims/${wrap.dataset.league}/${wrap.dataset.team}/${wrap.dataset.player}`, { method: "DELETE" });
-      await renderAccountProfile();
-    };
-  });
+  // One combined view across every claimed record — Sandton and Killarney
+  // results show up together as one person's profile, not walled off into
+  // separate per-league boxes. Each row still names its own league, so
+  // context isn't lost, just no longer segregated.
+  const leagueTag = (name) => ` <span class="tag">${escapeHtml(name)}</span>`;
+  const upcoming = cards.flatMap((card) => card.upcoming.map((r) => Object.assign({ leagueName: card.leagueName }, r)));
+  const results = cards.flatMap((card) => card.results.map((r) => Object.assign({ leagueName: card.leagueName }, r)));
+  const totalAwards = cards.reduce((sum, card) => sum + card.awards.length, 0);
+  const upcomingHtml = upcoming.length
+    ? upcoming.map((r) => `<div class="history-row"><div class="history-top"><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span>${leagueTag(r.leagueName)}</div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")}${r.date ? " · " + escapeHtml(r.date) : ""}</div></div>`).join("")
+    : '<p class="empty" style="border:none;">No upcoming selected matches.</p>';
+  const resultsHtml = results.length
+    ? results.map((r) => {
+        const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
+        return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span>${leagueTag(r.leagueName)}</div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+      }).join("")
+    : '<p class="empty" style="border:none;">No results yet.</p>';
+  // Awards only show up at all when this player has actually won one —
+  // unlike Upcoming/Results, there's no "No awards yet" placeholder.
+  const awardsHtml = totalAwards ? `<p class="modal-subhead">Awards</p><p class="note">👑 Pair of the Week × ${totalAwards}</p>` : "";
+  c.innerHTML = `
+    <p class="modal-subhead">Upcoming</p>${upcomingHtml}
+    <p class="modal-subhead">Results</p>${resultsHtml}
+    ${awardsHtml}
+  `;
 }
 function renderAccountTeamLogos(cards) {
   const seen = new Set();
@@ -594,13 +589,24 @@ function renderAccountLeaguesList(cards) {
     const seed = mostCommonCardSeed(card);
     const isCaptain = !!(playerAccount.captainOf && playerAccount.captainOf.leagueId === card.leagueId);
     const captainTag = isCaptain ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span>' : "";
-    return `<div class="notif-row account-league-row" data-league="${card.leagueId}" style="cursor:pointer;">
+    return `<div class="notif-row account-league-row" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}" style="cursor:pointer;">
       <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
-      <span class="link">Open &rarr;</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="link account-unclaim-btn" type="button">Remove</button>
+        <span class="link">Open &rarr;</span>
+      </div>
     </div>`;
   }).join("");
   c.querySelectorAll(".account-league-row").forEach((row) => {
-    row.onclick = () => openLeague(row.dataset.league);
+    row.onclick = (e) => { if (!e.target.classList.contains("account-unclaim-btn")) openLeague(row.dataset.league); };
+  });
+  c.querySelectorAll(".account-unclaim-btn").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const row = btn.closest(".account-league-row");
+      await api(`/players/claims/${row.dataset.league}/${row.dataset.team}/${row.dataset.player}`, { method: "DELETE" });
+      await renderAccountProfile();
+    };
   });
 }
 // The single soonest upcoming match across every claimed record — "your
