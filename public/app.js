@@ -1768,6 +1768,10 @@ el("default-venue-input").addEventListener("change", async (e) => {
   await api(`/leagues/${currentLeagueId}/default-venue`, { method: "PUT", body: { venue: e.target.value } });
   await refreshLeague(); renderAll();
 });
+function updateCourtPhotoControls() {
+  el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
+  el("court-photo-remove-btn").style.display = league.courtPhoto ? "inline" : "none";
+}
 el("court-photo-input").addEventListener("change", () => {
   const file = el("court-photo-input").files[0];
   if (!file) return;
@@ -1781,7 +1785,7 @@ el("court-photo-input").addEventListener("change", () => {
   resizeImageToDataUrl(file, 800, async (dataUrl) => {
     if (!dataUrl) {
       errEl.textContent = "Couldn't read that image — try a different file.";
-      el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
+      updateCourtPhotoControls();
       return;
     }
     try {
@@ -1789,10 +1793,20 @@ el("court-photo-input").addEventListener("change", () => {
       await refreshLeague(); renderAll();
     } catch (e) {
       errEl.textContent = e.message || "Upload failed — try a smaller photo.";
-      el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
+      updateCourtPhotoControls();
     }
     el("court-photo-input").value = "";
   }, 0.7);
+});
+el("court-photo-remove-btn").addEventListener("click", async () => {
+  const errEl = el("court-photo-error");
+  errEl.textContent = "";
+  try {
+    await api(`/leagues/${currentLeagueId}/court-photo`, { method: "PUT", body: { photo: "" } });
+    await refreshLeague(); renderAll();
+  } catch (e) {
+    errEl.textContent = e.message || "Couldn't remove the photo — try again.";
+  }
 });
 async function saveCourtSettings() {
   const courtCount = Number(el("court-count-input").value);
@@ -1829,7 +1843,7 @@ el("gold-tier-count-input").addEventListener("change", async () => {
 });
 function renderAdminFixtures() {
   el("default-venue-input").value = league.defaultVenue || "";
-  el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
+  updateCourtPhotoControls();
   el("court-count-input").value = league.courtCount || 4;
   el("slot-count-input").value = league.slotCount || 3;
   const c = el("admin-fixtures");
