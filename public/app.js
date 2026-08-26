@@ -594,7 +594,11 @@ function renderAccountNextMatch(cards) {
   const m = rows[0];
   wrap.style.display = "block";
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
-  wrap.classList.toggle("urgent", !!relativeDayLabel(m.date));
+  // Always floodlit, not just when it's today/tomorrow — this is a single
+  // curated highlight (unlike the hub's shared multi-league carousel,
+  // where "urgent" specifically signals imminence), so it always gets the
+  // spotlight treatment.
+  wrap.classList.add("urgent");
   const meta = [m.teamName + " vs " + m.opponentTeam, when, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
