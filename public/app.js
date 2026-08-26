@@ -628,7 +628,10 @@ function renderAccountNextMatch(cards) {
   // where "urgent" specifically signals imminence), so it always gets the
   // spotlight treatment.
   wrap.classList.add("urgent");
-  const meta = [m.teamName + " vs " + m.opponentTeam, when, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  // "Match N," same wording as the shared Next Matches carousel — a
+  // player glancing at their own hero card should recognize it as the
+  // same numbering, not a different "Seed" label for the same thing.
+  const meta = [m.teamName + " vs " + m.opponentTeam, when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
     <div class="mc-pairing">
