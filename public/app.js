@@ -239,10 +239,11 @@ async function renderNextMatches() {
   }
   // Soonest match sets the headline — "Matches Tonight" reads as an
   // invitation, "Next matches" is the neutral fallback once nothing's
-  // imminent.
+  // imminent. The floodlit look itself is always on now, not just when
+  // it's today/tomorrow — matches the profile's "Your next match" card.
   const soonestLabel = relativeDayLabel(nextMatchesPairings[0].date);
   el("next-matches-title").textContent = soonestLabel ? `Matches ${soonestLabel}` : "Next matches";
-  card.classList.toggle("urgent", !!soonestLabel);
+  card.classList.add("urgent");
   nextMatchesIdx = 0;
   renderNextMatchSlide();
   startNextMatchesTimer();

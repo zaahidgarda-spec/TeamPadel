@@ -400,19 +400,17 @@ function playerMatchHistory(league, playerId) {
       // — the split sets are real, played data, so it still belongs here.
       const played = setWinner(rubber.sets[0]) && setWinner(rubber.sets[1]);
       if (!winner && !played) return;
-      // Filters out a pairs match's unplayed 3rd set (left blank on a draw)
-      // rather than printing it as a phantom "?-?".
-      const setsStr = rubber.sets
-        .filter((s) => s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "")
-        .map((s) => s[0] + "-" + s[1])
-        .join(", ");
       rows.push({
         label: stageLabel(league, f),
         opponentTeam: oppTeam ? oppTeam.name : "?",
         opponentPlayers: oppNames,
         partner: partner ? partner.name : null,
         result: winner === null ? "D" : winner === mySide ? "W" : "L",
-        score: setsStr,
+        // rubberScoreText already handles the split-sets super-tiebreak
+        // (and filters out a pairs match's unplayed 3rd set on a draw) —
+        // this used to duplicate that logic inline and left the
+        // tiebreak score out entirely.
+        score: rubberScoreText(rubber),
         seed: idx + 1,
       });
     });
