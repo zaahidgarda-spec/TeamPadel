@@ -262,6 +262,7 @@ router.get("/leagues", (req, res) => {
       teamCount: league ? league.teams.length : 0,
       strength: league ? (league.strength || 0) : 0,
       format: league ? (league.format || "teams") : "teams",
+      courtPhoto: league ? (league.courtPhoto || "") : "",
       // Just enough for a logo strip on the league card — never codes/emails.
       teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
     };
@@ -497,9 +498,9 @@ router.get("/players/me", (req, res) => {
 
 // Cross-league name search — any league, any format, any status, since a
 // player record's existence is what matters here, not the league's phase.
-router.get("/players/search", requirePlayerUser, (req, res) => {
-  const q = ((req.query.q || "") + "").trim().toLowerCase();
-  if (!q) return res.json([]);
+// Shared by the player-facing search (below) and the owner-only admin
+// search used to combine profiles on someone's behalf.
+function searchPlayersAcrossLeagues(q) {
   const results = [];
   store.getIndex().forEach((entry) => {
     const league = store.getLeague(entry.id);
@@ -516,20 +517,27 @@ router.get("/players/search", requirePlayerUser, (req, res) => {
       });
     });
   });
-  res.json(results.slice(0, 30));
+  return results.slice(0, 30);
+}
+router.get("/players/search", requirePlayerUser, (req, res) => {
+  const q = ((req.query.q || "") + "").trim().toLowerCase();
+  res.json(q ? searchPlayersAcrossLeagues(q) : []);
 });
 
-router.post("/players/claims", requirePlayerUser, (req, res) => {
-  const { leagueId, teamId, playerId } = req.body || {};
+// Links one player record to one user account — used both by a player
+// claiming themselves and by the owner combining records on someone's
+// behalf. Throws (message is the user-facing error) rather than returning
+// a response directly, so both callers can handle the failure their own
+// way (one record failing shouldn't half-apply an admin combine).
+function claimPlayerRecord(user, leagueId, teamId, playerId) {
   const league = store.getLeague(leagueId);
-  if (!league) return res.status(404).json({ error: "League not found." });
+  if (!league) throw new Error("League not found.");
   const team = league.teams.find((t) => t.id === teamId);
-  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!team) throw new Error("Team not found.");
   const player = team.players.find((p) => p.id === playerId);
-  if (!player) return res.status(404).json({ error: "Player not found." });
-  const user = store.getUser(req.session.playerUser.id);
+  if (!player) throw new Error("Player not found.");
   if (player.claimedByUserId && player.claimedByUserId !== user.id) {
-    return res.status(400).json({ error: "That player has already been claimed by another profile." });
+    throw new Error(`${player.name} (${team.name}, ${league.name}) has already been claimed by another profile.`);
   }
   if (!player.claimedByUserId) {
     player.claimedByUserId = user.id;
@@ -537,9 +545,18 @@ router.post("/players/claims", requirePlayerUser, (req, res) => {
   }
   if (!user.claims.some((c) => c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId)) {
     user.claims.push({ leagueId, teamId, playerId });
-    store.saveUser(user.id, user);
   }
-  res.json({ ok: true });
+}
+router.post("/players/claims", requirePlayerUser, (req, res) => {
+  const { leagueId, teamId, playerId } = req.body || {};
+  const user = store.getUser(req.session.playerUser.id);
+  try {
+    claimPlayerRecord(user, leagueId, teamId, playerId);
+    store.saveUser(user.id, user);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, (req, res) => {
   const { leagueId, teamId, playerId } = req.params;
@@ -554,6 +571,69 @@ router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, 
     store.saveLeague(league.id, league);
   }
   res.json({ ok: true });
+});
+
+/* ---------- Admin: combine a player's records across leagues on their
+   behalf ---------- */
+// Same cross-league search self-serve claiming uses above, just gated to
+// the site owner instead of a logged-in player — for when a captain
+// reports "this is the same person in two leagues" and that person may
+// never have signed up themselves.
+router.get("/admin/players/search", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const q = ((req.query.q || "") + "").trim().toLowerCase();
+  res.json(q ? searchPlayersAcrossLeagues(q) : []);
+});
+router.post("/admin/players/combine", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { name, email, records } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+  const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes("@")) return res.status(400).json({ error: "A valid email is required." });
+  if (!Array.isArray(records) || records.length < 2) return res.status(400).json({ error: "Select at least two records to combine." });
+  let userId = findUserIdByEmail(normalized);
+  let user;
+  if (userId) {
+    user = store.getUser(userId);
+  } else {
+    userId = logic.uid();
+    // No password — this profile exists so its records show up combined,
+    // but nobody can log into it until the real player later sets one up
+    // themselves (not built yet; today it just can't be logged into).
+    user = { id: userId, email: normalized, passwordHash: null, name: name.trim(), createdAt: Date.now(), claims: [] };
+    const index = store.getUsersIndex();
+    index.push({ id: userId, email: normalized });
+    store.saveUsersIndex(index);
+  }
+  // All-or-nothing: if any one record is already claimed by a different
+  // profile, reject the whole combine rather than silently applying half
+  // of it — the admin can go unclaim the conflicting one first.
+  try {
+    records.forEach((r) => claimPlayerRecord(user, r.leagueId, r.teamId, r.playerId));
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  store.saveUser(user.id, user);
+  res.json({ ok: true, userId: user.id });
+});
+// A simple read-back of every player account and what it's linked to —
+// so combining someone isn't a write-only black box for the admin.
+router.get("/admin/players/accounts", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const accounts = store.getUsersIndex().map((entry) => {
+    const user = store.getUser(entry.id);
+    const claims = (user.claims || [])
+      .map((c) => {
+        const league = store.getLeague(c.leagueId);
+        const team = league && league.teams.find((t) => t.id === c.teamId);
+        const player = team && team.players.find((p) => p.id === c.playerId);
+        if (!league || !team || !player) return null;
+        return { leagueName: league.name, teamName: team.name, playerName: player.name };
+      })
+      .filter(Boolean);
+    return { id: user.id, name: user.name, email: user.email, claims };
+  });
+  res.json(accounts);
 });
 
 router.get("/players/profile", requirePlayerUser, (req, res) => {
@@ -604,6 +684,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league) return res.status(404).json({ error: "League not found." });
   if (!league.sponsors) league.sponsors = [];
   if (league.defaultVenue === undefined) league.defaultVenue = "";
+  if (league.courtPhoto === undefined) league.courtPhoto = "";
   if (!league.schedule) league.schedule = {};
   if (!league.notifications) league.notifications = [];
   if (!league.playoffFormat) league.playoffFormat = league.playoffs ? "semis_final" : "none";
@@ -1198,6 +1279,14 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
 router.put("/leagues/:leagueId/default-venue", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   league.defaultVenue = (req.body.venue || "").trim();
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+// A background photo for this league's card on the home hub — same
+// data-URL-on-the-object approach as a team's logo, just a bigger image.
+router.put("/leagues/:leagueId/court-photo", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  league.courtPhoto = req.body.photo || "";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

@@ -56,6 +56,7 @@
           <button class="hub-tab-btn" data-hubview="captain">Captain</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
           <button class="hub-tab-btn" data-hubview="account" id="hub-account-tab-btn">My profile</button>
+          <button class="hub-tab-btn" data-hubview="search">Search players</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
       </nav>
@@ -171,6 +172,22 @@
         </div>
       </section>
 
+      <section class="hub-view" id="hub-view-search">
+        <div class="card" id="search-signed-out-card">
+          <h2 class="section-title">Search players</h2>
+          <p class="note">Log in on the My Profile tab first — then you can look up anyone's record here.</p>
+        </div>
+        <div class="card" id="search-signed-in-card" style="display:none;">
+          <h2 class="section-title">Search players</h2>
+          <p class="note" style="margin-bottom:10px;">Find any player across every league and view their record — read-only, no claiming here.</p>
+          <div class="row">
+            <label class="sr-only" for="player-search-input">Search for a player</label>
+            <input type="text" id="player-search-input" placeholder="Search for a player…" style="flex:1;min-width:160px;">
+          </div>
+          <div id="player-search-results"></div>
+        </div>
+      </section>
+
       <section class="hub-view" id="hub-view-admin">
         <div class="card" id="owner-login-card">
           <h2 class="section-title">Admin login</h2>
@@ -199,6 +216,27 @@
         <div class="card" id="interest-signups-card" style="display:none;">
           <h2 class="section-title">League interest signups</h2>
           <div id="interest-signups-list"></div>
+        </div>
+        <div class="card" id="combine-players-card" style="display:none;">
+          <h2 class="section-title">Combine player profiles</h2>
+          <p class="note" style="margin-bottom:10px;">Same real person playing in more than one league? Search, pick at least two of their records, and link them into one profile — they don't need to have signed up themselves.</p>
+          <div class="row">
+            <label class="sr-only" for="combine-search-input">Search for a player</label>
+            <input type="text" id="combine-search-input" placeholder="Search for a player…" style="flex:1;min-width:160px;">
+          </div>
+          <div id="combine-search-results"></div>
+          <div id="combine-selected-wrap" style="display:none;margin-top:14px;">
+            <p class="modal-subhead">Selected records</p>
+            <div id="combine-selected-list"></div>
+            <div class="row" style="margin-top:10px;">
+              <input type="text" id="combine-name-input" placeholder="Profile name">
+              <input type="email" id="combine-email-input" placeholder="Profile email">
+              <button class="primary" id="combine-submit-btn">Combine</button>
+            </div>
+            <div class="error" id="combine-error"></div>
+          </div>
+          <p class="modal-subhead" style="margin-top:18px;">Existing player accounts</p>
+          <div id="combine-accounts-list"></div>
         </div>
       </section>
     </section>
@@ -322,6 +360,12 @@
           <div class="row" style="align-items:center;margin-top:12px;">
             <span class="note" style="width:110px;">Default venue</span>
             <input type="text" id="default-venue-input" placeholder="e.g. Riverside Padel Club">
+          </div>
+          <div class="row" style="align-items:center;margin-top:10px;">
+            <span class="note" style="width:110px;">Card photo</span>
+            <label class="logo-label" id="court-photo-label" for="court-photo-input">Add photo</label>
+            <input type="file" id="court-photo-input" accept="image/*" style="display:none;">
+            <span class="note">Shown as the background of this league's card on the home page.</span>
           </div>
           <div class="row" id="court-settings-row" style="align-items:center;margin-top:10px;">
             <span class="note" style="width:110px;">Courts / slots</span>

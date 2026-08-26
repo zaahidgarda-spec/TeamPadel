@@ -418,6 +418,24 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.league-theme-vibora50:hover{border-color:#2563EB;}
 .league-copy-codes-btn{margin-top:10px;}
 
+/* A real court photo behind the card instead of the plain panel — a dark
+   scrim (transparent at the top, near-black at the bottom) keeps every
+   existing element legible without having to restyle each one from
+   scratch, so this only overrides color, never layout. */
+.league-card.has-photo{position:relative;overflow:hidden;color:#fff;background-size:cover;background-position:center;border-color:rgba(255,255,255,.25);}
+.league-card.has-photo:hover{border-color:rgba(255,255,255,.5);}
+.league-card.has-photo::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(6,10,20,0) 0%,rgba(6,10,20,.35) 45%,rgba(6,10,20,.88) 100%);}
+.league-card.has-photo>*{position:relative;z-index:1;}
+.league-card.has-photo .league-card-name{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.5);}
+.league-card.has-photo .tag{background:rgba(37,99,235,.35);border-color:rgba(147,197,253,.6);color:#fff;}
+.league-card.has-photo .strength-label{color:rgba(255,255,255,.7);}
+.league-card.has-photo .strength-bars .bar{background:rgba(255,255,255,.25);}
+.league-card.has-photo .strength-bars .bar.filled{background:#93c5fd;box-shadow:0 0 6px rgba(147,197,253,.7);}
+.league-card.has-photo .league-card-meta{color:rgba(255,255,255,.75);}
+.league-card.has-photo .league-card-logos .avatar,
+.league-card.has-photo .league-card-logos .avatar-fb{border-color:rgba(255,255,255,.5);}
+.league-card.has-photo .league-copy-codes-btn{color:#93c5fd;}
+
 /* ---------- Home page: Next matches carousel ---------- */
 /* One real pairing at a time (not the team names) — auto-rotating, so it
    stays compact instead of a stacked list that pushes the rest of the

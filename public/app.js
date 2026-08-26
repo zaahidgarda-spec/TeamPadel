@@ -182,7 +182,8 @@ function leagueCardHtml(l) {
     ? `<div class="strength-row" title="League strength: ${l.strength}/5"><span class="strength-label">Strength</span><span class="strength-bars">${Array.from({ length: 5 }, (_, i) => `<span class="bar${i < l.strength ? " filled" : ""}"></span>`).join("")}</span></div>`
     : "";
   const viboraTag = l.format === "pairs" ? '<span class="tag vibora-tag">Vibora</span>' : "";
-  return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}>
+  const photoStyle = l.courtPhoto ? ` style="background-image:url('${l.courtPhoto}')"` : "";
+  return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}${l.courtPhoto ? " has-photo" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}${photoStyle}>
     <div class="league-card-top">
       ${nameHtml}
       <div class="row" style="gap:6px;">${viboraTag}<span class="tag league-status-${l.status}">${statusLabel}</span></div>
@@ -410,7 +411,8 @@ async function refreshOwnerStatus() {
   el("create-league-card").style.display = isOwner ? "block" : "none";
   el("owner-login-card").style.display = isOwner ? "none" : "block";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
-  if (isOwner) renderInterestSignups();
+  el("combine-players-card").style.display = isOwner ? "block" : "none";
+  if (isOwner) { renderInterestSignups(); renderCombineAccounts(); }
   renderHub();
 }
 async function renderInterestSignups() {
@@ -450,6 +452,87 @@ el("owner-logout-btn").onclick = async () => {
   await refreshOwnerStatus();
 };
 
+/* ---------- Admin: combine player profiles across leagues ----------
+   Same idea as a player self-serve claiming their own records, but done
+   by the owner on someone's behalf — that person doesn't need to have
+   signed up themselves for their roster entries across leagues to be
+   linked into one profile. */
+let combineSelected = [];
+let combineSearchTimer = null;
+el("combine-search-input").addEventListener("input", () => {
+  clearTimeout(combineSearchTimer);
+  const q = el("combine-search-input").value.trim();
+  if (!q) { el("combine-search-results").innerHTML = ""; return; }
+  combineSearchTimer = setTimeout(() => runCombineSearch(q), 300);
+});
+async function runCombineSearch(q) {
+  const results = await api("/admin/players/search?q=" + encodeURIComponent(q)).catch(() => []);
+  const c = el("combine-search-results");
+  if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
+  c.innerHTML = results.map((r) => {
+    const already = combineSelected.some((s) => s.leagueId === r.leagueId && s.teamId === r.teamId && s.playerId === r.playerId);
+    return `<div class="notif-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}" data-name="${escapeHtml(r.playerName)}" data-team-name="${escapeHtml(r.teamName)}" data-league-name="${escapeHtml(r.leagueName)}">
+      <div><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}${r.claimed ? " · already claimed" : ""}</div></div>
+      <button class="secondary combine-select-btn" type="button" ${already ? "disabled" : ""}>${already ? "Selected" : "Select"}</button>
+    </div>`;
+  }).join("");
+  c.querySelectorAll(".combine-select-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const row = btn.closest(".notif-row");
+      combineSelected.push({
+        leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player,
+        playerName: row.dataset.name, teamName: row.dataset.teamName, leagueName: row.dataset.leagueName,
+      });
+      if (!el("combine-name-input").value) el("combine-name-input").value = row.dataset.name;
+      renderCombineSelected();
+      runCombineSearch(q);
+    };
+  });
+}
+function renderCombineSelected() {
+  el("combine-selected-wrap").style.display = combineSelected.length ? "block" : "none";
+  el("combine-selected-list").innerHTML = combineSelected.map((s, i) => `
+    <div class="notif-row" data-idx="${i}">
+      <div><strong>${escapeHtml(s.playerName)}</strong><div class="note">${escapeHtml(s.teamName)} · ${escapeHtml(s.leagueName)}</div></div>
+      <button class="link combine-remove-btn" type="button">Remove</button>
+    </div>
+  `).join("");
+  el("combine-selected-list").querySelectorAll(".combine-remove-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const idx = Number(btn.closest(".notif-row").dataset.idx);
+      combineSelected.splice(idx, 1);
+      renderCombineSelected();
+      const q = el("combine-search-input").value.trim();
+      if (q) runCombineSearch(q);
+    };
+  });
+}
+el("combine-submit-btn").onclick = async () => {
+  const name = el("combine-name-input").value.trim();
+  const email = el("combine-email-input").value.trim();
+  if (combineSelected.length < 2) { el("combine-error").textContent = "Select at least two records."; return; }
+  try {
+    await api("/admin/players/combine", { method: "POST", body: { name, email, records: combineSelected.map((s) => ({ leagueId: s.leagueId, teamId: s.teamId, playerId: s.playerId })) } });
+    combineSelected = [];
+    el("combine-name-input").value = ""; el("combine-email-input").value = ""; el("combine-error").textContent = "";
+    el("combine-search-input").value = ""; el("combine-search-results").innerHTML = "";
+    renderCombineSelected();
+    renderCombineAccounts();
+  } catch (e) { el("combine-error").textContent = e.message; }
+};
+async function renderCombineAccounts() {
+  const accounts = await api("/admin/players/accounts").catch(() => []);
+  const c = el("combine-accounts-list");
+  if (accounts.length === 0) { c.innerHTML = '<p class="empty">No player accounts yet.</p>'; return; }
+  c.innerHTML = accounts.map((a) => `
+    <div class="notif-row">
+      <div><strong>${escapeHtml(a.name)}</strong> <span class="note">${escapeHtml(a.email)}</span>
+        <div class="note">${a.claims.length ? a.claims.map((c) => escapeHtml(c.teamName) + " · " + escapeHtml(c.leagueName)).join(", ") : "No linked records"}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
 /* ---------- Player accounts (sign up, claim player records, see profile) ----------
    Independent of the site owner / team captain logins above — one real
    person can sign up once and claim several player records across
@@ -462,6 +545,8 @@ async function refreshAccountStatus() {
   el("account-dashboard-card").style.display = playerAccount ? "block" : "none";
   el("account-signed-in-card").style.display = playerAccount ? "block" : "none";
   el("account-profile-card").style.display = playerAccount ? "block" : "none";
+  el("search-signed-out-card").style.display = playerAccount ? "none" : "block";
+  el("search-signed-in-card").style.display = playerAccount ? "block" : "none";
   if (playerAccount) {
     el("account-welcome").textContent = "Welcome back, " + playerAccount.name;
     el("account-search-results").innerHTML = "";
@@ -526,6 +611,34 @@ async function runAccountSearch(q) {
         await runAccountSearch(q);
         await renderAccountProfile();
       } catch (e) { alert(e.message); }
+    };
+  });
+}
+
+// Read-only lookup of anyone's record — no claim button, no "this is me".
+// Reuses the exact same /players/search endpoint and the tabbed
+// cross-league history modal, just without any write action attached.
+let playerSearchTimer = null;
+el("player-search-input").addEventListener("input", () => {
+  clearTimeout(playerSearchTimer);
+  const q = el("player-search-input").value.trim();
+  if (!q) { el("player-search-results").innerHTML = ""; return; }
+  playerSearchTimer = setTimeout(() => runPlayerSearch(q), 300);
+});
+async function runPlayerSearch(q) {
+  const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
+  const c = el("player-search-results");
+  if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
+  c.innerHTML = results.map((r) => `
+    <div class="notif-row" data-league="${r.leagueId}" data-player="${r.playerId}">
+      <div><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
+      <button class="secondary view-player-btn" type="button">View profile</button>
+    </div>
+  `).join("");
+  c.querySelectorAll(".view-player-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const row = btn.closest(".notif-row");
+      openPlayerHistory(row.dataset.league, row.dataset.player);
     };
   });
 }
@@ -1638,6 +1751,16 @@ el("default-venue-input").addEventListener("change", async (e) => {
   await api(`/leagues/${currentLeagueId}/default-venue`, { method: "PUT", body: { venue: e.target.value } });
   await refreshLeague(); renderAll();
 });
+el("court-photo-input").addEventListener("change", () => {
+  const file = el("court-photo-input").files[0];
+  if (!file) return;
+  // Wider than a team logo (128px) — this is stretched across a whole
+  // card's background, not shown as a small circle.
+  resizeImageToDataUrl(file, 800, async (dataUrl) => {
+    await api(`/leagues/${currentLeagueId}/court-photo`, { method: "PUT", body: { photo: dataUrl } });
+    await refreshLeague(); renderAll();
+  });
+});
 async function saveCourtSettings() {
   const courtCount = Number(el("court-count-input").value);
   const slotCount = Number(el("slot-count-input").value);
@@ -1673,6 +1796,7 @@ el("gold-tier-count-input").addEventListener("change", async () => {
 });
 function renderAdminFixtures() {
   el("default-venue-input").value = league.defaultVenue || "";
+  el("court-photo-label").textContent = league.courtPhoto ? "Change photo" : "Add photo";
   el("court-count-input").value = league.courtCount || 4;
   el("slot-count-input").value = league.slotCount || 3;
   const c = el("admin-fixtures");
