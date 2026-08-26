@@ -253,12 +253,16 @@ function renderNextMatchSlide() {
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
   const meta = [m.teamAName + " vs " + m.teamBName, when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   const slide = el("next-matches-slide");
+  // A seed already scored (captains enter results one at a time through
+  // the night) shows that score in place of a bare "vs", with the winning
+  // pair checked off — same convention as the results list.
+  const centerHtml = m.score ? `<span class="vs mc-score">${escapeHtml(m.score)}</span>` : `<span class="vs">vs</span>`;
   slide.innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
     <div class="mc-pairing">
-      <span class="mc-pair">${escapeHtml(m.pairA.join(" & "))}</span>
-      <span class="vs">vs</span>
-      <span class="mc-pair">${escapeHtml(m.pairB.join(" & "))}</span>
+      <span class="mc-pair${m.winner === "A" ? " won" : ""}">${escapeHtml(m.pairA.join(" & "))}</span>
+      ${centerHtml}
+      <span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span>
     </div>
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;

@@ -462,6 +462,13 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    of being cut off. */
 .mc-pairing{display:flex;flex-direction:column;align-items:center;gap:9px;}
 .mc-pair{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--text);line-height:1.3;max-width:320px;}
+/* A decided seed's score replaces the plain "vs" pill, and the winning
+   pair gets the same checkmark/success treatment as the results list. */
+.mc-pair.won{color:var(--success);}
+.mc-pair.won::before{content:"✓ ";}
+.vs.mc-score{min-width:auto;padding:3px 10px;font-size:11px;text-transform:none;letter-spacing:0;font-weight:700;color:var(--success);background:var(--success-soft);border-color:var(--success);}
+#next-matches-card.urgent .mc-pair.won{color:#6EE7A8;}
+#next-matches-card.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}
 .mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:11px;}
 /* Stories-style segmented progress instead of plain dots — the active
    segment fills over the rotation interval, so the countdown to the next

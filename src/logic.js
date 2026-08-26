@@ -126,6 +126,19 @@ function needsTiebreak(rubber) {
   const s2 = setWinner(rubber.sets[1]);
   return !!(s1 && s2 && s1 !== s2);
 }
+// e.g. "6-3, 6-4" or "6-4, 3-6, [10-7]" for a team split needing a super
+// tie-break, or "6-4, 3-6, 6-2" for a pairs 3rd set — mirrors the client's
+// rubberScoreText in app.js exactly, since next-matches needs the same
+// notation server-side.
+function rubberScoreText(rubber) {
+  const setText = (s) => (s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "") ? s[0] + "-" + s[1] : null;
+  const parts = rubber.sets.map(setText).filter(Boolean);
+  if (rubber.sets.length < 3 && needsTiebreak(rubber) && tiebreakWinner(rubber.tb)) {
+    const tb = setText(rubber.tb);
+    if (tb) parts.push("[" + tb + "]");
+  }
+  return parts.join(", ");
+}
 function fixtureScore(f) {
   let winsA = 0, winsB = 0, decided = 0;
   f.rubbers.slice(0, 4).forEach((r) => {
@@ -468,6 +481,7 @@ module.exports = {
   tiebreakWinner,
   rubberWinner,
   needsTiebreak,
+  rubberScoreText,
   fixtureScore,
   requiredRubbersOk,
   matchWinner,

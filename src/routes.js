@@ -381,6 +381,11 @@ router.get("/next-matches", (req, res) => {
       const namesA = [playerName(teamA, pairA[0]), playerName(teamA, pairA[1])].filter(Boolean);
       const namesB = [playerName(teamB, pairB[0]), playerName(teamB, pairB[1])].filter(Boolean);
       if (namesA.length !== 2 || namesB.length !== 2) return;
+      // A seed can already be decided while the rest of the night's
+      // fixture is still open (captains score them one at a time) — once
+      // it is, the card shows that result instead of a bare "vs".
+      const rubber = f.rubbers[i];
+      const winner = rubber ? logic.rubberWinner(rubber) : null;
       pairings.push({
         leagueName: league.name,
         teamAName: teamA.name,
@@ -391,6 +396,8 @@ router.get("/next-matches", (req, res) => {
         date: sched.date || "",
         time: sched.time || "",
         venue: sched.venue || league.defaultVenue || "",
+        winner,
+        score: winner ? logic.rubberScoreText(rubber) : null,
       });
     });
   });
