@@ -440,10 +440,11 @@ el("owner-logout-btn").onclick = async () => {
 async function refreshAccountStatus() {
   playerAccount = await api("/players/me").catch(() => null);
   el("account-signed-out-card").style.display = playerAccount ? "none" : "block";
+  el("account-dashboard-card").style.display = playerAccount ? "block" : "none";
   el("account-signed-in-card").style.display = playerAccount ? "block" : "none";
   el("account-profile-card").style.display = playerAccount ? "block" : "none";
   if (playerAccount) {
-    el("account-welcome").textContent = "Hi, " + playerAccount.name;
+    el("account-welcome").textContent = "Welcome back, " + playerAccount.name;
     el("account-search-results").innerHTML = "";
     el("account-search-input").value = "";
     renderAccountProfile();
@@ -508,6 +509,9 @@ async function runAccountSearch(q) {
 }
 async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
+  renderAccountTeamLogos(cards);
+  renderAccountNextMatch(cards);
+  renderAccountLeaguesList(cards);
   const c = el("account-profile-list");
   if (cards.length === 0) { c.innerHTML = '<p class="empty">Search for your name above and claim your player record to see your matches, results, and awards here.</p>'; return; }
   c.innerHTML = cards.map((card) => {
@@ -521,15 +525,15 @@ async function renderAccountProfile() {
           return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
         }).join("")
       : '<p class="empty" style="border:none;">No results yet.</p>';
-    const awardsHtml = card.awards.length
-      ? `<p class="note">👑 Pair of the Week × ${card.awards.length}</p>`
-      : '<p class="empty" style="border:none;">No awards yet.</p>';
+    // Awards only show up at all when this player has actually won one —
+    // unlike Upcoming/Results, there's no "No awards yet" placeholder.
+    const awardsHtml = card.awards.length ? `<p class="modal-subhead">Awards</p><p class="note">👑 Pair of the Week × ${card.awards.length}</p>` : "";
     return `
       <div class="roster-team" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
         <div class="roster-head">${logo}<div><div style="font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;">${escapeHtml(card.playerName)}</div><div class="note">${escapeHtml(card.teamName)} · ${escapeHtml(card.leagueName)}</div></div><button class="link account-unclaim-btn" style="margin-left:auto;">Remove</button></div>
         <p class="modal-subhead">Upcoming</p>${upcomingHtml}
         <p class="modal-subhead">Results</p>${resultsHtml}
-        <p class="modal-subhead">Awards</p>${awardsHtml}
+        ${awardsHtml}
       </div>
     `;
   }).join("");
@@ -540,6 +544,53 @@ async function renderAccountProfile() {
       await renderAccountProfile();
     };
   });
+}
+function renderAccountTeamLogos(cards) {
+  const seen = new Set();
+  const uniq = cards.filter((c) => (seen.has(c.teamId) ? false : (seen.add(c.teamId), true)));
+  el("account-team-logos").innerHTML = uniq.map((c) => c.teamLogo
+    ? `<img class="avatar-big" src="${c.teamLogo}" alt="${escapeHtml(c.teamName)}" title="${escapeHtml(c.teamName)}">`
+    : `<span class="avatar-big-fb" title="${escapeHtml(c.teamName)}">${escapeHtml(c.teamName.charAt(0).toUpperCase())}</span>`
+  ).join("");
+}
+function renderAccountLeaguesList(cards) {
+  const seen = new Set();
+  const uniq = cards.filter((c) => (seen.has(c.leagueId) ? false : (seen.add(c.leagueId), true)));
+  el("account-leagues-list").innerHTML = uniq.length
+    ? uniq.map((c) => `<span class="tag" style="margin:0 6px 6px 0;display:inline-block;">${escapeHtml(c.leagueName)}</span>`).join("")
+    : '<p class="empty">No leagues yet — claim a player record below to see your leagues here.</p>';
+}
+// The single soonest upcoming match across every claimed record — "your
+// next match," personalized, rather than the generic per-league carousel
+// everyone else sees on the hub. Reuses that same card's floodlit look
+// (see .floodlit in styles.css) when it's imminent.
+function renderAccountNextMatch(cards) {
+  const rows = [];
+  cards.forEach((card) => {
+    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueName: card.leagueName, teamName: card.teamName, playerName: card.playerName }, r)));
+  });
+  const wrap = el("account-next-match-card");
+  if (rows.length === 0) { wrap.style.display = "none"; wrap.classList.remove("urgent"); return; }
+  rows.sort((a, b) => {
+    if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return 0;
+  });
+  const m = rows[0];
+  wrap.style.display = "block";
+  const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
+  wrap.classList.toggle("urgent", !!relativeDayLabel(m.date));
+  const meta = [m.teamName + " vs " + m.opponentTeam, when, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  el("account-next-match-slide").innerHTML = `
+    <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
+    <div class="mc-pairing">
+      <span class="mc-pair">${escapeHtml([m.playerName, m.partner].filter(Boolean).join(" & "))}</span>
+      <span class="vs">vs</span>
+      <span class="mc-pair">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span>
+    </div>
+    <div class="mc-meta">${escapeHtml(meta)}</div>
+  `;
 }
 
 async function openLeague(id) {

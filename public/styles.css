@@ -427,29 +427,32 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    rest of the (all-light) page, rather than a plain white card
    indistinguishable from the rest. Etched court lines + a glowing
    vs/progress/text bloom carry the "floodlit" idea literally. */
-#next-matches-card.urgent{
+/* .floodlit is a reusable treatment (not just #next-matches-card) — the
+   personalized "your next match" hero on a player's profile uses the
+   exact same look. */
+.floodlit.urgent{
   background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));
   border:1px solid rgba(96,150,255,.25);
   box-shadow:0 0 0 1px rgba(96,150,255,.08),0 20px 44px rgba(0,0,0,.4),0 0 60px -10px rgba(64,120,255,.4);
   position:relative;overflow:hidden;
 }
-#next-matches-card.urgent::before{
+.floodlit.urgent::before{
   content:"";position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(120% 90% at 50% -10%,rgba(37,99,235,.3),transparent 60%);
 }
-#next-matches-card.urgent::after{
+.floodlit.urgent::after{
   content:"";position:absolute;inset:0;pointer-events:none;opacity:.14;
   background-image:
     linear-gradient(90deg,transparent 49%,#7FA8FF 49%,#7FA8FF 51%,transparent 51%),
     linear-gradient(0deg,transparent 12%,#7FA8FF 12%,#7FA8FF 12.8%,transparent 12.8%),
     linear-gradient(0deg,transparent 88%,#7FA8FF 88%,#7FA8FF 88.8%,transparent 88.8%);
 }
-#next-matches-card.urgent .section-title{color:#8FB4FF;border-bottom-color:rgba(96,150,255,.2);}
-#next-matches-card.urgent .tag{background:rgba(127,168,255,.14);border-color:rgba(96,150,255,.35);color:#8FB4FF;}
-#next-matches-card.urgent .mc-league{color:#8FB4FF;}
-#next-matches-card.urgent .mc-pair{color:#F2F6FF;text-shadow:0 0 14px rgba(120,165,255,.55);}
-#next-matches-card.urgent .mc-meta{color:#7C8CB0;}
-#next-matches-card.urgent .vs{background:#7FA8FF;color:#060A14;border-color:transparent;box-shadow:0 0 18px rgba(127,168,255,.7);}
+.floodlit.urgent .section-title{color:#8FB4FF;border-bottom-color:rgba(96,150,255,.2);}
+.floodlit.urgent .tag{background:rgba(127,168,255,.14);border-color:rgba(96,150,255,.35);color:#8FB4FF;}
+.floodlit.urgent .mc-league{color:#8FB4FF;}
+.floodlit.urgent .mc-pair{color:#F2F6FF;text-shadow:0 0 14px rgba(120,165,255,.55);}
+.floodlit.urgent .mc-meta{color:#7C8CB0;}
+.floodlit.urgent .vs{background:#7FA8FF;color:#060A14;border-color:transparent;box-shadow:0 0 18px rgba(127,168,255,.7);}
 .mc-carousel{max-width:380px;margin:0 auto;text-align:center;}
 .mc-slide{padding:2px 0 16px;animation:mc-fade-in .4s ease;}
 @keyframes mc-fade-in{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
@@ -464,8 +467,8 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mc-pair.won{color:var(--success);}
 .mc-pair.won::before{content:"✓ ";}
 .vs.mc-score{min-width:auto;padding:3px 10px;font-size:11px;text-transform:none;letter-spacing:0;font-weight:700;color:var(--success);background:var(--success-soft);border-color:var(--success);}
-#next-matches-card.urgent .mc-pair.won{color:#6EE7A8;}
-#next-matches-card.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}
+.floodlit.urgent .mc-pair.won{color:#6EE7A8;}
+.floodlit.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}
 .mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:11px;}
 
 .news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
