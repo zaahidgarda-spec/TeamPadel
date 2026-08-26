@@ -4234,7 +4234,7 @@ async function openPlayerHistory(playerId, playerName) {
   el("player-modal-name").textContent = playerName;
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-backdrop").classList.add("open");
-  const rows = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => []);
+  const { rows, otherLeagues } = await api(`/leagues/${currentLeagueId}/players/${playerId}/history`).catch(() => ({ rows: [], otherLeagues: [] }));
   const potwWins = potwWinCountForPlayer(playerId);
   const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
   // Hall of Fame winners are free text (season history can predate this
@@ -4246,7 +4246,17 @@ async function openPlayerHistory(playerId, playerName) {
   const titlesBlock = titles.length
     ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${titles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
     : "";
-  if (rows.length === 0) { el("player-modal-body").innerHTML = crownLine + titlesBlock + '<p class="empty">No completed matches yet.</p>'; return; }
+  // Only shows up once this player's record has been claimed via the
+  // player-accounts feature — otherwise there's no way to know two roster
+  // entries in different leagues are the same real person.
+  const otherLeaguesBlock = (otherLeagues || []).length
+    ? `<p class="note" style="margin-bottom:10px;">Also plays in: ${otherLeagues.map((o) => `<a href="#" class="other-league-link" data-league="${o.leagueId}">${escapeHtml(o.leagueName)} (${escapeHtml(o.teamName)})</a>`).join(", ")}</p>`
+    : "";
+  if (rows.length === 0) {
+    el("player-modal-body").innerHTML = crownLine + titlesBlock + otherLeaguesBlock + '<p class="empty">No completed matches yet.</p>';
+    bindOtherLeagueLinks();
+    return;
+  }
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;
   const losses = rows.length - wins - draws;
@@ -4256,7 +4266,7 @@ async function openPlayerHistory(playerId, playerName) {
   const isPairs = league.format === "pairs";
   const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
-  let html = crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
+  let html = crownLine + titlesBlock + otherLeaguesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
 
   // Best partners / toughest opponents — a minimum of 2 meetings so a
   // single fluke result doesn't crown a "100%" partner or a "0%" nemesis
@@ -4286,6 +4296,16 @@ async function openPlayerHistory(playerId, playerName) {
     html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
   });
   el("player-modal-body").innerHTML = html;
+  bindOtherLeagueLinks();
+}
+function bindOtherLeagueLinks() {
+  document.querySelectorAll(".other-league-link").forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      el("player-modal-backdrop").classList.remove("open");
+      openLeague(a.dataset.league);
+    };
+  });
 }
 el("player-modal-close").onclick = () => el("player-modal-backdrop").classList.remove("open");
 el("player-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "player-modal-backdrop") el("player-modal-backdrop").classList.remove("open"); });

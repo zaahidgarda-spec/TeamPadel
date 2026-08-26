@@ -1890,7 +1890,29 @@ router.get("/leagues/:leagueId/stats", (req, res) => {
 router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  res.json(logic.playerMatchHistory(league, req.params.playerId));
+  const rows = logic.playerMatchHistory(league, req.params.playerId);
+  // If this player record has been claimed (see the player-accounts
+  // feature), surface which other leagues that same real person plays
+  // in — so a captain/admin browsing one league's roster can see this
+  // isn't the only team this player is on.
+  let otherLeagues = [];
+  const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
+  const player = team && team.players.find((p) => p.id === req.params.playerId);
+  if (player && player.claimedByUserId) {
+    const user = store.getUser(player.claimedByUserId);
+    if (user) {
+      otherLeagues = user.claims
+        .filter((c) => c.leagueId !== league.id)
+        .map((c) => {
+          const otherLeague = store.getLeague(c.leagueId);
+          const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
+          if (!otherLeague || !otherTeam) return null;
+          return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name };
+        })
+        .filter(Boolean);
+    }
+  }
+  res.json({ rows, otherLeagues });
 });
 
 /* ---------- Notifications ---------- */
