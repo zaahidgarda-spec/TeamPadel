@@ -424,8 +424,19 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    homepage down as more leagues submit lineups. */
 /* A soft accent wash when the featured match is imminent (today/tomorrow)
    — the same "this matters now" treatment as the leaderboard's leader row,
-   rather than a plain white card indistinguishable from the rest. */
-#next-matches-card.urgent{background-image:linear-gradient(135deg,var(--accent-soft),var(--panel) 60%);border-color:var(--accent);}
+   rather than a plain white card indistinguishable from the rest. Faint
+   court lines + a glowing vs/progress read as "floodlit for tonight"
+   without leaving the app's light panel or blue accent. */
+#next-matches-card.urgent{background-image:linear-gradient(160deg,var(--accent-soft),var(--panel) 55%);border-color:var(--accent);position:relative;overflow:hidden;}
+#next-matches-card.urgent::before{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:.05;
+  background-image:
+    linear-gradient(90deg,transparent calc(50% - 1px),var(--accent) calc(50% - 1px),var(--accent) calc(50% + 1px),transparent calc(50% + 1px)),
+    linear-gradient(0deg,transparent 12%,var(--accent) 12%,var(--accent) 12.6%,transparent 12.6%),
+    linear-gradient(0deg,transparent 88%,var(--accent) 88%,var(--accent) 88.6%,transparent 88.6%);
+}
+#next-matches-card.urgent .vs{box-shadow:0 0 0 5px var(--accent-soft);border-color:var(--accent);}
+#next-matches-card.urgent .mc-progress-seg.active .fill{box-shadow:0 0 6px var(--accent);}
 .mc-carousel{max-width:380px;margin:0 auto;text-align:center;}
 .mc-slide{padding:2px 0 16px;animation:mc-fade-in .4s ease;}
 @keyframes mc-fade-in{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
