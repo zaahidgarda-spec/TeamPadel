@@ -381,8 +381,15 @@ el("hub-captain-login-btn").onclick = async () => {
   try {
     const { leagueId } = await api("/captain-login", { method: "POST", body: { code, email } });
     el("hub-captain-code").value = ""; el("hub-captain-email").value = ""; el("hub-captain-error").textContent = "";
-    viewingGroupId = null; // land on this captain's own group, not whatever a prior guest view defaulted to
-    await openLeague(leagueId);
+    // A signed-in player has a profile to land back on — stay there instead
+    // of jumping into the league, same as the captain box on My Profile.
+    // A guest using this tab has no profile, so opening the league is right.
+    if (playerAccount) {
+      await refreshAccountStatus();
+    } else {
+      viewingGroupId = null; // land on this captain's own group, not whatever a prior guest view defaulted to
+      await openLeague(leagueId);
+    }
   } catch (e) { el("hub-captain-error").textContent = e.message; }
 };
 
@@ -716,7 +723,9 @@ function renderAccountLeaguesList(cards) {
   c.innerHTML = uniq.map((card) => {
     const seed = mostCommonCardSeed(card);
     const isCaptain = !!(playerAccount.captainOf && playerAccount.captainOf.leagueId === card.leagueId);
-    const captainTag = isCaptain ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span>' : "";
+    const captainTag = isCaptain
+      ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button>'
+      : "";
     return `<div class="notif-row account-league-row" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}" style="cursor:pointer;">
       <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
       <div style="display:flex;align-items:center;gap:12px;">
@@ -726,7 +735,7 @@ function renderAccountLeaguesList(cards) {
     </div>`;
   }).join("");
   c.querySelectorAll(".account-league-row").forEach((row) => {
-    row.onclick = (e) => { if (!e.target.classList.contains("account-unclaim-btn")) openLeague(row.dataset.league); };
+    row.onclick = (e) => { if (!e.target.classList.contains("account-unclaim-btn") && !e.target.classList.contains("account-remove-captaincy-btn")) openLeague(row.dataset.league); };
   });
   c.querySelectorAll(".account-unclaim-btn").forEach((btn) => {
     btn.onclick = async (e) => {
@@ -734,6 +743,15 @@ function renderAccountLeaguesList(cards) {
       const row = btn.closest(".account-league-row");
       await api(`/players/claims/${row.dataset.league}/${row.dataset.team}/${row.dataset.player}`, { method: "DELETE" });
       await renderAccountProfile();
+    };
+  });
+  c.querySelectorAll(".account-remove-captaincy-btn").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      await api("/captain-logout", { method: "POST" });
+      // captainOf lives on playerAccount, not the cards this list was built
+      // from — re-fetch it too, or the tag/link would still show as captain.
+      await refreshAccountStatus();
     };
   });
 }

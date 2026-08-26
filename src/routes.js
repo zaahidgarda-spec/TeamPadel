@@ -873,6 +873,14 @@ router.post("/logout", (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
+// Ends only the captain session, same scoping as /players/logout — a
+// player removing their own captaincy shouldn't also sign them out of
+// their player account.
+router.post("/captain-logout", (req, res) => {
+  req.session.user = null;
+  res.json({ ok: true });
+});
+
 /* ---------- Teams & players (admin-managed) ---------- */
 
 router.post("/leagues/:leagueId/teams", requireAdmin, async (req, res) => {
