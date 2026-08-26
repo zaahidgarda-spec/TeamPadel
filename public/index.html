@@ -145,6 +145,16 @@
           </div>
           <p class="modal-subhead">Your leagues</p>
           <div id="account-leagues-list"></div>
+          <p class="modal-subhead">Also a team captain?</p>
+          <p class="note" style="margin-bottom:10px;">Enter your team code to manage that team's line-ups and scores.</p>
+          <div class="row">
+            <label class="sr-only" for="account-captain-code">Team code</label>
+            <input type="text" id="account-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
+            <label class="sr-only" for="account-captain-email">Email (optional, for notifications)</label>
+            <input type="email" id="account-captain-email" placeholder="Email (optional, for notifications)" style="width:260px;">
+            <button class="primary" id="account-captain-login-btn">Enter</button>
+          </div>
+          <div class="error" id="account-captain-error"></div>
         </div>
         <div class="card" id="account-signed-in-card" style="display:none;">
           <h2 class="section-title">Find and claim your player records</h2>

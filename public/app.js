@@ -383,6 +383,20 @@ el("hub-captain-login-btn").onclick = async () => {
   } catch (e) { el("hub-captain-error").textContent = e.message; }
 };
 
+// Same login, same session/privileges — just reachable from a player's own
+// dashboard too, so being a captain of one of their teams doesn't require
+// leaving their profile to go find the league first.
+el("account-captain-login-btn").onclick = async () => {
+  const code = el("account-captain-code").value;
+  const email = el("account-captain-email").value;
+  try {
+    const { leagueId } = await api("/captain-login", { method: "POST", body: { code, email } });
+    el("account-captain-code").value = ""; el("account-captain-email").value = ""; el("account-captain-error").textContent = "";
+    viewingGroupId = null;
+    await openLeague(leagueId);
+  } catch (e) { el("account-captain-error").textContent = e.message; }
+};
+
 /* ---------- Site owner login (gates who can create leagues) ---------- */
 
 async function refreshOwnerStatus() {
