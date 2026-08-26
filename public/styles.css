@@ -500,6 +500,11 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .roster-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md);}
 .roster-card .avatar-big{width:64px;height:64px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--line);}
 .roster-card .avatar-big-fb{width:64px;height:64px;border-radius:50%;background:var(--panel-2);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:24px;color:var(--text-dim);}
+/* Same team-logo markup, but a compact row on My Profile — otherwise these
+   render at their uploaded (up to 128px) size with no sizing rule at all,
+   since the roster-card rule above doesn't reach outside .roster-card. */
+#account-team-logos .avatar-big{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--line);}
+#account-team-logos .avatar-big-fb{width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:16px;color:var(--text-dim);}
 .roster-card .team-name{font-family:var(--font-display);font-size:17px;text-transform:uppercase;letter-spacing:.01em;margin-top:10px;}
 .roster-card .player-count{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
 .player-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
