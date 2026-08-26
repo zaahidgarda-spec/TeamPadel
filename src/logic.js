@@ -130,8 +130,15 @@ function needsTiebreak(rubber) {
 // tie-break, or "6-4, 3-6, 6-2" for a pairs 3rd set — mirrors the client's
 // rubberScoreText in app.js exactly, since next-matches needs the same
 // notation server-side.
-function rubberScoreText(rubber) {
-  const setText = (s) => (s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "") ? s[0] + "-" + s[1] : null;
+// `flip` reorders each set (and the tiebreak) so side B's number comes
+// first — sets are always stored as [A, B], so a player-specific history
+// (which may be looking at this from side B) needs its own score to lead,
+// or a line marked "W" would read with the smaller number first.
+function rubberScoreText(rubber, flip) {
+  const setText = (s) => {
+    if (s[0] === null || s[0] === "" || s[1] === null || s[1] === "") return null;
+    return flip ? s[1] + "-" + s[0] : s[0] + "-" + s[1];
+  };
   const parts = rubber.sets.map(setText).filter(Boolean);
   if (rubber.sets.length < 3 && needsTiebreak(rubber) && tiebreakWinner(rubber.tb)) {
     const tb = setText(rubber.tb);
@@ -409,8 +416,10 @@ function playerMatchHistory(league, playerId) {
         // rubberScoreText already handles the split-sets super-tiebreak
         // (and filters out a pairs match's unplayed 3rd set on a draw) —
         // this used to duplicate that logic inline and left the
-        // tiebreak score out entirely.
-        score: rubberScoreText(rubber),
+        // tiebreak score out entirely. Flipped when this player is side B,
+        // so their own score always leads — otherwise a "W" row could read
+        // with the smaller (opponent's) number shown first.
+        score: rubberScoreText(rubber, mySide === "B"),
         seed: idx + 1,
       });
     });

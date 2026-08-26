@@ -743,11 +743,9 @@ async function renderAccountProfile() {
   // Awards only show up at all when this player has actually won one —
   // unlike Upcoming/Results, there's no "No awards yet" placeholder.
   const awardsHtml = totalAwards ? `<p class="modal-subhead">Awards</p><p class="note">👑 Pair of the Week × ${totalAwards}</p>` : "";
-  // Scores first, same convention as the roster player-history popup —
-  // what someone already did comes before what they're about to do.
   c.innerHTML = `
-    <p class="modal-subhead">Results</p>${resultsHtml}
     <p class="modal-subhead">Upcoming</p>${upcomingHtml}
+    <p class="modal-subhead">Results</p>${resultsHtml}
     ${awardsHtml}
   `;
 }
@@ -4540,16 +4538,6 @@ function renderPlayerHistoryBody(data) {
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
   let html = crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
 
-  // Scores come first, right after the summary line — Best partners and
-  // Head-to-head are insights ABOUT those scores, so they follow rather
-  // than push the actual match history further down.
-  html += `<p class="modal-subhead">Match history</p>`;
-  rows.forEach((r) => {
-    const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
-    const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
-    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
-  });
-
   // Best partners / toughest opponents — a minimum of 2 meetings so a
   // single fluke result doesn't crown a "100%" partner or a "0%" nemesis
   // off one match. Best partners is meaningless for a Vibora pair — their
@@ -4570,6 +4558,13 @@ function renderPlayerHistoryBody(data) {
     .sort((a, b) => a.winPct - b.winPct || b.played - a.played)
     .slice(0, 3);
   if (opponents.length) html += `<p class="modal-subhead">Head-to-head</p>${insightRowsHtml(opponents)}`;
+
+  html += `<p class="modal-subhead">Match history</p>`;
+  rows.forEach((r) => {
+    const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
+    const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
+    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+  });
   return html;
 }
 el("player-modal-close").onclick = () => el("player-modal-backdrop").classList.remove("open");
