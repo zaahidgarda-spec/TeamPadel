@@ -285,6 +285,98 @@ function stageLabel(league, f) {
   return (meta && meta.label) || "Round " + f.round;
 }
 
+// Pair of the week: every specific partnership that actually took the court
+// that round — one per seed per side — is eligible, identified by fixture +
+// side + seed (not just the two player IDs, since in theory the same two
+// names could be paired up more than once across seeds/fixtures).
+function potwEligiblePairs(league, round) {
+  const pairs = [];
+  league.fixtures.filter((f) => f.round === round).forEach((f) => {
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    [["A", teamA, f.selectionA], ["B", teamB, f.selectionB]].forEach(([side, team, selection]) => {
+      if (!team || !selection || !selection.submitted) return;
+      selection.pairs.forEach((pair, seed) => {
+        const [p1id, p2id] = pair || [];
+        const p1 = team.players.find((p) => p.id === p1id);
+        const p2 = team.players.find((p) => p.id === p2id);
+        if (!p1 || !p2) return;
+        pairs.push({
+          key: `${f.id}:${side}:${seed}`,
+          fixtureId: f.id,
+          side,
+          seed,
+          teamId: team.id,
+          teamName: team.name,
+          playerAId: p1.id,
+          playerAName: p1.name,
+          playerBId: p2.id,
+          playerBName: p2.name,
+        });
+      });
+    });
+  });
+  return pairs;
+}
+// Public tally + winner for a round — vote counts and the winner are shared
+// with everyone (so the crown can show), but who voted for whom stays
+// server-side only, to keep captains from feeling pressured either way.
+function potwTallyForRound(league, round) {
+  const votes = (league.potwVotes && league.potwVotes[round]) || {};
+  const counts = {};
+  Object.values(votes).forEach((key) => { counts[key] = (counts[key] || 0) + 1; });
+  const eligible = potwEligiblePairs(league, round);
+  const tally = Object.keys(counts)
+    .map((key) => {
+      const p = eligible.find((x) => x.key === key);
+      return p ? { ...p, votes: counts[key] } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.votes - a.votes);
+  // A tie at the top goes to everyone tied, not just whichever pair
+  // happened to sort first — no votes means no winners at all.
+  const topVotes = tally.length ? tally[0].votes : 0;
+  const winners = topVotes > 0 ? tally.filter((p) => p.votes === topVotes) : [];
+  return { tally, winners };
+}
+
+// Every not-yet-finalized fixture this player is selected into, both sides
+// submitted — the "upcoming" half of a player's profile, mirroring
+// playerMatchHistory's "played" half below almost exactly.
+function findPlayerUpcoming(league, playerId) {
+  const rows = [];
+  allFixturesOf(league).forEach((f) => {
+    if (f.finalized || !f.teamA || !f.teamB) return;
+    if (!(f.selectionA.submitted && f.selectionB.submitted)) return;
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    if (!teamA || !teamB) return;
+    [["A", teamA, f.selectionA, teamB, f.selectionB], ["B", teamB, f.selectionB, teamA, f.selectionA]].forEach(
+      ([, team, selection, oppTeam, oppSelection]) => {
+        selection.pairs.forEach((pair, idx) => {
+          if (!pair.includes(playerId)) return;
+          const partnerId = pair[0] === playerId ? pair[1] : pair[0];
+          const partner = team.players.find((p) => p.id === partnerId);
+          const oppPair = oppSelection.pairs[idx] || [null, null];
+          const oppNames = oppPair.map((pid) => { const p = oppTeam.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+          const sched = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
+          rows.push({
+            label: stageLabel(league, f),
+            opponentTeam: oppTeam.name,
+            opponentPlayers: oppNames,
+            partner: partner ? partner.name : null,
+            seed: idx + 1,
+            date: sched.date || "",
+            time: sched.time || "",
+            venue: sched.venue || league.defaultVenue || "",
+          });
+        });
+      }
+    );
+  });
+  return rows;
+}
+
 function playerMatchHistory(league, playerId) {
   const team = league.teams.find((t) => t.players.some((p) => p.id === playerId));
   if (!team) return [];
@@ -488,6 +580,9 @@ module.exports = {
   computeStandings,
   validateSelection,
   playerMatchHistory,
+  findPlayerUpcoming,
+  potwEligiblePairs,
+  potwTallyForRound,
   computeLeagueStats,
   restrictToGroup,
   allFixturesOf,

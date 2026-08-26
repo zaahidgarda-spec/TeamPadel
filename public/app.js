@@ -9,6 +9,9 @@ let viewingKey = null;
 let viewingGroupId = null;
 let myNotifications = [];
 let isOwner = false;
+// The signed-in player account (independent of team-captain/admin sessions
+// above) — null when nobody's logged in on this axis.
+let playerAccount = null;
 // Tap-to-swap state for the court schedule grid: the first tapped cell,
 // held until a second tap (elsewhere) completes the swap or the same cell
 // is tapped again to cancel. Always cleared on re-render (round switch,
@@ -147,6 +150,7 @@ function showHub() {
   el("view-league").style.display = "none";
   document.body.className = "role-guest";
   refreshOwnerStatus();
+  refreshAccountStatus();
   renderHub();
   // Not tied to owner status like the rest of the hub, so it doesn't need
   // to re-run when refreshOwnerStatus's renderHub() call lands a moment
@@ -426,6 +430,117 @@ el("owner-logout-btn").onclick = async () => {
   await api("/owner/logout", { method: "POST" });
   await refreshOwnerStatus();
 };
+
+/* ---------- Player accounts (sign up, claim player records, see profile) ----------
+   Independent of the site owner / team captain logins above — one real
+   person can sign up once and claim several player records across
+   different leagues/teams. Claiming grants no write permissions; it's a
+   read-only "this is me" layer over the existing per-league data. */
+
+async function refreshAccountStatus() {
+  playerAccount = await api("/players/me").catch(() => null);
+  el("account-signed-out-card").style.display = playerAccount ? "none" : "block";
+  el("account-signed-in-card").style.display = playerAccount ? "block" : "none";
+  el("account-profile-card").style.display = playerAccount ? "block" : "none";
+  if (playerAccount) {
+    el("account-welcome").textContent = "Hi, " + playerAccount.name;
+    el("account-search-results").innerHTML = "";
+    el("account-search-input").value = "";
+    renderAccountProfile();
+  }
+}
+el("show-account-signup").onclick = () => {
+  el("account-login-form").style.display = "none"; el("account-signup-form").style.display = "block";
+  el("account-form-title").textContent = "Sign up"; el("account-auth-error").textContent = "";
+};
+el("show-account-login").onclick = () => {
+  el("account-signup-form").style.display = "none"; el("account-login-form").style.display = "block";
+  el("account-form-title").textContent = "Log in"; el("account-auth-error").textContent = "";
+};
+el("account-signup-btn").onclick = async () => {
+  const name = el("account-signup-name").value, email = el("account-signup-email").value, password = el("account-signup-password").value;
+  try {
+    await api("/players/signup", { method: "POST", body: { name, email, password } });
+    el("account-signup-name").value = ""; el("account-signup-email").value = ""; el("account-signup-password").value = ""; el("account-auth-error").textContent = "";
+    await refreshAccountStatus();
+  } catch (e) { el("account-auth-error").textContent = e.message; }
+};
+el("account-login-btn").onclick = async () => {
+  const email = el("account-login-email").value, password = el("account-login-password").value;
+  try {
+    await api("/players/login", { method: "POST", body: { email, password } });
+    el("account-login-email").value = ""; el("account-login-password").value = ""; el("account-auth-error").textContent = "";
+    await refreshAccountStatus();
+  } catch (e) { el("account-auth-error").textContent = e.message; }
+};
+el("account-logout-btn").onclick = async () => {
+  await api("/players/logout", { method: "POST" });
+  await refreshAccountStatus();
+};
+
+let accountSearchTimer = null;
+el("account-search-input").addEventListener("input", () => {
+  clearTimeout(accountSearchTimer);
+  const q = el("account-search-input").value.trim();
+  if (!q) { el("account-search-results").innerHTML = ""; return; }
+  accountSearchTimer = setTimeout(() => runAccountSearch(q), 300);
+});
+async function runAccountSearch(q) {
+  const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
+  const c = el("account-search-results");
+  if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
+  c.innerHTML = results.map((r) => `
+    <div class="notif-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}">
+      <div><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
+      ${r.claimed ? '<span class="tag">Already claimed</span>' : '<button class="secondary claim-btn" type="button">This is me</button>'}
+    </div>
+  `).join("");
+  c.querySelectorAll(".claim-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest(".notif-row");
+      try {
+        await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
+        await runAccountSearch(q);
+        await renderAccountProfile();
+      } catch (e) { alert(e.message); }
+    };
+  });
+}
+async function renderAccountProfile() {
+  const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
+  const c = el("account-profile-list");
+  if (cards.length === 0) { c.innerHTML = '<p class="empty">Search for your name above and claim your player record to see your matches, results, and awards here.</p>'; return; }
+  c.innerHTML = cards.map((card) => {
+    const logo = card.teamLogo ? `<img class="avatar" src="${card.teamLogo}" alt="">` : `<span class="avatar-fb">${escapeHtml(card.teamName.charAt(0).toUpperCase())}</span>`;
+    const upcomingHtml = card.upcoming.length
+      ? card.upcoming.map((r) => `<div class="history-row"><div class="history-top"><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")}${r.date ? " · " + escapeHtml(r.date) : ""}</div></div>`).join("")
+      : '<p class="empty" style="border:none;">No upcoming selected matches.</p>';
+    const resultsHtml = card.results.length
+      ? card.results.map((r) => {
+          const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
+          return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+        }).join("")
+      : '<p class="empty" style="border:none;">No results yet.</p>';
+    const awardsHtml = card.awards.length
+      ? `<p class="note">👑 Pair of the Week × ${card.awards.length}</p>`
+      : '<p class="empty" style="border:none;">No awards yet.</p>';
+    return `
+      <div class="roster-team" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
+        <div class="roster-head">${logo}<div><div style="font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;">${escapeHtml(card.playerName)}</div><div class="note">${escapeHtml(card.teamName)} · ${escapeHtml(card.leagueName)}</div></div><button class="link account-unclaim-btn" style="margin-left:auto;">Remove</button></div>
+        <p class="modal-subhead">Upcoming</p>${upcomingHtml}
+        <p class="modal-subhead">Results</p>${resultsHtml}
+        <p class="modal-subhead">Awards</p>${awardsHtml}
+      </div>
+    `;
+  }).join("");
+  c.querySelectorAll(".account-unclaim-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const wrap = btn.closest(".roster-team");
+      await api(`/players/claims/${wrap.dataset.league}/${wrap.dataset.team}/${wrap.dataset.player}`, { method: "DELETE" });
+      await renderAccountProfile();
+    };
+  });
+}
 
 async function openLeague(id) {
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }

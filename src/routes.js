@@ -135,61 +135,6 @@ function genTeamCode(league) {
   return code;
 }
 
-// Pair of the week: every specific partnership that actually took the court
-// that round — one per seed per side — is eligible, identified by fixture +
-// side + seed (not just the two player IDs, since in theory the same two
-// names could be paired up more than once across seeds/fixtures).
-function potwEligiblePairs(league, round) {
-  const pairs = [];
-  league.fixtures.filter((f) => f.round === round).forEach((f) => {
-    const teamA = league.teams.find((t) => t.id === f.teamA);
-    const teamB = league.teams.find((t) => t.id === f.teamB);
-    [["A", teamA, f.selectionA], ["B", teamB, f.selectionB]].forEach(([side, team, selection]) => {
-      if (!team || !selection || !selection.submitted) return;
-      selection.pairs.forEach((pair, seed) => {
-        const [p1id, p2id] = pair || [];
-        const p1 = team.players.find((p) => p.id === p1id);
-        const p2 = team.players.find((p) => p.id === p2id);
-        if (!p1 || !p2) return;
-        pairs.push({
-          key: `${f.id}:${side}:${seed}`,
-          fixtureId: f.id,
-          side,
-          seed,
-          teamId: team.id,
-          teamName: team.name,
-          playerAId: p1.id,
-          playerAName: p1.name,
-          playerBId: p2.id,
-          playerBName: p2.name,
-        });
-      });
-    });
-  });
-  return pairs;
-}
-// Public tally + winner for a round — vote counts and the winner are shared
-// with everyone (so the crown can show), but who voted for whom stays
-// server-side only, to keep captains from feeling pressured either way.
-function potwTallyForRound(league, round) {
-  const votes = (league.potwVotes && league.potwVotes[round]) || {};
-  const counts = {};
-  Object.values(votes).forEach((key) => { counts[key] = (counts[key] || 0) + 1; });
-  const eligible = potwEligiblePairs(league, round);
-  const tally = Object.keys(counts)
-    .map((key) => {
-      const p = eligible.find((x) => x.key === key);
-      return p ? { ...p, votes: counts[key] } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.votes - a.votes);
-  // A tie at the top goes to everyone tied, not just whichever pair
-  // happened to sort first — no votes means no winners at all.
-  const topVotes = tally.length ? tally[0].votes : 0;
-  const winners = topVotes > 0 ? tally.filter((p) => p.votes === topVotes) : [];
-  return { tally, winners };
-}
-
 // Strip anything a given viewer shouldn't see: password hashes always,
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
@@ -235,7 +180,7 @@ function sanitize(league, req) {
   // per-voter ballots never leave here.
   const rounds = [...new Set(league.fixtures.map((f) => f.round))];
   const potwByRound = {};
-  rounds.forEach((r) => { potwByRound[r] = potwTallyForRound(league, r); });
+  rounds.forEach((r) => { potwByRound[r] = logic.potwTallyForRound(league, r); });
   const potwVoterKey = isAdmin ? "admin" : teamId;
   const myPotwVote = {};
   if (potwVoterKey) {
@@ -480,6 +425,152 @@ router.post("/owner/logout", (req, res) => {
 });
 router.get("/owner/me", (req, res) => {
   res.json({ isOwner: !!req.session.isOwner });
+});
+
+/* ---------- Player accounts ----------
+   A third, independent auth axis from the site owner and per-league
+   captain/admin sessions above — one real person can sign up once and hold
+   several claimed player records across different leagues/teams. Claiming
+   a record grants no write permissions of its own (can't edit lineups or
+   scores); it's a read-only "this is me" identity layer over the existing
+   per-league data, so req.session.playerUser is checked independently of
+   req.session.user/isOwner and never substitutes for them. */
+
+function normalizeEmail(email) {
+  return ((email || "") + "").trim().toLowerCase();
+}
+function findUserIdByEmail(email) {
+  const entry = store.getUsersIndex().find((u) => u.email === email);
+  return entry ? entry.id : null;
+}
+function requirePlayerUser(req, res, next) {
+  if (!req.session.playerUser) return res.status(401).json({ error: "Log in to your player account first." });
+  next();
+}
+
+router.post("/players/signup", loginLimiter, async (req, res) => {
+  const { name, email, password } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+  const normalized = normalizeEmail(email);
+  if (!normalized || !normalized.includes("@")) return res.status(400).json({ error: "A valid email is required." });
+  if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  if (findUserIdByEmail(normalized)) return res.status(400).json({ error: "An account with that email already exists." });
+  const id = logic.uid();
+  const user = { id, email: normalized, passwordHash: await hashPassword(password), name: name.trim(), createdAt: Date.now(), claims: [] };
+  store.saveUser(id, user);
+  const index = store.getUsersIndex();
+  index.push({ id, email: normalized });
+  store.saveUsersIndex(index);
+  req.session.playerUser = { id };
+  res.json({ id, name: user.name, email: user.email });
+});
+router.post("/players/login", loginLimiter, async (req, res) => {
+  const { email, password } = req.body || {};
+  const id = findUserIdByEmail(normalizeEmail(email));
+  const user = id ? store.getUser(id) : null;
+  const ok = user && (await verifyPassword(password, user.passwordHash));
+  if (!ok) return res.status(401).json({ error: "Incorrect email or password." });
+  req.session.playerUser = { id: user.id };
+  res.json({ id: user.id, name: user.name, email: user.email });
+});
+router.post("/players/logout", (req, res) => {
+  req.session.playerUser = null;
+  res.json({ ok: true });
+});
+router.get("/players/me", (req, res) => {
+  const pu = req.session.playerUser;
+  const user = pu && store.getUser(pu.id);
+  res.json(user ? { id: user.id, name: user.name, email: user.email } : null);
+});
+
+// Cross-league name search — any league, any format, any status, since a
+// player record's existence is what matters here, not the league's phase.
+router.get("/players/search", requirePlayerUser, (req, res) => {
+  const q = ((req.query.q || "") + "").trim().toLowerCase();
+  if (!q) return res.json([]);
+  const results = [];
+  store.getIndex().forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    league.teams.forEach((team) => {
+      team.players.forEach((p) => {
+        if (!p.name.toLowerCase().includes(q)) return;
+        results.push({
+          leagueId: league.id, leagueName: league.name,
+          teamId: team.id, teamName: team.name,
+          playerId: p.id, playerName: p.name,
+          claimed: !!p.claimedByUserId,
+        });
+      });
+    });
+  });
+  res.json(results.slice(0, 30));
+});
+
+router.post("/players/claims", requirePlayerUser, (req, res) => {
+  const { leagueId, teamId, playerId } = req.body || {};
+  const league = store.getLeague(leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const player = team.players.find((p) => p.id === playerId);
+  if (!player) return res.status(404).json({ error: "Player not found." });
+  const user = store.getUser(req.session.playerUser.id);
+  if (player.claimedByUserId && player.claimedByUserId !== user.id) {
+    return res.status(400).json({ error: "That player has already been claimed by another profile." });
+  }
+  if (!player.claimedByUserId) {
+    player.claimedByUserId = user.id;
+    store.saveLeague(league.id, league);
+  }
+  if (!user.claims.some((c) => c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId)) {
+    user.claims.push({ leagueId, teamId, playerId });
+    store.saveUser(user.id, user);
+  }
+  res.json({ ok: true });
+});
+router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, (req, res) => {
+  const { leagueId, teamId, playerId } = req.params;
+  const user = store.getUser(req.session.playerUser.id);
+  user.claims = user.claims.filter((c) => !(c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId));
+  store.saveUser(user.id, user);
+  const league = store.getLeague(leagueId);
+  const team = league && league.teams.find((t) => t.id === teamId);
+  const player = team && team.players.find((p) => p.id === playerId);
+  if (player && player.claimedByUserId === user.id) {
+    player.claimedByUserId = null;
+    store.saveLeague(league.id, league);
+  }
+  res.json({ ok: true });
+});
+
+router.get("/players/profile", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const cards = [];
+  let changed = false;
+  // A league/team/player claimed earlier can later be deleted by its
+  // admin/captain — drop the now-dangling claim quietly rather than error.
+  user.claims = user.claims.filter((claim) => {
+    const league = store.getLeague(claim.leagueId);
+    const team = league && league.teams.find((t) => t.id === claim.teamId);
+    const player = team && team.players.find((p) => p.id === claim.playerId);
+    if (!league || !team || !player) { changed = true; return false; }
+    const rounds = [...new Set(league.fixtures.map((f) => f.round))];
+    const awards = rounds
+      .flatMap((r) => logic.potwTallyForRound(league, r).winners)
+      .filter((w) => w.playerAId === claim.playerId || w.playerBId === claim.playerId);
+    cards.push({
+      leagueId: league.id, leagueName: league.name,
+      teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
+      playerId: player.id, playerName: player.name,
+      upcoming: logic.findPlayerUpcoming(league, claim.playerId),
+      results: logic.playerMatchHistory(league, claim.playerId),
+      awards,
+    });
+    return true;
+  });
+  if (changed) store.saveUser(user.id, user);
+  res.json({ name: user.name, cards });
 });
 
 router.post("/leagues", async (req, res) => {
@@ -1604,13 +1695,13 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   if (roundFixtures.length === 0) return res.status(404).json({ error: "No fixtures in that round." });
   if (!roundFixtures.every((f) => f.finalized)) return res.status(400).json({ error: "Voting opens once every match in the round is finalized." });
   const { pairKey } = req.body || {};
-  const eligible = potwEligiblePairs(league, round);
+  const eligible = logic.potwEligiblePairs(league, round);
   if (!eligible.some((p) => p.key === pairKey)) return res.status(400).json({ error: "That pair didn't play this round." });
   if (!league.potwVotes) league.potwVotes = {};
   if (!league.potwVotes[round]) league.potwVotes[round] = {};
   league.potwVotes[round][voterKey] = pairKey;
   store.saveLeague(league.id, league);
-  res.json({ ok: true, tally: potwTallyForRound(league, round) });
+  res.json({ ok: true, tally: logic.potwTallyForRound(league, round) });
 });
 
 /* ---------- Court/playing order (which of a match's pairs plays where) ---------- */

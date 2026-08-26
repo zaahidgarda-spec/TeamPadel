@@ -55,6 +55,7 @@
           <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
           <button class="hub-tab-btn" data-hubview="captain">Captain</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
+          <button class="hub-tab-btn" data-hubview="account" id="hub-account-tab-btn">My profile</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
       </nav>
@@ -110,6 +111,43 @@
             <button class="primary" id="hub-captain-login-btn">Log in</button>
           </div>
           <div class="error" id="hub-captain-error"></div>
+        </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-account">
+        <div class="card" id="account-signed-out-card">
+          <h2 class="section-title"><span id="account-form-title">Log in</span></h2>
+          <div id="account-login-form">
+            <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
+              <input type="email" id="account-login-email" placeholder="Email">
+              <input type="password" id="account-login-password" placeholder="Password">
+              <button class="primary" id="account-login-btn">Log in</button>
+            </div>
+            <button class="link" id="show-account-signup" style="margin-top:10px;">New here? Sign up</button>
+          </div>
+          <div id="account-signup-form" style="display:none;">
+            <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
+              <input type="text" id="account-signup-name" placeholder="Your name">
+              <input type="email" id="account-signup-email" placeholder="Email">
+              <input type="password" id="account-signup-password" placeholder="Password (6+ characters)">
+              <button class="primary" id="account-signup-btn">Sign up</button>
+            </div>
+            <button class="link" id="show-account-login" style="margin-top:10px;">Already have an account? Log in</button>
+          </div>
+          <div class="error" id="account-auth-error"></div>
+        </div>
+        <div class="card" id="account-signed-in-card" style="display:none;">
+          <h2 class="section-title"><span id="account-welcome"></span><button class="secondary" id="account-logout-btn">Log out</button></h2>
+          <p class="note" style="margin-bottom:10px;">Find yourself across every league, and claim your player records — matches you're selected in, results, and awards will show up below.</p>
+          <div class="row">
+            <label class="sr-only" for="account-search-input">Search for your name</label>
+            <input type="text" id="account-search-input" placeholder="Search for your name…" style="flex:1;min-width:160px;">
+          </div>
+          <div id="account-search-results"></div>
+        </div>
+        <div class="card" id="account-profile-card" style="display:none;">
+          <h2 class="section-title">Your profiles</h2>
+          <div id="account-profile-list"></div>
         </div>
       </section>
 

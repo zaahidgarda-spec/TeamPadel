@@ -65,6 +65,12 @@ async function init() {
     const league = await redis.get("league-" + entry.id);
     if (league) cache.set("league-" + entry.id, league);
   }
+  const usersIndex = (await redis.get("users-index")) || [];
+  cache.set("users-index", usersIndex);
+  for (const entry of usersIndex) {
+    const user = await redis.get("user-" + entry.id);
+    if (user) cache.set("user-" + entry.id, user);
+  }
   cache.set("interest-signups", (await redis.get("interest-signups")) || []);
 }
 
@@ -108,6 +114,31 @@ function deleteLeague(id) {
   if (fs.existsSync(p)) fs.unlinkSync(p);
 }
 
+function getUsersIndex() {
+  if (useRedis) return cache.get("users-index") || [];
+  return readJsonFile("users-index", []);
+}
+function saveUsersIndex(index) {
+  if (useRedis) {
+    cache.set("users-index", index);
+    persist("users-index", index);
+    return;
+  }
+  writeJsonFile("users-index", index);
+}
+function getUser(id) {
+  if (useRedis) return cache.get("user-" + id) || null;
+  return readJsonFile("user-" + id, null);
+}
+function saveUser(id, user) {
+  if (useRedis) {
+    cache.set("user-" + id, user);
+    persist("user-" + id, user);
+    return;
+  }
+  writeJsonFile("user-" + id, user);
+}
+
 function getSignups() {
   if (useRedis) return cache.get("interest-signups") || [];
   return readJsonFile("interest-signups", []);
@@ -129,6 +160,10 @@ module.exports = {
   getLeague,
   saveLeague,
   deleteLeague,
+  getUsersIndex,
+  saveUsersIndex,
+  getUser,
+  saveUser,
   getSignups,
   saveSignups,
 };
