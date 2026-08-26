@@ -474,6 +474,39 @@ router.post("/players/login", loginLimiter, async (req, res) => {
   req.session.playerUser = { id: user.id };
   res.json({ id: user.id, name: user.name, email: user.email });
 });
+// Always responds the same way whether or not the email has an account —
+// otherwise this endpoint would let anyone probe which emails are signed up.
+router.post("/players/forgot-password", loginLimiter, (req, res) => {
+  const normalized = normalizeEmail(req.body && req.body.email);
+  const id = findUserIdByEmail(normalized);
+  if (id) {
+    const user = store.getUser(id);
+    user.resetToken = crypto.randomBytes(32).toString("hex");
+    user.resetTokenExpiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+    store.saveUser(user.id, user);
+    const link = `${req.protocol}://${req.get("host")}/?resetToken=${user.resetToken}`;
+    sendMail({
+      to: user.email,
+      subject: "Reset your Team Padel password",
+      text: `Hi ${user.name},\n\nClick the link below to set a new password. It expires in 1 hour.\n\n${link}\n\nIf you didn't request this, you can ignore this email.`,
+    }).catch(() => {});
+  }
+  res.json({ ok: true });
+});
+router.post("/players/reset-password", loginLimiter, async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token) return res.status(400).json({ error: "Missing reset token." });
+  if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  const entry = store.getUsersIndex().map((e) => store.getUser(e.id)).find((u) => u && u.resetToken === token);
+  if (!entry || !entry.resetTokenExpiresAt || entry.resetTokenExpiresAt < Date.now()) {
+    return res.status(400).json({ error: "That reset link is invalid or has expired — request a new one." });
+  }
+  entry.passwordHash = await hashPassword(password);
+  entry.resetToken = null;
+  entry.resetTokenExpiresAt = null;
+  store.saveUser(entry.id, entry);
+  res.json({ ok: true });
+});
 router.post("/players/logout", (req, res) => {
   req.session.playerUser = null;
   res.json({ ok: true });

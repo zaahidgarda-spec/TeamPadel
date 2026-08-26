@@ -125,6 +125,16 @@
               <button class="primary" id="account-login-btn">Log in</button>
             </div>
             <button class="link" id="show-account-signup" style="margin-top:10px;">New here? Sign up</button>
+            <button class="link" id="show-account-forgot" style="margin-top:10px;margin-left:16px;">Forgot password?</button>
+          </div>
+          <div id="account-forgot-form" style="display:none;">
+            <p class="note" style="margin-bottom:10px;">Enter your email and we'll send a link to reset your password.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
+              <input type="email" id="account-forgot-email" placeholder="Email">
+              <button class="primary" id="account-forgot-btn">Send reset link</button>
+            </div>
+            <button class="link" id="show-account-login-from-forgot" style="margin-top:10px;">Back to log in</button>
+            <p class="note" id="account-forgot-sent" style="display:none;margin-top:10px;">If that email has an account, a reset link is on its way.</p>
           </div>
           <div id="account-signup-form" style="display:none;">
             <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
@@ -136,6 +146,14 @@
             <button class="link" id="show-account-login" style="margin-top:10px;">Already have an account? Log in</button>
           </div>
           <div class="error" id="account-auth-error"></div>
+        </div>
+        <div class="card" id="account-reset-card" style="display:none;">
+          <h2 class="section-title">Set a new password</h2>
+          <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
+            <input type="password" id="account-reset-password" placeholder="New password (6+ characters)">
+            <button class="primary" id="account-reset-btn">Set password</button>
+          </div>
+          <div class="error" id="account-reset-error"></div>
         </div>
         <div class="card" id="account-dashboard-card" style="display:none;">
           <h2 class="section-title"><span id="account-welcome"></span><button class="secondary" id="account-logout-btn">Log out</button></h2>

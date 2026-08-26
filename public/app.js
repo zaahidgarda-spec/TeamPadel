@@ -561,6 +561,12 @@ async function renderCombineAccounts() {
    different leagues/teams. Claiming grants no write permissions; it's a
    read-only "this is me" layer over the existing per-league data. */
 
+// A reset-password link lands here as ?resetToken=... — checked once at
+// load and re-applied every time refreshAccountStatus runs, since that
+// call is async and would otherwise win the race and hide the reset card
+// (it's kicked off at startup without awaiting, so it can resolve after
+// any synchronous check further down this file has already run).
+let resetTokenInUrl = new URLSearchParams(location.search).get("resetToken");
 async function refreshAccountStatus() {
   playerAccount = await api("/players/me").catch(() => null);
   el("account-signed-out-card").style.display = playerAccount ? "none" : "block";
@@ -569,6 +575,12 @@ async function refreshAccountStatus() {
   el("account-profile-card").style.display = playerAccount ? "block" : "none";
   el("search-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("search-signed-in-card").style.display = playerAccount ? "block" : "none";
+  if (resetTokenInUrl) {
+    switchHubTab("account");
+    el("account-signed-out-card").style.display = "none";
+    el("account-dashboard-card").style.display = "none";
+    el("account-reset-card").style.display = "block";
+  }
   if (playerAccount) {
     el("account-welcome").textContent = "Welcome back, " + playerAccount.name;
     el("account-search-results").innerHTML = "";
@@ -607,6 +619,45 @@ el("account-logout-btn").onclick = async () => {
   await api("/players/logout", { method: "POST" });
   await refreshAccountStatus();
 };
+
+el("show-account-forgot").onclick = () => {
+  el("account-login-form").style.display = "none"; el("account-forgot-form").style.display = "block";
+  el("account-form-title").textContent = "Reset password"; el("account-auth-error").textContent = "";
+  el("account-forgot-sent").style.display = "none"; el("account-forgot-email").value = "";
+};
+el("show-account-login-from-forgot").onclick = () => {
+  el("account-forgot-form").style.display = "none"; el("account-login-form").style.display = "block";
+  el("account-form-title").textContent = "Log in";
+};
+el("account-forgot-btn").onclick = async () => {
+  const email = el("account-forgot-email").value;
+  await api("/players/forgot-password", { method: "POST", body: { email } }).catch(() => {});
+  el("account-forgot-sent").style.display = "block";
+};
+el("account-reset-btn").onclick = async () => {
+  const password = el("account-reset-password").value;
+  const params = new URLSearchParams(location.search);
+  const token = params.get("resetToken");
+  try {
+    await api("/players/reset-password", { method: "POST", body: { token, password } });
+    el("account-reset-password").value = ""; el("account-reset-error").textContent = "";
+    history.replaceState(null, "", location.pathname); // drop the token from the URL now that it's used
+    resetTokenInUrl = null; // otherwise the next refreshAccountStatus (e.g. right after logging in) would keep forcing this card back up
+    el("account-reset-card").style.display = "none";
+    el("account-signed-out-card").style.display = "block";
+    el("account-login-form").style.display = "block";
+    el("account-signup-form").style.display = "none";
+    el("account-forgot-form").style.display = "none";
+    el("account-form-title").textContent = "Log in";
+    alert("Password updated — log in below.");
+  } catch (e) { el("account-reset-error").textContent = e.message; }
+};
+if (resetTokenInUrl) {
+  switchHubTab("account");
+  el("account-signed-out-card").style.display = "none";
+  el("account-dashboard-card").style.display = "none";
+  el("account-reset-card").style.display = "block";
+}
 
 let accountSearchTimer = null;
 el("account-search-input").addEventListener("input", () => {
