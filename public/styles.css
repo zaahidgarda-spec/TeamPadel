@@ -450,9 +450,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 #next-matches-card.urgent .mc-pair{color:#F2F6FF;text-shadow:0 0 14px rgba(120,165,255,.55);}
 #next-matches-card.urgent .mc-meta{color:#7C8CB0;}
 #next-matches-card.urgent .vs{background:#7FA8FF;color:#060A14;border-color:transparent;box-shadow:0 0 18px rgba(127,168,255,.7);}
-#next-matches-card.urgent .mc-progress-seg{background:rgba(127,168,255,.18);}
-#next-matches-card.urgent .mc-progress-seg .fill{background:#7FA8FF;}
-#next-matches-card.urgent .mc-progress-seg.active .fill{box-shadow:0 0 8px rgba(127,168,255,.7);}
 .mc-carousel{max-width:380px;margin:0 auto;text-align:center;}
 .mc-slide{padding:2px 0 16px;animation:mc-fade-in .4s ease;}
 @keyframes mc-fade-in{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:translateY(0);}}
@@ -470,15 +467,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 #next-matches-card.urgent .mc-pair.won{color:#6EE7A8;}
 #next-matches-card.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}
 .mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:11px;}
-/* Stories-style segmented progress instead of plain dots — the active
-   segment fills over the rotation interval, so the countdown to the next
-   slide is visible rather than just which slide is current. */
-.mc-progress{display:flex;align-items:center;gap:5px;max-width:260px;margin:0 auto;}
-.mc-progress-seg{flex:1;height:3px;padding:0;border:none;border-radius:2px;background:var(--line);cursor:pointer;overflow:hidden;position:relative;}
-.mc-progress-seg .fill{position:absolute;inset:0;background:var(--accent);border-radius:2px;transform:scaleX(0);transform-origin:left;}
-.mc-progress-seg.done .fill{transform:scaleX(1);}
-.mc-progress-seg.active .fill{animation-name:mc-progress-fill;animation-timing-function:linear;animation-fill-mode:forwards;}
-@keyframes mc-progress-fill{from{transform:scaleX(0);}to{transform:scaleX(1);}}
 
 .news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
 .news-post:last-child{border-bottom:none;}

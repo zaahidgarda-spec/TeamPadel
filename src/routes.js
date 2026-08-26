@@ -413,20 +413,20 @@ router.get("/next-matches", (req, res) => {
     });
   });
 
-  // Round-robin across leagues (in the order their soonest fixture
-  // sorted to above) rather than taking the first 10 pairings outright —
-  // otherwise one league with a busy night fills the whole card before a
-  // quieter league's match ever gets a turn.
+  // Round-robin across leagues (in the order their soonest fixture sorted
+  // to above) rather than draining one league's queue before moving to
+  // the next — every match already belongs to the same night (scoped
+  // above), so all of them are shown, just interleaved fairly across
+  // leagues instead of one busy league's matches running back to back.
   const queues = Array.from(byLeague.values());
   const pairings = [];
   let tookOne = true;
-  while (tookOne && pairings.length < 10) {
+  while (tookOne) {
     tookOne = false;
     for (const q of queues) {
       if (!q.length) continue;
       pairings.push(q.shift());
       tookOne = true;
-      if (pairings.length >= 10) break;
     }
   }
 

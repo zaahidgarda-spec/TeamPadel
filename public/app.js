@@ -272,26 +272,6 @@ function renderNextMatchSlide() {
   slide.classList.remove("mc-slide");
   void slide.offsetWidth;
   slide.classList.add("mc-slide");
-
-  const progress = el("next-matches-progress");
-  if (nextMatchesPairings.length <= 1) { progress.innerHTML = ""; return; }
-  // Stories-style segmented progress instead of plain dots — each bar fills
-  // over the rotation interval so the countdown itself is visible, not just
-  // which slide is active.
-  progress.innerHTML = nextMatchesPairings.map((_, i) => {
-    const state = i < nextMatchesIdx ? "done" : i === nextMatchesIdx ? "active" : "";
-    const dur = i === nextMatchesIdx && nextMatchesTimer ? ` style="animation-duration:${NEXT_MATCHES_ROTATE_MS}ms"` : "";
-    return `<button type="button" class="mc-progress-seg ${state}" data-idx="${i}" aria-label="Match ${i + 1}"><span class="fill"${dur}></span></button>`;
-  }).join("");
-  progress.querySelectorAll(".mc-progress-seg").forEach((seg) => {
-    seg.onclick = () => {
-      nextMatchesIdx = Number(seg.dataset.idx);
-      renderNextMatchSlide();
-      // Only reset the clock if it was already running — a manual pick
-      // shouldn't start auto-rotation on a single-match card that never had it.
-      if (nextMatchesTimer) startNextMatchesTimer();
-    };
-  });
 }
 function renderHub() {
   renderInterestLeagueOptions();
