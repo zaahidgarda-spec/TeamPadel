@@ -515,18 +515,22 @@ router.get("/players/me", (req, res) => {
   const pu = req.session.playerUser;
   const user = pu && store.getUser(pu.id);
   if (!user) return res.json(null);
-  // The per-league captain session (req.session.user) is a completely
-  // separate axis from this player account — surfaced here only so the
-  // profile can reflect "you're currently logged in as captain of X,"
-  // not stored as part of the account itself.
-  let captainOf = null;
-  const cu = req.session.user;
-  if (cu && cu.role === "captain") {
-    const league = store.getLeague(cu.leagueId);
-    const team = league && league.teams.find((t) => t.id === cu.teamId);
-    if (league && team) captainOf = { leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name };
+  // Persisted per-account (see persistCaptaincy above), not the current
+  // device's session — so this is the same on every device the account
+  // signs into, not just whichever one most recently entered a code.
+  const captaincies = [];
+  let changed = false;
+  (user.captaincies || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    const team = league && league.teams.find((t) => t.id === c.teamId);
+    if (!league || !team) { changed = true; return; } // team/league deleted since — drop quietly
+    captaincies.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name });
+  });
+  if (changed) {
+    user.captaincies = captaincies.map((c) => ({ leagueId: c.leagueId, teamId: c.teamId }));
+    store.saveUser(user.id, user);
   }
-  res.json({ id: user.id, name: user.name, email: user.email, captainOf });
+  res.json({ id: user.id, name: user.name, email: user.email, captaincies });
 });
 
 // Cross-league name search — any league, any format, any status, since a
@@ -854,6 +858,24 @@ router.post("/leagues/:leagueId/login", loginLimiter, async (req, res) => {
   res.json({ role: "admin" });
 });
 
+// If a signed-in player just logged in as captain, persist it on their
+// account too — like a claimed player record, so "Captain" reflects a fact
+// about the person, not just whichever device most recently entered the
+// code. Without this, the same person's phone and laptop could disagree
+// about which team they captain, which looked exactly like a data bug.
+// Deliberately display-only: it does NOT grant write access by itself —
+// managing a team from a new device still requires that team's code there,
+// same as always, so this doesn't change who can actually edit lineups/scores.
+function persistCaptaincy(req, leagueId, teamId) {
+  if (!req.session.playerUser) return;
+  const user = store.getUser(req.session.playerUser.id);
+  if (!user) return;
+  if (!user.captaincies) user.captaincies = [];
+  if (!user.captaincies.some((c) => c.leagueId === leagueId && c.teamId === teamId)) {
+    user.captaincies.push({ leagueId, teamId });
+    store.saveUser(user.id, user);
+  }
+}
 router.post("/leagues/:leagueId/captain-login", loginLimiter, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
@@ -868,6 +890,7 @@ router.post("/leagues/:leagueId/captain-login", loginLimiter, (req, res) => {
     store.saveLeague(league.id, league);
   }
   req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
+  persistCaptaincy(req, league.id, team.id);
   res.json({ role: "captain", teamId: team.id });
 });
 
@@ -899,6 +922,7 @@ router.post("/captain-login", loginLimiter, (req, res) => {
     store.saveLeague(league.id, league);
   }
   req.session.user = { leagueId: league.id, role: "captain", teamId: team.id };
+  persistCaptaincy(req, league.id, team.id);
   res.json({ role: "captain", leagueId: league.id, teamId: team.id });
 });
 
@@ -908,9 +932,21 @@ router.post("/logout", (req, res) => {
 
 // Ends only the captain session, same scoping as /players/logout — a
 // player removing their own captaincy shouldn't also sign them out of
-// their player account.
+// their player account. Also drops the persisted captaincy (if a specific
+// leagueId/teamId is given) — otherwise it would just reappear next time
+// the account is checked from any device, since that's the source of truth.
 router.post("/captain-logout", (req, res) => {
-  req.session.user = null;
+  const { leagueId, teamId } = req.body || {};
+  if (!leagueId || !teamId || (req.session.user && req.session.user.leagueId === leagueId && req.session.user.teamId === teamId)) {
+    req.session.user = null;
+  }
+  if (leagueId && teamId && req.session.playerUser) {
+    const user = store.getUser(req.session.playerUser.id);
+    if (user && user.captaincies) {
+      user.captaincies = user.captaincies.filter((c) => !(c.leagueId === leagueId && c.teamId === teamId));
+      store.saveUser(user.id, user);
+    }
+  }
   res.json({ ok: true });
 });
 

@@ -769,11 +769,15 @@ function mostCommonCardSeed(card) {
 function renderAccountLeaguesList(cards) {
   const seen = new Set();
   const uniq = cards.filter((c) => (seen.has(c.leagueId) ? false : (seen.add(c.leagueId), true)));
-  if (uniq.length === 0) { el("account-leagues-list").innerHTML = '<p class="empty">No leagues yet — claim a player record below to see your leagues here.</p>'; return; }
+  const captaincies = playerAccount.captaincies || [];
+  // A captaincy with no claimed player record in that league has no card to
+  // attach to — give it its own row so it's still visible (and removable).
+  const extraCaptaincies = captaincies.filter((cap) => !cards.some((card) => card.leagueId === cap.leagueId && card.teamId === cap.teamId));
+  if (uniq.length === 0 && extraCaptaincies.length === 0) { el("account-leagues-list").innerHTML = '<p class="empty">No leagues yet — claim a player record below to see your leagues here.</p>'; return; }
   const c = el("account-leagues-list");
-  c.innerHTML = uniq.map((card) => {
+  const cardRows = uniq.map((card) => {
     const seed = mostCommonCardSeed(card);
-    const isCaptain = !!(playerAccount.captainOf && playerAccount.captainOf.leagueId === card.leagueId);
+    const isCaptain = captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId);
     const captainTag = isCaptain
       ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button>'
       : "";
@@ -784,7 +788,14 @@ function renderAccountLeaguesList(cards) {
         <span class="link">Open &rarr;</span>
       </div>
     </div>`;
-  }).join("");
+  });
+  const captaincyRows = extraCaptaincies.map((cap) => `<div class="notif-row account-league-row" data-league="${cap.leagueId}" data-team="${cap.teamId}" style="cursor:pointer;">
+      <div><strong>${escapeHtml(cap.leagueName)}</strong> <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button><div class="note">${escapeHtml(cap.teamName)}</div></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span class="link">Open &rarr;</span>
+      </div>
+    </div>`);
+  c.innerHTML = cardRows.concat(captaincyRows).join("");
   c.querySelectorAll(".account-league-row").forEach((row) => {
     row.onclick = (e) => { if (!e.target.classList.contains("account-unclaim-btn") && !e.target.classList.contains("account-remove-captaincy-btn")) openLeague(row.dataset.league); };
   });
@@ -799,8 +810,9 @@ function renderAccountLeaguesList(cards) {
   c.querySelectorAll(".account-remove-captaincy-btn").forEach((btn) => {
     btn.onclick = async (e) => {
       e.stopPropagation();
-      await api("/captain-logout", { method: "POST" });
-      // captainOf lives on playerAccount, not the cards this list was built
+      const row = btn.closest(".account-league-row");
+      await api("/captain-logout", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team } });
+      // captaincies live on playerAccount, not the cards this list was built
       // from — re-fetch it too, or the tag/link would still show as captain.
       await refreshAccountStatus();
     };
