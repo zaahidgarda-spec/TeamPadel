@@ -335,6 +335,8 @@ function buildNextMatchesPairings(leagues) {
       // it is, the card shows that result instead of a bare "vs".
       const rubber = f.rubbers[i];
       const winner = rubber ? logic.rubberWinner(rubber) : null;
+      // No point predicting a seed that's already been played.
+      const prediction = winner ? null : logic.predictSeed(league, pairA, pairB);
       if (!byLeague.has(league.id)) byLeague.set(league.id, []);
       byLeague.get(league.id).push({
         leagueName: league.name,
@@ -350,6 +352,7 @@ function buildNextMatchesPairings(leagues) {
         venue: sched.venue || league.defaultVenue || "",
         winner,
         score: winner ? logic.rubberScoreText(rubber) : null,
+        prediction,
       });
     });
   });
@@ -730,6 +733,8 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     const awards = rounds
       .flatMap((r) => logic.potwTallyForRound(league, r).winners)
       .filter((w) => w.playerAId === claim.playerId || w.playerBId === claim.playerId);
+    const { players: ratingPlayers } = logic.computeLeagueRatings(league);
+    const ratingEntry = ratingPlayers.get(claim.playerId);
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
@@ -737,6 +742,9 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       upcoming: logic.findPlayerUpcoming(league, claim.playerId),
       results: logic.playerMatchHistory(league, claim.playerId),
       awards,
+      rating: ratingEntry ? ratingEntry.rating : null,
+      ratingPlayed: ratingEntry ? ratingEntry.played : 0,
+      ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
     });
     return true;
   });
@@ -2094,6 +2102,12 @@ router.get("/leagues/:leagueId/stats", (req, res) => {
   if (!league) return res.status(404).json({ error: "Not found." });
   const scoped = logic.restrictToGroup(league, req.query.groupId);
   res.json(logic.computeLeagueStats(scoped));
+});
+// Read-only, same as Stats/Table — no login needed to see the leaderboard.
+router.get("/leagues/:leagueId/rankings", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Not found." });
+  res.json({ rankings: logic.leagueRankings(league) });
 });
 // Fully self-contained — every field the player-history modal needs to
 // render, computed server-side, so the client never has to have this

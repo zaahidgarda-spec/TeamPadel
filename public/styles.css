@@ -352,6 +352,11 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .rank-pts .n{font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums;}
 .rank-pts .l{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-top:3px;}
 .rank-summary{display:none;}
+.elo-form{display:flex !important;flex-direction:row !important;gap:2px;}
+.elo-dot{width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:var(--font-display);color:#fff;}
+.elo-dot-w{background:var(--success);}
+.elo-dot-l{background:var(--clay);}
+.elo-dot-d{background:var(--text-faint);}
 @media (max-width:640px){
   .rank-row{grid-template-columns:30px 1fr auto;grid-template-areas:"badge name pts" "summary summary summary";row-gap:8px;padding:11px 14px;}
   .rank-badge{grid-area:badge;width:28px;height:28px;font-size:12.5px;}
@@ -491,6 +496,21 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .mc-pair.won{color:#6EE7A8;}
 .floodlit.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}
 .mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:11px;}
+/* Win% bar for an undecided seed — same expectation the rating engine
+   itself uses, shown ahead of the actual result rather than after it. */
+.mc-predict{width:100%;max-width:260px;margin:10px auto 0;}
+.mc-predict-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--panel-2);}
+.mc-predict-bar .a{background:var(--accent);}
+.mc-predict-bar .b{background:var(--text-faint);}
+.mc-predict-pcts{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-dim);margin-top:3px;font-variant-numeric:tabular-nums;}
+.mc-predict-note{font-size:10px;color:var(--text-faint);margin-top:3px;}
+.mc-predict-solo{font-size:12.5px;font-weight:600;color:var(--accent);margin-top:9px;text-align:center;}
+.mc-predict-solo .note{font-weight:400;color:var(--text-faint);}
+.floodlit.urgent .mc-predict-bar{background:rgba(255,255,255,.12);}
+.floodlit.urgent .mc-predict-bar .a{background:#7FA8FF;}
+.floodlit.urgent .mc-predict-bar .b{background:rgba(255,255,255,.25);}
+.floodlit.urgent .mc-predict-pcts,.floodlit.urgent .mc-predict-note{color:#7C8CB0;}
+.floodlit.urgent .mc-predict-solo{color:#8FB4FF;}
 
 /* ---------- My Profile: player dashboard ---------- */
 .pd-card{padding-top:22px;}
@@ -511,7 +531,7 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex-shrink:0;}
 .pd-hero-when{font-size:11.5px;font-weight:600;color:var(--text-dim);background:var(--panel);border:1px solid var(--line);padding:4px 11px;border-radius:var(--radius-full);}
 
-.pd-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;}
+.pd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:22px;}
 .pd-stats .stat-tile{background:var(--panel);}
 .pd-stats .stat-lbl .tag{display:inline-block;margin-top:4px;}
 
@@ -743,6 +763,9 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .inline-edit:focus{border-color:var(--accent);background:var(--panel-2);outline:none;}
 .history-label{font-size:13px;font-weight:600;}
 .history-detail{font-size:12px;color:var(--text-dim);margin-top:3px;margin-left:28px;}
+.rating-delta{font-family:var(--font-display);font-weight:700;font-size:11.5px;}
+.rating-delta.up{color:var(--success);}
+.rating-delta.down{color:var(--clay);}
 .modal-subhead{font-family:var(--font-display);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin:14px 0 4px;padding-top:12px;border-top:1px dashed var(--line);}
 
 /* ---------- Install (PWA) banner ---------- */

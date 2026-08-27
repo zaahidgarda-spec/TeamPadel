@@ -55,6 +55,14 @@ function avatarHtml(t) {
   const initial = t ? t.name.charAt(0).toUpperCase() : "?";
   return `<span class="avatar-fb">${escapeHtml(initial)}</span>`;
 }
+// The rating swing a single result caused — null for a match played before
+// either partner had any rating history to move (shouldn't happen once the
+// engine's warmed up, but the field can still be absent defensively).
+function ratingDeltaHtml(delta) {
+  if (delta == null) return "";
+  const cls = delta > 0 ? "up" : delta < 0 ? "down" : "";
+  return ` <span class="rating-delta ${cls}">${delta > 0 ? "+" : ""}${delta}</span>`;
+}
 function isGoldPlayer(p) { return !!(league && league.tieringEnabled && p && p.gold); }
 function goldPrefix(p) { return isGoldPlayer(p) ? "★ " : ""; }
 function goldNameHtml(p) {
@@ -224,6 +232,25 @@ function relativeDayLabel(iso) {
   return null;
 }
 
+// A lightweight win% bar for an undecided pairing — same expectation the
+// rating engine itself uses to update ratings, just not followed by an
+// actual update. Null once a seed is scored (the backend stops predicting
+// decided matches), so this renders nothing rather than a stale guess.
+function predictionBarHtml(prediction) {
+  if (!prediction) return "";
+  const note = prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : "";
+  return `<div class="mc-predict">
+    <div class="mc-predict-bar"><span class="a" style="width:${prediction.winPctA}%"></span><span class="b" style="width:${prediction.winPctB}%"></span></div>
+    <div class="mc-predict-pcts"><span>${prediction.winPctA}%</span><span>${prediction.winPctB}%</span></div>
+    ${note}
+  </div>`;
+}
+// Same idea, but for a personal "your side" view — one number, not a bar
+// with two teams, since the player only cares about their own chances here.
+function personalPredictionHtml(prediction) {
+  if (!prediction) return "";
+  return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>`;
+}
 async function renderNextMatches() {
   const card = el("next-matches-card");
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
@@ -271,6 +298,7 @@ function renderNextMatchSlide() {
       ${centerHtml}
       <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
     </div>
+    ${predictionBarHtml(m.prediction)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   // Re-trigger the slide-in animation on every rotation, not just the first
@@ -728,7 +756,7 @@ async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
   renderAccountNextMatch(cards);
   renderAccountLeaguesList(cards);
-  renderAccountStats(cards);
+  await renderAccountStats(cards);
   // Claiming (or unclaiming) a record can change which leagues count as
   // "yours", so this needs to stay in step with every renderAccountProfile
   // call, not just the one at login — folded in here rather than making
@@ -749,14 +777,14 @@ async function renderAccountProfile() {
   c.innerHTML = results.length
     ? results.map((r) => {
         const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
-        return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span>${leagueTag(r.leagueName)}</div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+        return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span>${leagueTag(r.leagueName)}</div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}${ratingDeltaHtml(r.ratingDelta)}</div></div>`;
       }).join("")
     : '<p class="empty">No results yet.</p>';
 }
 // The stat strip — season record, how many leagues, a captain badge if
 // they manage a team, and an award count. A glance-able summary of "how's
 // my season going", sitting between the hero match and the detail lists.
-function renderAccountStats(cards) {
+async function renderAccountStats(cards) {
   const results = cards.flatMap((card) => card.results);
   const wins = results.filter((r) => r.result === "W").length;
   const losses = results.filter((r) => r.result === "L").length;
@@ -768,10 +796,25 @@ function renderAccountStats(cards) {
   const captainTile = captaincies.length
     ? `<div class="stat-tile"><div class="stat-num" style="font-size:19px;">${escapeHtml(captaincies[0].teamName)}</div><div class="stat-lbl">Captain of<span class="tag">${escapeHtml(captaincies[0].leagueName)}</span>${captaincies.length > 1 ? ` +${captaincies.length - 1} more` : ""}</div></div>`
     : `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">Not a captain yet</div></div>`;
+  // A player can have a rating in every league they've claimed a record in —
+  // show whichever one has the most games behind it, since that's the
+  // least noisy number to lead with. Its rank is a second fetch (the
+  // dashboard only has the raw cards, not the full sorted leaderboard).
+  const rated = cards.filter((c) => c.rating != null).sort((a, b) => b.ratingPlayed - a.ratingPlayed);
+  let ratingTile = `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">No rating yet</div></div>`;
+  if (rated.length) {
+    const primary = rated[0];
+    let rankNote = "";
+    const { rankings } = await api(`/leagues/${primary.leagueId}/rankings`).catch(() => ({ rankings: [] }));
+    const idx = rankings.findIndex((r) => r.playerId === primary.playerId);
+    if (idx >= 0) rankNote = `<div class="note">#${idx + 1} in ${escapeHtml(primary.leagueName)}</div>`;
+    ratingTile = `<div class="stat-tile"><div class="stat-num">${Math.round(primary.rating)}</div><div class="stat-lbl">Rating${primary.ratingProvisional ? ' <span class="tag">Prov.</span>' : ""}${rankNote}</div></div>`;
+  }
   el("account-stats").innerHTML = `
     <div class="stat-tile"><div class="stat-num">${results.length ? record : "—"}</div><div class="stat-lbl">Season record</div></div>
     <div class="stat-tile"><div class="stat-num">${seenLeagues.size}</div><div class="stat-lbl">League${seenLeagues.size === 1 ? "" : "s"} this season</div></div>
     ${captainTile}
+    ${ratingTile}
     <div class="stat-tile"><div class="stat-num">${totalAwards ? totalAwards + "×" : "—"}</div><div class="stat-lbl">🏆 Pair of the Week</div></div>
   `;
 }
@@ -793,6 +836,7 @@ async function renderAccountTonightMatches() {
         ${centerHtml}
         <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
       </div>
+      ${predictionBarHtml(m.prediction)}
       <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · "))}</div>
     </div>`;
   }).join("");
@@ -892,6 +936,7 @@ function renderAccountNextMatch(cards) {
       <span class="vs">vs</span>
       <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span></span>
     </div>
+    ${personalPredictionHtml(m.prediction)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
 }
@@ -994,6 +1039,7 @@ function tabDefs() {
   if (!isPairs) defs.push({ key: "fixtures", label: "Fixtures" });
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
+  defs.push({ key: "rankings", label: "Rankings" });
   defs.push({ key: "stats", label: "Stats" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
@@ -1217,6 +1263,7 @@ function renderAll() {
   renderFixtures();
   renderResults();
   renderTable();
+  renderRankings();
   renderRoster();
   renderStats();
   renderHallOfFame();
@@ -4334,6 +4381,36 @@ function renderTable() {
       ${champion ? `<p class="note" style="margin-top:10px;text-align:center;">Champion: <strong style="color:var(--accent);">${escapeHtml(champion.name)}</strong></p>` : ""}`;
   } else { koCard.style.display = "none"; }
 }
+// Player ELO leaderboard — same self-labeling .rank-row idiom as the
+// standings table above, just keyed by rating instead of league points.
+// Computed server-side on demand (never persisted), so this is always one
+// fetch, not something derivable from the already-loaded `league` object.
+async function renderRankings() {
+  const c = el("rankings-list");
+  if (!c) return;
+  const { rankings } = await api(`/leagues/${currentLeagueId}/rankings`).catch(() => ({ rankings: [] }));
+  if (rankings.length === 0) { c.innerHTML = '<p class="empty">No finalized matches yet — ratings appear once results start coming in.</p>'; return; }
+  let html = '<div class="leaderboard">';
+  rankings.forEach((r, i) => {
+    const formHtml = r.form.map((f) => `<span class="elo-dot elo-dot-${f.toLowerCase()}">${f}</span>`).join("");
+    const provTag = r.provisional ? ' <span class="tag">Provisional</span>' : "";
+    const record = r.draws ? `${r.wins}-${r.draws}-${r.losses}` : `${r.wins}-${r.losses}`;
+    html += `<div class="rank-row${i === 0 ? " leader" : ""}">
+      <div class="rank-badge">${i + 1}</div>
+      <div class="rank-name"><span class="avatar-fb">${escapeHtml(r.playerName.charAt(0).toUpperCase())}</span><span>${playerLinkHtml({ id: r.playerId, name: r.playerName })}${provTag}<div class="note">${escapeHtml(r.teamName)}</div></span></div>
+      <div class="rank-stats">
+        <div class="rank-stat"><span class="v">${r.played}</span><span class="l">Played</span></div>
+        <div class="rank-stat"><span class="v">${record}</span><span class="l">Record</span></div>
+        <div class="rank-stat"><span class="v elo-form">${formHtml}</span><span class="l">Form</span></div>
+      </div>
+      <div class="rank-pts"><span class="n">${Math.round(r.rating)}</span><span class="l">Rating</span></div>
+      <div class="rank-summary">${record} · ${r.played} played</div>
+    </div>`;
+  });
+  html += "</div>";
+  c.innerHTML = html;
+  bindPlayerLinks(c);
+}
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -4600,7 +4677,7 @@ function renderPlayerHistoryBody(data) {
   rows.forEach((r) => {
     const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
     const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
-    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
+    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}${ratingDeltaHtml(r.ratingDelta)}</div></div>`;
   });
   return html;
 }
