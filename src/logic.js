@@ -350,13 +350,14 @@ function potwTallyForRound(league, round) {
 // Every not-yet-finalized fixture this player is selected into, both sides
 // submitted — the "upcoming" half of a player's profile, mirroring
 // playerMatchHistory's "played" half below almost exactly.
-function findPlayerUpcoming(league, playerId) {
+function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
   const rows = [];
-  // Computed once for the whole league, not once per upcoming row — every
-  // row here shares the same "as of right now" rating snapshot anyway.
-  const { players: ratingPlayers } = computeLeagueRatings(league);
-  const ratingOf = (id) => (ratingPlayers.get(id) ? ratingPlayers.get(id).rating : ELO_BASE);
-  const provisionalOf = (id) => !ratingPlayers.get(id) || ratingPlayers.get(id).played < ELO_PROVISIONAL_GAMES;
+  // `ratingsData` comes from computeGlobalRatings run across every league
+  // in the store, not just this one — a claimed player's prediction here
+  // already reflects form earned in their other leagues too.
+  const ratingPlayers = ratingsData.players;
+  const ratingOf = (id) => { const s = ratingPlayers.get(identityOf(league.id, id)); return s ? s.rating : ELO_BASE; };
+  const provisionalOf = (id) => { const s = ratingPlayers.get(identityOf(league.id, id)); return !s || s.played < ELO_PROVISIONAL_GAMES; };
   allFixturesOf(league).forEach((f) => {
     if (f.finalized || !f.teamA || !f.teamB) return;
     if (!(f.selectionA.submitted && f.selectionB.submitted)) return;
@@ -399,15 +400,15 @@ function findPlayerUpcoming(league, playerId) {
 }
 
 // ---------- Player ratings (doubles-adjusted ELO) ----------
-// A rating per player, built purely from finalized results already in the
-// league — no new data to collect, no schema change. A match's "team
-// rating" is the average of its two partners' ratings; each partner's own
-// rating then moves by their own K times how much the actual result
-// beat or missed that expectation. Both partners on a side get the same
-// expectation and actual result, but K is per-player — higher while
-// they're still "provisional" (fewer than ELO_PROVISIONAL_GAMES played)
-// — so an established player's rating isn't yanked around by one fluky
-// result the same way a newcomer's still-settling rating is.
+// A rating per linked player identity, built purely from finalized results
+// already on record — no new data to collect, no schema change. A match's
+// "team rating" is the average of its two partners' ratings; each
+// partner's own rating then moves by their own K times how much the
+// actual result beat or missed that expectation. Both partners on a side
+// get the same expectation and actual result, but K is per-player — higher
+// while they're still "provisional" (fewer than ELO_PROVISIONAL_GAMES
+// played) — so an established player's rating isn't yanked around by one
+// fluky result the same way a newcomer's still-settling rating is.
 //
 // Deliberately NOT the 1500-point scale some matchmaking-focused ELO
 // systems use — that flattens win probability toward 50/50 (the point,
@@ -426,11 +427,46 @@ const ELO_PROVISIONAL_GAMES = 5;
 // decided who reached it. Stage order keeps regular season first (by
 // round), then semis, then the final.
 const ELO_STAGE_ORDER = { regular: 0, semi: 1, position: 1, final: 2 };
-function computeLeagueRatings(league) {
-  const players = new Map(); // playerId -> { rating, played, wins, losses, draws, form }
-  // `${fixtureId}:${seedIndex}:${playerId}` -> { delta, ratingBefore, ratingAfter }
-  // — lets playerMatchHistory show the rating swing from each specific
-  // result without recomputing anything.
+// The chronological sort key for a fixture, spanning every league passed
+// in — not just one. A real scheduled date (per-round, on league.schedule)
+// wins; a league with no dates entered at all falls back to when the
+// league itself was created, so its fixtures still land in roughly the
+// right era relative to every other league's.
+function fixtureSortDate(league, f) {
+  const sched = league.schedule && league.schedule[stageKeyFor(f)];
+  const dateStr = (sched && sched.date) || f.date || "";
+  const parsed = dateStr ? Date.parse(dateStr + "T00:00:00") : NaN;
+  return isNaN(parsed) ? league.createdAt : parsed;
+}
+function allRatableFixtures(leagues) {
+  const entries = [];
+  leagues.forEach((league) => {
+    allFixturesOf(league)
+      .filter((f) => f.finalized && f.teamA && f.teamB)
+      .forEach((f) => entries.push({ league, f }));
+  });
+  entries.sort((x, y) => {
+    const dx = fixtureSortDate(x.league, x.f), dy = fixtureSortDate(y.league, y.f);
+    if (dx !== dy) return dx - dy;
+    const sx = ELO_STAGE_ORDER[x.f.stage] ?? 0, sy = ELO_STAGE_ORDER[y.f.stage] ?? 0;
+    if (sx !== sy) return sx - sy;
+    return x.f.round - y.f.round;
+  });
+  return entries;
+}
+// One rating per linked identity, replayed across every league in
+// `leagues` in true chronological order — a player claimed across several
+// leagues (even leagues that live on a different site, once it shares
+// this same backend) carries one rating between all of them instead of
+// starting over at ELO_BASE in each. `identityOf(leagueId, playerId)`
+// resolves a raw per-league player id to that shared identity — the
+// claiming account's id if claimed, otherwise a per-league fallback so an
+// unclaimed player still gets a rating, just one that doesn't travel.
+function computeGlobalRatings(leagues, identityOf) {
+  const players = new Map(); // identity -> { rating, played, wins, losses, draws, form }
+  // `${fixtureId}:${seedIndex}:${rawPlayerId}` -> { delta, ratingBefore, ratingAfter }
+  // keyed by the raw per-league player id (not the shared identity), so a
+  // single league's own lookups (playerMatchHistory) don't need identityOf.
   const deltas = new Map();
 
   function entryFor(id) {
@@ -438,16 +474,7 @@ function computeLeagueRatings(league) {
     return players.get(id);
   }
 
-  const fixtures = allFixturesOf(league)
-    .filter((f) => f.finalized && f.teamA && f.teamB)
-    .slice()
-    .sort((a, b) => {
-      const sa = ELO_STAGE_ORDER[a.stage] ?? 0, sb = ELO_STAGE_ORDER[b.stage] ?? 0;
-      if (sa !== sb) return sa - sb;
-      return a.round - b.round;
-    });
-
-  fixtures.forEach((f) => {
+  allRatableFixtures(leagues).forEach(({ league, f }) => {
     (f.selectionA.pairs || []).forEach((pairA, i) => {
       const pairB = (f.selectionB.pairs || [])[i];
       if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return;
@@ -462,14 +489,15 @@ function computeLeagueRatings(league) {
 
       const [a1, a2] = pairA;
       const [b1, b2] = pairB;
-      const pa1 = entryFor(a1), pa2 = entryFor(a2), pb1 = entryFor(b1), pb2 = entryFor(b2);
+      const pa1 = entryFor(identityOf(league.id, a1)), pa2 = entryFor(identityOf(league.id, a2));
+      const pb1 = entryFor(identityOf(league.id, b1)), pb2 = entryFor(identityOf(league.id, b2));
       const ratingA = (pa1.rating + pa2.rating) / 2;
       const ratingB = (pb1.rating + pb2.rating) / 2;
       const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / ELO_SCALE));
       const actualA = winner === "A" ? 1 : winner === "B" ? 0 : 0.5;
 
-      const applySide = (p1, p2, id1, id2, actual, expected) => {
-        [[p1, id1], [p2, id2]].forEach(([p, id]) => {
+      const applySide = (p1, p2, rawId1, rawId2, actual, expected) => {
+        [[p1, rawId1], [p2, rawId2]].forEach(([p, rawId]) => {
           const k = p.played < ELO_PROVISIONAL_GAMES ? ELO_K_PROVISIONAL : ELO_K_ESTABLISHED;
           const delta = Math.round(k * (actual - expected));
           const ratingBefore = p.rating;
@@ -479,7 +507,7 @@ function computeLeagueRatings(league) {
           else if (actual === 0) { p.losses++; p.form.push("L"); }
           else { p.draws++; p.form.push("D"); }
           if (p.form.length > 5) p.form.shift();
-          deltas.set(`${f.id}:${i}:${id}`, { delta, ratingBefore, ratingAfter: p.rating });
+          deltas.set(`${f.id}:${i}:${rawId}`, { delta, ratingBefore, ratingAfter: p.rating });
         });
       };
       applySide(pa1, pa2, a1, a2, actualA, expectedA);
@@ -489,16 +517,19 @@ function computeLeagueRatings(league) {
 
   return { players, deltas };
 }
-// Sorted leaderboard for display — every player who's actually played a
-// finalized match, ranked highest rating first. `provisional` (fewer than
-// ELO_PROVISIONAL_GAMES played) is surfaced so the UI can flag a rating
-// that hasn't settled yet rather than presenting it with false confidence.
-function leagueRankings(league) {
-  const { players } = computeLeagueRatings(league);
+// Sorted leaderboard for display — every one of this league's own roster
+// who's actually played a finalized match, ranked by their rating highest
+// first. `ratingsData`/`identityOf` come from computeGlobalRatings run
+// across every league in the store, so a claimed player's rank here
+// already reflects form earned in their other leagues too, not just this
+// one. `provisional` (fewer than ELO_PROVISIONAL_GAMES played, across all
+// of that identity's leagues) flags a rating that hasn't settled yet.
+function leagueRankings(league, ratingsData, identityOf) {
+  const { players } = ratingsData;
   const rows = [];
   league.teams.forEach((team) => {
     team.players.forEach((p) => {
-      const stat = players.get(p.id);
+      const stat = players.get(identityOf(league.id, p.id));
       if (!stat || stat.played === 0) return;
       rows.push({
         playerId: p.id,
@@ -519,12 +550,13 @@ function leagueRankings(league) {
   return rows;
 }
 // Win probability for a hypothetical/upcoming seed pairing, from current
-// (as of every finalized result so far) ratings — same expectation formula
-// the rating engine itself uses, just not followed by an actual update.
-function predictSeed(league, pairA, pairB) {
-  const { players } = computeLeagueRatings(league);
-  const ratingOf = (id) => (players.get(id) ? players.get(id).rating : ELO_BASE);
-  const provisionalOf = (id) => !players.get(id) || players.get(id).played < ELO_PROVISIONAL_GAMES;
+// (as of every finalized result so far, across every league) ratings —
+// same expectation formula the rating engine itself uses, just not
+// followed by an actual update.
+function predictSeed(league, pairA, pairB, ratingsData, identityOf) {
+  const { players } = ratingsData;
+  const ratingOf = (id) => { const s = players.get(identityOf(league.id, id)); return s ? s.rating : ELO_BASE; };
+  const provisionalOf = (id) => { const s = players.get(identityOf(league.id, id)); return !s || s.played < ELO_PROVISIONAL_GAMES; };
   const ratingA = (ratingOf(pairA[0]) + ratingOf(pairA[1])) / 2;
   const ratingB = (ratingOf(pairB[0]) + ratingOf(pairB[1])) / 2;
   const winPctA = Math.round((1 / (1 + Math.pow(10, (ratingB - ratingA) / ELO_SCALE))) * 100);
@@ -537,11 +569,14 @@ function predictSeed(league, pairA, pairB) {
   };
 }
 
-function playerMatchHistory(league, playerId) {
+// `ratingsData` is optional — topScorers below calls this just for W/L
+// records and has no rating data to hand in, so ratingDelta simply comes
+// back null in that path rather than forcing every caller to supply it.
+function playerMatchHistory(league, playerId, ratingsData) {
   const team = league.teams.find((t) => t.players.some((p) => p.id === playerId));
   if (!team) return [];
   const rows = [];
-  const { deltas } = computeLeagueRatings(league);
+  const deltas = ratingsData ? ratingsData.deltas : new Map();
   allFixturesOf(league).forEach((f) => {
     if (!f.finalized || (f.teamA !== team.id && f.teamB !== team.id)) return;
     const mySide = f.teamA === team.id ? "A" : "B";
@@ -742,7 +777,7 @@ module.exports = {
   computeStandings,
   validateSelection,
   playerMatchHistory,
-  computeLeagueRatings,
+  computeGlobalRatings,
   leagueRankings,
   predictSeed,
   ELO_PROVISIONAL_GAMES,

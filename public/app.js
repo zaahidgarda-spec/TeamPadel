@@ -796,10 +796,11 @@ async function renderAccountStats(cards) {
   const captainTile = captaincies.length
     ? `<div class="stat-tile"><div class="stat-num" style="font-size:19px;">${escapeHtml(captaincies[0].teamName)}</div><div class="stat-lbl">Captain of<span class="tag">${escapeHtml(captaincies[0].leagueName)}</span>${captaincies.length > 1 ? ` +${captaincies.length - 1} more` : ""}</div></div>`
     : `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">Not a captain yet</div></div>`;
-  // A player can have a rating in every league they've claimed a record in —
-  // show whichever one has the most games behind it, since that's the
-  // least noisy number to lead with. Its rank is a second fetch (the
-  // dashboard only has the raw cards, not the full sorted leaderboard).
+  // Rating is now one number shared across every league this account has
+  // claimed a record in (the backend replays a claimed player's history
+  // globally) — every card agrees, so picking one is just about which
+  // league's rank to show alongside it. Most games played reads as "the
+  // league they're most established in," a reasonable one to lead with.
   const rated = cards.filter((c) => c.rating != null).sort((a, b) => b.ratingPlayed - a.ratingPlayed);
   let ratingTile = `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">No rating yet</div></div>`;
   if (rated.length) {

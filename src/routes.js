@@ -277,13 +277,35 @@ router.get("/leagues", (req, res) => {
 // plays any opponent on any night, so there's no fixed "next match" to
 // feature. A signed-in captain or admin narrows this to just their own
 // league; a guest, or a captain whose own league is a Vibora league
+// One rating per linked player identity, replayed across every league in
+// the store (not just one) — this is what lets a claimed player's rating
+// travel between leagues, including leagues that live on a different site
+// once that site points at this same backend/database. `identityOf`
+// resolves a raw (leagueId, playerId) pair to the claiming account's id,
+// or falls back to a per-league id for anyone who's never claimed a
+// record (their rating simply doesn't travel anywhere).
+function buildClaimsIndex() {
+  const map = new Map(); // `${leagueId}:${playerId}` -> claiming userId
+  store.getUsersIndex().forEach(({ id }) => {
+    const user = store.getUser(id);
+    if (!user) return;
+    (user.claims || []).forEach((c) => map.set(`${c.leagueId}:${c.playerId}`, user.id));
+  });
+  return map;
+}
+function loadGlobalRatings() {
+  const leagues = store.getIndex().map((e) => store.getLeague(e.id)).filter(Boolean);
+  const claimsIndex = buildClaimsIndex();
+  const identityOf = (leagueId, playerId) => claimsIndex.get(`${leagueId}:${playerId}`) || `${leagueId}:${playerId}`;
+  return { ratingsData: logic.computeGlobalRatings(leagues, identityOf), identityOf };
+}
 // (nothing to scope to), sees the full cross-league feed instead.
 // Shared by the site-wide Next Matches carousel and the signed-in player's
 // personal "Tonight's matches" strip — both need the same "soonest shared
 // night, interleaved fairly across leagues" grouping, just over a
 // different set of leagues (every active league vs. just the ones this
 // player is in).
-function buildNextMatchesPairings(leagues) {
+function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
   const playerName = (team, id) => {
     const p = team && team.players.find((pl) => pl.id === id);
     return p ? p.name : null;
@@ -336,7 +358,7 @@ function buildNextMatchesPairings(leagues) {
       const rubber = f.rubbers[i];
       const winner = rubber ? logic.rubberWinner(rubber) : null;
       // No point predicting a seed that's already been played.
-      const prediction = winner ? null : logic.predictSeed(league, pairA, pairB);
+      const prediction = winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
       if (!byLeague.has(league.id)) byLeague.set(league.id, []);
       byLeague.get(league.id).push({
         leagueName: league.name,
@@ -389,7 +411,8 @@ router.get("/next-matches", (req, res) => {
     if (mine) { leagues = [mine]; scopedTo = { id: mine.id, name: mine.name }; }
   }
 
-  res.json({ scopedTo, matches: buildNextMatchesPairings(leagues) });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  res.json({ scopedTo, matches: buildNextMatchesPairings(leagues, ratingsData, identityOf) });
 });
 
 // A signed-in player's own "Tonight's matches" — same grouping as the
@@ -403,7 +426,8 @@ router.get("/players/tonight-matches", (req, res) => {
   const leagues = Array.from(leagueIds)
     .map((id) => store.getLeague(id))
     .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
-  res.json({ matches: buildNextMatchesPairings(leagues) });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  res.json({ matches: buildNextMatchesPairings(leagues, ratingsData, identityOf) });
 });
 
 /* ---------- "Interested to join a league" signups ---------- */
@@ -722,6 +746,10 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   const cards = [];
   let changed = false;
+  // Computed once for this whole request, not once per claimed card — every
+  // card belonging to this account resolves to the SAME rating entry below
+  // (that's the point: one linked identity, one number, wherever it's shown).
+  const { ratingsData, identityOf } = loadGlobalRatings();
   // A league/team/player claimed earlier can later be deleted by its
   // admin/captain — drop the now-dangling claim quietly rather than error.
   user.claims = user.claims.filter((claim) => {
@@ -733,14 +761,13 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     const awards = rounds
       .flatMap((r) => logic.potwTallyForRound(league, r).winners)
       .filter((w) => w.playerAId === claim.playerId || w.playerBId === claim.playerId);
-    const { players: ratingPlayers } = logic.computeLeagueRatings(league);
-    const ratingEntry = ratingPlayers.get(claim.playerId);
+    const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name,
-      upcoming: logic.findPlayerUpcoming(league, claim.playerId),
-      results: logic.playerMatchHistory(league, claim.playerId),
+      upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
+      results: logic.playerMatchHistory(league, claim.playerId, ratingsData),
       awards,
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
@@ -2107,7 +2134,8 @@ router.get("/leagues/:leagueId/stats", (req, res) => {
 router.get("/leagues/:leagueId/rankings", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  res.json({ rankings: logic.leagueRankings(league) });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  res.json({ rankings: logic.leagueRankings(league, ratingsData, identityOf) });
 });
 // Fully self-contained — every field the player-history modal needs to
 // render, computed server-side, so the client never has to have this
@@ -2121,7 +2149,8 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
   const player = team && team.players.find((p) => p.id === req.params.playerId);
   if (!team || !player) return res.status(404).json({ error: "Player not found." });
-  const rows = logic.playerMatchHistory(league, req.params.playerId);
+  const { ratingsData } = loadGlobalRatings();
+  const rows = logic.playerMatchHistory(league, req.params.playerId, ratingsData);
   const rounds = [...new Set(league.fixtures.map((f) => f.round))];
   const potwWins = rounds
     .flatMap((r) => logic.potwTallyForRound(league, r).winners)
