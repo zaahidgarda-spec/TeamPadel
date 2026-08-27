@@ -239,6 +239,31 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .info-callout.info-callout-success{background:var(--success-soft);border-color:rgba(23,138,76,.3);}
 .info-callout.info-callout-success strong{color:var(--success);}
 .note.info-callout-success{color:var(--success);font-weight:600;}
+/* A logged-out visitor looking at an unclaimed player's own stats — their
+   own record already on screen is the reason to bother signing up, so the
+   offer sits right there instead of somewhere they'd have to go find it. */
+.claim-banner{display:flex;align-items:center;gap:12px;background:var(--accent-soft);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;}
+.claim-banner .icon{font-size:22px;flex-shrink:0;}
+.claim-banner .txt{flex:1;font-size:12.5px;color:var(--text);line-height:1.45;}
+.claim-banner .txt b{color:var(--accent);}
+.claim-banner button{white-space:nowrap;padding:8px 14px;font-size:11.5px;}
+@media (max-width:480px){
+  .claim-banner{flex-direction:column;align-items:stretch;text-align:center;}
+}
+/* The lightest of the three sign-up nudges — a strip above a roster/pairs
+   list a guest is already browsing, not a new destination. */
+.roster-signup-strip{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,var(--accent-soft),rgba(37,99,235,0) 70%);border:1px solid rgba(37,99,235,.2);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:16px;}
+.roster-signup-strip .icon{font-size:22px;flex-shrink:0;}
+.roster-signup-strip .txt{flex:1;}
+.roster-signup-strip .txt b{font-size:13px;display:block;margin-bottom:1px;}
+.roster-signup-strip .txt span{font-size:11.5px;color:var(--text-dim);}
+.roster-signup-strip button.primary{white-space:nowrap;}
+.roster-signup-strip .dismiss{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:18px;padding:0 2px;line-height:1;}
+.roster-signup-strip .dismiss:hover{color:var(--clay);}
+@media (max-width:560px){
+  .roster-signup-strip{flex-wrap:wrap;}
+  .roster-signup-strip .txt{flex-basis:100%;}
+}
 
 /* Horizontally-scrollable tables (court schedule, league table, tie-break
    record) had no visual cue that there was more to scroll to — on a
@@ -596,6 +621,25 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-section{margin-bottom:26px;}
 .pd-section-head{margin-bottom:10px;}
 .pd-section-head h2{font-family:var(--font-display);font-size:13.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text);margin:0;}
+
+/* A logged-out visitor sees this before the actual sign-up/login form —
+   what claiming a profile is actually for, not just a bare set of
+   inputs asking for a leap of faith. */
+.account-hero{
+  background:radial-gradient(120% 160% at 18% 0%,var(--accent-soft),rgba(37,99,235,0) 65%);
+  border-radius:var(--radius-lg); padding:28px 26px 24px; text-align:center; margin-bottom:22px;
+}
+.account-hero-eyebrow{font-family:var(--font-display);font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);font-weight:600;margin:0 0 8px;}
+.account-hero-title{font-family:var(--font-display);font-size:24px;font-weight:700;margin:0 0 8px;letter-spacing:-.01em;}
+.account-hero-sub{color:var(--text-dim);font-size:13.5px;max-width:42ch;margin:0 auto 22px;}
+.account-hero-benefits{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:560px;margin:0 auto;text-align:left;}
+.account-hero-benefit{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px;}
+.account-hero-benefit .ic{font-size:18px;flex-shrink:0;}
+.account-hero-benefit b{display:block;font-size:12px;margin-bottom:2px;}
+.account-hero-benefit span{font-size:11px;color:var(--text-dim);line-height:1.4;}
+@media (max-width:640px){
+  .account-hero-benefits{grid-template-columns:1fr;}
+}
 
 .pd-tonight-scroll{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;margin:0 -2px;}
 .pd-tonight-card{flex:0 0 auto;width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px;box-shadow:var(--shadow-sm);}

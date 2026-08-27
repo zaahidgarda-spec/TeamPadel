@@ -4514,7 +4514,20 @@ function matchCardHtml(label, teamAId, teamBId, f) {
 
 /* ---------- Roster (read-only, except a captain can manage their own team) ---------- */
 
+// In-memory only — dismissing just clears it for this visit, not
+// permanently, since a different session browsing this same roster is a
+// fresh chance to catch someone who hasn't signed up yet.
+let rosterBannerDismissed = false;
+el("roster-signup-dismiss").onclick = () => {
+  rosterBannerDismissed = true;
+  el("roster-signup-banner").style.display = "none";
+};
+el("roster-signup-cta").onclick = () => {
+  showHub();
+  switchHubTab("account");
+};
 function renderRoster() {
+  el("roster-signup-banner").style.display = (!playerAccount && !rosterBannerDismissed) ? "flex" : "none";
   const c = el("roster-container");
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
   if (scopedTeams.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No teams yet.</p></div>'; return; }
@@ -4715,14 +4728,30 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
     tabsEl.innerHTML = "";
   }
   el("player-modal-body").innerHTML = renderPlayerHistoryBody(data);
+  const claimBtn = el("player-modal-body").querySelector(".claim-banner-btn");
+  if (claimBtn) claimBtn.onclick = () => {
+    el("player-modal-backdrop").classList.remove("open");
+    // The modal can be opened from a league's own Roster/Results tabs, not
+    // just the hub — back out to the hub first so My Profile is actually
+    // on screen, not just marked active underneath the still-showing league.
+    showHub();
+    switchHubTab("account");
+  };
 }
 function renderPlayerHistoryBody(data) {
+  // Whoever's looking isn't signed in, and this record hasn't been claimed
+  // by anyone yet — could be the player themselves, or a teammate who
+  // knows them, either way worth a nudge right where their own stats are
+  // already on screen as the reason to bother.
+  const claimBanner = (!playerAccount && !data.claimed)
+    ? `<div class="claim-banner"><span class="icon">👋</span><span class="txt">Is this <b>${escapeHtml(data.playerName)}</b>? Claim this profile to track your stats and get your next match up front.</span><button class="primary claim-banner-btn" type="button">Claim profile</button></div>`
+    : "";
   const { rows, isPairs, potwWins, hallOfFameTitles } = data;
   const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
   const titlesBlock = hallOfFameTitles.length
     ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
     : "";
-  if (rows.length === 0) return crownLine + titlesBlock + '<p class="empty">No completed matches yet.</p>';
+  if (rows.length === 0) return claimBanner + crownLine + titlesBlock + '<p class="empty">No completed matches yet.</p>';
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;
   const losses = rows.length - wins - draws;
@@ -4731,7 +4760,7 @@ function renderPlayerHistoryBody(data) {
   // team-league-only.
   const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
   const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
-  let html = crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
+  let html = claimBanner + crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
 
   // Best partners / toughest opponents — a minimum of 2 meetings so a
   // single fluke result doesn't crown a "100%" partner or a "0%" nemesis

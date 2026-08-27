@@ -117,8 +117,18 @@
 
       <section class="hub-view" id="hub-view-account">
         <div class="card" id="account-signed-out-card">
-          <h2 class="section-title"><span id="account-form-title">Log in</span></h2>
-          <div id="account-login-form">
+          <div class="account-hero">
+            <div class="account-hero-eyebrow">My Profile</div>
+            <h2 class="account-hero-title">Your season, in one place.</h2>
+            <p class="account-hero-sub">Claim your player record and see your matches, results, and season record every time you open the site — across every league you play in.</p>
+            <div class="account-hero-benefits">
+              <div class="account-hero-benefit"><span class="ic">📅</span><div><b>Never miss a match</b><span>Your next match, right up top, every time you visit.</span></div></div>
+              <div class="account-hero-benefit"><span class="ic">📊</span><div><b>Track your season</b><span>Win record, form, and history — automatically kept.</span></div></div>
+              <div class="account-hero-benefit"><span class="ic">🔗</span><div><b>One profile, every league</b><span>Play in two leagues? See both in one place.</span></div></div>
+            </div>
+          </div>
+          <h2 class="section-title"><span id="account-form-title">Sign up</span></h2>
+          <div id="account-login-form" style="display:none;">
             <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
               <input type="email" id="account-login-email" placeholder="Email">
               <input type="password" id="account-login-password" placeholder="Password">
@@ -136,12 +146,12 @@
             <button class="link" id="show-account-login-from-forgot" style="margin-top:10px;">Back to log in</button>
             <p class="note" id="account-forgot-sent" style="display:none;margin-top:10px;">If that email has an account, a reset link is on its way.</p>
           </div>
-          <div id="account-signup-form" style="display:none;">
+          <div id="account-signup-form">
             <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
               <input type="text" id="account-signup-name" placeholder="Your name">
               <input type="email" id="account-signup-email" placeholder="Email">
               <input type="password" id="account-signup-password" placeholder="Password (6+ characters)">
-              <button class="primary" id="account-signup-btn">Sign up</button>
+              <button class="primary" id="account-signup-btn">Create your profile</button>
             </div>
             <button class="link" id="show-account-login" style="margin-top:10px;">Already have an account? Log in</button>
           </div>
@@ -620,6 +630,12 @@
       </section>
 
       <section class="view" id="view-roster">
+        <div class="roster-signup-strip" id="roster-signup-banner" style="display:none;">
+          <span class="icon">🎾</span>
+          <div class="txt"><b>Playing in this league?</b><span>Sign up to track your matches, results, and season record.</span></div>
+          <button class="primary" id="roster-signup-cta">Sign up free</button>
+          <button class="dismiss" id="roster-signup-dismiss" aria-label="Dismiss" type="button">&times;</button>
+        </div>
         <div id="roster-container"></div>
       </section>
 

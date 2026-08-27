@@ -2279,6 +2279,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     potwWins,
     hallOfFameTitles,
     otherLeagues,
+    claimed: !!player.claimedByUserId,
   });
 });
 
