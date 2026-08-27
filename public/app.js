@@ -1,3 +1,8 @@
+// Ratings/rankings/predictions are being built out on a separate site —
+// this one keeps the full backend (routes, computeGlobalRatings, etc.)
+// live and ready, just with the UI switched off here. Flip to true to
+// show it on this site again; nothing else needs to change either way.
+const RATINGS_ENABLED = false;
 let leaguesIndex = [];
 let currentLeagueId = null;
 let league = null;
@@ -59,7 +64,7 @@ function avatarHtml(t) {
 // either partner had any rating history to move (shouldn't happen once the
 // engine's warmed up, but the field can still be absent defensively).
 function ratingDeltaHtml(delta) {
-  if (delta == null) return "";
+  if (!RATINGS_ENABLED || delta == null) return "";
   const cls = delta > 0 ? "up" : delta < 0 ? "down" : "";
   return ` <span class="rating-delta ${cls}">${delta > 0 ? "+" : ""}${delta}</span>`;
 }
@@ -237,7 +242,7 @@ function relativeDayLabel(iso) {
 // actual update. Null once a seed is scored (the backend stops predicting
 // decided matches), so this renders nothing rather than a stale guess.
 function predictionBarHtml(prediction) {
-  if (!prediction) return "";
+  if (!RATINGS_ENABLED || !prediction) return "";
   const note = prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : "";
   return `<div class="mc-predict">
     <div class="mc-predict-bar"><span class="a" style="width:${prediction.winPctA}%"></span><span class="b" style="width:${prediction.winPctB}%"></span></div>
@@ -248,7 +253,7 @@ function predictionBarHtml(prediction) {
 // Same idea, but for a personal "your side" view — one number, not a bar
 // with two teams, since the player only cares about their own chances here.
 function personalPredictionHtml(prediction) {
-  if (!prediction) return "";
+  if (!RATINGS_ENABLED || !prediction) return "";
   return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>`;
 }
 async function renderNextMatches() {
@@ -801,15 +806,18 @@ async function renderAccountStats(cards) {
   // globally) — every card agrees, so picking one is just about which
   // league's rank to show alongside it. Most games played reads as "the
   // league they're most established in," a reasonable one to lead with.
-  const rated = cards.filter((c) => c.rating != null).sort((a, b) => b.ratingPlayed - a.ratingPlayed);
-  let ratingTile = `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">No rating yet</div></div>`;
-  if (rated.length) {
-    const primary = rated[0];
-    let rankNote = "";
-    const { rankings } = await api(`/leagues/${primary.leagueId}/rankings`).catch(() => ({ rankings: [] }));
-    const idx = rankings.findIndex((r) => r.playerId === primary.playerId);
-    if (idx >= 0) rankNote = `<div class="note">#${idx + 1} in ${escapeHtml(primary.leagueName)}</div>`;
-    ratingTile = `<div class="stat-tile"><div class="stat-num">${Math.round(primary.rating)}</div><div class="stat-lbl">Rating${primary.ratingProvisional ? ' <span class="tag">Prov.</span>' : ""}${rankNote}</div></div>`;
+  let ratingTile = "";
+  if (RATINGS_ENABLED) {
+    const rated = cards.filter((c) => c.rating != null).sort((a, b) => b.ratingPlayed - a.ratingPlayed);
+    ratingTile = `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">No rating yet</div></div>`;
+    if (rated.length) {
+      const primary = rated[0];
+      let rankNote = "";
+      const { rankings } = await api(`/leagues/${primary.leagueId}/rankings`).catch(() => ({ rankings: [] }));
+      const idx = rankings.findIndex((r) => r.playerId === primary.playerId);
+      if (idx >= 0) rankNote = `<div class="note">#${idx + 1} in ${escapeHtml(primary.leagueName)}</div>`;
+      ratingTile = `<div class="stat-tile"><div class="stat-num">${Math.round(primary.rating)}</div><div class="stat-lbl">Rating${primary.ratingProvisional ? ' <span class="tag">Prov.</span>' : ""}${rankNote}</div></div>`;
+    }
   }
   el("account-stats").innerHTML = `
     <div class="stat-tile"><div class="stat-num">${results.length ? record : "—"}</div><div class="stat-lbl">Season record</div></div>
@@ -1040,7 +1048,7 @@ function tabDefs() {
   if (!isPairs) defs.push({ key: "fixtures", label: "Fixtures" });
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
-  defs.push({ key: "rankings", label: "Rankings" });
+  if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
   defs.push({ key: "stats", label: "Stats" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
@@ -1264,7 +1272,7 @@ function renderAll() {
   renderFixtures();
   renderResults();
   renderTable();
-  renderRankings();
+  if (RATINGS_ENABLED) renderRankings();
   renderRoster();
   renderStats();
   renderHallOfFame();
