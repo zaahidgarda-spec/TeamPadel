@@ -2789,6 +2789,23 @@ const COURT_SCHEDULE_GLOW = {
   "#4F46E5": "#A5B4FC",
 };
 function fixtureGlow(color) { return COURT_SCHEDULE_GLOW[color.border] || color.border; }
+// A frosted-glass tint per fixture for the floodlit court schedule's own
+// cells/legend — a translucent color (not the bright glow above, which is
+// for borders/rings) that sits over a blurred view of the dark backdrop
+// behind it. The orange slot is deliberately yellow instead of its
+// light-mode orange — chosen to read clearly at this same low opacity,
+// where the original orange muddied toward brown.
+const COURT_SCHEDULE_GLASS = {
+  "#2563EB": "rgba(37,99,235,.25)",
+  "#D97706": "rgba(234,179,8,.25)",
+  "#DB2777": "rgba(219,39,119,.25)",
+  "#0D9488": "rgba(13,148,136,.25)",
+  "#7C3AED": "rgba(124,58,237,.25)",
+  "#EA580C": "rgba(234,88,12,.25)",
+  "#16A34A": "rgba(22,163,74,.25)",
+  "#4F46E5": "rgba(79,70,229,.25)",
+};
+function fixtureGlass(color) { return COURT_SCHEDULE_GLASS[color.border] || color.bg; }
 // Counts, per team per slot, how many times that team has had a "double"
 // (two rubbers on two courts at once) across every round with a saved court
 // schedule — lets the admin see the auto-fill's rotation is actually fair
@@ -2893,7 +2910,7 @@ function renderCourtScheduleGrid(fixtures) {
   legend.innerHTML = fixtures.map((f) => {
     const color = fixtureColor(f.id, fixtures);
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-    return `<div class="cs-legend-item" style="--fx-glow:${fixtureGlow(color)};"><span class="cs-swatch" style="background:${color.border}"></span>${avatarHtml(teamA)}<span class="cs-vs">v</span>${avatarHtml(teamB)}<span>${escapeHtml(teamA ? teamA.name : "TBD")} vs ${escapeHtml(teamB ? teamB.name : "TBD")}</span></div>`;
+    return `<div class="cs-legend-item" style="--fx-glow:${fixtureGlow(color)};--fx-glass:${fixtureGlass(color)};"><span class="cs-swatch" style="background:${color.border}"></span>${avatarHtml(teamA)}<span class="cs-vs">v</span>${avatarHtml(teamB)}<span>${escapeHtml(teamA ? teamA.name : "TBD")} vs ${escapeHtml(teamB ? teamB.name : "TBD")}</span></div>`;
   }).join("");
   wrap.appendChild(legend);
 
@@ -3020,6 +3037,7 @@ function renderCourtScheduleGrid(fixtures) {
           const color = fixtureColor(cell.fixtureId, fixtures);
           td.style.cssText = `border-radius:8px;background:${color.bg};`;
           td.style.setProperty("--fx-glow", fixtureGlow(color));
+          td.style.setProperty("--fx-glass", fixtureGlass(color));
           td.appendChild(doubleBadge("2 courts at once"));
           const row = document.createElement("div");
           row.className = "cs-double-row";
@@ -3041,6 +3059,7 @@ function renderCourtScheduleGrid(fixtures) {
         const color = fixtureColor(cell.fixtureId, fixtures);
         td.style.cssText = `border-radius:8px;background:${color.bg};`;
         td.style.setProperty("--fx-glow", fixtureGlow(color));
+        td.style.setProperty("--fx-glass", fixtureGlass(color));
       }
       if (isDouble(cell)) td.appendChild(doubleBadge("2 courts"));
       // Content renders the same way for every role now — the admin-only
