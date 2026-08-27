@@ -458,7 +458,7 @@ async function refreshOwnerStatus() {
   el("owner-login-card").style.display = isOwner ? "none" : "block";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
-  if (isOwner) { renderInterestSignups(); renderCombineAccounts(); }
+  if (isOwner) { renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); }
   renderHub();
 }
 async function renderInterestSignups() {
@@ -535,6 +535,37 @@ async function runCombineSearch(q) {
     };
   });
 }
+// Same-name candidates found across leagues, purely a suggestion — clicking
+// "Combine these" just pre-fills the same selection flow a manual search
+// would, so nothing here ever links a profile without the admin reviewing
+// and confirming it themselves via the existing Combine button.
+async function renderCombineSuggestions() {
+  const groups = await api("/admin/players/suggestions").catch(() => []);
+  const wrap = el("combine-suggestions-wrap");
+  if (groups.length === 0) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  el("combine-suggestions-list").innerHTML = groups.map((g, gi) => `
+    <div class="notif-row" data-gi="${gi}" style="align-items:flex-start;">
+      <div>
+        <span class="tag" style="${g.confidence === "exact" ? "color:var(--accent);border-color:var(--accent);" : ""}">${g.confidence === "exact" ? "Same name" : "Similar name"}</span>
+        <div class="note" style="margin-top:6px;">${g.players.map((p) => `${escapeHtml(p.playerName)} — ${escapeHtml(p.teamName)}, ${escapeHtml(p.leagueName)}${p.claimed ? " (already claimed)" : ""}`).join("<br>")}</div>
+      </div>
+      <button class="secondary combine-suggestion-btn" type="button">Combine these</button>
+    </div>
+  `).join("");
+  el("combine-suggestions-list").querySelectorAll(".combine-suggestion-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const group = groups[Number(btn.closest(".notif-row").dataset.gi)];
+      combineSelected = group.players.map((p) => ({
+        leagueId: p.leagueId, teamId: p.teamId, playerId: p.playerId,
+        playerName: p.playerName, teamName: p.teamName, leagueName: p.leagueName,
+      }));
+      el("combine-name-input").value = group.players[0].playerName;
+      renderCombineSelected();
+      el("combine-selected-wrap").scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+  });
+}
 function renderCombineSelected() {
   el("combine-selected-wrap").style.display = combineSelected.length ? "block" : "none";
   el("combine-selected-list").innerHTML = combineSelected.map((s, i) => `
@@ -564,6 +595,7 @@ el("combine-submit-btn").onclick = async () => {
     el("combine-search-input").value = ""; el("combine-search-results").innerHTML = "";
     renderCombineSelected();
     renderCombineAccounts();
+    renderCombineSuggestions();
   } catch (e) { el("combine-error").textContent = e.message; }
 };
 async function renderCombineAccounts() {

@@ -602,28 +602,88 @@ router.get("/players/me", (req, res) => {
   res.json({ id: user.id, name: user.name, email: user.email, captaincies });
 });
 
-// Cross-league name search — any league, any format, any status, since a
-// player record's existence is what matters here, not the league's phase.
-// Shared by the player-facing search (below) and the owner-only admin
-// search used to combine profiles on someone's behalf.
-function searchPlayersAcrossLeagues(q) {
+// Every player record in the store, flat — any league, any format, any
+// status, since a player record's existence is what matters here, not the
+// league's phase. The shared base both the cross-league name search and
+// the combine-suggestions scan build on.
+function allPlayersFlat() {
   const results = [];
   store.getIndex().forEach((entry) => {
     const league = store.getLeague(entry.id);
     if (!league) return;
     league.teams.forEach((team) => {
       team.players.forEach((p) => {
-        if (!p.name.toLowerCase().includes(q)) return;
         results.push({
           leagueId: league.id, leagueName: league.name,
           teamId: team.id, teamName: team.name,
           playerId: p.id, playerName: p.name,
-          claimed: !!p.claimedByUserId,
+          claimedByUserId: p.claimedByUserId || null,
         });
       });
     });
   });
-  return results.slice(0, 30);
+  return results;
+}
+// Shared by the player-facing search (below) and the owner-only admin
+// search used to combine profiles on someone's behalf.
+function searchPlayersAcrossLeagues(q) {
+  return allPlayersFlat()
+    .filter((p) => p.playerName.toLowerCase().includes(q))
+    .map((p) => ({
+      leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
+      playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
+    }))
+    .slice(0, 30);
+}
+// Groups player records across every league whose names look like the
+// same real person, so the admin combine tool can suggest candidates
+// instead of relying on the admin to think to search a specific name.
+// Purely a suggestion — two different people sharing (or nearly sharing)
+// a name is completely normal in a league, so nothing here links anyone;
+// it only surfaces groups worth a human's second look.
+function findPlayerNameSuggestions() {
+  const all = allPlayersFlat();
+  const n = all.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+  function union(i, j) { const ri = find(i), rj = find(j); if (ri !== rj) parent[ri] = rj; }
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      // Same team's own roster never has the same person twice — a name
+      // match there is coincidence, not a cross-league duplicate.
+      if (all[i].teamId === all[j].teamId) continue;
+      if (logic.namesSimilar(all[i].playerName, all[j].playerName)) union(i, j);
+    }
+  }
+  const groups = {};
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    (groups[root] = groups[root] || []).push(all[i]);
+  }
+  return Object.values(groups)
+    .filter((players) => players.length >= 2)
+    // Nothing left to suggest once every record in the group is already
+    // combined under the same account.
+    .filter((players) => {
+      const owners = new Set(players.map((p) => p.claimedByUserId));
+      return !(owners.size === 1 && players[0].claimedByUserId);
+    })
+    .map((players) => {
+      let confidence = "close";
+      outer: for (let a = 0; a < players.length; a++) {
+        for (let b = a + 1; b < players.length; b++) {
+          if (logic.namesSimilar(players[a].playerName, players[b].playerName) === "exact") { confidence = "exact"; break outer; }
+        }
+      }
+      return {
+        confidence,
+        players: players.map((p) => ({
+          leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
+          playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
+        })),
+      };
+    })
+    .sort((a, b) => (b.confidence === "exact") - (a.confidence === "exact"));
 }
 router.get("/players/search", requirePlayerUser, (req, res) => {
   const q = ((req.query.q || "") + "").trim().toLowerCase();
@@ -689,6 +749,13 @@ router.get("/admin/players/search", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const q = ((req.query.q || "") + "").trim().toLowerCase();
   res.json(q ? searchPlayersAcrossLeagues(q) : []);
+});
+// Groups of records across every league whose names look like the same
+// real person — surfaced so the admin doesn't have to already suspect a
+// specific name is duplicated before searching for it.
+router.get("/admin/players/suggestions", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  res.json(findPlayerNameSuggestions());
 });
 router.post("/admin/players/combine", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });

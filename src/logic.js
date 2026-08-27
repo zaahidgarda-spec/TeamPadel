@@ -758,6 +758,44 @@ function computeLeagueStats(league) {
   };
 }
 
+// ---------- Name matching (for suggesting combine candidates) ----------
+// Standard edit-distance DP — how many single-character insert/delete/
+// substitute steps turn one string into the other.
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+function normalizeNameForMatch(name) {
+  return (name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+// "exact" for the same name typed identically (case/spacing aside) across
+// two rosters — the common real case of one person entered twice. "close"
+// for a small edit distance (a typo, a missing initial) — deliberately
+// conservative, since two DIFFERENT people sharing a name is completely
+// normal in a league; this only ever suggests, never links anything
+// itself. null means "don't suggest these as the same person."
+function namesSimilar(nameA, nameB) {
+  const a = normalizeNameForMatch(nameA), b = normalizeNameForMatch(nameB);
+  if (!a || !b) return null;
+  if (a === b) return "exact";
+  const shortLen = Math.min(a.length, b.length);
+  if (shortLen < 4) return null;
+  const dist = levenshtein(a, b);
+  if (shortLen >= 8 && dist <= 2) return "close";
+  if (dist <= 1) return "close";
+  return null;
+}
+
 module.exports = {
   uid,
   emptyRubber,
@@ -788,4 +826,5 @@ module.exports = {
   restrictToGroup,
   allFixturesOf,
   stageKeyFor,
+  namesSimilar,
 };
