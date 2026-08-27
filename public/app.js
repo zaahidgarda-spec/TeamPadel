@@ -1089,6 +1089,9 @@ function tabDefs() {
   defs.push({ key: "results", label: "Results" });
   defs.push({ key: "table", label: "Table" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
+  // Admin-only, independent of RATINGS_ENABLED — a preview of what ratings
+  // could look like, not a toggle for showing it to everyone else.
+  if (myRole === "admin") defs.push({ key: "ratings-preview", label: "Ratings preview" });
   defs.push({ key: "stats", label: "Stats" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
@@ -1313,6 +1316,7 @@ function renderAll() {
   renderResults();
   renderTable();
   if (RATINGS_ENABLED) renderRankings();
+  if (myRole === "admin") renderRatingsPreview();
   renderRoster();
   renderStats();
   renderHallOfFame();
@@ -4495,6 +4499,112 @@ async function renderRankings() {
   html += "</div>";
   c.innerHTML = html;
   bindPlayerLinks(c);
+}
+// Admin-only preview of what the (already fully working, currently hidden
+// behind RATINGS_ENABLED) rating engine could look like — independent of
+// that flag, since the whole point is being able to see it while it's off
+// for everyone else. Every module comes from one route that only ever
+// reads data the engine already computes; nothing new is stored.
+async function renderRatingsPreview() {
+  const data = await api(`/leagues/${currentLeagueId}/admin/ratings-preview`).catch(() => null);
+  if (!data) return;
+  const logoHtml = (logo, name) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "";
+
+  // 1. Tale of the tape
+  el("rp-matchup-card").style.display = "block";
+  if (data.matchup) {
+    const m = data.matchup;
+    el("rp-matchup").innerHTML = `
+      <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
+      <div class="mc-pairing">
+        <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair">${escapeHtml(m.pairA.join(" & "))}</span></span>
+        <span class="vs">vs</span>
+        <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair">${escapeHtml(m.pairB.join(" & "))}</span></span>
+      </div>
+      <div class="mc-predict">
+        <div class="mc-predict-bar"><span class="a" style="width:${m.prediction.winPctA}%"></span><span class="b" style="width:${m.prediction.winPctB}%"></span></div>
+        <div class="mc-predict-pcts"><span>${m.prediction.winPctA}%</span><span>${m.prediction.winPctB}%</span></div>
+        ${m.prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : ""}
+      </div>
+      <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, m.venue].filter(Boolean).join(" · "))}</div>
+    `;
+  } else {
+    el("rp-matchup").innerHTML = '<p class="note">No undecided, fully-selected seed to preview right now.</p>';
+  }
+
+  // 2. Season trend
+  const tCard = el("rp-trend-card");
+  if (data.trend && data.trend.points.length > 1) {
+    tCard.style.display = "block";
+    el("rp-trend").innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div><strong>${escapeHtml(data.trend.playerName)}</strong><div class="note">${escapeHtml(data.trend.teamName)}</div></div>
+        <div style="text-align:right;"><div style="font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--accent);">${data.trend.current}</div><div class="note">Current rating</div></div>
+      </div>
+      <svg viewBox="0 0 600 100" style="width:100%;height:100px;display:block;" id="rp-trend-svg"></svg>
+    `;
+    renderTrendSpark("rp-trend-svg", data.trend.points);
+  } else {
+    tCard.style.display = "none";
+  }
+
+  // 3. Leaderboard with movement
+  const lCard = el("rp-leaderboard-card");
+  if (data.leaderboard.length) {
+    lCard.style.display = "block";
+    el("rp-leaderboard").innerHTML = data.leaderboard.map((r, i) => {
+      const moveHtml = !r.lastDelta ? '<span class="note">—</span>'
+        : r.lastDelta > 0 ? `<span class="rating-delta up">▲ +${r.lastDelta}</span>`
+        : `<span class="rating-delta down">▼ ${r.lastDelta}</span>`;
+      return `<div class="history-row" style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-family:var(--font-display);font-weight:700;color:var(--text-dim);width:20px;">${i + 1}</span>
+          <div><strong>${escapeHtml(r.playerName)}</strong>${r.provisional ? ' <span class="tag">Prov.</span>' : ""}<div class="note">${escapeHtml(r.teamName)}</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;">
+          ${moveHtml}
+          <span style="font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--accent);">${r.rating}</span>
+        </div>
+      </div>`;
+    }).join("");
+  } else {
+    lCard.style.display = "none";
+  }
+
+  // 4. Prediction recap
+  const rCard = el("rp-recap-card");
+  if (data.recap.length) {
+    rCard.style.display = "block";
+    el("rp-recap").innerHTML = data.recap.map((r) => {
+      const favName = r.favoriteSide === "A" ? r.pairA.join(" & ") : r.pairB.join(" & ");
+      const otherName = r.favoriteSide === "A" ? r.pairB.join(" & ") : r.pairA.join(" & ");
+      return `<div class="history-row"><div class="history-top"><span class="history-badge ${r.hit ? "win" : "loss"}">${r.hit ? "✓" : "✗"}</span><span class="history-label">${escapeHtml(favName)} (${r.winPct}% favorite) ${r.hit ? "beat" : "lost to"} ${escapeHtml(otherName)}</span></div></div>`;
+    }).join("");
+  } else {
+    rCard.style.display = "none";
+  }
+}
+// A minimal line-chart, styled to the site's own accent — resolves the
+// color once from the live stylesheet rather than relying on var()
+// inside a plain SVG attribute, which browsers don't reliably resolve.
+function renderTrendSpark(svgId, points) {
+  const svg = el(svgId);
+  const w = 600, h = 100, pad = 8;
+  const min = Math.min(...points), max = Math.max(...points);
+  const x = (i) => pad + (i / (points.length - 1)) * (w - pad * 2);
+  const y = (v) => h - pad - ((v - min) / (max - min || 1)) * (h - pad * 2);
+  const path = points.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const areaPath = path + ` L${x(points.length - 1).toFixed(1)},${h} L${x(0).toFixed(1)},${h} Z`;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2563EB";
+  svg.innerHTML = `
+    <defs><linearGradient id="rpFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${accent}" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="${accent}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <path d="${areaPath}" fill="url(#rpFade)" stroke="none"/>
+    <path d="${path}" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${points.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${i === points.length - 1 ? 4.5 : 2.5}" fill="${accent}"/>`).join("")}
+  `;
 }
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;

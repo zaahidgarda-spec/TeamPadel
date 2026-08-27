@@ -462,8 +462,15 @@ function allRatableFixtures(leagues) {
 // resolves a raw per-league player id to that shared identity — the
 // claiming account's id if claimed, otherwise a per-league fallback so an
 // unclaimed player still gets a rating, just one that doesn't travel.
+// The engine's own win-expectation formula, pulled out once so both the
+// live rating update and a point-in-time prediction (current or, given an
+// already-decided match's pre-match ratings, retroactive) compute it
+// identically.
+function expectedScore(ratingA, ratingB) {
+  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / ELO_SCALE));
+}
 function computeGlobalRatings(leagues, identityOf) {
-  const players = new Map(); // identity -> { rating, played, wins, losses, draws, form }
+  const players = new Map(); // identity -> { rating, played, wins, losses, draws, form, last }
   // `${fixtureId}:${seedIndex}:${rawPlayerId}` -> { delta, ratingBefore, ratingAfter }
   // keyed by the raw per-league player id (not the shared identity), so a
   // single league's own lookups (playerMatchHistory) don't need identityOf.
@@ -493,7 +500,7 @@ function computeGlobalRatings(leagues, identityOf) {
       const pb1 = entryFor(identityOf(league.id, b1)), pb2 = entryFor(identityOf(league.id, b2));
       const ratingA = (pa1.rating + pa2.rating) / 2;
       const ratingB = (pb1.rating + pb2.rating) / 2;
-      const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / ELO_SCALE));
+      const expectedA = expectedScore(ratingA, ratingB);
       const actualA = winner === "A" ? 1 : winner === "B" ? 0 : 0.5;
 
       const applySide = (p1, p2, rawId1, rawId2, actual, expected) => {
@@ -507,7 +514,12 @@ function computeGlobalRatings(leagues, identityOf) {
           else if (actual === 0) { p.losses++; p.form.push("L"); }
           else { p.draws++; p.form.push("D"); }
           if (p.form.length > 5) p.form.shift();
-          deltas.set(`${f.id}:${i}:${rawId}`, { delta, ratingBefore, ratingAfter: p.rating });
+          const entry = { fixtureId: f.id, delta, ratingBefore, ratingAfter: p.rating };
+          deltas.set(`${f.id}:${i}:${rawId}`, entry);
+          // Overwritten every time — since fixtures are processed in true
+          // chronological order, whatever's left once the loop ends is each
+          // player's most recent result, for "moved ▲/▼ since last match".
+          p.last = entry;
         });
       };
       applySide(pa1, pa2, a1, a2, actualA, expectedA);
@@ -543,6 +555,7 @@ function leagueRankings(league, ratingsData, identityOf) {
         draws: stat.draws,
         form: stat.form.slice(),
         provisional: stat.played < ELO_PROVISIONAL_GAMES,
+        lastDelta: stat.last ? stat.last.delta : null,
       });
     });
   });
@@ -559,7 +572,7 @@ function predictSeed(league, pairA, pairB, ratingsData, identityOf) {
   const provisionalOf = (id) => { const s = players.get(identityOf(league.id, id)); return !s || s.played < ELO_PROVISIONAL_GAMES; };
   const ratingA = (ratingOf(pairA[0]) + ratingOf(pairA[1])) / 2;
   const ratingB = (ratingOf(pairB[0]) + ratingOf(pairB[1])) / 2;
-  const winPctA = Math.round((1 / (1 + Math.pow(10, (ratingB - ratingA) / ELO_SCALE))) * 100);
+  const winPctA = Math.round(expectedScore(ratingA, ratingB) * 100);
   return {
     winPctA,
     winPctB: 100 - winPctA,
@@ -818,6 +831,9 @@ module.exports = {
   computeGlobalRatings,
   leagueRankings,
   predictSeed,
+  expectedScore,
+  allRatableFixtures,
+  ELO_BASE,
   ELO_PROVISIONAL_GAMES,
   findPlayerUpcoming,
   potwEligiblePairs,

@@ -2222,6 +2222,74 @@ router.get("/leagues/:leagueId/rankings", (req, res) => {
   const { ratingsData, identityOf } = loadGlobalRatings();
   res.json({ rankings: logic.leagueRankings(league, ratingsData, identityOf) });
 });
+// Admin-only preview of what ratings/predictions could look like for this
+// league — the backend runs regardless of whether RATINGS_ENABLED shows
+// any of it to everyone else, so this is a way for an admin to see the
+// real thing without turning it on for players yet. Four self-contained
+// pieces, each built from data the engine already computes — nothing new
+// is stored to produce any of them.
+router.get("/leagues/:leagueId/admin/ratings-preview", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Not found." });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  const rankings = logic.leagueRankings(league, ratingsData, identityOf);
+
+  // 1. Tale of the tape — the soonest seed with both line-ups in and no
+  // result yet.
+  const matchup = buildNextMatchesPairings([league], ratingsData, identityOf).find((m) => m.prediction) || null;
+
+  // 2. Season trend — the #1 ranked player's rating after each finalized
+  // match, reconstructed by walking their own already-stored per-match
+  // deltas forward from the base rating (no separate history is kept).
+  let trend = null;
+  if (rankings.length) {
+    const top = rankings[0];
+    const rows = logic.playerMatchHistory(league, top.playerId, ratingsData).filter((r) => r.ratingDelta != null);
+    let running = logic.ELO_BASE;
+    const points = [running];
+    rows.forEach((r) => { running += r.ratingDelta; points.push(running); });
+    trend = { playerName: top.playerName, teamName: top.teamName, points, current: top.rating };
+  }
+
+  // 3. Leaderboard with movement — top 5, each with the delta from their
+  // own most recent result.
+  const leaderboard = rankings.slice(0, 5).map((r) => ({
+    playerName: r.playerName, teamName: r.teamName, rating: r.rating, lastDelta: r.lastDelta, provisional: r.provisional,
+  }));
+
+  // 4. Recap — the most recent decided seeds, with a *retroactive*
+  // prediction: each player's rating going INTO that specific match is
+  // already on record (deltas' ratingBefore), so "what the model would
+  // have said beforehand" costs nothing new to compute after the fact.
+  const recapAll = [];
+  logic.allRatableFixtures([league]).forEach(({ f }) => {
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    if (!teamA || !teamB) return;
+    (f.selectionA.pairs || []).forEach((pairA, i) => {
+      const pairB = (f.selectionB.pairs || [])[i];
+      if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return;
+      const rubber = f.rubbers[i];
+      const winner = rubber && logic.rubberWinner(rubber);
+      if (!winner) return; // keeps the recap's "did the favorite win" framing simple — no draws
+      const parts = [pairA[0], pairA[1], pairB[0], pairB[1]].map((id) => ratingsData.deltas.get(`${f.id}:${i}:${id}`));
+      if (parts.some((x) => !x)) return;
+      const ratingA = (parts[0].ratingBefore + parts[1].ratingBefore) / 2;
+      const ratingB = (parts[2].ratingBefore + parts[3].ratingBefore) / 2;
+      const winPctA = Math.round(logic.expectedScore(ratingA, ratingB) * 100);
+      const favoriteSide = winPctA >= 50 ? "A" : "B";
+      recapAll.push({
+        pairA: pairA.map((id) => (teamA.players.find((p) => p.id === id) || {}).name).filter(Boolean),
+        pairB: pairB.map((id) => (teamB.players.find((p) => p.id === id) || {}).name).filter(Boolean),
+        winPct: favoriteSide === "A" ? winPctA : 100 - winPctA,
+        favoriteSide, hit: favoriteSide === winner,
+      });
+    });
+  });
+  const recap = recapAll.slice(-4).reverse();
+
+  res.json({ matchup, trend, leaderboard, recap });
+});
 // Fully self-contained — every field the player-history modal needs to
 // render, computed server-side, so the client never has to have this
 // league's full object loaded to show it (that's what makes the "Also
