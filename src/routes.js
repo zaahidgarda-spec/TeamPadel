@@ -347,7 +347,17 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
   // (from a league with nothing on sooner) would ride along under the
   // wrong heading. Anything past the soonest scheduled date is left for
   // its own night's carousel instead.
-  const referenceDate = fixtures.length ? fixtures[0].sched.date || "" : "";
+  //
+  // "Soonest" prefers today-or-later — a fixture whose scores never got
+  // finished (a captain left one seed unscored, so the whole fixture never
+  // got marked finalized) would otherwise permanently block every later
+  // night's matches from ever showing, since its now-past date always
+  // sorts first. Only fall back to an overdue date when nothing
+  // today-or-later exists yet, so a league that's fallen behind entirely
+  // still shows something rather than an empty carousel.
+  const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const upcoming = fixtures.find((x) => x.sched.date && x.sched.date >= todayStr);
+  const referenceDate = upcoming ? upcoming.sched.date : (fixtures.length ? fixtures[0].sched.date || "" : "");
   const sameNight = fixtures.filter((x) => (x.sched.date || "") === referenceDate);
 
   // Flatten to one entry per seed pairing (up to 4 per fixture), grouped
