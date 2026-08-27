@@ -1,8 +1,10 @@
-// Ratings/rankings/predictions are being built out on a separate site —
-// this one keeps the full backend (routes, computeGlobalRatings, etc.)
-// live and ready, just with the UI switched off here. Flip to true to
-// show it on this site again; nothing else needs to change either way.
-const RATINGS_ENABLED = false;
+// Ratings/rankings/predictions are being built out on a separate site.
+// The backend (routes, computeGlobalRatings, etc.) is always fully live —
+// this flag only controls whether THIS deployment's frontend shows it,
+// read from the RATINGS_ENABLED env var so the exact same codebase can
+// run both ways (off here, on there) with no code difference at all.
+// Defaults to off until boot()'s config fetch resolves.
+let RATINGS_ENABLED = false;
 let leaguesIndex = [];
 let currentLeagueId = null;
 let league = null;
@@ -145,6 +147,8 @@ async function api(path, opts) {
 }
 
 async function boot() {
+  const config = await api("/config").catch(() => ({ ratingsEnabled: false }));
+  RATINGS_ENABLED = !!config.ratingsEnabled;
   leaguesIndex = await api("/leagues").catch(() => []);
   el("loading").style.display = "none";
   el("app").style.display = "block";

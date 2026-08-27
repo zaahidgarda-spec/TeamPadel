@@ -250,6 +250,14 @@ function syncPlayoffs(league) {
   return changed;
 }
 
+// Read once at boot, before the hub or any league renders — lets the exact
+// same codebase run two ways from one env var: ratings hidden on this
+// site, shown on another deployment (a second site sharing this same
+// backend/database) without anything else differing between them.
+router.get("/config", (req, res) => {
+  res.json({ ratingsEnabled: process.env.RATINGS_ENABLED === "true" });
+});
+
 /* ---------- Leagues ---------- */
 
 router.get("/leagues", (req, res) => {
