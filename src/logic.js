@@ -370,6 +370,7 @@ function findPlayerUpcoming(league, playerId) {
           rows.push({
             label: stageLabel(league, f),
             opponentTeam: oppTeam.name,
+            opponentLogo: oppTeam.logo || "",
             opponentPlayers: oppNames,
             partner: partner ? partner.name : null,
             seed: idx + 1,

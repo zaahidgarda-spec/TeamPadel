@@ -572,8 +572,6 @@ async function refreshAccountStatus() {
   playerAccount = await api("/players/me").catch(() => null);
   el("account-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("account-dashboard-card").style.display = playerAccount ? "block" : "none";
-  el("account-signed-in-card").style.display = playerAccount ? "block" : "none";
-  el("account-profile-card").style.display = playerAccount ? "block" : "none";
   el("search-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("search-signed-in-card").style.display = playerAccount ? "block" : "none";
   if (resetTokenInUrl) {
@@ -583,7 +581,7 @@ async function refreshAccountStatus() {
     el("account-reset-card").style.display = "block";
   }
   if (playerAccount) {
-    el("account-welcome").textContent = "Welcome back, " + playerAccount.name;
+    el("account-welcome").textContent = playerAccount.name;
     el("account-search-results").innerHTML = "";
     el("account-search-input").value = "";
     renderAccountProfile();
@@ -592,6 +590,16 @@ async function refreshAccountStatus() {
     switchHubTab("account");
   }
 }
+el("toggle-claim-panel").onclick = () => {
+  const panel = el("claim-panel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+  if (panel.style.display === "block") el("account-search-input").focus();
+};
+el("toggle-captain-panel").onclick = () => {
+  const panel = el("captain-panel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+  if (panel.style.display === "block") el("account-captain-code").focus();
+};
 el("show-account-signup").onclick = () => {
   el("account-login-form").style.display = "none"; el("account-signup-form").style.display = "block";
   el("account-form-title").textContent = "Sign up"; el("account-auth-error").textContent = "";
@@ -718,44 +726,76 @@ async function runPlayerSearch(q) {
 }
 async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
-  renderAccountTeamLogos(cards);
   renderAccountNextMatch(cards);
   renderAccountLeaguesList(cards);
-  const c = el("account-profile-list");
-  if (cards.length === 0) { c.innerHTML = '<p class="empty">Search for your name above and claim your player record to see your matches, results, and awards here.</p>'; return; }
+  renderAccountStats(cards);
+  // Claiming (or unclaiming) a record can change which leagues count as
+  // "yours", so this needs to stay in step with every renderAccountProfile
+  // call, not just the one at login — folded in here rather than making
+  // every caller remember to refresh both.
+  renderAccountTonightMatches();
+  const c = el("account-form-list");
+  if (cards.length === 0) { c.innerHTML = '<p class="empty">Claim a player record below to see your matches, results, and awards here.</p>'; return; }
   // One combined view across every claimed record — Sandton and Killarney
-  // results show up together as one person's profile, not walled off into
+  // results show up together as one person's history, not walled off into
   // separate per-league boxes. Each row still names its own league, so
-  // context isn't lost, just no longer segregated.
+  // context isn't lost, just no longer segregated. Most recent first, and
+  // capped — this is a glance at recent form, not a full archive (every
+  // result is still in the roster's own player-history popup).
   const leagueTag = (name) => ` <span class="tag">${escapeHtml(name)}</span>`;
-  const upcoming = cards.flatMap((card) => card.upcoming.map((r) => Object.assign({ leagueName: card.leagueName }, r)));
-  const results = cards.flatMap((card) => card.results.map((r) => Object.assign({ leagueName: card.leagueName }, r)));
-  const totalAwards = cards.reduce((sum, card) => sum + card.awards.length, 0);
-  const upcomingHtml = upcoming.length
-    ? upcoming.map((r) => `<div class="history-row"><div class="history-top"><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span>${leagueTag(r.leagueName)}</div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")}${r.date ? " · " + escapeHtml(r.date) : ""}</div></div>`).join("")
-    : '<p class="empty" style="border:none;">No upcoming selected matches.</p>';
-  const resultsHtml = results.length
+  const results = cards.flatMap((card) => card.results.map((r) => Object.assign({ leagueName: card.leagueName }, r)))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+    .slice(0, 8);
+  c.innerHTML = results.length
     ? results.map((r) => {
         const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
         return `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)} <span class="note">· Seed ${r.seed}</span></span>${leagueTag(r.leagueName)}</div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}</div></div>`;
       }).join("")
-    : '<p class="empty" style="border:none;">No results yet.</p>';
-  // Awards only show up at all when this player has actually won one —
-  // unlike Upcoming/Results, there's no "No awards yet" placeholder.
-  const awardsHtml = totalAwards ? `<p class="modal-subhead">Awards</p><p class="note">👑 Pair of the Week × ${totalAwards}</p>` : "";
-  c.innerHTML = `
-    <p class="modal-subhead">Upcoming</p>${upcomingHtml}
-    <p class="modal-subhead">Results</p>${resultsHtml}
-    ${awardsHtml}
+    : '<p class="empty">No results yet.</p>';
+}
+// The stat strip — season record, how many leagues, a captain badge if
+// they manage a team, and an award count. A glance-able summary of "how's
+// my season going", sitting between the hero match and the detail lists.
+function renderAccountStats(cards) {
+  const results = cards.flatMap((card) => card.results);
+  const wins = results.filter((r) => r.result === "W").length;
+  const losses = results.filter((r) => r.result === "L").length;
+  const draws = results.length - wins - losses;
+  const record = draws ? `${wins}–${draws}–${losses}` : `${wins}–${losses}`;
+  const seenLeagues = new Set(cards.map((c) => c.leagueId));
+  const totalAwards = cards.reduce((sum, card) => sum + card.awards.length, 0);
+  const captaincies = playerAccount.captaincies || [];
+  const captainTile = captaincies.length
+    ? `<div class="stat-tile"><div class="stat-num" style="font-size:19px;">${escapeHtml(captaincies[0].teamName)}</div><div class="stat-lbl">Captain of<span class="tag">${escapeHtml(captaincies[0].leagueName)}</span>${captaincies.length > 1 ? ` +${captaincies.length - 1} more` : ""}</div></div>`
+    : `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">Not a captain yet</div></div>`;
+  el("account-stats").innerHTML = `
+    <div class="stat-tile"><div class="stat-num">${results.length ? record : "—"}</div><div class="stat-lbl">Season record</div></div>
+    <div class="stat-tile"><div class="stat-num">${seenLeagues.size}</div><div class="stat-lbl">League${seenLeagues.size === 1 ? "" : "s"} this season</div></div>
+    ${captainTile}
+    <div class="stat-tile"><div class="stat-num">${totalAwards ? totalAwards + "×" : "—"}</div><div class="stat-lbl">🏆 Pair of the Week</div></div>
   `;
 }
-function renderAccountTeamLogos(cards) {
-  const seen = new Set();
-  const uniq = cards.filter((c) => (seen.has(c.teamId) ? false : (seen.add(c.teamId), true)));
-  el("account-team-logos").innerHTML = uniq.map((c) => c.teamLogo
-    ? `<img class="avatar-big" src="${c.teamLogo}" alt="${escapeHtml(c.teamName)}" title="${escapeHtml(c.teamName)}">`
-    : `<span class="avatar-big-fb" title="${escapeHtml(c.teamName)}">${escapeHtml(c.teamName.charAt(0).toUpperCase())}</span>`
-  ).join("");
+// A signed-in player's own "Tonight's matches" — everything happening
+// across the leagues they're actually in, not the site-wide carousel
+// scoped to whichever league a captain session happens to be logged into.
+async function renderAccountTonightMatches() {
+  const { matches } = await api("/players/tonight-matches").catch(() => ({ matches: [] }));
+  const wrap = el("account-tonight-section");
+  if (!matches.length) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  const logoHtml = (logo, teamName) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(teamName)}">` : "";
+  el("account-tonight-scroll").innerHTML = matches.map((m) => {
+    const centerHtml = m.score ? `<span class="vs mc-score">${escapeHtml(m.score)}</span>` : `<span class="vs">vs</span>`;
+    return `<div class="pd-tonight-card">
+      <span class="league-tag">${escapeHtml(m.leagueName)}</span>
+      <div class="mc-pairing">
+        <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair${m.winner === "A" ? " won" : ""}">${escapeHtml(m.pairA.join(" & "))}</span></span>
+        ${centerHtml}
+        <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
+      </div>
+      <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · "))}</div>
+    </div>`;
+  }).join("");
 }
 // Whichever seed number shows up most often across a card's played and
 // upcoming matches — "Killarney Seed 1," not a bare league name — so a
@@ -821,15 +861,15 @@ function renderAccountLeaguesList(cards) {
 }
 // The single soonest upcoming match across every claimed record — "your
 // next match," personalized, rather than the generic per-league carousel
-// everyone else sees on the hub. Reuses that same card's floodlit look
-// (see .floodlit in styles.css) when it's imminent.
+// everyone else sees on the hub. This is the hero of the whole dashboard,
+// so it always gets shown (not just when it's today/tomorrow).
 function renderAccountNextMatch(cards) {
   const rows = [];
   cards.forEach((card) => {
-    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueName: card.leagueName, teamName: card.teamName, playerName: card.playerName }, r)));
+    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo, playerName: card.playerName }, r)));
   });
   const wrap = el("account-next-match-card");
-  if (rows.length === 0) { wrap.style.display = "none"; wrap.classList.remove("urgent"); return; }
+  if (rows.length === 0) { wrap.style.display = "none"; return; }
   rows.sort((a, b) => {
     if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
     if (a.date) return -1;
@@ -839,21 +879,18 @@ function renderAccountNextMatch(cards) {
   const m = rows[0];
   wrap.style.display = "block";
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
-  // Always floodlit, not just when it's today/tomorrow — this is a single
-  // curated highlight (unlike the hub's shared multi-league carousel,
-  // where "urgent" specifically signals imminence), so it always gets the
-  // spotlight treatment.
-  wrap.classList.add("urgent");
+  el("account-next-match-when").textContent = when;
   // "Match N," same wording as the shared Next Matches carousel — a
   // player glancing at their own hero card should recognize it as the
   // same numbering, not a different "Seed" label for the same thing.
-  const meta = [m.teamName + " vs " + m.opponentTeam, when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  const logoHtml = (logo, name) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "";
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
     <div class="mc-pairing">
-      <span class="mc-pair">${escapeHtml([m.playerName, m.partner].filter(Boolean).join(" & "))}</span>
+      <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair">${escapeHtml([m.playerName, m.partner].filter(Boolean).join(" & "))}</span></span>
       <span class="vs">vs</span>
-      <span class="mc-pair">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span>
+      <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span></span>
     </div>
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;

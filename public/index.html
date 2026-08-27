@@ -155,36 +155,62 @@
           </div>
           <div class="error" id="account-reset-error"></div>
         </div>
-        <div class="card" id="account-dashboard-card" style="display:none;">
-          <h2 class="section-title"><span id="account-welcome"></span><button class="secondary" id="account-logout-btn">Log out</button></h2>
-          <div id="account-team-logos" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;"></div>
-          <div class="card floodlit" id="account-next-match-card" style="display:none;margin-bottom:16px;">
-            <h2 class="section-title">Your next match</h2>
-            <div class="mc-carousel"><div class="mc-slide" id="account-next-match-slide"></div></div>
+        <div class="card pd-card" id="account-dashboard-card" style="display:none;">
+          <div class="pd-greet-row">
+            <div>
+              <p class="pd-eyebrow">Welcome back</p>
+              <h1 class="pd-title" id="account-welcome"></h1>
+            </div>
+            <button class="secondary" id="account-logout-btn">Log out</button>
           </div>
-          <p class="modal-subhead">Your leagues</p>
-          <div id="account-leagues-list"></div>
-          <p class="modal-subhead">Also a team captain?</p>
-          <p class="note" style="margin-bottom:10px;">Enter your team code to manage that team's line-ups and scores.</p>
-          <div class="row">
-            <label class="sr-only" for="account-captain-code">Team code</label>
-            <input type="text" id="account-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
-            <button class="primary" id="account-captain-login-btn">Enter</button>
+
+          <div class="pd-hero" id="account-next-match-card" style="display:none;">
+            <div class="pd-hero-top">
+              <span class="pd-hero-eyebrow"><span class="pd-dot"></span>Your next match</span>
+              <span class="pd-hero-when" id="account-next-match-when"></span>
+            </div>
+            <div id="account-next-match-slide"></div>
           </div>
-          <div class="error" id="account-captain-error"></div>
-        </div>
-        <div class="card" id="account-signed-in-card" style="display:none;">
-          <h2 class="section-title">Find and claim your player records</h2>
-          <p class="note" style="margin-bottom:10px;">Search across every league — matches you're selected in, results, and awards will show up on your dashboard above.</p>
-          <div class="row">
-            <label class="sr-only" for="account-search-input">Search for your name</label>
-            <input type="text" id="account-search-input" placeholder="Search for your name…" style="flex:1;min-width:160px;">
+
+          <div class="pd-stats" id="account-stats"></div>
+
+          <section class="pd-section" id="account-tonight-section" style="display:none;">
+            <div class="pd-section-head"><h2>Tonight's matches</h2></div>
+            <div class="pd-tonight-scroll" id="account-tonight-scroll"></div>
+          </section>
+
+          <div class="pd-cols">
+            <section class="pd-section">
+              <div class="pd-section-head"><h2>Your leagues</h2></div>
+              <div class="pd-card-list" id="account-leagues-list"></div>
+            </section>
+            <section class="pd-section">
+              <div class="pd-section-head"><h2>Recent form</h2></div>
+              <div class="pd-card-list" id="account-form-list"></div>
+            </section>
           </div>
-          <div id="account-search-results"></div>
-        </div>
-        <div class="card" id="account-profile-card" style="display:none;">
-          <h2 class="section-title">Your profiles</h2>
-          <div id="account-profile-list"></div>
+
+          <div class="pd-utility">
+            <button class="pd-utility-link" id="toggle-claim-panel" type="button">+ Claim another player record</button>
+            <button class="pd-utility-link" id="toggle-captain-panel" type="button">+ Enter a team code (captain)</button>
+          </div>
+          <div id="claim-panel" style="display:none;margin-top:16px;">
+            <p class="note" style="margin-bottom:10px;">Search across every league — matches you're selected in, results, and awards will show up on your dashboard above.</p>
+            <div class="row">
+              <label class="sr-only" for="account-search-input">Search for your name</label>
+              <input type="text" id="account-search-input" placeholder="Search for your name…" style="flex:1;min-width:160px;">
+            </div>
+            <div id="account-search-results"></div>
+          </div>
+          <div id="captain-panel" style="display:none;margin-top:16px;">
+            <p class="note" style="margin-bottom:10px;">Enter your team code to manage that team's line-ups and scores.</p>
+            <div class="row">
+              <label class="sr-only" for="account-captain-code">Team code</label>
+              <input type="text" id="account-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
+              <button class="primary" id="account-captain-login-btn">Enter</button>
+            </div>
+            <div class="error" id="account-captain-error"></div>
+          </div>
         </div>
       </section>
 

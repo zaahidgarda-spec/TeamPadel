@@ -278,19 +278,12 @@ router.get("/leagues", (req, res) => {
 // feature. A signed-in captain or admin narrows this to just their own
 // league; a guest, or a captain whose own league is a Vibora league
 // (nothing to scope to), sees the full cross-league feed instead.
-router.get("/next-matches", (req, res) => {
-  const myLeagueId = req.session.user && req.session.user.leagueId;
-  const index = store.getIndex();
-  let leagues = index
-    .map((entry) => store.getLeague(entry.id))
-    .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
-
-  let scopedTo = null;
-  if (myLeagueId) {
-    const mine = leagues.find((l) => l.id === myLeagueId);
-    if (mine) { leagues = [mine]; scopedTo = { id: mine.id, name: mine.name }; }
-  }
-
+// Shared by the site-wide Next Matches carousel and the signed-in player's
+// personal "Tonight's matches" strip — both need the same "soonest shared
+// night, interleaved fairly across leagues" grouping, just over a
+// different set of leagues (every active league vs. just the ones this
+// player is in).
+function buildNextMatchesPairings(leagues) {
   const playerName = (team, id) => {
     const p = team && team.players.find((pl) => pl.id === id);
     return p ? p.name : null;
@@ -377,8 +370,37 @@ router.get("/next-matches", (req, res) => {
       tookOne = true;
     }
   }
+  return pairings;
+}
 
-  res.json({ scopedTo, matches: pairings });
+router.get("/next-matches", (req, res) => {
+  const myLeagueId = req.session.user && req.session.user.leagueId;
+  const index = store.getIndex();
+  let leagues = index
+    .map((entry) => store.getLeague(entry.id))
+    .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
+
+  let scopedTo = null;
+  if (myLeagueId) {
+    const mine = leagues.find((l) => l.id === myLeagueId);
+    if (mine) { leagues = [mine]; scopedTo = { id: mine.id, name: mine.name }; }
+  }
+
+  res.json({ scopedTo, matches: buildNextMatchesPairings(leagues) });
+});
+
+// A signed-in player's own "Tonight's matches" — same grouping as the
+// site-wide carousel, but scoped to only the leagues they've claimed a
+// record in, not every active league on the site.
+router.get("/players/tonight-matches", (req, res) => {
+  if (!req.session.playerUser) return res.json({ matches: [] });
+  const user = store.getUser(req.session.playerUser.id);
+  if (!user) return res.json({ matches: [] });
+  const leagueIds = new Set((user.claims || []).map((c) => c.leagueId));
+  const leagues = Array.from(leagueIds)
+    .map((id) => store.getLeague(id))
+    .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
+  res.json({ matches: buildNextMatchesPairings(leagues) });
 });
 
 /* ---------- "Interested to join a league" signups ---------- */
