@@ -744,19 +744,28 @@ el("account-search-input").addEventListener("input", () => {
   if (!q) { el("account-search-results").innerHTML = ""; return; }
   accountSearchTimer = setTimeout(() => runAccountSearch(q), 300);
 });
+// A real card — avatar, name, team/league — instead of a bare text row,
+// shared by both search surfaces (claim-search here, and the read-only
+// "Search players" tab below) so a result reads as a person's profile,
+// not a list item. `actionHtml` is whatever goes on the right (a claim
+// button, a "View profile" button, an "Already claimed" tag, ...).
+function playerSearchRowHtml(r, actionHtml) {
+  return `<div class="player-search-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}">
+    ${avatarHtml({ logo: r.teamLogo, name: r.playerName })}
+    <div class="info"><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
+    ${actionHtml}
+  </div>`;
+}
 async function runAccountSearch(q) {
   const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
   const c = el("account-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
-  c.innerHTML = results.map((r) => `
-    <div class="notif-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}">
-      <div><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
-      ${r.claimed ? '<span class="tag">Already claimed</span>' : '<button class="secondary claim-btn" type="button">This is me</button>'}
-    </div>
-  `).join("");
+  c.innerHTML = results.map((r) => playerSearchRowHtml(r,
+    r.claimed ? '<span class="tag">Already claimed</span>' : '<button class="secondary claim-btn" type="button">This is me</button>'
+  )).join("");
   c.querySelectorAll(".claim-btn").forEach((btn) => {
     btn.onclick = async () => {
-      const row = btn.closest(".notif-row");
+      const row = btn.closest(".player-search-row");
       try {
         await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
         await runAccountSearch(q);
@@ -780,15 +789,10 @@ async function runPlayerSearch(q) {
   const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
   const c = el("player-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
-  c.innerHTML = results.map((r) => `
-    <div class="notif-row" data-league="${r.leagueId}" data-player="${r.playerId}">
-      <div><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
-      <button class="secondary view-player-btn" type="button">View profile</button>
-    </div>
-  `).join("");
+  c.innerHTML = results.map((r) => playerSearchRowHtml(r, '<button class="secondary view-player-btn" type="button">View profile</button>')).join("");
   c.querySelectorAll(".view-player-btn").forEach((btn) => {
     btn.onclick = () => {
-      const row = btn.closest(".notif-row");
+      const row = btn.closest(".player-search-row");
       openPlayerHistory(row.dataset.league, row.dataset.player);
     };
   });

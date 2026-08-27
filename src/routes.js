@@ -615,7 +615,7 @@ function allPlayersFlat() {
       team.players.forEach((p) => {
         results.push({
           leagueId: league.id, leagueName: league.name,
-          teamId: team.id, teamName: team.name,
+          teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
           playerId: p.id, playerName: p.name,
           claimedByUserId: p.claimedByUserId || null,
         });
@@ -630,7 +630,7 @@ function searchPlayersAcrossLeagues(q) {
   return allPlayersFlat()
     .filter((p) => p.playerName.toLowerCase().includes(q))
     .map((p) => ({
-      leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
+      leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName, teamLogo: p.teamLogo,
       playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
     }))
     .slice(0, 30);
