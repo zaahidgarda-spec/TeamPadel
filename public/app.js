@@ -2774,6 +2774,21 @@ function fixtureColor(fixtureId, fixtures) {
   const idx = fixtures.findIndex((f) => f.id === fixtureId);
   return COURT_SCHEDULE_PALETTE[(idx < 0 ? 0 : idx) % COURT_SCHEDULE_PALETTE.length];
 }
+// Brighter equivalents of the palette above — only used when this grid sits
+// inside the floodlit treatment (see styles.css), where the flat light-mode
+// colors would look muddy against a dark background. Same fixture, same
+// identity, just re-tuned for a dark card instead of a light one.
+const COURT_SCHEDULE_GLOW = {
+  "#2563EB": "#7FA8FF",
+  "#D97706": "#FFB84D",
+  "#DB2777": "#FF7AB6",
+  "#0D9488": "#4FE3D1",
+  "#7C3AED": "#B69CFF",
+  "#EA580C": "#FF9A5C",
+  "#16A34A": "#6EE7A8",
+  "#4F46E5": "#A5B4FC",
+};
+function fixtureGlow(color) { return COURT_SCHEDULE_GLOW[color.border] || color.border; }
 // Counts, per team per slot, how many times that team has had a "double"
 // (two rubbers on two courts at once) across every round with a saved court
 // schedule — lets the admin see the auto-fill's rotation is actually fair
@@ -2878,7 +2893,7 @@ function renderCourtScheduleGrid(fixtures) {
   legend.innerHTML = fixtures.map((f) => {
     const color = fixtureColor(f.id, fixtures);
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-    return `<div class="cs-legend-item"><span class="cs-swatch" style="background:${color.border}"></span>${avatarHtml(teamA)}<span class="cs-vs">v</span>${avatarHtml(teamB)}<span>${escapeHtml(teamA ? teamA.name : "TBD")} vs ${escapeHtml(teamB ? teamB.name : "TBD")}</span></div>`;
+    return `<div class="cs-legend-item" style="--fx-glow:${fixtureGlow(color)};"><span class="cs-swatch" style="background:${color.border}"></span>${avatarHtml(teamA)}<span class="cs-vs">v</span>${avatarHtml(teamB)}<span>${escapeHtml(teamA ? teamA.name : "TBD")} vs ${escapeHtml(teamB ? teamB.name : "TBD")}</span></div>`;
   }).join("");
   wrap.appendChild(legend);
 
@@ -3004,6 +3019,7 @@ function renderCourtScheduleGrid(fixtures) {
           td.colSpan = 2;
           const color = fixtureColor(cell.fixtureId, fixtures);
           td.style.cssText = `border-radius:8px;background:${color.bg};`;
+          td.style.setProperty("--fx-glow", fixtureGlow(color));
           td.appendChild(doubleBadge("2 courts at once"));
           const row = document.createElement("div");
           row.className = "cs-double-row";
@@ -3024,6 +3040,7 @@ function renderCourtScheduleGrid(fixtures) {
       if (cell) {
         const color = fixtureColor(cell.fixtureId, fixtures);
         td.style.cssText = `border-radius:8px;background:${color.bg};`;
+        td.style.setProperty("--fx-glow", fixtureGlow(color));
       }
       if (isDouble(cell)) td.appendChild(doubleBadge("2 courts"));
       // Content renders the same way for every role now — the admin-only

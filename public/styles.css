@@ -512,6 +512,48 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .mc-predict-pcts,.floodlit.urgent .mc-predict-note{color:#7C8CB0;}
 .floodlit.urgent .mc-predict-solo{color:#8FB4FF;}
 
+/* Court schedule, inside the same floodlit treatment as the homepage's
+   Next Match hero — a lit court at night, applied here to the admin/
+   captain court-assignment grid instead of just the teaser card. Every
+   fixture's color gets a brighter --fx-glow variant (set inline per
+   legend item/cell in app.js) since the flat light-mode palette would
+   look muddy against this dark background. */
+.floodlit.urgent .cs-legend{border-bottom-color:rgba(255,255,255,.12);}
+.floodlit.urgent .cs-legend-item{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:6px 10px;color:#C7D2E8;}
+.floodlit.urgent .cs-swatch{background:var(--fx-glow) !important;box-shadow:0 0 8px var(--fx-glow);}
+.floodlit.urgent .avatar,.floodlit.urgent .avatar-fb{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16);color:#C7D2E8;}
+.floodlit.urgent .note{color:#7C8CB0;}
+.floodlit.urgent .info-callout{background:rgba(127,168,255,.10);border-color:rgba(96,150,255,.3);color:#C7D2E8;}
+.floodlit.urgent .info-callout strong{color:#8FB4FF;}
+.floodlit.urgent .info-callout-success{background:rgba(110,231,168,.12);border-color:rgba(110,231,168,.35);}
+.floodlit.urgent .info-callout-success strong,.floodlit.urgent .note.info-callout-success{color:#6EE7A8;}
+.floodlit.urgent button.secondary{background:rgba(255,255,255,.05);border-color:rgba(96,150,255,.3);color:#8FB4FF;}
+.floodlit.urgent button.secondary:hover:not(:disabled){border-color:#7FA8FF;background:rgba(127,168,255,.12);color:#7FA8FF;}
+.floodlit.urgent table.court-schedule-table th{color:#8FB4FF;border-bottom-color:rgba(96,150,255,.2);}
+.floodlit.urgent table.court-schedule-table tbody th{color:#C7D2E8;}
+.floodlit.urgent table.court-schedule-table td{border-bottom-color:rgba(255,255,255,.10);}
+.floodlit.urgent table.court-schedule-table tr:nth-child(even) td{background:transparent;}
+.floodlit.urgent table.court-schedule-table td[style*="background"]{background:rgba(255,255,255,.035) !important;border:1px solid rgba(255,255,255,.10);}
+.floodlit.urgent .cs-cell-label{color:#C7D2E8;}
+.floodlit.urgent .cs-vs{color:#7C8CB0;}
+.floodlit.urgent .cs-double-badge{color:#FF9A8A;}
+.floodlit.urgent table.court-schedule-table .court-name-input{color:#F2F6FF;}
+.floodlit.urgent table.court-schedule-table .court-name-input:hover{border-color:rgba(255,255,255,.2);}
+.floodlit.urgent table.court-schedule-table .court-name-input:focus{border-color:#7FA8FF;background:rgba(255,255,255,.06);}
+.floodlit.urgent table.court-schedule-table td.cs-tappable:hover{box-shadow:0 0 0 1px var(--fx-glow,#7FA8FF),0 0 16px -4px var(--fx-glow,#7FA8FF);}
+.floodlit.urgent table.court-schedule-table td.cs-selected{outline-color:#7FA8FF;background-color:rgba(127,168,255,.16) !important;}
+.floodlit.urgent table.court-schedule-table td.cs-swap-target{outline-color:rgba(127,168,255,.55);}
+.floodlit.urgent table.court-schedule-table td.cs-drop-target{outline-color:#7FA8FF;background-color:rgba(127,168,255,.16) !important;}
+.floodlit.urgent .cs-balance{border-top-color:rgba(255,255,255,.12);}
+.floodlit.urgent .cs-balance-title{color:#7C8CB0;}
+.floodlit.urgent #court-schedule-grid::after{color:#7C8CB0;}
+/* .hscroll's own edge-fade trick paints an opaque var(--panel) (white)
+   background behind the table — invisible against the rest of the light
+   page, but it was showing straight through the table's near-transparent
+   dark cells here. Neutralized rather than re-implemented for dark, since
+   the mobile "Swipe to see all courts" hint already covers narrow screens. */
+.floodlit.urgent .hscroll{background:transparent;}
+
 /* ---------- My Profile: player dashboard ---------- */
 .pd-card{padding-top:22px;}
 .pd-greet-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;}
