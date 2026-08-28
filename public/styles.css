@@ -49,6 +49,14 @@ header.site-header{display:flex;align-items:center;justify-content:space-between
    reuses for its title. */
 header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(--accent-soft),rgba(37,99,235,0) 65%);margin:0 -20px 6px;padding:22px 20px 24px;}
 .hub-tagline{font-size:14.5px;color:var(--text-dim);margin:0 0 22px;}
+/* Captain/Admin sit apart from the main hub tabs — clicking either opens a
+   login prompt rather than switching to a browsable view like the other
+   tabs do, so they read as a distinct "sign in" row above the real nav. */
+.hub-login-row{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin:-10px 0 14px;}
+.hub-login-row button{background:none;border:none;padding:0;font-family:var(--font-body);font-size:13px;color:var(--accent);cursor:pointer;text-decoration:underline;}
+.hub-login-row button:hover{color:var(--text);}
+.hub-login-row button.active{font-weight:600;}
+.hub-login-sep{color:var(--text-faint);font-size:13px;}
 .brand-link{display:flex;align-items:center;flex-shrink:0;}
 .logo-img{height:26px;width:auto;display:block;}
 .brand-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;row-gap:6px;}
