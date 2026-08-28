@@ -510,6 +510,19 @@ el("account-captain-login-btn").onclick = async () => {
   } catch (e) { el("account-captain-error").textContent = e.message; }
 };
 
+// Same idea as the captain box above — admin is a separate session from
+// the player one, so being signed in as a player doesn't mean logging in
+// as admin needs a logout first.
+el("account-owner-login-btn").onclick = async () => {
+  const username = el("account-owner-username").value, pin = el("account-owner-pin").value;
+  try {
+    await api("/owner/login", { method: "POST", body: { username, pin } });
+    el("account-owner-username").value = ""; el("account-owner-pin").value = ""; el("account-owner-error").textContent = "";
+    await refreshOwnerStatus();
+    switchHubTab("admin");
+  } catch (e) { el("account-owner-error").textContent = e.message; }
+};
+
 /* ---------- Site owner login (gates who can create leagues) ---------- */
 
 async function refreshOwnerStatus() {
@@ -733,6 +746,11 @@ el("toggle-captain-panel").onclick = () => {
   const panel = el("captain-panel");
   panel.style.display = panel.style.display === "none" ? "block" : "none";
   if (panel.style.display === "block") el("account-captain-code").focus();
+};
+el("toggle-admin-panel").onclick = () => {
+  const panel = el("admin-panel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+  if (panel.style.display === "block") el("account-owner-username").focus();
 };
 el("show-account-signup").onclick = () => {
   el("account-login-form").style.display = "none"; el("account-signup-form").style.display = "block";
