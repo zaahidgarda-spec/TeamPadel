@@ -1000,7 +1000,12 @@ nav.tabs::-webkit-scrollbar{display:none;}
    Selection Room form/reveal (selectionForm/selectionReveal) is reused
    unchanged, just recolored here via descendant overrides so it reads
    as part of the dark stage instead of a light card dropped into one. */
-.call-pairings{position:relative;z-index:2;padding:4px 18px 0;}
+.call-pairings{
+  position:relative;z-index:2;margin:12px 14px 0;
+  background:rgba(9,13,24,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(127,168,255,.28);border-radius:12px;
+  padding:16px 18px 18px;
+}
 .call-stage .selection-side{background:rgba(255,255,255,.05);border:1px solid rgba(127,168,255,.18);}
 .call-stage .selection-side h3{color:#F2F6FF;}
 .call-stage .seed-row{background:rgba(255,255,255,.06);border-color:rgba(127,168,255,.16);box-shadow:none;}
