@@ -127,6 +127,15 @@ function codeInUse(code) {
     return other && other.teams.some((t) => t.code === code);
   });
 }
+// A league can be flagged `hidden` on its index entry — data imported
+// purely to feed the shared Elo rating engine (see the Elo Padel Ratings
+// site, which reads this same database), not a real Team Padel league
+// with captains to manage here. It still counts for ratings/predictions
+// (those read the full, unfiltered index), it just never appears in any
+// list, search, or login lookup on this site.
+function visibleIndexEntries() {
+  return store.getIndex().filter((entry) => !entry.hidden);
+}
 function genTeamCode(league) {
   let code;
   do {
@@ -261,7 +270,7 @@ router.get("/config", (req, res) => {
 /* ---------- Leagues ---------- */
 
 router.get("/leagues", (req, res) => {
-  const index = store.getIndex();
+  const index = visibleIndexEntries();
   const enriched = index.map((entry) => {
     const league = store.getLeague(entry.id);
     return {
@@ -418,7 +427,7 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
 
 router.get("/next-matches", (req, res) => {
   const myLeagueId = req.session.user && req.session.user.leagueId;
-  const index = store.getIndex();
+  const index = visibleIndexEntries();
   let leagues = index
     .map((entry) => store.getLeague(entry.id))
     .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
@@ -608,7 +617,7 @@ router.get("/players/me", (req, res) => {
 // the combine-suggestions scan build on.
 function allPlayersFlat() {
   const results = [];
-  store.getIndex().forEach((entry) => {
+  visibleIndexEntries().forEach((entry) => {
     const league = store.getLeague(entry.id);
     if (!league) return;
     league.teams.forEach((team) => {
@@ -1082,7 +1091,7 @@ router.post("/captain-login", loginLimiter, (req, res) => {
     return res.status(400).json({ error: "Enter a valid email, or leave it blank." });
 
   const matches = [];
-  for (const entry of store.getIndex()) {
+  for (const entry of visibleIndexEntries()) {
     const league = store.getLeague(entry.id);
     if (!league) continue;
     const team = league.teams.find((t) => t.code === val);
