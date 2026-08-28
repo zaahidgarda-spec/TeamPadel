@@ -271,6 +271,26 @@ function validateSelection(pairs, confirmDoubleUp) {
   return null;
 }
 
+// Same duplicate/self-pair checks as validateSelection, but for filling in
+// one round of a gold/silver pair-toss at a time rather than all 4 seeds at
+// once — "already used" only looks at the OTHER rounds' pairs, since this
+// round's own (possibly stale) slot is what's being overwritten.
+function validateRoundPair(existingPairs, roundIdx, pair, confirmDoubleUp) {
+  const [a, b] = pair || [];
+  if (!a || !b) return { error: "Pick two players for this pairing." };
+  if (a === b) return { error: "A player can't be paired with themselves." };
+  const seen = new Set();
+  existingPairs.forEach((p, i) => {
+    if (i === roundIdx) return;
+    if (p[0]) seen.add(p[0]);
+    if (p[1]) seen.add(p[1]);
+  });
+  if ((seen.has(a) || seen.has(b)) && !confirmDoubleUp) {
+    return { error: "A player appears more than once tonight — confirm the double-up to submit.", needsConfirm: true };
+  }
+  return null;
+}
+
 function allFixturesOf(league) {
   if (!league.playoffs) return league.fixtures.slice();
   if (league.playoffs.format === "position") return league.fixtures.concat(league.playoffs.matches || []);
@@ -827,6 +847,7 @@ module.exports = {
   matchWinner,
   computeStandings,
   validateSelection,
+  validateRoundPair,
   playerMatchHistory,
   computeGlobalRatings,
   leagueRankings,

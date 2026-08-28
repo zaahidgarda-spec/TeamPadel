@@ -2391,6 +2391,9 @@ function tossCard(f) {
     endBtn.classList.remove("show");
   };
 
+  if (league.tieringEnabled && league.format !== "pairs") {
+    stage.appendChild(pairTossAccordion(f, teamA, teamB, mySide));
+  } else {
   // --- the toss HUD, pulled up over the video's bottom edge ---
   const hud = document.createElement("div"); hud.className = "toss-hud";
   hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-label", textContent: "Coin toss" }));
@@ -2553,6 +2556,7 @@ function tossCard(f) {
     }
     stage.appendChild(pairWrap);
   }
+  }
 
   const footerRow = document.createElement("div"); footerRow.className = "call-footer-row";
   const linkBtn = document.createElement("button"); linkBtn.className = "link"; linkBtn.textContent = "Copy spectator link";
@@ -2568,6 +2572,289 @@ function tossCard(f) {
 
   card.appendChild(stage);
   return card;
+}
+// A separate toss for every one of the 4 pairings instead of one toss for
+// the whole line-up — winner of each pairing's flip picks gold or silver
+// (whichever tier isn't full yet) and who declares first, same shape as
+// the regular toss just scoped to one pairing at a time. Rounds are
+// strictly sequential — round N+1 stays locked until both sides have
+// declared round N's pair, since the running gold/silver count only
+// makes sense read in order.
+function pairTossAccordion(f, teamA, teamB, mySide) {
+  const wrap = document.createElement("div");
+  const rounds = f.pairToss && f.pairToss.length === 4 ? f.pairToss : [{}, {}, {}, {}];
+  const goldSlots = Math.max(0, Math.min(4, league.goldTierCount || 0));
+  const silverSlots = 4 - goldSlots;
+
+  function roundFilledLocal(side, idx) {
+    const sel = side === "A" ? f.selectionA : f.selectionB;
+    const p = sel.pairs[idx];
+    return !!(p && p[0] && p[1]);
+  }
+  function roundUnlocked(idx) {
+    return idx === 0 || (roundFilledLocal("A", idx - 1) && roundFilledLocal("B", idx - 1));
+  }
+  function tierAvailability(idx) {
+    let goldUsed = 0, silverUsed = 0;
+    rounds.forEach((r, i) => { if (i !== idx) { if (r.tier === "gold") goldUsed++; if (r.tier === "silver") silverUsed++; } });
+    return { goldAvailable: goldUsed < goldSlots, silverAvailable: silverUsed < silverSlots };
+  }
+  function usedPlayerIds(side, excludeIdx) {
+    const sel = side === "A" ? f.selectionA : f.selectionB;
+    const used = new Set();
+    sel.pairs.forEach((p, i) => { if (i !== excludeIdx) { if (p[0]) used.add(p[0]); if (p[1]) used.add(p[1]); } });
+    return used;
+  }
+  function coinEl(landedHeads) {
+    const coinWrap = document.createElement("div"); coinWrap.className = "toss-coin-wrap";
+    const coin = document.createElement("div"); coin.className = "toss-coin";
+    coin.style.transform = "rotateY(" + (landedHeads ? "0" : "180") + "deg)";
+    coin.innerHTML = '<div class="toss-coin-face front"><span>H</span></div><div class="toss-coin-face back"><span>T</span></div>';
+    const coinShadow = document.createElement("div"); coinShadow.className = "toss-coin-shadow";
+    coinWrap.appendChild(coin); coinWrap.appendChild(coinShadow);
+    return { coinWrap, coin };
+  }
+
+  for (let idx = 0; idx < 4; idx++) {
+    const round = rounds[idx] || {};
+    const roundNum = idx + 1;
+
+    if (!roundUnlocked(idx)) {
+      wrap.appendChild(Object.assign(document.createElement("p"), {
+        className: "pair-round-locked",
+        textContent: "Pairing " + roundNum + " — locked until Pairing " + (roundNum - 1) + " is decided.",
+      }));
+      continue;
+    }
+
+    const panel = document.createElement("div");
+    panel.className = idx === 0 ? "toss-hud" : "call-pairings";
+    const titleRow = document.createElement("div");
+    titleRow.style.cssText = "display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px;";
+    const title = document.createElement("span"); title.className = "toss-hud-label"; title.style.margin = "0"; title.textContent = "Pairing " + roundNum;
+    titleRow.appendChild(title);
+    if (round.tier) {
+      const badge = document.createElement("span"); badge.className = "pair-tier-badge " + round.tier; badge.textContent = round.tier;
+      titleRow.appendChild(badge);
+    }
+    panel.appendChild(titleRow);
+
+    if (!round.result) {
+      panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", textContent: "Call it, then flip — the winner picks gold or silver for this pairing." }));
+      const { coinWrap, coin } = coinEl(true);
+      const resultLine = document.createElement("div"); resultLine.className = "toss-hud-error";
+
+      let flipping = false;
+      const allBtns = [];
+      function attachCallBtn(btn, side, callVal) {
+        allBtns.push(btn);
+        btn.onclick = async () => {
+          if (flipping) return;
+          flipping = true;
+          allBtns.forEach((b) => (b.disabled = true));
+          resultLine.textContent = "";
+          coin.classList.add("flipping");
+          try {
+            await Promise.all([
+              api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundNum}/call`, { method: "POST", body: { call: callVal, side } }),
+              new Promise((resolve) => setTimeout(resolve, 1100)),
+            ]);
+            await refreshLeague(); renderAll();
+          } catch (e) {
+            coin.classList.remove("flipping");
+            resultLine.textContent = e.message;
+            flipping = false;
+            allBtns.forEach((b) => (b.disabled = false));
+          }
+        };
+      }
+      function callRow(side) {
+        const row = document.createElement("div"); row.className = "toss-call-row";
+        ["heads", "tails"].forEach((cv) => {
+          const btn = document.createElement("button");
+          btn.className = "toss-call-btn"; btn.textContent = "Call " + (cv === "heads" ? "Heads" : "Tails");
+          attachCallBtn(btn, side, cv);
+          row.appendChild(btn);
+        });
+        return row;
+      }
+      if (myRole === "admin") {
+        [["A", teamA], ["B", teamB]].forEach(([side, team]) => {
+          const grp = document.createElement("div"); grp.className = "toss-call-group";
+          grp.appendChild(Object.assign(document.createElement("div"), { className: "toss-call-who", textContent: "On behalf of " + team.name + ":" }));
+          grp.appendChild(callRow(side));
+          panel.appendChild(grp);
+        });
+      } else if (mySide) {
+        panel.appendChild(callRow(mySide));
+      } else {
+        panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", textContent: "Waiting for a captain to call it." }));
+      }
+      panel.appendChild(coinWrap);
+      panel.appendChild(resultLine);
+      wrap.appendChild(panel);
+      continue;
+    }
+
+    if (!round.firstSide) {
+      const callerTeam = round.callerSide === "A" ? teamA : teamB;
+      const winnerTeam = round.winnerSide === "A" ? teamA : teamB;
+      const { coinWrap } = coinEl(round.result === "heads");
+      panel.appendChild(coinWrap);
+      panel.appendChild(Object.assign(document.createElement("p"), {
+        className: "toss-result",
+        innerHTML: `${escapeHtml(callerTeam.name)} called <strong>${round.call}</strong>, landed on <strong>${round.result}</strong> — <strong>${escapeHtml(winnerTeam.name)}</strong> wins this pairing's toss.`,
+      }));
+
+      const canChoose = myRole === "admin" || mySide === round.winnerSide;
+      if (canChoose) {
+        const { goldAvailable, silverAvailable } = tierAvailability(idx);
+        panel.appendChild(Object.assign(document.createElement("p"), {
+          className: "toss-hud-note", style: "margin-top:10px;",
+          textContent: goldAvailable && silverAvailable ? "Pick gold or silver for this pairing, and who declares first:" : "Pick who declares first for this " + (goldAvailable ? "gold" : "silver") + " pairing:",
+        }));
+        const err = document.createElement("div"); err.className = "toss-hud-error";
+        async function choose(tier, orderChoice) {
+          try {
+            const { pairToss: newRounds } = await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundNum}/choice`, { method: "POST", body: { tier, orderChoice } });
+            f.pairToss = newRounds;
+            await refreshLeague(); renderAll();
+          } catch (e) { err.textContent = e.message; }
+        }
+        [goldAvailable ? "gold" : null, silverAvailable ? "silver" : null].filter(Boolean).forEach((tier) => {
+          if (goldAvailable && silverAvailable) {
+            panel.appendChild(Object.assign(document.createElement("div"), { className: "toss-hud-note", style: "margin:8px 0 4px;text-transform:capitalize;", textContent: tier + ":" }));
+          }
+          const row = document.createElement("div"); row.className = "toss-choice-row";
+          const selfBtn = document.createElement("button"); selfBtn.className = "toss-choice-btn primary"; selfBtn.textContent = "We'll go first";
+          const oppBtn = document.createElement("button"); oppBtn.className = "toss-choice-btn ghost"; oppBtn.textContent = "Make them go first";
+          selfBtn.onclick = () => choose(tier, "self");
+          oppBtn.onclick = () => choose(tier, "opponent");
+          row.appendChild(selfBtn); row.appendChild(oppBtn);
+          panel.appendChild(row);
+        });
+        panel.appendChild(err);
+      } else {
+        panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:10px;", textContent: "Waiting for " + winnerTeam.name + " to decide." }));
+      }
+      if (myRole === "admin") {
+        const resetBtn = document.createElement("button");
+        resetBtn.className = "toss-reset-btn"; resetBtn.textContent = "Reset this pairing's toss";
+        resetBtn.onclick = async () => {
+          if (!confirm("Reset this pairing's toss?")) return;
+          try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundNum}/reset`, { method: "POST" }); await refreshLeague(); renderAll(); }
+          catch (e) { alert(e.message); }
+        };
+        panel.appendChild(resetBtn);
+      }
+      wrap.appendChild(panel);
+      continue;
+    }
+
+    // tier + firstSide both decided — declare pairs
+    const firstTeam = round.firstSide === "A" ? teamA : teamB;
+    const secondTeam = round.firstSide === "A" ? teamB : teamA;
+    const secondSideKey = round.firstSide === "A" ? "B" : "A";
+    const { coinWrap } = coinEl(round.result === "heads");
+    panel.appendChild(coinWrap);
+    panel.appendChild(Object.assign(document.createElement("p"), {
+      className: "toss-result",
+      innerHTML: `<strong>${escapeHtml(firstTeam.name)}</strong> declares first on this ${round.tier} pairing.`,
+    }));
+
+    const firstFilled = roundFilledLocal(round.firstSide, idx);
+    [[round.firstSide, firstTeam, true], [secondSideKey, secondTeam, false]].forEach(([side, team, isFirst]) => {
+      const filled = roundFilledLocal(side, idx);
+      if (filled) {
+        const sel = side === "A" ? f.selectionA : f.selectionB;
+        panel.appendChild(Object.assign(document.createElement("p"), {
+          className: "toss-hud-note", style: "margin-top:6px;",
+          innerHTML: `<strong style="color:#F2F6FF;">${escapeHtml(team.name)}:</strong> ${pairNamesGoldHtml(team, sel.pairs[idx])}`,
+        }));
+      } else if (!isFirst && !firstFilled) {
+        panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:6px;", textContent: "Waiting on " + firstTeam.name + " to declare first." }));
+      } else {
+        const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
+        if (canEdit) {
+          panel.appendChild(roundPairForm(f, team, side, idx, usedPlayerIds(side, idx)));
+        } else {
+          panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:6px;", textContent: "Waiting for " + team.name + "'s captain." }));
+        }
+      }
+    });
+
+    if (myRole === "admin") {
+      const resetBtn = document.createElement("button");
+      resetBtn.className = "toss-reset-btn"; resetBtn.textContent = "Reset this pairing's toss";
+      resetBtn.onclick = async () => {
+        if (!confirm("Reset this pairing's toss? Already-declared pairs for it stay as they are.")) return;
+        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundNum}/reset`, { method: "POST" }); await refreshLeague(); renderAll(); }
+        catch (e) { alert(e.message); }
+      };
+      panel.appendChild(resetBtn);
+    }
+    wrap.appendChild(panel);
+  }
+
+  return wrap;
+}
+// One pairing's worth of the player-picker — two selects plus a submit
+// button, scoped to whichever players this team hasn't already used in
+// an earlier pairing round this fixture.
+function roundPairForm(f, team, side, roundIdx, usedIds) {
+  const div = document.createElement("div");
+  div.style.marginTop = "10px";
+  const available = team.players.filter((p) => !usedIds.has(p.id));
+  if (available.length < 2) {
+    div.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-error", textContent: "Not enough unused players left on this roster for another pairing." }));
+    return div;
+  }
+  const sel = side === "A" ? f.selectionA : f.selectionB;
+  const existing = sel.pairs[roundIdx] || [null, null];
+  const localPair = [existing[0], existing[1]];
+
+  const row = document.createElement("div"); row.className = "toss-call-row"; row.style.marginBottom = "8px";
+  const selects = [];
+  function optionsFor(mySlot) {
+    const otherVal = localPair[mySlot === 0 ? 1 : 0];
+    return '<option value="">Player…</option>' + available.map((p) => `<option value="${p.id}" ${p.id === otherVal ? "disabled" : ""} ${p.id === localPair[mySlot] ? "selected" : ""}>${goldPrefix(p)}${escapeHtml(p.name)}</option>`).join("");
+  }
+  [0, 1].forEach((slot) => {
+    const select = document.createElement("select");
+    select.style.cssText = "flex:1;min-width:0;";
+    select.innerHTML = optionsFor(slot);
+    select.onchange = () => {
+      localPair[slot] = select.value || null;
+      const otherSlot = slot === 0 ? 1 : 0;
+      selects[otherSlot].innerHTML = optionsFor(otherSlot);
+    };
+    selects.push(select);
+    row.appendChild(select);
+    if (slot === 0) { const amp = document.createElement("span"); amp.style.color = "#7C8CB0"; amp.style.fontSize = "12px"; amp.textContent = "&"; row.appendChild(amp); }
+  });
+  div.appendChild(row);
+
+  const err = document.createElement("div"); err.className = "toss-hud-error";
+  const btn = document.createElement("button"); btn.className = "toss-choice-btn primary"; btn.textContent = "Submit pairing";
+  btn.onclick = async () => {
+    if (!localPair[0] || !localPair[1]) { err.textContent = "Pick two players."; return; }
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundIdx + 1}/pair`, { method: "POST", body: { side, pair: localPair } });
+      await refreshLeague(); renderAll();
+    } catch (e) {
+      if (e.needsConfirm) {
+        if (confirm(e.message + " Submit anyway?")) {
+          api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundIdx + 1}/pair`, { method: "POST", body: { side, pair: localPair, confirmDoubleUp: true } })
+            .then(async () => { await refreshLeague(); renderAll(); })
+            .catch((e2) => { err.textContent = e2.message; });
+        }
+      } else {
+        err.textContent = e.message;
+      }
+    }
+  };
+  div.appendChild(btn); div.appendChild(err);
+  return div;
 }
 function renderSelection() {
   if (myRole !== "admin" && myRole !== "captain") return;

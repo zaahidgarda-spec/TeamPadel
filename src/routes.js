@@ -1383,6 +1383,8 @@ router.get("/leagues/:leagueId/fixtures/:fixtureId/toss/public", (req, res) => {
     teamA: publicTeam(teamA),
     teamB: publicTeam(teamB),
     toss: f.toss || null,
+    tieringEnabled: !!league.tieringEnabled,
+    pairToss: f.pairToss || null,
     selectionA: { submitted: f.selectionA.submitted, pairs: f.selectionA.submitted ? f.selectionA.pairs : [] },
     selectionB: { submitted: f.selectionB.submitted, pairs: f.selectionB.submitted ? f.selectionB.pairs : [] },
     videoRoom: "TeamPadel-" + f.id,
@@ -1435,6 +1437,120 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/reset", requireAdmin, (
   f.toss = {};
   store.saveLeague(league.id, league);
   res.json({ toss: f.toss });
+});
+
+/* ---------- Pair toss: for a gold-tier league, one toss PER pairing
+   instead of one toss for the whole line-up. Winner of each round's flip
+   picks the tier (gold/silver, whichever isn't already full) for that
+   round, then the same self-first/opponent-first choice as the regular
+   toss — so the two gold pairings and two silver pairings each get their
+   own moment instead of being buried inside one big reveal. Rounds are
+   strictly sequential: round 2 can't start until both sides have
+   declared their round-1 pair. ---------- */
+function pairToss(f) {
+  if (!f.pairToss || f.pairToss.length !== 4) f.pairToss = [{}, {}, {}, {}];
+  return f.pairToss;
+}
+function roundFilled(f, side, roundIdx) {
+  const sel = side === "A" ? f.selectionA : f.selectionB;
+  const pair = sel.pairs[roundIdx];
+  return !!(pair && pair[0] && pair[1]);
+}
+function roundUnlocked(f, roundIdx) {
+  if (roundIdx === 0) return true;
+  return roundFilled(f, "A", roundIdx - 1) && roundFilled(f, "B", roundIdx - 1);
+}
+router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/call", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!league.tieringEnabled) return res.status(400).json({ error: "Gold-tier seeding isn't on for this league." });
+  if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
+  const roundIdx = Number(req.params.round) - 1;
+  if (!(roundIdx >= 0 && roundIdx < 4)) return res.status(400).json({ error: "Invalid pairing round." });
+  if (!roundUnlocked(f, roundIdx)) return res.status(400).json({ error: "Decide the previous pairing first." });
+  const side = fixtureSide(league, f, req, req.body.side);
+  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
+  const call = req.body.call;
+  if (call !== "heads" && call !== "tails") return res.status(400).json({ error: "Call heads or tails first." });
+  const rounds = pairToss(f);
+  if (rounds[roundIdx].firstSide) return res.status(400).json({ error: "This pairing's toss is already decided — ask the admin to reset it to redo the flip." });
+  const result = Math.random() < 0.5 ? "heads" : "tails";
+  const winnerSide = call === result ? side : side === "A" ? "B" : "A";
+  rounds[roundIdx] = { call, result, callerSide: side, winnerSide, tier: null, firstSide: null };
+  store.saveLeague(league.id, league);
+  res.json({ pairToss: rounds });
+});
+router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/choice", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const roundIdx = Number(req.params.round) - 1;
+  if (!(roundIdx >= 0 && roundIdx < 4)) return res.status(400).json({ error: "Invalid pairing round." });
+  const rounds = pairToss(f);
+  const round = rounds[roundIdx];
+  if (!round || !round.result) return res.status(400).json({ error: "Flip the coin first." });
+  if (round.firstSide) return res.status(400).json({ error: "This pairing is already decided." });
+  const side = fixtureSide(league, f, req, round.winnerSide);
+  if (side !== round.winnerSide) return res.status(403).json({ error: "Only the team that won this pairing's toss can make this choice." });
+  const goldSlots = Math.max(0, Math.min(4, league.goldTierCount || 0));
+  const silverSlots = 4 - goldSlots;
+  let goldUsed = 0, silverUsed = 0;
+  rounds.forEach((r, i) => { if (i !== roundIdx && r.tier === "gold") goldUsed++; if (i !== roundIdx && r.tier === "silver") silverUsed++; });
+  const goldAvailable = goldUsed < goldSlots, silverAvailable = silverUsed < silverSlots;
+  let tier = req.body.tier;
+  if (goldAvailable && !silverAvailable) tier = "gold";
+  else if (silverAvailable && !goldAvailable) tier = "silver";
+  else if (tier !== "gold" && tier !== "silver") return res.status(400).json({ error: "Choose gold or silver for this pairing." });
+  if (tier === "gold" && !goldAvailable) return res.status(400).json({ error: "Both gold pairings are already spoken for." });
+  if (tier === "silver" && !silverAvailable) return res.status(400).json({ error: "Both silver pairings are already spoken for." });
+  const orderChoice = req.body.orderChoice;
+  if (orderChoice !== "self" && orderChoice !== "opponent") return res.status(400).json({ error: "Choose who declares first." });
+  round.tier = tier;
+  round.firstSide = orderChoice === "self" ? round.winnerSide : round.winnerSide === "A" ? "B" : "A";
+  store.saveLeague(league.id, league);
+  res.json({ pairToss: rounds });
+});
+router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/pair", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const roundIdx = Number(req.params.round) - 1;
+  if (!(roundIdx >= 0 && roundIdx < 4)) return res.status(400).json({ error: "Invalid pairing round." });
+  const rounds = pairToss(f);
+  const round = rounds[roundIdx];
+  if (!round || !round.firstSide) return res.status(400).json({ error: "This pairing's toss hasn't decided who goes first yet." });
+  const side = fixtureSide(league, f, req, req.body.side);
+  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
+  const oppSide = side === "A" ? "B" : "A";
+  if (roundFilled(f, "A", roundIdx) && roundFilled(f, "B", roundIdx)) {
+    return res.status(400).json({ error: "Both sides have already declared this pairing." });
+  }
+  if (round.firstSide !== side && !roundFilled(f, oppSide, roundIdx)) {
+    const firstTeamId = round.firstSide === "A" ? f.teamA : f.teamB;
+    const firstTeam = league.teams.find((t) => t.id === firstTeamId);
+    return res.status(400).json({ error: (firstTeam ? firstTeam.name : "The other team") + " goes first on this pairing — wait for their pick before submitting yours." });
+  }
+  const selKey = side === "A" ? "selectionA" : "selectionB";
+  const pair = req.body.pair;
+  if (!Array.isArray(pair) || pair.length !== 2) return res.status(400).json({ error: "Pick two players for this pairing." });
+  const result = logic.validateRoundPair(f[selKey].pairs, roundIdx, pair, !!req.body.confirmDoubleUp);
+  if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
+  f[selKey].pairs[roundIdx] = pair;
+  if (f[selKey].pairs.every((p) => p[0] && p[1])) f[selKey].submitted = true;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, pairToss: rounds, selection: f[selKey] });
+});
+router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/reset", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const roundIdx = Number(req.params.round) - 1;
+  if (!(roundIdx >= 0 && roundIdx < 4)) return res.status(400).json({ error: "Invalid pairing round." });
+  const rounds = pairToss(f);
+  rounds[roundIdx] = {};
+  store.saveLeague(league.id, league);
+  res.json({ pairToss: rounds });
 });
 
 router.post(
