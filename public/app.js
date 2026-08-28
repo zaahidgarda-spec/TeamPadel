@@ -695,6 +695,9 @@ async function renderCombineAccounts() {
 let resetTokenInUrl = new URLSearchParams(location.search).get("resetToken");
 async function refreshAccountStatus() {
   playerAccount = await api("/players/me").catch(() => null);
+  // Nothing else on the hub says "log in" — this tab is the only door in
+  // for a player, captain, or admin, so it has to say so while signed out.
+  el("hub-account-tab-btn").textContent = playerAccount ? "My profile" : "Log in";
   el("account-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("account-dashboard-card").style.display = playerAccount ? "block" : "none";
   el("search-signed-out-card").style.display = playerAccount ? "none" : "block";
