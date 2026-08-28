@@ -994,4 +994,19 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .toss-hud-error{color:#FF9B8A;font-size:12px;margin-top:8px;}
 .toss-reset-btn{display:block;margin:12px auto 0;background:none;border:none;color:#7C8CB0;font-size:11.5px;text-decoration:underline;cursor:pointer;}
 
-.call-footer-row{display:flex;align-items:center;gap:10px;padding:14px 18px 4px;flex-wrap:wrap;}
+.call-footer-row{display:flex;align-items:center;gap:10px;padding:14px 18px 18px;flex-wrap:wrap;}
+
+/* Pairings, nested inside the same dark stage as the toss — the shared
+   Selection Room form/reveal (selectionForm/selectionReveal) is reused
+   unchanged, just recolored here via descendant overrides so it reads
+   as part of the dark stage instead of a light card dropped into one. */
+.call-pairings{position:relative;z-index:2;padding:4px 18px 0;}
+.call-stage .selection-side{background:rgba(255,255,255,.05);border:1px solid rgba(127,168,255,.18);}
+.call-stage .selection-side h3{color:#F2F6FF;}
+.call-stage .seed-row{background:rgba(255,255,255,.06);border-color:rgba(127,168,255,.16);box-shadow:none;}
+.call-stage .seed-row .num{color:#7C8CB0;}
+.call-stage .seed-row-amp{color:#7C8CB0;}
+.call-stage select{background:rgba(255,255,255,.08);color:#F2F6FF;border-color:rgba(127,168,255,.25);}
+.call-stage .note,.call-stage .empty{color:#7C8CB0;}
+.call-stage .error{color:#FF9B8A;}
+.call-stage button.link{color:#8FB4FF;}

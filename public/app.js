@@ -2525,24 +2525,12 @@ function tossCard(f) {
   }
   stage.appendChild(hud);
 
-  const footerRow = document.createElement("div"); footerRow.className = "call-footer-row";
-  const linkBtn = document.createElement("button"); linkBtn.className = "link"; linkBtn.textContent = "Copy spectator link";
-  const linkNote = document.createElement("span"); linkNote.className = "note";
-  linkBtn.onclick = async () => {
-    const url = location.origin + "/toss.html?l=" + currentLeagueId + "&f=" + f.id;
-    try { await navigator.clipboard.writeText(url); linkNote.textContent = "Copied!"; }
-    catch (e) { linkNote.textContent = url; }
-    setTimeout(() => { linkNote.textContent = ""; }, 3000);
-  };
-  footerRow.appendChild(linkBtn); footerRow.appendChild(linkNote);
-  stage.appendChild(footerRow);
-
-  card.appendChild(stage);
-
-  // --- pairings, live, once the toss says who goes first ---
+  // --- pairings, live, once the toss says who goes first — same dark
+  // stage as the toss and video, not a separate card, so picking pairs
+  // happens in the same zone as calling the toss. ---
   if (toss.firstSide && league.format !== "pairs") {
-    const pairWrap = document.createElement("div"); pairWrap.className = "card"; pairWrap.style.marginTop = "12px";
-    pairWrap.appendChild(Object.assign(document.createElement("h3"), { className: "timeslot-title", textContent: "Pairings" }));
+    const pairWrap = document.createElement("div"); pairWrap.className = "call-pairings";
+    pairWrap.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-label", textContent: "Pairings" }));
 
     const firstTeam = toss.firstSide === "A" ? teamA : teamB;
     const secondTeam = toss.firstSide === "A" ? teamB : teamA;
@@ -2563,9 +2551,22 @@ function tossCard(f) {
     if (f.selectionA.submitted && f.selectionB.submitted) {
       pairWrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:10px;", textContent: "Both line-ups are in — head to Selection Room to set the court & playing order." }));
     }
-    card.appendChild(pairWrap);
+    stage.appendChild(pairWrap);
   }
 
+  const footerRow = document.createElement("div"); footerRow.className = "call-footer-row";
+  const linkBtn = document.createElement("button"); linkBtn.className = "link"; linkBtn.textContent = "Copy spectator link";
+  const linkNote = document.createElement("span"); linkNote.className = "note";
+  linkBtn.onclick = async () => {
+    const url = location.origin + "/toss.html?l=" + currentLeagueId + "&f=" + f.id;
+    try { await navigator.clipboard.writeText(url); linkNote.textContent = "Copied!"; }
+    catch (e) { linkNote.textContent = url; }
+    setTimeout(() => { linkNote.textContent = ""; }, 3000);
+  };
+  footerRow.appendChild(linkBtn); footerRow.appendChild(linkNote);
+  stage.appendChild(footerRow);
+
+  card.appendChild(stage);
   return card;
 }
 function renderSelection() {
