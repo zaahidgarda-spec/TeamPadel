@@ -710,7 +710,14 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .roster-team{margin-bottom:14px;}
 .logo-label{font-size:12px;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 
-.loading{padding:60px 0;text-align:center;color:var(--text-dim);}
+/* The one thing guaranteed to paint before boot()'s API calls resolve —
+   the actual OS-level splash (manifest icon + background_color) already
+   covers the very first instant on Android; this covers the moment right
+   after that, and every platform where a manifest splash doesn't apply. */
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:70vh;text-align:center;color:var(--text-dim);animation:loading-fade-in .3s ease;}
+.loading-logo{width:180px;height:auto;}
+.loading-caption{font-family:var(--font-display);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);}
+@keyframes loading-fade-in{from{opacity:0;}to{opacity:1;}}
 footer.actions{display:flex;justify-content:space-between;align-items:center;margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--text-dim);flex-wrap:wrap;gap:10px;}
 
 /* ---------- Mobile ---------- */
