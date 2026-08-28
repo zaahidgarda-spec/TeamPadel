@@ -427,27 +427,72 @@ document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
   btn.onclick = () => switchHubTab(btn.dataset.hubview);
 });
 
-/* ---------- Captain login from the home page (no need to find your league first) ---------- */
-
-el("hub-captain-login-btn").onclick = async () => {
-  const code = el("hub-captain-code").value;
-  const email = el("hub-captain-email").value;
+/* ---------- Unified log in: player, captain, or admin all share one box
+   on the My Profile tab — what's typed decides which. An email logs in as
+   a player, a 6-character team code as captain, anything else is read as
+   the site admin's username. ---------- */
+function detectLoginType(value) {
+  const v = (value || "").trim();
+  if (!v) return null;
+  if (v.includes("@")) return "player";
+  if (/^[A-Za-z0-9]{6}$/.test(v)) return "captain";
+  return "owner";
+}
+function updateUnifiedLoginUI() {
+  const type = detectLoginType(el("unified-login-id").value);
+  const secret = el("unified-login-secret");
+  const notifyEmail = el("unified-login-notify-email");
+  const hint = el("unified-login-hint");
+  const btn = el("unified-login-btn");
+  secret.style.display = type === "player" || type === "owner" ? "block" : "none";
+  secret.placeholder = type === "owner" ? "PIN" : "Password";
+  notifyEmail.style.display = type === "captain" ? "block" : "none";
+  hint.style.display = type ? "block" : "none";
+  hint.textContent = type === "player" ? "Logging in as a player."
+    : type === "captain" ? "Logging in as team captain, using your team code."
+    : type === "owner" ? "Logging in as site admin."
+    : "";
+  btn.textContent = type === "captain" ? "Enter" : "Log in";
+}
+el("unified-login-id").addEventListener("input", updateUnifiedLoginUI);
+el("unified-login-btn").onclick = async () => {
+  const idVal = el("unified-login-id").value.trim();
+  const type = detectLoginType(idVal);
+  const err = el("account-auth-error");
+  err.textContent = "";
+  if (!type) { err.textContent = "Enter your email, team code, or admin username."; return; }
   try {
-    const { leagueId } = await api("/captain-login", { method: "POST", body: { code, email } });
-    el("hub-captain-code").value = ""; el("hub-captain-email").value = ""; el("hub-captain-error").textContent = "";
-    // A signed-in player has a profile to land back on — stay there instead
-    // of jumping into the league, same as the captain box on My Profile.
-    // A guest using this tab has no profile, so opening the league is right.
-    if (playerAccount) {
+    if (type === "player") {
+      await api("/players/login", { method: "POST", body: { email: idVal, password: el("unified-login-secret").value } });
+      clearUnifiedLoginForm();
       await refreshAccountStatus();
+    } else if (type === "captain") {
+      const notifyEmail = el("unified-login-notify-email").value;
+      const { leagueId } = await api("/captain-login", { method: "POST", body: { code: idVal, email: notifyEmail } });
+      clearUnifiedLoginForm();
+      // A signed-in player has a profile to land back on — stay there instead
+      // of jumping into the league. A guest has no profile, so opening the
+      // league directly is right.
+      if (playerAccount) {
+        await refreshAccountStatus();
+      } else {
+        viewingGroupId = null; // land on this captain's own group, not whatever a prior guest view defaulted to
+        await openLeague(leagueId);
+      }
     } else {
-      viewingGroupId = null; // land on this captain's own group, not whatever a prior guest view defaulted to
-      await openLeague(leagueId);
+      await api("/owner/login", { method: "POST", body: { username: idVal, pin: el("unified-login-secret").value } });
+      clearUnifiedLoginForm();
+      await refreshOwnerStatus();
+      switchHubTab("admin");
     }
-  } catch (e) { el("hub-captain-error").textContent = e.message; }
+  } catch (e) { err.textContent = e.message; }
 };
+function clearUnifiedLoginForm() {
+  el("unified-login-id").value = ""; el("unified-login-secret").value = ""; el("unified-login-notify-email").value = "";
+  updateUnifiedLoginUI();
+}
 
-// Same login, same session/privileges — just reachable from a player's own
+// Same captain login, same session/privileges — just reachable from a player's own
 // dashboard too, so being a captain of one of their teams doesn't require
 // leaving their profile to go find the league first. Stays on the
 // dashboard rather than jumping straight into the league, so the new
@@ -501,14 +546,9 @@ async function renderInterestSignups() {
     };
   });
 }
-el("owner-login-btn").onclick = async () => {
-  const username = el("owner-username").value, pin = el("owner-pin").value;
-  try {
-    await api("/owner/login", { method: "POST", body: { username, pin } });
-    el("owner-username").value = ""; el("owner-pin").value = ""; el("owner-error").textContent = "";
-    await refreshOwnerStatus();
-  } catch (e) { el("owner-error").textContent = e.message; }
-};
+// Owner login itself now happens through the unified box on My Profile
+// (see detectLoginType/unified-login-btn above) — this tab is just the
+// destination once you're in.
 el("owner-logout-btn").onclick = async () => {
   await api("/owner/logout", { method: "POST" });
   await refreshOwnerStatus();
@@ -701,14 +741,8 @@ el("account-signup-btn").onclick = async () => {
     await refreshAccountStatus();
   } catch (e) { el("account-auth-error").textContent = e.message; }
 };
-el("account-login-btn").onclick = async () => {
-  const email = el("account-login-email").value, password = el("account-login-password").value;
-  try {
-    await api("/players/login", { method: "POST", body: { email, password } });
-    el("account-login-email").value = ""; el("account-login-password").value = ""; el("account-auth-error").textContent = "";
-    await refreshAccountStatus();
-  } catch (e) { el("account-auth-error").textContent = e.message; }
-};
+// Player login itself now happens through the unified box (see
+// detectLoginType/unified-login-btn above) — this stays only for logout.
 el("account-logout-btn").onclick = async () => {
   await api("/players/logout", { method: "POST" });
   await refreshAccountStatus();

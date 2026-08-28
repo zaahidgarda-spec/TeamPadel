@@ -53,17 +53,12 @@
       </header>
       <p class="hub-tagline">Browse active leagues, check standings, or find your team below.</p>
 
-      <div class="hub-login-row">
-        <button class="hub-tab-btn" data-hubview="captain">Captain login</button>
-        <span class="hub-login-sep">&middot;</span>
-        <button class="hub-tab-btn" data-hubview="admin">Admin login</button>
-      </div>
-
       <nav class="tabs" style="width:100%;justify-content:space-between;">
         <div style="display:flex;gap:4px;">
           <button class="hub-tab-btn" data-hubview="account" id="hub-account-tab-btn">My profile</button>
           <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
           <button class="hub-tab-btn" data-hubview="search">Search players</button>
+          <button class="hub-tab-btn" data-hubview="admin">Admin</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
       </nav>
@@ -107,21 +102,6 @@
         </div>
       </section>
 
-      <section class="hub-view" id="hub-view-captain">
-        <div class="card">
-          <h2 class="section-title">Captain login</h2>
-          <p class="note" style="margin-bottom:10px;">Enter the team code your organizer gave you — you don't need to find your league first.</p>
-          <div class="row">
-            <label class="sr-only" for="hub-captain-code">Team code</label>
-            <input type="text" id="hub-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
-            <label class="sr-only" for="hub-captain-email">Email (optional, for notifications)</label>
-            <input type="email" id="hub-captain-email" placeholder="Email (optional, for notifications)" style="width:260px;">
-            <button class="primary" id="hub-captain-login-btn">Log in</button>
-          </div>
-          <div class="error" id="hub-captain-error"></div>
-        </div>
-      </section>
-
       <section class="hub-view" id="hub-view-account">
         <div class="card" id="account-signed-out-card">
           <div class="account-hero">
@@ -136,10 +116,16 @@
           </div>
           <h2 class="section-title"><span id="account-form-title">Sign up</span></h2>
           <div id="account-login-form" style="display:none;">
+            <p class="note" style="margin-bottom:10px;">Player, team captain, or admin — one box, whatever you type decides which.</p>
             <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
-              <input type="email" id="account-login-email" placeholder="Email">
-              <input type="password" id="account-login-password" placeholder="Password">
-              <button class="primary" id="account-login-btn">Log in</button>
+              <label class="sr-only" for="unified-login-id">Email, team code, or admin username</label>
+              <input type="text" id="unified-login-id" placeholder="Email, team code, or admin username">
+              <label class="sr-only" for="unified-login-secret">Password or PIN</label>
+              <input type="password" id="unified-login-secret" placeholder="Password" style="display:none;">
+              <label class="sr-only" for="unified-login-notify-email">Email (optional, for notifications)</label>
+              <input type="email" id="unified-login-notify-email" placeholder="Email (optional, for notifications)" style="display:none;">
+              <p class="note" id="unified-login-hint" style="display:none;margin:0;"></p>
+              <button class="primary" id="unified-login-btn">Log in</button>
             </div>
             <button class="link" id="show-account-signup" style="margin-top:10px;">New here? Sign up</button>
             <button class="link" id="show-account-forgot" style="margin-top:10px;margin-left:16px;">Forgot password?</button>
@@ -249,15 +235,8 @@
 
       <section class="hub-view" id="hub-view-admin">
         <div class="card" id="owner-login-card">
-          <h2 class="section-title">Admin login</h2>
-          <div class="row">
-            <label class="sr-only" for="owner-username">Username</label>
-            <input type="text" id="owner-username" placeholder="Username" style="width:160px;">
-            <label class="sr-only" for="owner-pin">PIN</label>
-            <input type="password" id="owner-pin" placeholder="PIN" style="width:140px;">
-            <button class="primary" id="owner-login-btn">Log in</button>
-          </div>
-          <div class="error" id="owner-error"></div>
+          <h2 class="section-title">Admin</h2>
+          <p class="note">Log in on the My Profile tab first — enter your admin username instead of an email, and this tab fills in with your tools.</p>
         </div>
         <div class="card" id="create-league-card" style="display:none;">
           <h2 class="section-title">Create a league<button class="secondary" id="owner-logout-btn">Log out</button></h2>
