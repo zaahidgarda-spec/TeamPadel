@@ -519,6 +519,12 @@ async function refreshOwnerStatus() {
   el("owner-login-card").style.display = isOwner ? "none" : "block";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
+  // Not a login entry point anymore (that's the unified box on My Profile)
+  // — with nothing to show a guest, the tab itself only makes sense once
+  // there's actually something behind it.
+  const adminTabBtn = document.querySelector('.hub-tab-btn[data-hubview="admin"]');
+  adminTabBtn.style.display = isOwner ? "" : "none";
+  if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
   if (isOwner) { renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); }
   renderHub();
 }
