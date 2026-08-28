@@ -245,13 +245,19 @@ function relativeDayLabel(iso) {
 // rating engine itself uses to update ratings, just not followed by an
 // actual update. Null once a seed is scored (the backend stops predicting
 // decided matches), so this renders nothing rather than a stale guess.
-function predictionBarHtml(prediction) {
-  if (!RATINGS_ENABLED || !prediction) return "";
+// `forceShow` bypasses the RATINGS_ENABLED gate — used only by the
+// site-wide Next Matches square, which shows predictions branded as
+// coming from the sister site regardless of whether this site's own
+// (currently off) ratings UI is enabled. Every other caller stays gated.
+function predictionBarHtml(prediction, forceShow) {
+  if ((!RATINGS_ENABLED && !forceShow) || !prediction) return "";
   const note = prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : "";
+  const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
   return `<div class="mc-predict">
     <div class="mc-predict-bar"><span class="a" style="width:${prediction.winPctA}%"></span><span class="b" style="width:${prediction.winPctB}%"></span></div>
     <div class="mc-predict-pcts"><span>${prediction.winPctA}%</span><span>${prediction.winPctB}%</span></div>
     ${note}
+    ${powered}
   </div>`;
 }
 // Same idea, but for a personal "your side" view — one number, not a bar
@@ -307,7 +313,7 @@ function renderNextMatchSlide() {
       ${centerHtml}
       <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
     </div>
-    ${predictionBarHtml(m.prediction)}
+    ${predictionBarHtml(m.prediction, true)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   // Re-trigger the slide-in animation on every rotation, not just the first

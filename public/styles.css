@@ -536,6 +536,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .mc-predict-bar .b{background:rgba(255,255,255,.25);}
 .floodlit.urgent .mc-predict-pcts,.floodlit.urgent .mc-predict-note{color:#7C8CB0;}
 .floodlit.urgent .mc-predict-solo{color:#8FB4FF;}
+.mc-predict-powered{display:block;text-align:center;margin-top:6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;color:var(--text-faint);text-decoration:none;}
+.mc-predict-powered:hover{text-decoration:underline;}
+.floodlit.urgent .mc-predict-powered{color:#7C8CB0;}
+.floodlit.urgent .mc-predict-powered:hover{color:#8FB4FF;}
 
 /* Court schedule, inside the same floodlit treatment as the homepage's
    Next Match hero — a lit court at night, applied here to the admin/
