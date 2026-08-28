@@ -490,35 +490,11 @@
 
       <section class="view" id="view-toss">
         <div class="card" style="margin-bottom:16px;">
-          <h2 class="section-title">Coin toss</h2>
-          <p class="note" style="margin-bottom:16px;">A fair, server-decided flip for whatever needs settling — who serves first, who picks ends, a tie-break. Call it, then flip.</p>
-          <div class="toss-call-row">
-            <button class="secondary toss-call-btn" data-call="heads" type="button">Call Heads</button>
-            <button class="secondary toss-call-btn" data-call="tails" type="button">Call Tails</button>
-          </div>
-          <div class="toss-coin-wrap">
-            <div id="toss-coin" class="toss-coin"><span id="toss-coin-face">?</span></div>
-          </div>
-          <div id="toss-result" class="toss-result"></div>
-          <p class="modal-subhead" style="margin-top:18px;">Recent flips</p>
-          <div id="toss-history"></div>
+          <h2 class="section-title">Toss</h2>
+          <p class="note">A fair, server-decided flip between the two teams in each match. The winner picks who declares their line-up first — then pair up right here, live on a video call. Guests can watch and join with a shared link.</p>
         </div>
-        <div class="card">
-          <h2 class="section-title">Video call</h2>
-          <p class="note" style="margin-bottom:14px;">A private video room for this league — share this tab with the other captain and join whenever you're both ready. No account or app needed on their end.</p>
-          <div id="toss-video-launch">
-            <button class="primary" id="toss-video-start-btn" type="button">Start video call</button>
-          </div>
-          <div id="toss-video-active" style="display:none;">
-            <div class="row" style="margin-bottom:10px;justify-content:space-between;">
-              <a class="link" id="toss-video-open-btn" href="#" target="_blank" rel="noopener">Open in a new tab &rarr;</a>
-              <button class="link" id="toss-video-end-btn" type="button">End call</button>
-            </div>
-            <div class="toss-video-frame-wrap">
-              <iframe id="toss-video-frame" class="toss-video-frame" allow="camera; microphone; fullscreen; display-capture; autoplay" src="about:blank" title="Video call"></iframe>
-            </div>
-          </div>
-        </div>
+        <div id="round-nav-toss"></div>
+        <div id="toss-container"></div>
       </section>
 
       <section class="view" id="view-fixtures">

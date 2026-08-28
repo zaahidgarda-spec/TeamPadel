@@ -45,6 +45,12 @@ function fmtTime(hhmm) {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return h12 + ":" + String(m).padStart(2, "0") + " " + period;
 }
+function fmtDateTime(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  if (isNaN(d)) return "";
+  return d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
 function teamById(id) { return league.teams.find((t) => t.id === id); }
 function playerById(team, id) { return team ? team.players.find((p) => p.id === id) : null; }
 // Matches a league's name against the two branded leagues (Premier League,
@@ -2290,59 +2296,256 @@ el("mark-all-read-btn").onclick = async () => {
    discussed doesn't always map to a specific match. ---------- */
 function renderToss() {
   if (myRole !== "admin" && myRole !== "captain") return;
-  el("toss-history").innerHTML = (league.coinTosses || []).length
-    ? league.coinTosses.map((t) => `
-        <div class="notif-row">
-          <div><strong>${escapeHtml(t.by)}</strong> called ${t.call} <span class="note">· landed on ${t.result}</span></div>
-          <span class="tag" style="${t.won ? "color:var(--success);border-color:var(--success);" : "color:var(--clay);border-color:var(--clay);"}">${t.won ? "Won" : "Lost"}</span>
-        </div>
-      `).join("")
-    : '<p class="empty">No flips yet.</p>';
+  renderRoundNav("round-nav-toss");
+  const c = el("toss-container");
+  c.innerHTML = "";
+  let fixtures = fixturesForKey(viewingKey);
+  if (myRole === "captain") fixtures = fixtures.filter((f) => f.teamA === myTeamId || f.teamB === myTeamId);
+  if (fixtures.length === 0) {
+    c.innerHTML = myRole === "captain"
+      ? '<div class="card"><p class="empty">Your team isn\'t playing this round.</p></div>'
+      : '<div class="card"><p class="empty">No fixtures this round yet.</p></div>';
+    return;
+  }
+  fixtures.forEach((f) => c.appendChild(tossCard(f)));
+}
+function tossCard(f) {
+  const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+  const card = document.createElement("div"); card.className = "fixture-card";
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div></div>`;
+  if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
 
-  let flipping = false;
-  document.querySelectorAll(".toss-call-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      if (flipping) return;
-      flipping = true;
-      document.querySelectorAll(".toss-call-btn").forEach((b) => (b.disabled = true));
-      el("toss-result").textContent = "";
-      const coin = el("toss-coin");
-      coin.classList.add("flipping");
-      try {
-        const [{ entry }] = await Promise.all([
-          api(`/leagues/${currentLeagueId}/coin-toss`, { method: "POST", body: { call: btn.dataset.call } }),
-          new Promise((resolve) => setTimeout(resolve, 900)), // let the flip animation actually play out
-        ]);
-        coin.classList.remove("flipping");
-        el("toss-coin-face").textContent = entry.result === "heads" ? "H" : "T";
-        el("toss-result").innerHTML = entry.won
-          ? `<span style="color:var(--success);">Called ${entry.call}, landed ${entry.result} — you win the toss!</span>`
-          : `<span style="color:var(--clay);">Called ${entry.call}, landed ${entry.result} — the other side wins.</span>`;
-        league.coinTosses = league.coinTosses || [];
-        league.coinTosses.unshift(entry);
-        renderToss();
-      } catch (e) {
-        coin.classList.remove("flipping");
-        el("toss-result").textContent = e.message;
-      } finally {
-        flipping = false;
-        document.querySelectorAll(".toss-call-btn").forEach((b) => (b.disabled = false));
-      }
-    };
+  const mySide = myRole === "captain" ? (myTeamId === f.teamA ? "A" : myTeamId === f.teamB ? "B" : null) : null;
+  const toss = f.toss || {};
+
+  // Rosters up front — no need to go dig through the roster tab mid-call.
+  const rosters = document.createElement("div"); rosters.className = "toss-rosters";
+  [teamA, teamB].forEach((team) => {
+    const col = document.createElement("div");
+    col.innerHTML = `<h4>${escapeHtml(team.name)}</h4><ul class="toss-roster-list">${
+      team.players.length ? team.players.map((p) => `<li>${goldNameHtml(p)}</li>`).join("") : '<li class="empty">No players yet.</li>'
+    }</ul>`;
+    rosters.appendChild(col);
   });
+  card.appendChild(rosters);
 
-  el("toss-video-start-btn").onclick = () => {
-    const url = `https://meet.jit.si/TeamPadel-${currentLeagueId}`;
-    el("toss-video-frame").src = url + "#config.prejoinPageEnabled=false";
-    el("toss-video-open-btn").href = url;
-    el("toss-video-launch").style.display = "none";
-    el("toss-video-active").style.display = "block";
+  // --- toss time ---
+  const schedRow = document.createElement("div"); schedRow.className = "toss-sched-row";
+  const schedLabel = document.createElement("span"); schedLabel.className = "note";
+  schedLabel.textContent = toss.scheduledAt ? "Toss time: " + fmtDateTime(toss.scheduledAt) : "No toss time set yet.";
+  schedRow.appendChild(schedLabel);
+  if (mySide || myRole === "admin") {
+    const input = document.createElement("input");
+    input.type = "datetime-local"; input.className = "toss-sched-input";
+    if (toss.scheduledAt) {
+      const d = new Date(toss.scheduledAt);
+      input.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "link"; saveBtn.textContent = "Save";
+    saveBtn.onclick = async () => {
+      const ms = input.value ? new Date(input.value).getTime() : null;
+      try {
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/toss/schedule`, { method: "PUT", body: { scheduledAt: ms } });
+        await refreshLeague(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    schedRow.appendChild(input); schedRow.appendChild(saveBtn);
+  }
+  card.appendChild(schedRow);
+
+  // --- coin toss ---
+  const flipCard = document.createElement("div"); flipCard.className = "card"; flipCard.style.marginTop = "12px";
+  const flipTitle = document.createElement("h3"); flipTitle.className = "timeslot-title"; flipTitle.textContent = "Coin toss";
+  flipCard.appendChild(flipTitle);
+
+  if (!toss.result) {
+    const note = document.createElement("p"); note.className = "note"; note.style.marginBottom = "12px";
+    note.textContent = "Call it, then flip — the winner decides who declares their line-up first.";
+    flipCard.appendChild(note);
+
+    const coinWrap = document.createElement("div"); coinWrap.className = "toss-coin-wrap";
+    const coin = document.createElement("div"); coin.className = "toss-coin";
+    coin.innerHTML = "<span>?</span>";
+    coinWrap.appendChild(coin);
+    const resultLine = document.createElement("div"); resultLine.className = "toss-result";
+
+    let flipping = false;
+    const allBtns = [];
+    function attachCallBtn(btn, side, callVal) {
+      allBtns.push(btn);
+      btn.onclick = async () => {
+        if (flipping) return;
+        flipping = true;
+        allBtns.forEach((b) => (b.disabled = true));
+        resultLine.textContent = "";
+        coin.classList.add("flipping");
+        try {
+          const [{ toss: newToss }] = await Promise.all([
+            api(`/leagues/${currentLeagueId}/fixtures/${f.id}/toss/call`, { method: "POST", body: { call: callVal, side } }),
+            new Promise((resolve) => setTimeout(resolve, 900)), // let the flip animation actually play out
+          ]);
+          f.toss = newToss;
+          await refreshLeague(); renderAll();
+        } catch (e) {
+          coin.classList.remove("flipping");
+          resultLine.textContent = e.message;
+          flipping = false;
+          allBtns.forEach((b) => (b.disabled = false));
+        }
+      };
+    }
+    function callRow(side) {
+      const row = document.createElement("div"); row.className = "toss-call-row";
+      ["heads", "tails"].forEach((cv) => {
+        const btn = document.createElement("button");
+        btn.className = "secondary"; btn.textContent = "Call " + (cv === "heads" ? "Heads" : "Tails");
+        attachCallBtn(btn, side, cv);
+        row.appendChild(btn);
+      });
+      return row;
+    }
+    if (myRole === "admin") {
+      [["A", teamA], ["B", teamB]].forEach(([side, team]) => {
+        const grp = document.createElement("div"); grp.className = "toss-call-group";
+        grp.appendChild(Object.assign(document.createElement("div"), { className: "note", textContent: "On behalf of " + team.name + ":" }));
+        grp.appendChild(callRow(side));
+        flipCard.appendChild(grp);
+      });
+    } else if (mySide) {
+      flipCard.appendChild(callRow(mySide));
+    } else {
+      flipCard.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for a captain to call it." }));
+    }
+    flipCard.appendChild(coinWrap);
+    flipCard.appendChild(resultLine);
+  } else if (!toss.firstSide) {
+    const callerTeam = toss.callerSide === "A" ? teamA : teamB;
+    const winnerTeam = toss.winnerSide === "A" ? teamA : teamB;
+    flipCard.appendChild(Object.assign(document.createElement("p"), {
+      className: "note",
+      innerHTML: `${escapeHtml(callerTeam.name)} called <strong>${toss.call}</strong>, landed on <strong>${toss.result}</strong> — <strong>${escapeHtml(winnerTeam.name)}</strong> wins the toss.`,
+    }));
+    const canChoose = myRole === "admin" || mySide === toss.winnerSide;
+    if (canChoose) {
+      flipCard.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin:10px 0 6px;", textContent: "Declare your line-up first, or make the other team go first?" }));
+      const row = document.createElement("div"); row.className = "row";
+      const selfBtn = document.createElement("button"); selfBtn.className = "primary"; selfBtn.textContent = "We'll go first";
+      const oppBtn = document.createElement("button"); oppBtn.className = "secondary"; oppBtn.textContent = "Make them go first";
+      const err = document.createElement("div"); err.className = "error";
+      async function choose(choice) {
+        try {
+          const { toss: newToss } = await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/toss/choice`, { method: "POST", body: { choice } });
+          f.toss = newToss;
+          await refreshLeague(); renderAll();
+        } catch (e) { err.textContent = e.message; }
+      }
+      selfBtn.onclick = () => choose("self");
+      oppBtn.onclick = () => choose("opponent");
+      row.appendChild(selfBtn); row.appendChild(oppBtn);
+      flipCard.appendChild(row); flipCard.appendChild(err);
+    } else {
+      flipCard.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for " + winnerTeam.name + " to decide who goes first." }));
+    }
+  } else {
+    const firstTeam = toss.firstSide === "A" ? teamA : teamB;
+    const winnerTeam = toss.winnerSide === "A" ? teamA : teamB;
+    const msg = toss.firstSide === toss.winnerSide
+      ? `<strong>${escapeHtml(firstTeam.name)}</strong> won the toss and goes first.`
+      : `<strong>${escapeHtml(winnerTeam.name)}</strong> won the toss and chose to make <strong>${escapeHtml(firstTeam.name)}</strong> go first.`;
+    flipCard.appendChild(Object.assign(document.createElement("p"), { className: "note", innerHTML: msg }));
+  }
+  if (myRole === "admin" && toss.result) {
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "link"; resetBtn.style.marginTop = "8px"; resetBtn.textContent = "Reset toss";
+    resetBtn.onclick = async () => {
+      if (!confirm("Reset this toss? The call, result, and who-goes-first decision will be cleared — nothing about the pairings themselves changes.")) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/toss/reset`, { method: "POST" });
+        await refreshLeague(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    flipCard.appendChild(resetBtn);
+  }
+  card.appendChild(flipCard);
+
+  // --- pairings, live, once the toss says who goes first ---
+  if (toss.firstSide && league.format !== "pairs") {
+    const pairWrap = document.createElement("div"); pairWrap.className = "card"; pairWrap.style.marginTop = "12px";
+    pairWrap.appendChild(Object.assign(document.createElement("h3"), { className: "timeslot-title", textContent: "Pairings" }));
+
+    const firstTeam = toss.firstSide === "A" ? teamA : teamB;
+    const secondTeam = toss.firstSide === "A" ? teamB : teamA;
+    const firstSel = toss.firstSide === "A" ? f.selectionA : f.selectionB;
+    const secondSel = toss.firstSide === "A" ? f.selectionB : f.selectionA;
+    const secondSide = toss.firstSide === "A" ? "B" : "A";
+
+    const grid = document.createElement("div"); grid.className = "selection-grid";
+    grid.appendChild(firstSel.submitted ? selectionReveal(f, firstTeam, firstSel, toss.firstSide) : selectionForm(f, firstTeam, toss.firstSide));
+    if (firstSel.submitted) {
+      grid.appendChild(secondSel.submitted ? selectionReveal(f, secondTeam, secondSel, secondSide) : selectionForm(f, secondTeam, secondSide));
+    } else {
+      const waiting = document.createElement("div"); waiting.className = "selection-side";
+      waiting.innerHTML = `<h3>${escapeHtml(secondTeam.name)}</h3><p class="note">Waiting on ${escapeHtml(firstTeam.name)} to submit their line-up.</p>`;
+      grid.appendChild(waiting);
+    }
+    pairWrap.appendChild(grid);
+    if (f.selectionA.submitted && f.selectionB.submitted) {
+      pairWrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:10px;", textContent: "Both line-ups are in — head to Selection Room to set the court & playing order." }));
+    }
+    card.appendChild(pairWrap);
+  }
+
+  // --- video call + spectator link ---
+  const videoWrap = document.createElement("div"); videoWrap.className = "card"; videoWrap.style.marginTop = "12px";
+  videoWrap.appendChild(Object.assign(document.createElement("h3"), { className: "section-title", textContent: "Video call" }));
+  videoWrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-bottom:14px;", textContent: "A video room just for this match — join whenever you're both ready. No account needed on their end." }));
+
+  const linkRow = document.createElement("div"); linkRow.className = "row"; linkRow.style.marginBottom = "12px";
+  const linkBtn = document.createElement("button"); linkBtn.className = "secondary"; linkBtn.textContent = "Copy spectator link";
+  const linkNote = document.createElement("span"); linkNote.className = "note";
+  linkBtn.onclick = async () => {
+    const url = location.origin + "/toss.html?l=" + currentLeagueId + "&f=" + f.id;
+    try { await navigator.clipboard.writeText(url); linkNote.textContent = "Copied!"; }
+    catch (e) { linkNote.textContent = url; }
+    setTimeout(() => { linkNote.textContent = ""; }, 3000);
   };
-  el("toss-video-end-btn").onclick = () => {
-    el("toss-video-frame").src = "about:blank";
-    el("toss-video-active").style.display = "none";
-    el("toss-video-launch").style.display = "block";
+  linkRow.appendChild(linkBtn); linkRow.appendChild(linkNote);
+  videoWrap.appendChild(linkRow);
+
+  const launch = document.createElement("div");
+  const startBtn = document.createElement("button"); startBtn.className = "primary"; startBtn.textContent = "Start video call";
+  launch.appendChild(startBtn);
+
+  const active = document.createElement("div"); active.style.display = "none";
+  const activeRow = document.createElement("div"); activeRow.className = "row"; activeRow.style.cssText = "margin-bottom:10px;justify-content:space-between;";
+  const openLink = document.createElement("a"); openLink.className = "link"; openLink.target = "_blank"; openLink.rel = "noopener"; openLink.textContent = "Open in a new tab →";
+  const endBtn = document.createElement("button"); endBtn.className = "link"; endBtn.textContent = "End call";
+  activeRow.appendChild(openLink); activeRow.appendChild(endBtn);
+  const frameWrap = document.createElement("div"); frameWrap.className = "toss-video-frame-wrap";
+  const frame = document.createElement("iframe"); frame.className = "toss-video-frame"; frame.src = "about:blank"; frame.title = "Video call";
+  frame.allow = "camera; microphone; fullscreen; display-capture; autoplay";
+  frameWrap.appendChild(frame);
+  active.appendChild(activeRow); active.appendChild(frameWrap);
+
+  startBtn.onclick = () => {
+    const url = "https://meet.jit.si/TeamPadel-" + f.id;
+    frame.src = url + "#config.prejoinPageEnabled=false";
+    openLink.href = url;
+    launch.style.display = "none";
+    active.style.display = "block";
   };
+  endBtn.onclick = () => {
+    frame.src = "about:blank";
+    active.style.display = "none";
+    launch.style.display = "block";
+  };
+
+  videoWrap.appendChild(launch);
+  videoWrap.appendChild(active);
+  card.appendChild(videoWrap);
+
+  return card;
 }
 function renderSelection() {
   if (myRole !== "admin" && myRole !== "captain") return;

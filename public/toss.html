@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toss &amp; pairings — Team Padel</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .toss-guest-badge{display:inline-block;font-family:var(--font-display);font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-full);padding:4px 12px;margin-bottom:14px;}
+  .toss-guest-head{margin-bottom:8px;}
+</style>
+</head>
+<body>
+<div class="wrap" style="max-width:640px;">
+  <span class="toss-guest-badge">Spectator view</span>
+  <div id="app-root"><p class="note">Loading…</p></div>
+</div>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const leagueId = params.get("l");
+  const fixtureId = params.get("f");
+  const root = document.getElementById("app-root");
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function avatarHtml(t) {
+    if (t && t.logo) return '<img class="avatar" src="' + t.logo + '" alt="">';
+    const initial = t ? t.name.charAt(0).toUpperCase() : "?";
+    return '<span class="avatar-fb">' + escapeHtml(initial) + "</span>";
+  }
+  function pairNames(team, pair) {
+    if (!team || !pair) return "—";
+    const names = pair.map((pid) => { const p = team.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+    return names.length ? escapeHtml(names.join(" & ")) : "—";
+  }
+
+  if (!leagueId || !fixtureId) {
+    root.innerHTML = '<div class="card"><p class="empty">This link is missing some details — ask whoever sent it for a fresh one.</p></div>';
+    return;
+  }
+
+  fetch("/api/leagues/" + leagueId + "/fixtures/" + fixtureId + "/toss/public")
+    .then((r) => { if (!r.ok) throw new Error("not-found"); return r.json(); })
+    .then(render)
+    .catch(() => {
+      root.innerHTML = '<div class="card"><p class="empty">Couldn\'t find that match — the link may be out of date.</p></div>';
+    });
+
+  function render(data) {
+    const teamA = data.teamA, teamB = data.teamB;
+    const toss = data.toss || {};
+    document.title = (teamA ? teamA.name : "TBD") + " vs " + (teamB ? teamB.name : "TBD") + " — Toss";
+
+    let html = "";
+    html += '<div class="card toss-guest-head">';
+    html += '<h2 class="section-title">' + (teamA ? avatarHtml(teamA) : "") + " " + escapeHtml(teamA ? teamA.name : "TBD") +
+      ' <span class="vs">vs</span> ' + escapeHtml(teamB ? teamB.name : "TBD") + " " + (teamB ? avatarHtml(teamB) : "") + "</h2>";
+    html += '<p class="note">' + escapeHtml(data.league.name) + " · " + escapeHtml(data.label) + "</p>";
+    html += "</div>";
+
+    if (teamA && teamB) {
+      html += '<div class="card"><div class="toss-rosters">';
+      [teamA, teamB].forEach((team) => {
+        html += "<div><h4>" + escapeHtml(team.name) + "</h4><ul class=\"toss-roster-list\">";
+        html += team.players.length ? team.players.map((p) => "<li>" + escapeHtml(p.name) + "</li>").join("") : '<li class="empty">No players yet.</li>';
+        html += "</ul></div>";
+      });
+      html += "</div></div>";
+
+      html += '<div class="card">';
+      html += '<h3 class="timeslot-title">Toss</h3>';
+      if (toss.scheduledAt) {
+        const d = new Date(toss.scheduledAt);
+        html += '<p class="note">Scheduled for ' + escapeHtml(d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })) + "</p>";
+      }
+      if (!toss.result) {
+        html += '<p class="empty">Waiting on the toss.</p>';
+      } else {
+        const callerTeam = toss.callerSide === "A" ? teamA : teamB;
+        const winnerTeam = toss.winnerSide === "A" ? teamA : teamB;
+        html += "<p>" + escapeHtml(callerTeam.name) + " called <strong>" + toss.call + "</strong>, landed on <strong>" + toss.result + "</strong> — <strong>" + escapeHtml(winnerTeam.name) + "</strong> wins the toss.</p>";
+        if (toss.firstSide) {
+          const firstTeam = toss.firstSide === "A" ? teamA : teamB;
+          html += "<p>" + escapeHtml(firstTeam.name) + " goes first.</p>";
+        } else {
+          html += '<p class="note">Waiting on ' + escapeHtml(winnerTeam.name) + " to decide who goes first.</p>";
+        }
+      }
+      html += "</div>";
+
+      if (toss.firstSide) {
+        html += '<div class="card"><h3 class="timeslot-title">Pairings</h3><div class="selection-grid">';
+        [["A", teamA], ["B", teamB]].forEach(([side, team]) => {
+          const sel = side === "A" ? data.selectionA : data.selectionB;
+          html += '<div class="selection-side"><h3>' + escapeHtml(team.name) + "</h3>";
+          if (sel.submitted) {
+            sel.pairs.forEach((pair, i) => {
+              html += '<div class="seed-row"><span class="num">Seed ' + (i + 1) + '</span><span class="pair" style="flex:1;">' + pairNames(team, pair) + "</span></div>";
+            });
+          } else {
+            html += '<p class="note">Not submitted yet.</p>';
+          }
+          html += "</div>";
+        });
+        html += "</div></div>";
+      }
+    }
+
+    html += '<div class="card">';
+    html += '<h3 class="section-title">Video call</h3>';
+    html += '<p class="note" style="margin-bottom:14px;">Watch or join the call for this match — no account needed.</p>';
+    html += '<div id="video-launch"><button class="primary" id="video-start-btn" type="button">Join video call</button></div>';
+    html += '<div id="video-active" style="display:none;"><div class="toss-video-frame-wrap"><iframe id="video-frame" class="toss-video-frame" allow="camera; microphone; fullscreen; display-capture; autoplay" src="about:blank" title="Video call"></iframe></div></div>';
+    html += "</div>";
+
+    root.innerHTML = html;
+
+    const startBtn = document.getElementById("video-start-btn");
+    if (startBtn) {
+      startBtn.onclick = function () {
+        const url = "https://meet.jit.si/" + data.videoRoom;
+        document.getElementById("video-frame").src = url + "#config.prejoinPageEnabled=false";
+        document.getElementById("video-launch").style.display = "none";
+        document.getElementById("video-active").style.display = "block";
+      };
+    }
+  }
+})();
+</script>
+</body>
+</html>

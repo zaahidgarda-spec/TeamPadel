@@ -940,7 +940,6 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.format) league.format = "teams";
   if (!league.groups) league.groups = [];
   if (!league.hallOfFame) league.hallOfFame = [];
-  if (!league.coinTosses) league.coinTosses = [];
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -1349,27 +1348,93 @@ router.delete("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, re
   res.json({ ok: true });
 });
 
-/* ---------- Toss: a fair, server-decided coin flip for whatever a
-   captain/admin needs settled (who serves first, who picks ends, a
-   tie-break) — not tied to any specific fixture, since a call like this
-   comes up in different forms match to match. ---------- */
-router.post("/leagues/:leagueId/coin-toss", requireLeagueSession, (req, res) => {
+/* ---------- Toss: a fair, server-decided coin flip between the two
+   teams in a specific fixture. The winner picks whether their line-up
+   goes in first or forces the opponent to declare first — that ordering
+   then gates the existing /selection route below, so the toss feeds
+   straight into picking pairs live instead of being a separate ritual.
+   Selection Room's blind submit-then-reveal keeps working unchanged for
+   any fixture that skips the toss entirely. ---------- */
+// Resolves which side (A/B) the current session is allowed to act as for
+// this fixture — admin/owner may act as either (via req.body.side), a
+// captain only as their own team. Null means "not part of this fixture."
+function fixtureSide(league, f, req, bodySide) {
+  const ownerHere = isOwnerSession(req);
+  const u = req.session.user;
+  if (ownerHere || (u && u.leagueId === league.id && u.role === "admin")) {
+    return bodySide === "A" || bodySide === "B" ? bodySide : null;
+  }
+  if (!u || u.leagueId !== league.id) return null;
+  return u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
+}
+router.get("/leagues/:leagueId/fixtures/:fixtureId/toss/public", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  const call = req.body && req.body.call;
-  if (call !== "heads" && call !== "tails") return res.status(400).json({ error: "Call heads or tails first." });
-  const result = Math.random() < 0.5 ? "heads" : "tails";
-  let by = "Admin";
-  if (!isOwnerSession(req) && req.session.user && req.session.user.role === "captain") {
-    const team = league.teams.find((t) => t.id === req.session.user.teamId);
-    by = team ? team.name : "Captain";
-  }
-  const entry = { id: logic.uid(), call, result, won: call === result, by, createdAt: Date.now() };
-  if (!league.coinTosses) league.coinTosses = [];
-  league.coinTosses.unshift(entry);
-  league.coinTosses = league.coinTosses.slice(0, 20);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Not found." });
+  const teamA = league.teams.find((t) => t.id === f.teamA) || null;
+  const teamB = league.teams.find((t) => t.id === f.teamB) || null;
+  // Read-only, no login: only what a spectator needs to follow along —
+  // never contact details, codes, or anything from other fixtures.
+  const publicTeam = (t) => (t ? { name: t.name, logo: t.logo || "", players: t.players.map((p) => ({ id: p.id, name: p.name })) } : null);
+  res.json({
+    league: { name: league.name },
+    label: fixtureLabel(league, f),
+    teamA: publicTeam(teamA),
+    teamB: publicTeam(teamB),
+    toss: f.toss || null,
+    selectionA: { submitted: f.selectionA.submitted, pairs: f.selectionA.submitted ? f.selectionA.pairs : [] },
+    selectionB: { submitted: f.selectionB.submitted, pairs: f.selectionB.submitted ? f.selectionB.pairs : [] },
+    videoRoom: "TeamPadel-" + f.id,
+  });
+});
+router.put("/leagues/:leagueId/fixtures/:fixtureId/toss/schedule", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!fixtureSide(league, f, req, "A") && !fixtureSide(league, f, req, "B")) return res.status(403).json({ error: "You're not in this fixture." });
+  if (!f.toss) f.toss = {};
+  f.toss.scheduledAt = req.body.scheduledAt || null;
   store.saveLeague(league.id, league);
-  res.json({ entry });
+  res.json({ toss: f.toss });
+});
+router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/call", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
+  const side = fixtureSide(league, f, req, req.body.side);
+  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
+  const call = req.body.call;
+  if (call !== "heads" && call !== "tails") return res.status(400).json({ error: "Call heads or tails first." });
+  if (f.toss && f.toss.firstSide) return res.status(400).json({ error: "This toss is already decided — ask the admin to reset it to redo the flip." });
+  const result = Math.random() < 0.5 ? "heads" : "tails";
+  const winnerSide = call === result ? side : side === "A" ? "B" : "A";
+  f.toss = { scheduledAt: (f.toss && f.toss.scheduledAt) || null, call, result, callerSide: side, winnerSide, firstSide: null };
+  store.saveLeague(league.id, league);
+  res.json({ toss: f.toss });
+});
+router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/choice", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.toss || !f.toss.result) return res.status(400).json({ error: "Flip the coin first." });
+  if (f.toss.firstSide) return res.status(400).json({ error: "This toss is already decided." });
+  const side = fixtureSide(league, f, req, f.toss.winnerSide);
+  if (side !== f.toss.winnerSide) return res.status(403).json({ error: "Only the team that won the toss can make this choice." });
+  const choice = req.body.choice;
+  if (choice !== "self" && choice !== "opponent") return res.status(400).json({ error: "Choose self or opponent." });
+  f.toss.firstSide = choice === "self" ? f.toss.winnerSide : f.toss.winnerSide === "A" ? "B" : "A";
+  store.saveLeague(league.id, league);
+  res.json({ toss: f.toss });
+});
+router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/reset", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  f.toss = {};
+  store.saveLeague(league.id, league);
+  res.json({ toss: f.toss });
 });
 
 router.post(
@@ -1850,6 +1915,13 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   // gone (a real reveal happened), after which only admin can reopen it.
   if (f[selKey].submitted && f[oppKey].submitted) {
     return res.status(400).json({ error: "Both line-ups are already in — ask the admin to unlock it, or request it in Selection Room (needs the other captain's approval)." });
+  }
+  // A toss can decide who declares first — the losing side of that choice
+  // has to wait and see the winner's pairs before submitting their own.
+  if (f.toss && f.toss.firstSide && f.toss.firstSide !== side && !f[oppKey].submitted) {
+    const firstTeamId = f.toss.firstSide === "A" ? f.teamA : f.teamB;
+    const firstTeam = league.teams.find((t) => t.id === firstTeamId);
+    return res.status(400).json({ error: (firstTeam ? firstTeam.name : "The other team") + " won the toss and goes first — wait for their line-up before submitting yours." });
   }
 
   const pairs = req.body.pairs;

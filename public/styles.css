@@ -925,3 +925,13 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .toss-result{text-align:center;margin-top:14px;font-size:14px;font-weight:600;min-height:20px;}
 .toss-video-frame-wrap{position:relative;width:100%;padding-top:56.25%;border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);background:#000;}
 .toss-video-frame{position:absolute;inset:0;width:100%;height:100%;border:none;}
+.toss-rosters{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+@media (max-width:640px){.toss-rosters{grid-template-columns:1fr;}}
+.toss-rosters h4{font-family:var(--font-display);font-size:13px;margin:0 0 6px;}
+.toss-roster-list{list-style:none;margin:0;padding:0;font-size:14px;color:var(--text);}
+.toss-roster-list li{padding:3px 0;border-bottom:1px solid var(--line);}
+.toss-roster-list li:last-child{border-bottom:none;}
+.toss-sched-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.toss-sched-input{font-family:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--text);}
+.toss-call-group{margin-bottom:10px;}
+.toss-call-group .toss-call-row{margin-bottom:8px;}
