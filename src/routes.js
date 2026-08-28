@@ -703,7 +703,19 @@ function claimPlayerRecord(user, leagueId, teamId, playerId) {
   const player = team.players.find((p) => p.id === playerId);
   if (!player) throw new Error("Player not found.");
   if (player.claimedByUserId && player.claimedByUserId !== user.id) {
-    throw new Error(`${player.name} (${team.name}, ${league.name}) has already been claimed by another profile.`);
+    // Already claimed by someone else is only a hard conflict if that
+    // "someone else" could actually be a real person logged in as them.
+    // A passwordHash of null means nobody can log into that account —
+    // it only exists because an admin combined this record with others on
+    // this player's behalf before they'd ever signed up themselves. The
+    // real player showing up now to claim it absorbs everything already
+    // linked there instead of hitting a wall.
+    const other = store.getUser(player.claimedByUserId);
+    if (other && !other.passwordHash) {
+      absorbPlaceholderAccount(user, other);
+    } else {
+      throw new Error(`${player.name} (${team.name}, ${league.name}) has already been claimed by another profile.`);
+    }
   }
   if (!player.claimedByUserId) {
     player.claimedByUserId = user.id;
@@ -712,6 +724,25 @@ function claimPlayerRecord(user, leagueId, teamId, playerId) {
   if (!user.claims.some((c) => c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId)) {
     user.claims.push({ leagueId, teamId, playerId });
   }
+}
+// Pulls every claim off a passwordless placeholder account onto `user`
+// (re-pointing each already-claimed player record along the way) and
+// removes the now-empty placeholder — the other half of the merge above.
+function absorbPlaceholderAccount(user, placeholder) {
+  (placeholder.claims || []).forEach((c) => {
+    const otherLeague = store.getLeague(c.leagueId);
+    const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
+    const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
+    if (!otherLeague || !otherTeam || !otherPlayer) return;
+    otherPlayer.claimedByUserId = user.id;
+    store.saveLeague(otherLeague.id, otherLeague);
+    if (!user.claims.some((x) => x.leagueId === c.leagueId && x.teamId === c.teamId && x.playerId === c.playerId)) {
+      user.claims.push({ leagueId: c.leagueId, teamId: c.teamId, playerId: c.playerId });
+    }
+  });
+  const index = store.getUsersIndex();
+  store.saveUsersIndex(index.filter((e) => e.id !== placeholder.id));
+  store.deleteUser(placeholder.id);
 }
 router.post("/players/claims", requirePlayerUser, (req, res) => {
   const { leagueId, teamId, playerId } = req.body || {};

@@ -138,6 +138,15 @@ function saveUser(id, user) {
   }
   writeJsonFile("user-" + id, user);
 }
+function deleteUser(id) {
+  if (useRedis) {
+    cache.delete("user-" + id);
+    remove("user-" + id);
+    return;
+  }
+  const p = filePath("user-" + id);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+}
 
 function getSignups() {
   if (useRedis) return cache.get("interest-signups") || [];
@@ -164,6 +173,7 @@ module.exports = {
   saveUsersIndex,
   getUser,
   saveUser,
+  deleteUser,
   getSignups,
   saveSignups,
 };
