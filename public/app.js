@@ -152,6 +152,10 @@ async function boot() {
   leaguesIndex = await api("/leagues").catch(() => []);
   el("loading").style.display = "none";
   el("app").style.display = "block";
+  // Black while the splash/loading screen is up (matches it exactly, no
+  // blue status-bar strip on top of a black screen) — back to the site's
+  // own blue now that the real app is actually on screen.
+  el("theme-color-meta").setAttribute("content", "#2563EB");
   const m = window.location.hash.match(/^#league\/(.+)$/);
   if (m && leaguesIndex.find((l) => l.id === m[1])) {
     await openLeague(m[1]);
