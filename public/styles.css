@@ -906,25 +906,14 @@ nav.tabs::-webkit-scrollbar{display:none;}
   #install-btn{order:2;}
 }
 
-/* ---------- Toss: coin flip + video call ---------- */
-.toss-call-row{display:flex;justify-content:center;gap:12px;margin-bottom:22px;}
-.toss-coin-wrap{display:flex;justify-content:center;perspective:600px;}
-.toss-coin{
-  width:88px;height:88px;border-radius:50%;
-  background:linear-gradient(155deg,var(--accent-soft),var(--panel));
-  border:3px solid var(--accent);
-  display:flex;align-items:center;justify-content:center;
-  font-family:var(--font-display);font-weight:700;font-size:30px;color:var(--accent);
-  transform-style:preserve-3d;
-}
-.toss-coin.flipping{animation:toss-flip .9s cubic-bezier(.4,.1,.2,1);}
-@keyframes toss-flip{
-  0%{transform:rotateY(0deg);}
-  100%{transform:rotateY(1440deg);}
-}
-.toss-result{text-align:center;margin-top:14px;font-size:14px;font-weight:600;min-height:20px;}
-.toss-video-frame-wrap{position:relative;width:100%;padding-top:56.25%;border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);background:#000;}
-.toss-video-frame{position:absolute;inset:0;width:100%;height:100%;border:none;}
+/* ---------- Toss: the coin toss lives inside the video call stage,
+   not as a separate card — a frosted HUD overlapping the bottom edge
+   of the video, on the same dark "floodlit" treatment used elsewhere
+   (Next Matches, Court Schedule) so it reads as one product. The HUD
+   sits in normal document flow with a negative top margin pulling it
+   up over the video, rather than true position:absolute overlay —
+   admin's two "on behalf of" call groups and longer result text need
+   to grow without ever clipping against a fixed-height box. ---------- */
 .toss-rosters{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
 @media (max-width:640px){.toss-rosters{grid-template-columns:1fr;}}
 .toss-rosters h4{font-family:var(--font-display);font-size:13px;margin:0 0 6px;}
@@ -933,5 +922,76 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .toss-roster-list li:last-child{border-bottom:none;}
 .toss-sched-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
 .toss-sched-input{font-family:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--text);}
+
+.call-stage{
+  position:relative;overflow:hidden;border-radius:var(--radius);
+  background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));
+  border:1px solid rgba(96,150,255,.25);
+  box-shadow:0 0 0 1px rgba(96,150,255,.08),0 20px 44px rgba(0,0,0,.35),0 0 60px -10px rgba(64,120,255,.4);
+}
+.call-stage::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% -10%,rgba(37,99,235,.3),transparent 60%);}
+.call-topbar{position:absolute;top:0;left:0;right:0;padding:10px 14px;display:flex;align-items:center;justify-content:flex-end;z-index:3;}
+.call-live-badge{display:none;align-items:center;gap:6px;font-family:var(--font-display);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--clay);padding:4px 9px 4px 7px;border-radius:999px;margin-right:auto;}
+.call-live-badge.show{display:flex;}
+.call-live-dot{width:6px;height:6px;border-radius:50%;background:#fff;}
+.call-end-btn{display:none;font-family:var(--font-body);font-size:11.5px;font-weight:600;color:#F2F6FF;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);padding:5px 11px;border-radius:7px;cursor:pointer;}
+.call-end-btn.show{display:block;}
+
+.call-video{position:relative;width:100%;padding-top:42%;}
+.call-video-layer{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-start;flex-direction:column;gap:8px;padding-top:16px;z-index:1;}
+.call-video-layer.hide{display:none;}
+.call-video-icon{width:36px;height:36px;border-radius:50%;background:rgba(127,168,255,.12);border:1px solid rgba(127,168,255,.3);display:flex;align-items:center;justify-content:center;}
+.call-video-text{font-family:var(--font-body);font-size:11.5px;color:#7C8CB0;text-align:center;max-width:260px;line-height:1.4;padding:0 16px;}
+.call-start-btn{font-family:var(--font-body);font-weight:600;font-size:12.5px;padding:8px 16px;border-radius:8px;background:#7FA8FF;color:#060A14;border:none;box-shadow:0 0 18px rgba(127,168,255,.4);cursor:pointer;}
+.call-video-frame{position:absolute;inset:0;width:100%;height:100%;border:none;display:none;}
+.call-stage.live .call-video-frame{display:block;}
+
+.toss-hud{
+  position:relative;z-index:2;margin:-40px 14px 0;
+  background:rgba(9,13,24,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(127,168,255,.28);border-radius:12px;
+  padding:16px 18px 18px;text-align:center;
+}
+.toss-hud-label{font-family:var(--font-display);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:#8FB4FF;margin:0 0 12px;}
+.toss-hud-note{font-family:var(--font-body);font-size:12px;color:#7C8CB0;margin:0 0 4px;line-height:1.5;}
 .toss-call-group{margin-bottom:10px;}
-.toss-call-group .toss-call-row{margin-bottom:8px;}
+.toss-call-group:last-of-type{margin-bottom:0;}
+.toss-call-who{font-family:var(--font-body);font-size:11px;color:#7C8CB0;margin-bottom:6px;}
+.toss-call-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;}
+.toss-call-btn{font-family:var(--font-body);font-size:12.5px;font-weight:600;padding:7px 15px;border-radius:999px;border:1.5px solid rgba(143,180,255,.4);background:rgba(255,255,255,.04);color:#8FB4FF;cursor:pointer;}
+.toss-call-btn:disabled{opacity:.5;cursor:default;}
+
+.toss-coin-wrap{display:flex;justify-content:center;perspective:900px;margin:14px 0;position:relative;height:74px;align-items:flex-end;}
+.toss-coin-shadow{position:absolute;bottom:2px;width:44px;height:10px;border-radius:50%;background:radial-gradient(closest-side, rgba(0,0,0,.5), transparent 75%);}
+.toss-coin{position:absolute;bottom:14px;width:62px;height:62px;border-radius:50%;transform-style:preserve-3d;}
+.toss-coin.flipping{animation:toss-flip 1.1s cubic-bezier(.45,.05,.35,1);}
+@keyframes toss-flip{
+  0%{transform:rotateY(0deg) translateY(0);}
+  45%{transform:rotateY(900deg) translateY(-36px);}
+  100%{transform:rotateY(1800deg) translateY(0);}
+}
+.toss-coin-face{
+  position:absolute;inset:0;border-radius:50%;backface-visibility:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:repeating-conic-gradient(from 0deg, #143A78 0deg 4deg, #1E4FA0 4deg 8deg);
+  box-shadow:inset 0 0 0 4px #0B1220, inset 0 0 0 5px #2A5BC7;
+}
+.toss-coin-face::after{
+  content:"";position:absolute;inset:4px;border-radius:50%;
+  background:radial-gradient(circle at 34% 26%, #BFD6FF 0%, #5B90E8 42%, #1B3E85 100%);
+  box-shadow:inset 0 -4px 8px rgba(0,0,0,.3),inset 0 2px 5px rgba(255,255,255,.45);
+}
+.toss-coin-face span{position:relative;z-index:2;font-family:var(--font-display);font-weight:600;font-size:23px;color:#0B1220;text-shadow:0 1px 0 rgba(255,255,255,.4);}
+.toss-coin-face.back{transform:rotateY(180deg);}
+
+.toss-result{font-family:var(--font-body);font-size:12.5px;color:#F2F6FF;margin:10px 0 0;line-height:1.5;}
+.toss-result strong{color:#8FB4FF;font-weight:600;}
+
+.toss-choice-row{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
+.toss-choice-btn{font-family:var(--font-body);font-size:12px;font-weight:600;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;}
+.toss-choice-btn.primary{background:var(--accent);color:#fff;}
+.toss-choice-btn.ghost{background:rgba(255,255,255,.08);color:#F2F6FF;border:1px solid rgba(255,255,255,.22);}
+.toss-hud-error{color:#FF9B8A;font-size:12px;margin-top:8px;}
+.toss-reset-btn{display:block;margin:12px auto 0;background:none;border:none;color:#7C8CB0;font-size:11.5px;text-decoration:underline;cursor:pointer;}
+
+.call-footer-row{display:flex;align-items:center;gap:10px;padding:14px 18px 4px;flex-wrap:wrap;}

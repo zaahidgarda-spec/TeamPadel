@@ -2354,21 +2354,57 @@ function tossCard(f) {
   }
   card.appendChild(schedRow);
 
-  // --- coin toss ---
-  const flipCard = document.createElement("div"); flipCard.className = "card"; flipCard.style.marginTop = "12px";
-  const flipTitle = document.createElement("h3"); flipTitle.className = "timeslot-title"; flipTitle.textContent = "Coin toss";
-  flipCard.appendChild(flipTitle);
+  // --- call stage: video + toss HUD baked into one unit ---
+  const stage = document.createElement("div"); stage.className = "call-stage";
+
+  const topbar = document.createElement("div"); topbar.className = "call-topbar";
+  const liveBadge = document.createElement("span"); liveBadge.className = "call-live-badge";
+  liveBadge.innerHTML = '<span class="call-live-dot"></span>Live';
+  const endBtn = document.createElement("button"); endBtn.className = "call-end-btn"; endBtn.textContent = "End call";
+  topbar.appendChild(liveBadge); topbar.appendChild(endBtn);
+  stage.appendChild(topbar);
+
+  const video = document.createElement("div"); video.className = "call-video";
+  const videoLayer = document.createElement("div"); videoLayer.className = "call-video-layer";
+  videoLayer.innerHTML = `<div class="call-video-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#8FB4FF" stroke-width="1.6" width="16" height="16"><path d="M15 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3.5l4 3V7.5l-4 3Z"/></svg></div>
+    <p class="call-video-text">No account needed on their end — start the call and flip together, right here.</p>`;
+  const startBtn = document.createElement("button"); startBtn.className = "call-start-btn"; startBtn.textContent = "Start video call";
+  videoLayer.appendChild(startBtn);
+  const frame = document.createElement("iframe"); frame.className = "call-video-frame"; frame.src = "about:blank"; frame.title = "Video call";
+  frame.allow = "camera; microphone; fullscreen; display-capture; autoplay";
+  video.appendChild(videoLayer); video.appendChild(frame);
+  stage.appendChild(video);
+
+  startBtn.onclick = () => {
+    const url = "https://meet.jit.si/TeamPadel-" + f.id;
+    frame.src = url + "#config.prejoinPageEnabled=false";
+    stage.classList.add("live");
+    videoLayer.classList.add("hide");
+    liveBadge.classList.add("show");
+    endBtn.classList.add("show");
+  };
+  endBtn.onclick = () => {
+    frame.src = "about:blank";
+    stage.classList.remove("live");
+    videoLayer.classList.remove("hide");
+    liveBadge.classList.remove("show");
+    endBtn.classList.remove("show");
+  };
+
+  // --- the toss HUD, pulled up over the video's bottom edge ---
+  const hud = document.createElement("div"); hud.className = "toss-hud";
+  hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-label", textContent: "Coin toss" }));
 
   if (!toss.result) {
-    const note = document.createElement("p"); note.className = "note"; note.style.marginBottom = "12px";
-    note.textContent = "Call it, then flip — the winner decides who declares their line-up first.";
-    flipCard.appendChild(note);
+    hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", textContent: "Call it, then flip — the winner decides who declares their line-up first." }));
 
     const coinWrap = document.createElement("div"); coinWrap.className = "toss-coin-wrap";
     const coin = document.createElement("div"); coin.className = "toss-coin";
-    coin.innerHTML = "<span>?</span>";
-    coinWrap.appendChild(coin);
-    const resultLine = document.createElement("div"); resultLine.className = "toss-result";
+    coin.style.transform = "rotateY(0deg)";
+    coin.innerHTML = '<div class="toss-coin-face front"><span>H</span></div><div class="toss-coin-face back"><span>T</span></div>';
+    const coinShadow = document.createElement("div"); coinShadow.className = "toss-coin-shadow";
+    coinWrap.appendChild(coin); coinWrap.appendChild(coinShadow);
+    const resultLine = document.createElement("div"); resultLine.className = "toss-hud-error";
 
     let flipping = false;
     const allBtns = [];
@@ -2383,7 +2419,7 @@ function tossCard(f) {
         try {
           const [{ toss: newToss }] = await Promise.all([
             api(`/leagues/${currentLeagueId}/fixtures/${f.id}/toss/call`, { method: "POST", body: { call: callVal, side } }),
-            new Promise((resolve) => setTimeout(resolve, 900)), // let the flip animation actually play out
+            new Promise((resolve) => setTimeout(resolve, 1100)), // let the flip animation actually play out
           ]);
           f.toss = newToss;
           await refreshLeague(); renderAll();
@@ -2399,7 +2435,7 @@ function tossCard(f) {
       const row = document.createElement("div"); row.className = "toss-call-row";
       ["heads", "tails"].forEach((cv) => {
         const btn = document.createElement("button");
-        btn.className = "secondary"; btn.textContent = "Call " + (cv === "heads" ? "Heads" : "Tails");
+        btn.className = "toss-call-btn"; btn.textContent = "Call " + (cv === "heads" ? "Heads" : "Tails");
         attachCallBtn(btn, side, cv);
         row.appendChild(btn);
       });
@@ -2408,31 +2444,41 @@ function tossCard(f) {
     if (myRole === "admin") {
       [["A", teamA], ["B", teamB]].forEach(([side, team]) => {
         const grp = document.createElement("div"); grp.className = "toss-call-group";
-        grp.appendChild(Object.assign(document.createElement("div"), { className: "note", textContent: "On behalf of " + team.name + ":" }));
+        grp.appendChild(Object.assign(document.createElement("div"), { className: "toss-call-who", textContent: "On behalf of " + team.name + ":" }));
         grp.appendChild(callRow(side));
-        flipCard.appendChild(grp);
+        hud.appendChild(grp);
       });
     } else if (mySide) {
-      flipCard.appendChild(callRow(mySide));
+      hud.appendChild(callRow(mySide));
     } else {
-      flipCard.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for a captain to call it." }));
+      hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", textContent: "Waiting for a captain to call it." }));
     }
-    flipCard.appendChild(coinWrap);
-    flipCard.appendChild(resultLine);
+    hud.appendChild(coinWrap);
+    hud.appendChild(resultLine);
   } else if (!toss.firstSide) {
     const callerTeam = toss.callerSide === "A" ? teamA : teamB;
     const winnerTeam = toss.winnerSide === "A" ? teamA : teamB;
-    flipCard.appendChild(Object.assign(document.createElement("p"), {
-      className: "note",
+    const landedHeads = toss.result === "heads";
+
+    const coinWrap = document.createElement("div"); coinWrap.className = "toss-coin-wrap";
+    const coin = document.createElement("div"); coin.className = "toss-coin";
+    coin.style.transform = "rotateY(" + (landedHeads ? "0" : "180") + "deg)";
+    coin.innerHTML = '<div class="toss-coin-face front"><span>H</span></div><div class="toss-coin-face back"><span>T</span></div>';
+    const coinShadow = document.createElement("div"); coinShadow.className = "toss-coin-shadow";
+    coinWrap.appendChild(coin); coinWrap.appendChild(coinShadow);
+    hud.appendChild(coinWrap);
+
+    hud.appendChild(Object.assign(document.createElement("p"), {
+      className: "toss-result",
       innerHTML: `${escapeHtml(callerTeam.name)} called <strong>${toss.call}</strong>, landed on <strong>${toss.result}</strong> — <strong>${escapeHtml(winnerTeam.name)}</strong> wins the toss.`,
     }));
     const canChoose = myRole === "admin" || mySide === toss.winnerSide;
     if (canChoose) {
-      flipCard.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin:10px 0 6px;", textContent: "Declare your line-up first, or make the other team go first?" }));
-      const row = document.createElement("div"); row.className = "row";
-      const selfBtn = document.createElement("button"); selfBtn.className = "primary"; selfBtn.textContent = "We'll go first";
-      const oppBtn = document.createElement("button"); oppBtn.className = "secondary"; oppBtn.textContent = "Make them go first";
-      const err = document.createElement("div"); err.className = "error";
+      hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:10px;", textContent: "Declare your line-up first, or make the other team go first?" }));
+      const row = document.createElement("div"); row.className = "toss-choice-row";
+      const selfBtn = document.createElement("button"); selfBtn.className = "toss-choice-btn primary"; selfBtn.textContent = "We'll go first";
+      const oppBtn = document.createElement("button"); oppBtn.className = "toss-choice-btn ghost"; oppBtn.textContent = "Make them go first";
+      const err = document.createElement("div"); err.className = "toss-hud-error";
       async function choose(choice) {
         try {
           const { toss: newToss } = await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/toss/choice`, { method: "POST", body: { choice } });
@@ -2443,21 +2489,31 @@ function tossCard(f) {
       selfBtn.onclick = () => choose("self");
       oppBtn.onclick = () => choose("opponent");
       row.appendChild(selfBtn); row.appendChild(oppBtn);
-      flipCard.appendChild(row); flipCard.appendChild(err);
+      hud.appendChild(row); hud.appendChild(err);
     } else {
-      flipCard.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for " + winnerTeam.name + " to decide who goes first." }));
+      hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:10px;", textContent: "Waiting for " + winnerTeam.name + " to decide who goes first." }));
     }
   } else {
     const firstTeam = toss.firstSide === "A" ? teamA : teamB;
     const winnerTeam = toss.winnerSide === "A" ? teamA : teamB;
+    const landedHeads = toss.result === "heads";
+
+    const coinWrap = document.createElement("div"); coinWrap.className = "toss-coin-wrap";
+    const coin = document.createElement("div"); coin.className = "toss-coin";
+    coin.style.transform = "rotateY(" + (landedHeads ? "0" : "180") + "deg)";
+    coin.innerHTML = '<div class="toss-coin-face front"><span>H</span></div><div class="toss-coin-face back"><span>T</span></div>';
+    const coinShadow = document.createElement("div"); coinShadow.className = "toss-coin-shadow";
+    coinWrap.appendChild(coin); coinWrap.appendChild(coinShadow);
+    hud.appendChild(coinWrap);
+
     const msg = toss.firstSide === toss.winnerSide
       ? `<strong>${escapeHtml(firstTeam.name)}</strong> won the toss and goes first.`
       : `<strong>${escapeHtml(winnerTeam.name)}</strong> won the toss and chose to make <strong>${escapeHtml(firstTeam.name)}</strong> go first.`;
-    flipCard.appendChild(Object.assign(document.createElement("p"), { className: "note", innerHTML: msg }));
+    hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-result", innerHTML: msg }));
   }
   if (myRole === "admin" && toss.result) {
     const resetBtn = document.createElement("button");
-    resetBtn.className = "link"; resetBtn.style.marginTop = "8px"; resetBtn.textContent = "Reset toss";
+    resetBtn.className = "toss-reset-btn"; resetBtn.textContent = "Reset toss";
     resetBtn.onclick = async () => {
       if (!confirm("Reset this toss? The call, result, and who-goes-first decision will be cleared — nothing about the pairings themselves changes.")) return;
       try {
@@ -2465,9 +2521,23 @@ function tossCard(f) {
         await refreshLeague(); renderAll();
       } catch (e) { alert(e.message); }
     };
-    flipCard.appendChild(resetBtn);
+    hud.appendChild(resetBtn);
   }
-  card.appendChild(flipCard);
+  stage.appendChild(hud);
+
+  const footerRow = document.createElement("div"); footerRow.className = "call-footer-row";
+  const linkBtn = document.createElement("button"); linkBtn.className = "link"; linkBtn.textContent = "Copy spectator link";
+  const linkNote = document.createElement("span"); linkNote.className = "note";
+  linkBtn.onclick = async () => {
+    const url = location.origin + "/toss.html?l=" + currentLeagueId + "&f=" + f.id;
+    try { await navigator.clipboard.writeText(url); linkNote.textContent = "Copied!"; }
+    catch (e) { linkNote.textContent = url; }
+    setTimeout(() => { linkNote.textContent = ""; }, 3000);
+  };
+  footerRow.appendChild(linkBtn); footerRow.appendChild(linkNote);
+  stage.appendChild(footerRow);
+
+  card.appendChild(stage);
 
   // --- pairings, live, once the toss says who goes first ---
   if (toss.firstSide && league.format !== "pairs") {
@@ -2495,55 +2565,6 @@ function tossCard(f) {
     }
     card.appendChild(pairWrap);
   }
-
-  // --- video call + spectator link ---
-  const videoWrap = document.createElement("div"); videoWrap.className = "card"; videoWrap.style.marginTop = "12px";
-  videoWrap.appendChild(Object.assign(document.createElement("h3"), { className: "section-title", textContent: "Video call" }));
-  videoWrap.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-bottom:14px;", textContent: "A video room just for this match — join whenever you're both ready. No account needed on their end." }));
-
-  const linkRow = document.createElement("div"); linkRow.className = "row"; linkRow.style.marginBottom = "12px";
-  const linkBtn = document.createElement("button"); linkBtn.className = "secondary"; linkBtn.textContent = "Copy spectator link";
-  const linkNote = document.createElement("span"); linkNote.className = "note";
-  linkBtn.onclick = async () => {
-    const url = location.origin + "/toss.html?l=" + currentLeagueId + "&f=" + f.id;
-    try { await navigator.clipboard.writeText(url); linkNote.textContent = "Copied!"; }
-    catch (e) { linkNote.textContent = url; }
-    setTimeout(() => { linkNote.textContent = ""; }, 3000);
-  };
-  linkRow.appendChild(linkBtn); linkRow.appendChild(linkNote);
-  videoWrap.appendChild(linkRow);
-
-  const launch = document.createElement("div");
-  const startBtn = document.createElement("button"); startBtn.className = "primary"; startBtn.textContent = "Start video call";
-  launch.appendChild(startBtn);
-
-  const active = document.createElement("div"); active.style.display = "none";
-  const activeRow = document.createElement("div"); activeRow.className = "row"; activeRow.style.cssText = "margin-bottom:10px;justify-content:space-between;";
-  const openLink = document.createElement("a"); openLink.className = "link"; openLink.target = "_blank"; openLink.rel = "noopener"; openLink.textContent = "Open in a new tab →";
-  const endBtn = document.createElement("button"); endBtn.className = "link"; endBtn.textContent = "End call";
-  activeRow.appendChild(openLink); activeRow.appendChild(endBtn);
-  const frameWrap = document.createElement("div"); frameWrap.className = "toss-video-frame-wrap";
-  const frame = document.createElement("iframe"); frame.className = "toss-video-frame"; frame.src = "about:blank"; frame.title = "Video call";
-  frame.allow = "camera; microphone; fullscreen; display-capture; autoplay";
-  frameWrap.appendChild(frame);
-  active.appendChild(activeRow); active.appendChild(frameWrap);
-
-  startBtn.onclick = () => {
-    const url = "https://meet.jit.si/TeamPadel-" + f.id;
-    frame.src = url + "#config.prejoinPageEnabled=false";
-    openLink.href = url;
-    launch.style.display = "none";
-    active.style.display = "block";
-  };
-  endBtn.onclick = () => {
-    frame.src = "about:blank";
-    active.style.display = "none";
-    launch.style.display = "block";
-  };
-
-  videoWrap.appendChild(launch);
-  videoWrap.appendChild(active);
-  card.appendChild(videoWrap);
 
   return card;
 }
