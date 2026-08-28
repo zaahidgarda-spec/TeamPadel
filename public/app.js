@@ -1849,6 +1849,23 @@ function renderRulesCard() {
     };
     actionsWrap.appendChild(resetBtn);
   }
+  if (isOwner) {
+    const hideBtn = document.createElement("button");
+    hideBtn.className = "secondary";
+    hideBtn.textContent = league.hidden ? "Unhide this league" : "Hide this league from all lists";
+    hideBtn.onclick = async () => {
+      const next = !league.hidden;
+      const msg = next
+        ? `Hide "${league.name}" everywhere — search, login, and every player's "Your leagues"? Use this for a league that's only here to feed the ratings engine, not a real one to manage. It'll still count for ratings and still be reachable at its direct link.`
+        : `Unhide "${league.name}"? It'll show up again in search, login, and every claimed player's "Your leagues".`;
+      if (!confirm(msg)) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/hidden`, { method: "PUT", body: { hidden: next } });
+        await refreshLeague(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    actionsWrap.appendChild(hideBtn);
+  }
   const deleteBtn = document.createElement("button");
   deleteBtn.className = "danger"; deleteBtn.textContent = "Delete this league";
   deleteBtn.onclick = async () => {

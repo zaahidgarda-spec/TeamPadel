@@ -598,10 +598,12 @@ router.get("/players/me", (req, res) => {
   // signs into, not just whichever one most recently entered a code.
   const captaincies = [];
   let changed = false;
+  const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
   (user.captaincies || []).forEach((c) => {
     const league = store.getLeague(c.leagueId);
     const team = league && league.teams.find((t) => t.id === c.teamId);
     if (!league || !team) { changed = true; return; } // team/league deleted since — drop quietly
+    if (hiddenLeagueIds.has(c.leagueId)) return; // hidden league — data-only, never shown (captaincy itself stays intact)
     captaincies.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name });
   });
   if (changed) {
@@ -875,6 +877,10 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
   // card belonging to this account resolves to the SAME rating entry below
   // (that's the point: one linked identity, one number, wherever it's shown).
   const { ratingsData, identityOf } = loadGlobalRatings();
+  // `hidden` lives on the leagues-index entry, not the league document
+  // itself — same source visibleIndexEntries() reads, just a Set for O(1)
+  // lookup per claim below instead of scanning the index each time.
+  const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
   // A league/team/player claimed earlier can later be deleted by its
   // admin/captain — drop the now-dangling claim quietly rather than error.
   user.claims = user.claims.filter((claim) => {
@@ -882,6 +888,10 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     const team = league && league.teams.find((t) => t.id === claim.teamId);
     const player = team && team.players.find((p) => p.id === claim.playerId);
     if (!league || !team || !player) { changed = true; return false; }
+    // A hidden league (data imported purely to feed ratings, not a real
+    // league to manage here) never surfaces in any list on this site — the
+    // claim still counts for rating purposes, it just gets no card here.
+    if (hiddenLeagueIds.has(claim.leagueId)) return true;
     const rounds = [...new Set(league.fixtures.map((f) => f.round))];
     const awards = rounds
       .flatMap((r) => logic.potwTallyForRound(league, r).winners)
@@ -940,6 +950,11 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.format) league.format = "teams";
   if (!league.groups) league.groups = [];
   if (!league.hallOfFame) league.hallOfFame = [];
+  // Lives on the leagues-index entry, not this document — surfaced here
+  // (harmless either way) so the owner-only "hide from lists" toggle in
+  // Admin knows its current state without a separate lookup.
+  const indexEntry = store.getIndex().find((e) => e.id === league.id);
+  league.hidden = !!(indexEntry && indexEntry.hidden);
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -990,6 +1005,20 @@ router.put("/leagues/:leagueId/name", requireAdmin, (req, res) => {
   const entry = index.find((l) => l.id === league.id);
   if (entry) { entry.name = league.name; store.saveIndex(index); }
   res.json({ ok: true });
+});
+
+// Owner-only, not per-league admin: hiding a league affects site-wide
+// lists (search, login lookup, every player's "Your leagues"), not just
+// this one league's own management — same bar as creating/deleting a
+// league itself.
+router.put("/leagues/:leagueId/hidden", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const index = store.getIndex();
+  const entry = index.find((l) => l.id === req.params.leagueId);
+  if (!entry) return res.status(404).json({ error: "Not found." });
+  entry.hidden = !!req.body.hidden;
+  store.saveIndex(index);
+  res.json({ ok: true, hidden: entry.hidden });
 });
 
 router.delete("/leagues/:leagueId", requireAdmin, (req, res) => {
