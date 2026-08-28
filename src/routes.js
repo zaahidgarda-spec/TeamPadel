@@ -2,7 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
-const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, isAdminSession, isOwnerSession } = require("./auth");
+const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail } = require("./mailer");
 
 const router = express.Router();
@@ -940,6 +940,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.format) league.format = "teams";
   if (!league.groups) league.groups = [];
   if (!league.hallOfFame) league.hallOfFame = [];
+  if (!league.coinTosses) league.coinTosses = [];
   let migrated = syncPlayoffs(league);
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
@@ -1346,6 +1347,29 @@ router.delete("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, re
   league.hallOfFame = (league.hallOfFame || []).filter((e) => e.id !== req.params.entryId);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+/* ---------- Toss: a fair, server-decided coin flip for whatever a
+   captain/admin needs settled (who serves first, who picks ends, a
+   tie-break) — not tied to any specific fixture, since a call like this
+   comes up in different forms match to match. ---------- */
+router.post("/leagues/:leagueId/coin-toss", requireLeagueSession, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Not found." });
+  const call = req.body && req.body.call;
+  if (call !== "heads" && call !== "tails") return res.status(400).json({ error: "Call heads or tails first." });
+  const result = Math.random() < 0.5 ? "heads" : "tails";
+  let by = "Admin";
+  if (!isOwnerSession(req) && req.session.user && req.session.user.role === "captain") {
+    const team = league.teams.find((t) => t.id === req.session.user.teamId);
+    by = team ? team.name : "Captain";
+  }
+  const entry = { id: logic.uid(), call, result, won: call === result, by, createdAt: Date.now() };
+  if (!league.coinTosses) league.coinTosses = [];
+  league.coinTosses.unshift(entry);
+  league.coinTosses = league.coinTosses.slice(0, 20);
+  store.saveLeague(league.id, league);
+  res.json({ entry });
 });
 
 router.post(

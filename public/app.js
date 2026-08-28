@@ -1092,6 +1092,7 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
+  if (myRole === "admin" || myRole === "captain") defs.push({ key: "toss", label: "Toss" });
   // A Vibora pair can play any opponent in any order — there's no fixed
   // weekly schedule to browse, so Fixtures collapses into Results: what's
   // been played, and who's left to play.
@@ -1322,6 +1323,7 @@ function renderAll() {
   renderPendingScoreBanner();
   if (myRole === "admin") renderAdmin();
   renderSelection();
+  renderToss();
   renderFixtures();
   renderResults();
   renderTable();
@@ -2283,6 +2285,65 @@ el("mark-all-read-btn").onclick = async () => {
   renderNotificationsList(); updateNotifTabLabel();
 };
 
+/* ---------- Toss: coin flip + video call, both scoped to this league,
+   not any one fixture — whatever a captain/admin needs settled or
+   discussed doesn't always map to a specific match. ---------- */
+function renderToss() {
+  if (myRole !== "admin" && myRole !== "captain") return;
+  el("toss-history").innerHTML = (league.coinTosses || []).length
+    ? league.coinTosses.map((t) => `
+        <div class="notif-row">
+          <div><strong>${escapeHtml(t.by)}</strong> called ${t.call} <span class="note">· landed on ${t.result}</span></div>
+          <span class="tag" style="${t.won ? "color:var(--success);border-color:var(--success);" : "color:var(--clay);border-color:var(--clay);"}">${t.won ? "Won" : "Lost"}</span>
+        </div>
+      `).join("")
+    : '<p class="empty">No flips yet.</p>';
+
+  let flipping = false;
+  document.querySelectorAll(".toss-call-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      if (flipping) return;
+      flipping = true;
+      document.querySelectorAll(".toss-call-btn").forEach((b) => (b.disabled = true));
+      el("toss-result").textContent = "";
+      const coin = el("toss-coin");
+      coin.classList.add("flipping");
+      try {
+        const [{ entry }] = await Promise.all([
+          api(`/leagues/${currentLeagueId}/coin-toss`, { method: "POST", body: { call: btn.dataset.call } }),
+          new Promise((resolve) => setTimeout(resolve, 900)), // let the flip animation actually play out
+        ]);
+        coin.classList.remove("flipping");
+        el("toss-coin-face").textContent = entry.result === "heads" ? "H" : "T";
+        el("toss-result").innerHTML = entry.won
+          ? `<span style="color:var(--success);">Called ${entry.call}, landed ${entry.result} — you win the toss!</span>`
+          : `<span style="color:var(--clay);">Called ${entry.call}, landed ${entry.result} — the other side wins.</span>`;
+        league.coinTosses = league.coinTosses || [];
+        league.coinTosses.unshift(entry);
+        renderToss();
+      } catch (e) {
+        coin.classList.remove("flipping");
+        el("toss-result").textContent = e.message;
+      } finally {
+        flipping = false;
+        document.querySelectorAll(".toss-call-btn").forEach((b) => (b.disabled = false));
+      }
+    };
+  });
+
+  el("toss-video-start-btn").onclick = () => {
+    const url = `https://meet.jit.si/TeamPadel-${currentLeagueId}`;
+    el("toss-video-frame").src = url + "#config.prejoinPageEnabled=false";
+    el("toss-video-open-btn").href = url;
+    el("toss-video-launch").style.display = "none";
+    el("toss-video-active").style.display = "block";
+  };
+  el("toss-video-end-btn").onclick = () => {
+    el("toss-video-frame").src = "about:blank";
+    el("toss-video-active").style.display = "none";
+    el("toss-video-launch").style.display = "block";
+  };
+}
 function renderSelection() {
   if (myRole !== "admin" && myRole !== "captain") return;
   // A pair IS the line-up — nothing to blind-pick, and no per-seed court
