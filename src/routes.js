@@ -541,6 +541,33 @@ router.get("/players/tonight-matches", (req, res) => {
   res.json({ matches: buildNextMatchesPairings(leagues, ratingsData, identityOf) });
 });
 
+// Homepage teasers, public and site-wide (not scoped to one league or one
+// signed-in player) — reuses the same structured data the round-recap news
+// post already carries, rather than recomputing anything. For each visible
+// league, its most recently posted round recap supplies that league's
+// current Pair of the Week (if any) and a few non-"quiet" highlights.
+router.get("/homepage/highlights", (req, res) => {
+  const leagues = visibleIndexEntries()
+    .map((entry) => store.getLeague(entry.id))
+    .filter((l) => l && leagueStatus(l) === "active");
+
+  const potw = [];
+  const highlights = [];
+  leagues.forEach((league) => {
+    const latest = (league.news || [])
+      .filter((p) => p.auto)
+      .sort((a, b) => b.round - a.round)[0];
+    if (!latest) return;
+    (latest.potw || []).forEach((p) => potw.push({ names: p.names, team: p.team, leagueId: league.id, leagueName: league.name }));
+    (latest.highlights || []).forEach((h) => {
+      if (h.type === "quiet") return;
+      highlights.push({ type: h.type, label: h.label, text: h.text, leagueId: league.id, leagueName: league.name, createdAt: latest.createdAt });
+    });
+  });
+  highlights.sort((a, b) => b.createdAt - a.createdAt);
+  res.json({ potw, highlights: highlights.slice(0, 6) });
+});
+
 /* ---------- "Interested to join a league" signups ---------- */
 
 router.post("/interest", (req, res) => {

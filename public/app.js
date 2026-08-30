@@ -184,6 +184,7 @@ function showHub() {
   // later — that would restart the carousel from its first slide and
   // double up the /api/next-matches request on every hub visit.
   renderNextMatches();
+  renderHomepageHighlights();
 }
 const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
@@ -332,6 +333,40 @@ function renderNextMatchSlide() {
   slide.classList.remove("mc-slide");
   void slide.offsetWidth;
   slide.classList.add("mc-slide");
+}
+// Two homepage teasers, public and site-wide — every visible league's
+// current Pair of the Week, and a handful of recent highlights across all
+// of them. Both come from /homepage/highlights, which just reads the
+// structured data already sitting on each league's latest round-recap post
+// (see the News Room redesign) rather than computing anything new. Either
+// section hides itself if there's nothing to show yet (a brand-new site
+// with no finalized rounds, for instance).
+async function renderHomepageHighlights() {
+  const data = await api("/homepage/highlights").catch(() => null);
+  const potw = (data && data.potw) || [];
+  const potwCard = el("homepage-potw-card");
+  potwCard.style.display = potw.length ? "block" : "none";
+  if (potw.length) {
+    el("homepage-potw-strip").innerHTML = potw.map((p) => {
+      const avatars = p.names.split(" & ").map((n) => `<div class="potw-avatar">${escapeHtml(playerInitials(n))}</div>`).join("");
+      return `<div class="potw-card">
+        <div class="potw-crown">👑</div>
+        <div class="potw-avatars">${avatars}</div>
+        <div class="potw-names">${escapeHtml(p.names)}</div>
+        <div class="potw-team">${escapeHtml(p.team)}</div>
+        <div class="potw-league">${escapeHtml(p.leagueName)}</div>
+      </div>`;
+    }).join("");
+  }
+  const highlights = (data && data.highlights) || [];
+  const interestingCard = el("homepage-interesting-card");
+  interestingCard.style.display = highlights.length ? "block" : "none";
+  if (highlights.length) {
+    el("homepage-interesting-list").innerHTML = highlights.map((h) => {
+      const [letter, cls] = NEWS_HIGHLIGHT_ICON[h.type] || ["–", "neutral"];
+      return `<div class="interesting-row"><div class="nr-icon ${cls}">${letter}</div><div><div class="interesting-text">${escapeHtml(h.text)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div></div>`;
+    }).join("");
+  }
 }
 function renderHub() {
   renderInterestLeagueOptions();
