@@ -69,6 +69,9 @@ nav.tabs{position:relative;display:flex;gap:4px;margin-bottom:20px;background:va
 nav.tabs button{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:12.5px;background:transparent;border:none;color:var(--text-dim);padding:9px 14px;border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap;}
 nav.tabs button:hover{color:var(--text);}
 nav.tabs button.active{background:var(--accent);color:var(--accent-ink);font-weight:600;}
+/* Admin-only reminder that a tab isn't finished yet — never shown to
+   captains, since the tab itself is hidden from them entirely. */
+nav.tabs button.tab-wip:not(.active){color:var(--clay);}
 nav.tabs.tabs-sub{padding:3px;}
 nav.tabs.tabs-sub button{font-size:11px;padding:7px 12px;}
 nav.tabs.tabs-sub button.active{background:var(--accent-soft);color:var(--accent);}

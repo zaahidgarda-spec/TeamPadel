@@ -1189,7 +1189,9 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
-  if (myRole === "admin" || myRole === "captain") defs.push({ key: "toss", label: "Toss" });
+  // Work in progress — admin-only for now (flagged red on the tab itself
+  // as a reminder) until it's ready for captains to see.
+  if (myRole === "admin") defs.push({ key: "toss", label: "Toss", wip: true });
   // A Vibora pair can play any opponent in any order — there's no fixed
   // weekly schedule to browse, so Fixtures collapses into Results: what's
   // been played, and who's left to play.
@@ -1198,8 +1200,9 @@ function tabDefs() {
   defs.push({ key: "table", label: "Table" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
   // Admin-only, independent of RATINGS_ENABLED — a preview of what ratings
-  // could look like, not a toggle for showing it to everyone else.
-  if (myRole === "admin") defs.push({ key: "ratings-preview", label: "Ratings preview" });
+  // could look like, not a toggle for showing it to everyone else. Still
+  // work in progress, hence the red flag on the tab.
+  if (myRole === "admin") defs.push({ key: "ratings-preview", label: "Ratings preview", wip: true });
   defs.push({ key: "stats", label: "Stats" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
@@ -1217,6 +1220,7 @@ function buildTabs() {
   tabDefs().forEach((d) => {
     const btn = document.createElement("button");
     btn.textContent = d.label; btn.dataset.view = d.key;
+    if (d.wip) { btn.classList.add("tab-wip"); btn.title = "Work in progress — not visible to captains yet."; }
     btn.onclick = () => switchTab(d.key);
     nav.appendChild(btn);
   });
