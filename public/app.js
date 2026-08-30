@@ -552,10 +552,14 @@ async function renderManageLeagues() {
   if (leagues.length === 0) { c.innerHTML = '<p class="empty">No leagues yet.</p>'; return; }
   const sorted = leagues.slice().sort((a, b) => a.name.localeCompare(b.name));
   c.innerHTML = sorted.map((l) => `
-    <div class="notif-row" data-league="${l.id}">
-      <div>
-        <strong>${escapeHtml(l.name)}</strong>${l.hidden ? ' <span class="tag" style="color:var(--text-dim);border-color:var(--line);">Hidden</span>' : ""}
-        <div class="note">${l.teamCount} team${l.teamCount === 1 ? "" : "s"} · Created ${new Date(l.createdAt).toLocaleDateString()}</div>
+    <div class="notif-row" data-league="${l.id}" style="flex-wrap:wrap;">
+      <div style="flex:1;min-width:220px;">
+        <div class="row" style="gap:6px;">
+          <input type="text" class="manage-league-name-input" value="${escapeHtml(l.name)}" style="font-family:var(--font-display);font-size:14px;font-weight:600;min-width:160px;flex:1;">
+          <button class="link manage-league-rename-btn" type="button">Save</button>
+          ${l.hidden ? '<span class="tag" style="color:var(--text-dim);border-color:var(--line);">Hidden</span>' : ""}
+        </div>
+        <div class="note" style="margin-top:4px;">${l.teamCount} team${l.teamCount === 1 ? "" : "s"} · Created ${new Date(l.createdAt).toLocaleDateString()}</div>
       </div>
       <button class="link manage-league-hide-btn" type="button" data-hidden="${l.hidden}">${l.hidden ? "Unhide" : "Hide"}</button>
     </div>
@@ -566,6 +570,19 @@ async function renderManageLeagues() {
       const nextHidden = btn.dataset.hidden !== "true";
       try {
         await api(`/leagues/${leagueId}/hidden`, { method: "PUT", body: { hidden: nextHidden } });
+        await renderManageLeagues();
+      } catch (e) { alert(e.message); }
+    };
+  });
+  c.querySelectorAll(".manage-league-rename-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest(".notif-row");
+      const leagueId = row.dataset.league;
+      const input = row.querySelector(".manage-league-name-input");
+      const name = input.value.trim();
+      if (!name) { alert("League name can't be empty."); return; }
+      try {
+        await api(`/leagues/${leagueId}/name`, { method: "PUT", body: { name } });
         await renderManageLeagues();
       } catch (e) { alert(e.message); }
     };
