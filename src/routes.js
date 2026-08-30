@@ -1008,6 +1008,26 @@ router.put("/leagues/:leagueId/name", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// The site owner's own view of every league that exists, hidden ones
+// included — visibleIndexEntries() (used everywhere else) deliberately
+// drops hidden leagues, which makes them hard to find again once hidden,
+// especially several leagues sharing the same name. This is the one place
+// that intentionally shows all of them.
+router.get("/admin/leagues", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const leagues = store.getIndex().map((entry) => {
+    const league = store.getLeague(entry.id);
+    return {
+      id: entry.id,
+      name: entry.name,
+      hidden: !!entry.hidden,
+      createdAt: entry.createdAt,
+      teamCount: league ? league.teams.length : 0,
+    };
+  });
+  res.json(leagues);
+});
+
 // Owner-only, not per-league admin: hiding a league affects site-wide
 // lists (search, login lookup, every player's "Your leagues"), not just
 // this one league's own management — same bar as creating/deleting a

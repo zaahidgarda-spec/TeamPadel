@@ -530,6 +530,7 @@ async function refreshOwnerStatus() {
   isOwner = !!status.isOwner;
   el("create-league-card").style.display = isOwner ? "block" : "none";
   el("owner-login-card").style.display = isOwner ? "none" : "block";
+  el("manage-leagues-card").style.display = isOwner ? "block" : "none";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
   // Not a login entry point anymore (that's the unified box on My Profile)
@@ -538,8 +539,37 @@ async function refreshOwnerStatus() {
   const adminTabBtn = document.querySelector('.hub-tab-btn[data-hubview="admin"]');
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); }
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); }
   renderHub();
+}
+// The owner's full list of every league — including hidden ones, which
+// drop out of every other list on the site the moment they're hidden.
+// Several leagues sharing a name (e.g. multiple "Community" imports) are
+// otherwise impossible to tell apart or find again once hidden.
+async function renderManageLeagues() {
+  const leagues = await api("/admin/leagues").catch(() => []);
+  const c = el("manage-leagues-list");
+  if (leagues.length === 0) { c.innerHTML = '<p class="empty">No leagues yet.</p>'; return; }
+  const sorted = leagues.slice().sort((a, b) => a.name.localeCompare(b.name));
+  c.innerHTML = sorted.map((l) => `
+    <div class="notif-row" data-league="${l.id}">
+      <div>
+        <strong>${escapeHtml(l.name)}</strong>${l.hidden ? ' <span class="tag" style="color:var(--text-dim);border-color:var(--line);">Hidden</span>' : ""}
+        <div class="note">${l.teamCount} team${l.teamCount === 1 ? "" : "s"} · Created ${new Date(l.createdAt).toLocaleDateString()}</div>
+      </div>
+      <button class="link manage-league-hide-btn" type="button" data-hidden="${l.hidden}">${l.hidden ? "Unhide" : "Hide"}</button>
+    </div>
+  `).join("");
+  c.querySelectorAll(".manage-league-hide-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const leagueId = btn.closest(".notif-row").dataset.league;
+      const nextHidden = btn.dataset.hidden !== "true";
+      try {
+        await api(`/leagues/${leagueId}/hidden`, { method: "PUT", body: { hidden: nextHidden } });
+        await renderManageLeagues();
+      } catch (e) { alert(e.message); }
+    };
+  });
 }
 async function renderInterestSignups() {
   const signups = await api("/interest").catch(() => []);
