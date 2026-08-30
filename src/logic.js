@@ -396,12 +396,19 @@ function standingsBeforeRound(league, round) {
 // two dominant sets, any rubber that went the distance to a breaker or
 // decider, any team that lost 3 or all 4 of its rubbers in one night, any
 // team that beat a side ranked above it in the table before this round,
-// and who's currently top of the table. `ratingsTopLine`, if given, is
-// appended as-is — computing an Elo leader needs cross-league claims data
-// this pure function doesn't have, so the caller (routes.js, which
-// already has that) builds it and passes it in. Returns null if the
-// round isn't actually fully finalized yet.
-function buildRoundRecap(league, round, ratingsTopLine) {
+// and who's currently top of the table. `inForm`, if given, is a list of
+// {name, team} — computing it needs cross-league claims data this pure
+// function doesn't have, so the caller (routes.js, which already has
+// that) builds it and passes it in. Returns null if the round isn't
+// actually fully finalized yet.
+//
+// Returns structured data (`potw`, `highlights`, `inForm`), not just a
+// prose blob — the News Room UI renders each highlight as its own row
+// with an icon, and Pair of the Week gets its own spotlight treatment.
+// `body` is still included as a plain-text join of the same content, kept
+// for anything reading a post's text (search, notifications) rather than
+// its structure.
+function buildRoundRecap(league, round, inForm) {
   const fixtures = league.fixtures.filter((f) => f.round === round && f.stage === "regular");
   if (fixtures.length === 0 || !fixtures.every((f) => f.finalized)) return null;
   const isPairs = league.format === "pairs";
@@ -467,29 +474,46 @@ function buildRoundRecap(league, round, ratingsTopLine) {
   const potw = potwTallyForRound(league, round);
   const table = !isPairs ? computeStandings(league) : [];
 
+  const potwEntries = potw.winners.map((p) => ({ names: p.playerAName + " & " + p.playerBName, team: p.teamName }));
+
+  const highlights = [];
   const lines = [];
-  if (potw.winners.length) {
-    lines.push("Pair of the Week: " + potw.winners.map((p) => p.playerAName + " & " + p.playerBName + " (" + p.teamName + ")").join(", ") + ".");
+  if (potwEntries.length) {
+    lines.push("Pair of the Week: " + potwEntries.map((p) => p.names + " (" + p.team + ")").join(", ") + ".");
   }
   if (bigWins.length) {
-    lines.push("Big wins: " + bigWins.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" "));
+    const text = bigWins.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" ");
+    highlights.push({ type: "bigwin", label: "Big win", text });
+    lines.push("Big wins: " + text);
   }
   if (closeMatches.length) {
-    lines.push("Went the distance: " + closeMatches.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" "));
-  }
-  if (roughNights.length) {
-    lines.push("Rough night: " + roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".").join(" "));
+    const text = closeMatches.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" ");
+    highlights.push({ type: "distance", label: "Went the distance", text });
+    lines.push("Went the distance: " + text);
   }
   if (upsets.length) {
-    lines.push("Surprising result: " + upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").").join(" "));
+    const text = upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").").join(" ");
+    highlights.push({ type: "upset", label: "Surprising result", text });
+    lines.push("Surprising result: " + text);
+  }
+  if (roughNights.length) {
+    const text = roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".").join(" ");
+    highlights.push({ type: "rough", label: "Rough night", text });
+    lines.push("Rough night: " + text);
   }
   if (table.length) {
-    lines.push("Top of the table: " + table[0].name + ".");
+    const text = table[0].name + ".";
+    highlights.push({ type: "table", label: "Top of the table", text });
+    lines.push("Top of the table: " + text);
   }
-  if (ratingsTopLine) lines.push(ratingsTopLine);
-  if (lines.length === 0) lines.push("A quiet one on the scoreline front — check the Table for how the standings moved.");
+  const inFormList = inForm && inForm.length ? inForm : [];
+  if (inFormList.length) lines.push("In form right now: " + inFormList.map((p) => p.name + " (" + p.team + ")").join(", ") + ".");
+  if (potwEntries.length === 0 && highlights.length === 0) {
+    highlights.push({ type: "quiet", label: "Scoreline", text: "A quiet one on the scoreline front — check the Table for how the standings moved." });
+    lines.push(highlights[0].text);
+  }
 
-  return { title: "Round " + round + " wrap-up", body: lines.join("\n\n") };
+  return { title: "Round " + round + " wrap-up", potw: potwEntries, highlights, inForm: inFormList, body: lines.join("\n\n") };
 }
 
 // Every not-yet-finalized fixture this player is selected into, both sides

@@ -5777,24 +5777,67 @@ function renderAwards() {
 
 /* ---------- News ---------- */
 
+const NEWS_HIGHLIGHT_ICON = {
+  bigwin: ["W", "accent"], distance: ["D", "accent"], upset: ["U", "clay"],
+  rough: ["R", "neutral"], table: ["T", "success"], quiet: ["–", "neutral"],
+};
+function playerInitials(name) {
+  const parts = (name || "").trim().split(/\s+/);
+  return ((parts[0] || "")[0] || "") + ((parts.length > 1 ? parts[parts.length - 1][0] : "") || "");
+}
+// One post's card — the round-recap shape (has `highlights`) gets the full
+// floodlit-hero-plus-icon-rows treatment; a free-standing admin post (just
+// title/body, no structure to key off) gets a plain card instead.
+// `leagueLabel` swaps the date-only byline for "League · date" in the
+// cross-league view; `onDelete`, if given, adds a delete control (in-league
+// admin view only — the cross-league view is read-only).
+function newsPostCardHtml(p, leagueLabel) {
+  const dateText = new Date(p.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const byline = leagueLabel ? `${escapeHtml(leagueLabel)} · ${dateText}` : dateText;
+  if (!p.highlights) {
+    return `<div class="news-post" data-id="${p.id}">
+      <h3>${escapeHtml(p.title)}</h3>
+      <time>${byline}</time>
+      ${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}
+    </div>`;
+  }
+  const potw = p.potw || [];
+  const roundLabel = leagueLabel ? escapeHtml(leagueLabel) : "Round " + p.round;
+  const heroInner = potw.length
+    ? `<p class="nr-potw-label">Pair of the week</p><div class="nr-potw-names">${potw.map((x) => escapeHtml(x.names)).join(", ")}</div><div class="nr-potw-team">${escapeHtml(potw.map((x) => x.team).join(", "))}</div>`
+    : `<p class="nr-potw-label">${escapeHtml(p.title)}</p>`;
+  const rows = (p.highlights || []).map((h) => {
+    const [letter, cls] = NEWS_HIGHLIGHT_ICON[h.type] || ["–", "neutral"];
+    return `<div class="nr-row"><div class="nr-icon ${cls}">${letter}</div><div><div class="nr-row-label">${escapeHtml(h.label)}</div><div class="nr-row-text">${escapeHtml(h.text)}</div></div></div>`;
+  }).join("");
+  const formHtml = (p.inForm || []).length ? `<div class="nr-form">
+      <p class="nr-form-label">In form right now</p>
+      <div class="nr-form-list">${p.inForm.map((f) => `<div class="nr-form-player"><div class="nr-form-avatar">${escapeHtml(playerInitials(f.name))}</div><div class="nr-form-name">${escapeHtml(f.name)}</div><div class="nr-form-team">${escapeHtml(f.team)}</div></div>`).join("")}</div>
+    </div>` : "";
+  return `<div class="nr-round" data-id="${p.id}">
+    <div class="nr-hero">
+      <div class="nr-hero-top"><span class="nr-round-eyebrow">${roundLabel}</span><span class="nr-round-date">${dateText}</span></div>
+      ${heroInner}
+    </div>
+    <div class="nr-body">${rows}</div>
+    ${formHtml}
+  </div>`;
+}
 async function renderNews() {
   el("news-post-card").style.display = myRole === "admin" ? "block" : "none";
   const posts = await api(`/leagues/${currentLeagueId}/news`).catch(() => []);
   const c = el("news-list");
   if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates posted yet.</p>'; return; }
-  c.innerHTML = "";
-  posts.forEach((p) => {
-    const div = document.createElement("div"); div.className = "news-post";
-    div.innerHTML = `<h3>${escapeHtml(p.title)}</h3><time>${new Date(p.createdAt).toLocaleString()}</time>${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}`;
-    if (myRole === "admin") {
-      const del = document.createElement("button"); del.className = "link"; del.textContent = "Delete"; del.style.marginTop = "8px";
-      del.onclick = async () => { await api(`/leagues/${currentLeagueId}/news/${p.id}`, { method: "DELETE" }); renderNews(); };
+  c.innerHTML = posts.map((p) => newsPostCardHtml(p)).join("");
+  if (myRole === "admin") {
+    c.querySelectorAll("[data-id]").forEach((div) => {
+      const del = document.createElement("button"); del.className = "link"; del.textContent = "Delete"; del.style.margin = "8px 0 4px";
+      del.onclick = async () => { await api(`/leagues/${currentLeagueId}/news/${div.dataset.id}`, { method: "DELETE" }); renderNews(); };
       div.appendChild(del);
-    }
-    c.appendChild(div);
-  });
+    });
+  }
 }
-// Cross-league News Room — same post markup as the in-league renderNews
+// Cross-league News Room — same card markup as the in-league renderNews
 // above, just labeled with which league each post is from and with no
 // admin controls (this is a signed-in player's read-only aggregated view,
 // not any one league's own News Room).
@@ -5802,11 +5845,7 @@ async function renderAccountNews() {
   const posts = await api("/players/news").catch(() => []);
   const c = el("account-news-list");
   if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates yet from any league you play in.</p>'; return; }
-  c.innerHTML = posts.map((p) => `<div class="news-post">
-      <h3>${escapeHtml(p.title)}</h3>
-      <time>${escapeHtml(p.leagueName)} · ${new Date(p.createdAt).toLocaleString()}</time>
-      ${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}
-    </div>`).join("");
+  c.innerHTML = posts.map((p) => newsPostCardHtml(p, p.leagueName)).join("");
 }
 el("news-post-btn").onclick = async () => {
   const title = el("news-title").value.trim(), body = el("news-body").value.trim();

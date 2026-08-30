@@ -130,27 +130,24 @@ function postOrUpdateRoundRecap(league, round) {
   // lucky game doesn't get someone called out as "in form." Purely a
   // function of current rating (form), top 3 — never fewer than the pool
   // has, never a ranking tie-break or anything besides the rating itself.
-  let ratingsTopLine = null;
+  let inForm = [];
   try {
     const { ratingsData, identityOf } = loadGlobalRatings();
     const rankings = logic.leagueRankings(league, ratingsData, identityOf);
     const established = rankings.filter((r) => !r.provisional);
     const pool = established.length ? established : rankings;
-    const top = pool.slice(0, 3);
-    if (top.length) {
-      ratingsTopLine = "In form right now: " + top.map((r) => r.playerName + " (" + r.teamName + ")").join(", ") + ".";
-    }
+    inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName }));
   } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
-  const recap = logic.buildRoundRecap(league, round, ratingsTopLine);
+  const recap = logic.buildRoundRecap(league, round, inForm);
   if (!recap) return false;
   if (!league.news) league.news = [];
   const existing = league.news.find((p) => p.auto && p.round === round);
+  const fields = { title: recap.title, body: recap.body, potw: recap.potw, highlights: recap.highlights, inForm: recap.inForm };
   if (existing) {
-    existing.title = recap.title;
-    existing.body = recap.body;
+    Object.assign(existing, fields);
     return false;
   }
-  league.news.push({ id: logic.uid(), title: recap.title, body: recap.body, createdAt: Date.now(), auto: true, round });
+  league.news.push({ id: logic.uid(), createdAt: Date.now(), auto: true, round, ...fields });
   return true;
 }
 // Catches up any round that finished before the auto-recap feature existed

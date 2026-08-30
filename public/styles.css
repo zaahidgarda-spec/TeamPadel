@@ -1022,3 +1022,49 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .call-stage .note,.call-stage .empty{color:#7C8CB0;}
 .call-stage .error{color:#FF9B8A;}
 .call-stage button.link{color:#8FB4FF;}
+
+/* ---------- News Room ---------- */
+/* A round-recap post (has `highlights`) gets its own floodlit hero — same
+   night-court gradient and etched lines as .floodlit.urgent above — with
+   Pair of the Week spotlighted inside it, then each other highlight as its
+   own icon row below instead of one dense paragraph. A free-standing admin
+   post (no structure to key off) falls back to .news-post, a plain card. */
+.news-post{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow-sm);}
+.news-post h3{font-family:var(--font-display);font-size:15px;margin:0 0 4px;}
+.news-post time{font-size:11.5px;color:var(--text-faint);}
+.news-post p{font-size:13.5px;line-height:1.55;color:var(--text-dim);margin:10px 0 0;white-space:pre-wrap;}
+.nr-round{margin-bottom:18px;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md);}
+.nr-hero{
+  background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));
+  position:relative;overflow:hidden;padding:18px 18px 20px;
+}
+.nr-hero::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% -10%,rgba(37,99,235,.3),transparent 60%);}
+.nr-hero::after{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:.14;
+  background-image:
+    linear-gradient(0deg,transparent 12%,#7FA8FF 12%,#7FA8FF 12.8%,transparent 12.8%),
+    linear-gradient(0deg,transparent 88%,#7FA8FF 88%,#7FA8FF 88.8%,transparent 88.8%);
+}
+.nr-hero-top{display:flex;align-items:center;justify-content:space-between;position:relative;}
+.nr-round-eyebrow{font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8FB4FF;}
+.nr-round-date{font-size:12px;color:#7C8CB0;}
+.nr-potw-label{font-family:var(--font-display);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#7FA8FF;margin:16px 0 6px;position:relative;}
+.nr-potw-names{font-family:var(--font-display);font-size:21px;font-weight:600;color:#F2F6FF;line-height:1.25;text-shadow:0 0 14px rgba(120,165,255,.45);position:relative;}
+.nr-potw-team{font-size:12.5px;color:#9FB0D6;margin-top:4px;position:relative;}
+.nr-body{background:var(--panel);padding:4px 4px 6px;}
+.nr-row{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--line);}
+.nr-row:last-child{border-bottom:none;}
+.nr-icon{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12.5px;}
+.nr-icon.accent{background:var(--accent-soft);color:var(--accent);}
+.nr-icon.clay{background:var(--clay-soft);color:var(--clay);}
+.nr-icon.success{background:var(--success-soft);color:var(--success);}
+.nr-icon.neutral{background:var(--panel-2);color:var(--text-dim);}
+.nr-row-label{font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:2px;}
+.nr-row-text{font-size:13px;line-height:1.5;color:var(--text);}
+.nr-form{padding:13px 16px 16px;border-top:1px solid var(--line);}
+.nr-form-label{font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin:0 0 10px;}
+.nr-form-list{display:flex;gap:16px;flex-wrap:wrap;}
+.nr-form-player{display:flex;flex-direction:column;align-items:center;gap:5px;width:60px;}
+.nr-form-avatar{width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:13px;}
+.nr-form-name{font-size:10.5px;text-align:center;line-height:1.25;color:var(--text);font-weight:500;}
+.nr-form-team{font-size:9.5px;color:var(--text-faint);text-align:center;}
