@@ -367,15 +367,41 @@ function potwTallyForRound(league, round) {
   return { tally, winners };
 }
 
+// "1st"/"2nd"/"3rd"/"4th" — English ordinal suffix for a table position.
+function getOrdinalSuffix(n) {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return "th";
+  switch (n % 10) {
+    case 1: return "st";
+    case 2: return "nd";
+    case 3: return "rd";
+    default: return "th";
+  }
+}
+
+// Standings as they stood BEFORE a given round — used to tell a
+// surprising result from an expected one, since "who was ahead in the
+// table" is the only notion of favorite/underdog this league tracks
+// without touching the (currently hidden) Elo engine.
+function standingsBeforeRound(league, round) {
+  const prior = Object.assign({}, league, { fixtures: league.fixtures.filter((f) => f.round < round) });
+  return computeStandings(prior);
+}
+
 // The auto-posted round wrap-up once every fixture in a round is
 // finalized — Pair of the Week (if voting's already landed by the time
 // this runs — usually it hasn't, since voting only opens once the round
 // is complete, so this section is normally added later by re-running
 // this same function from the vote route), any pair that won a rubber in
 // two dominant sets, any rubber that went the distance to a breaker or
-// decider, and any team that lost 3 or all 4 of its rubbers in one
-// night. Returns null if the round isn't actually fully finalized yet.
-function buildRoundRecap(league, round) {
+// decider, any team that lost 3 or all 4 of its rubbers in one night, any
+// team that beat a side ranked above it in the table before this round,
+// and who's currently top of the table. `ratingsTopLine`, if given, is
+// appended as-is — computing an Elo leader needs cross-league claims data
+// this pure function doesn't have, so the caller (routes.js, which
+// already has that) builds it and passes it in. Returns null if the
+// round isn't actually fully finalized yet.
+function buildRoundRecap(league, round, ratingsTopLine) {
   const fixtures = league.fixtures.filter((f) => f.round === round && f.stage === "regular");
   if (fixtures.length === 0 || !fixtures.every((f) => f.finalized)) return null;
   const isPairs = league.format === "pairs";
@@ -390,6 +416,14 @@ function buildRoundRecap(league, round) {
   const bigWins = [];
   const closeMatches = [];
   const roughNights = [];
+  const upsets = [];
+
+  // Rank lookup as of the round just gone, so a team's very first-ever
+  // result (round 1, everyone tied at zero) never gets called "surprising"
+  // for lack of any real form to be surprising against.
+  const priorStandings = round > 1 ? standingsBeforeRound(league, round) : [];
+  const priorHasForm = priorStandings.some((r) => r.played > 0);
+  const priorRank = new Map(priorStandings.map((r, i) => [r.id, i]));
 
   fixtures.forEach((f) => {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
@@ -399,6 +433,16 @@ function buildRoundRecap(league, round) {
       const { winsA, winsB } = fixtureScore(f);
       if (winsA <= 1 && winsB >= 3) roughNights.push({ team: teamA.name, against: teamB.name, winsFor: winsA, winsAgainst: winsB });
       if (winsB <= 1 && winsA >= 3) roughNights.push({ team: teamB.name, against: teamA.name, winsFor: winsB, winsAgainst: winsA });
+      const winner = matchWinner(f);
+      if (priorHasForm && winner) {
+        const winnerTeam = winner === "A" ? teamA : teamB, loserTeam = winner === "A" ? teamB : teamA;
+        const winnerRank = priorRank.get(winnerTeam.id), loserRank = priorRank.get(loserTeam.id);
+        // Higher array index = further down the table — the winner being
+        // ranked below the team they just beat is the "surprising" part.
+        if (winnerRank !== undefined && loserRank !== undefined && winnerRank > loserRank) {
+          upsets.push({ winner: winnerTeam.name, winnerRank: winnerRank + 1, loser: loserTeam.name, loserRank: loserRank + 1 });
+        }
+      }
     }
     f.rubbers.slice(0, regulation).forEach((r, idx) => {
       const w = rubberWinner(r);
@@ -421,6 +465,7 @@ function buildRoundRecap(league, round) {
   });
 
   const potw = potwTallyForRound(league, round);
+  const table = !isPairs ? computeStandings(league) : [];
 
   const lines = [];
   if (potw.winners.length) {
@@ -435,6 +480,13 @@ function buildRoundRecap(league, round) {
   if (roughNights.length) {
     lines.push("Rough night: " + roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".").join(" "));
   }
+  if (upsets.length) {
+    lines.push("Surprising result: " + upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").").join(" "));
+  }
+  if (table.length) {
+    lines.push("Top of the table: " + table[0].name + ".");
+  }
+  if (ratingsTopLine) lines.push(ratingsTopLine);
   if (lines.length === 0) lines.push("A quiet one on the scoreline front — check the Table for how the standings moved.");
 
   return { title: "Round " + round + " wrap-up", body: lines.join("\n\n") };

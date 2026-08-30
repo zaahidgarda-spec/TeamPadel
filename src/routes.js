@@ -124,7 +124,19 @@ function notify(league, teamId, type, message, extra) {
 // Returns true only when a brand-new post was created, so the caller
 // knows whether this is the moment to notify captains.
 function postOrUpdateRoundRecap(league, round) {
-  const recap = logic.buildRoundRecap(league, round);
+  // The one place the (otherwise hidden, admin-only) rating engine feeds
+  // something player-facing — just a name, not the Ratings Preview numbers
+  // themselves. Prefers a player past the provisional window so a single
+  // lucky game doesn't get called out as "in form."
+  let ratingsTopLine = null;
+  try {
+    const { ratingsData, identityOf } = loadGlobalRatings();
+    const rankings = logic.leagueRankings(league, ratingsData, identityOf);
+    const established = rankings.filter((r) => !r.provisional);
+    const top = established.length ? established[0] : rankings[0];
+    if (top) ratingsTopLine = "In-form right now: " + top.playerName + " (" + top.teamName + ").";
+  } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
+  const recap = logic.buildRoundRecap(league, round, ratingsTopLine);
   if (!recap) return false;
   if (!league.news) league.news = [];
   const existing = league.news.find((p) => p.auto && p.round === round);
