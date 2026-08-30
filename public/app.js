@@ -4307,7 +4307,11 @@ function resultsCard(f) {
   if (editable && !f.finalized) {
     const saveBtn = document.createElement("button"); saveBtn.className = "secondary"; saveBtn.textContent = "Finalize";
     saveBtn.onclick = async () => {
-      try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" }); await refreshLeague(); renderAll(); }
+      try {
+        const res = await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" });
+        await refreshLeague(); renderAll();
+        maybePromptRoundComplete(res);
+      }
       catch (e) { alert(e.message); }
     };
     footer.appendChild(saveBtn);
@@ -4407,16 +4411,18 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     if (showTb()) body.tb = state.tb;
     try {
       await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body });
+      let finalizeRes = null;
       if (isPairsRubber) {
         // A pairs fixture is exactly one rubber, so a decisive score IS the
         // whole result — finalize right away instead of making the pair
         // come back for a separate step. If it's not decided yet (a
         // half-entered score, or a draw still waiting on an optional 3rd
         // set), the server just says so and this is a no-op.
-        await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" }).catch(() => {});
+        finalizeRes = await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" }).catch(() => null);
       }
       el("score-modal-backdrop").classList.remove("open");
       await refreshLeague(); renderResults();
+      if (finalizeRes) maybePromptRoundComplete(finalizeRes);
     } catch (e) { alert(e.message); }
   }
   render();
@@ -4424,6 +4430,21 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   el("score-modal-clear").onclick = () => { state.sets = state.sets.map(() => [null, null]); state.tb = [0, 0]; render(); };
   el("score-modal-save").onclick = saveScore;
 }
+// Fires right after whichever finalize call just completed the last
+// fixture in a round — an immediate on-screen nudge to go vote, on top of
+// the notification every captain already gets. A no-op for anything that
+// didn't just complete a round (an earlier fixture in the round, or a
+// pairs-format league, which doesn't do round-based Pair of the Week).
+function maybePromptRoundComplete(res) {
+  if (!res || !res.roundComplete) return;
+  el("round-complete-modal-backdrop").classList.add("open");
+}
+el("round-complete-modal-close").onclick = () => el("round-complete-modal-backdrop").classList.remove("open");
+el("round-complete-modal-later").onclick = () => el("round-complete-modal-backdrop").classList.remove("open");
+el("round-complete-modal-vote").onclick = () => {
+  el("round-complete-modal-backdrop").classList.remove("open");
+  switchTab("awards");
+};
 el("score-modal-close").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-cancel").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "score-modal-backdrop") el("score-modal-backdrop").classList.remove("open"); });

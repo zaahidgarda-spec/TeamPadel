@@ -2435,10 +2435,14 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
 
   // Once every regular-round fixture for this round is in, Pair of the Week
   // voting for that week becomes meaningful — let every captain know, once,
-  // per round.
+  // per round. `roundComplete` also goes back in the response itself, not
+  // just as a notification, so whoever just finalized the last fixture gets
+  // an immediate on-screen prompt to go vote rather than relying on them to
+  // notice the notification bell.
+  let roundComplete = false;
   if (f.stage === "regular" && league.format !== "pairs") {
     const roundFixtures = league.fixtures.filter((x) => x.round === f.round);
-    const roundComplete = roundFixtures.length > 0 && roundFixtures.every((x) => x.finalized);
+    roundComplete = roundFixtures.length > 0 && roundFixtures.every((x) => x.finalized);
     if (roundComplete) {
       if (!league.potwNotified) league.potwNotified = {};
       if (!league.potwNotified[f.round]) {
@@ -2459,7 +2463,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   }
 
   store.saveLeague(league.id, league);
-  res.json({ ok: true });
+  res.json({ ok: true, roundComplete, round: f.round });
 });
 
 /* ---------- Pair of the week ---------- */
