@@ -58,6 +58,7 @@
           <button class="hub-tab-btn" data-hubview="account" id="hub-account-tab-btn">My profile</button>
           <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
           <button class="hub-tab-btn" data-hubview="search">Search players</button>
+          <button class="hub-tab-btn" data-hubview="news">News room</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
@@ -245,6 +246,18 @@
             <input type="text" id="player-search-input" placeholder="Search for a player…" style="flex:1;min-width:160px;">
           </div>
           <div id="player-search-results"></div>
+        </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-news">
+        <div class="card" id="news-signed-out-card">
+          <h2 class="section-title">News room</h2>
+          <p class="note">Log in on the My Profile tab first — then every league you play in shows its news here, in one place.</p>
+        </div>
+        <div class="card" id="news-signed-in-card" style="display:none;">
+          <h2 class="section-title">News room</h2>
+          <p class="note" style="margin-bottom:10px;">Every update from every league you play in, most recent first.</p>
+          <div id="account-news-list"></div>
         </div>
       </section>
 

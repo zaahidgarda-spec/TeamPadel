@@ -981,6 +981,24 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
   res.json({ name: user.name, cards });
 });
 
+// News Room, aggregated across every league this account has a claimed
+// record in — same "one profile, every league" idea as /players/profile,
+// just for news posts instead of match history. A hidden league (data-only,
+// feeds ratings, never shown anywhere else on the site) is skipped here too.
+router.get("/players/news", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
+  const leagueIds = [...new Set((user.claims || []).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)))];
+  const posts = [];
+  leagueIds.forEach((leagueId) => {
+    const league = store.getLeague(leagueId);
+    if (!league) return;
+    (league.news || []).forEach((p) => posts.push({ ...p, leagueId: league.id, leagueName: league.name }));
+  });
+  posts.sort((a, b) => b.createdAt - a.createdAt);
+  res.json(posts);
+});
+
 router.post("/leagues", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Only the site admin can create leagues. Log in first." });
   const { name, adminEmail, format } = req.body || {};

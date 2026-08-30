@@ -768,6 +768,9 @@ async function refreshAccountStatus() {
   el("account-dashboard-card").style.display = playerAccount ? "block" : "none";
   el("search-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("search-signed-in-card").style.display = playerAccount ? "block" : "none";
+  el("news-signed-out-card").style.display = playerAccount ? "none" : "block";
+  el("news-signed-in-card").style.display = playerAccount ? "block" : "none";
+  if (playerAccount) renderAccountNews();
   if (resetTokenInUrl) {
     switchHubTab("account");
     el("account-signed-out-card").style.display = "none";
@@ -5791,6 +5794,23 @@ async function renderNews() {
     }
     c.appendChild(div);
   });
+}
+// Cross-league News Room — same post markup as the in-league renderNews
+// above, just labeled with which league each post is from and with no
+// admin controls (this is a signed-in player's read-only aggregated view,
+// not any one league's own News Room).
+async function renderAccountNews() {
+  const posts = await api("/players/news").catch(() => []);
+  const c = el("account-news-list");
+  if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates yet from any league you play in.</p>'; return; }
+  c.innerHTML = posts.map((p) => {
+    const autoTag = p.auto ? ' <span class="tag" style="font-size:10px;">Auto</span>' : "";
+    return `<div class="news-post">
+      <h3>${escapeHtml(p.title)}${autoTag}</h3>
+      <time>${escapeHtml(p.leagueName)} · ${new Date(p.createdAt).toLocaleString()}</time>
+      ${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}
+    </div>`;
+  }).join("");
 }
 el("news-post-btn").onclick = async () => {
   const title = el("news-title").value.trim(), body = el("news-body").value.trim();
