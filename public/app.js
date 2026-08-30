@@ -369,10 +369,9 @@ async function renderHomepageHighlights() {
   // whoever's on a pointer device rather than swiping.
   const shownUpfront = 4;
   const cardHtml = (h, hidden) => {
-    const [letter, cls] = NEWS_HIGHLIGHT_ICON[h.type] || ["–", "neutral"];
     const removeBtn = isOwner ? `<button class="interesting-remove" type="button" aria-label="Remove">&times;</button>` : "";
     const dataAttrs = h.manualId ? ` data-manual-id="${h.manualId}"` : ` data-league-id="${h.leagueId}" data-round="${h.round}" data-type="${h.type}"`;
-    return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"${dataAttrs}>${removeBtn}<div class="nr-icon ${cls}">${letter}</div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
+    return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"${dataAttrs}>${removeBtn}<div class="interesting-label">${escapeHtml(h.label)}</div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
   };
   const hiddenCount = Math.max(0, highlights.length - shownUpfront);
   const moreTile = hiddenCount
