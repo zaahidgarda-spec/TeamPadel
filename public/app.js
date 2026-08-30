@@ -5782,7 +5782,8 @@ async function renderNews() {
   c.innerHTML = "";
   posts.forEach((p) => {
     const div = document.createElement("div"); div.className = "news-post";
-    div.innerHTML = `<h3>${escapeHtml(p.title)}</h3><time>${new Date(p.createdAt).toLocaleString()}</time>${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}`;
+    const autoTag = p.auto ? ' <span class="tag" style="font-size:10px;">Auto</span>' : "";
+    div.innerHTML = `<h3>${escapeHtml(p.title)}${autoTag}</h3><time>${new Date(p.createdAt).toLocaleString()}</time>${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}`;
     if (myRole === "admin") {
       const del = document.createElement("button"); del.className = "link"; del.textContent = "Delete"; del.style.marginTop = "8px";
       del.onclick = async () => { await api(`/leagues/${currentLeagueId}/news/${p.id}`, { method: "DELETE" }); renderNews(); };

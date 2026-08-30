@@ -115,6 +115,27 @@ function notify(league, teamId, type, message, extra) {
     sendMail({ to: team.notifyEmail, subject: league.name + ": " + type, text: message }).catch(() => {});
   }
 }
+// Creates (or, if one already exists for this round, refreshes) the
+// auto-generated round wrap-up in News Room. Refreshing rather than
+// reposting matters because Pair of the Week voting only opens once the
+// round is fully finalized — so the post made at that moment almost
+// never has a POTW winner yet; a later vote calls this again and the
+// existing post picks it up instead of a second post appearing.
+// Returns true only when a brand-new post was created, so the caller
+// knows whether this is the moment to notify captains.
+function postOrUpdateRoundRecap(league, round) {
+  const recap = logic.buildRoundRecap(league, round);
+  if (!recap) return false;
+  if (!league.news) league.news = [];
+  const existing = league.news.find((p) => p.auto && p.round === round);
+  if (existing) {
+    existing.title = recap.title;
+    existing.body = recap.body;
+    return false;
+  }
+  league.news.push({ id: logic.uid(), title: recap.title, body: recap.body, createdAt: Date.now(), auto: true, round });
+  return true;
+}
 // No 0/O/1/I — avoids characters that look alike when a captain is reading
 // a code off a phone screen or someone's handwriting.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -2332,6 +2353,14 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
           notify(league, t.id, "potw", "Results are in for Round " + f.round + " — vote now for Pair of the Week on the Awards page!", { round: f.round });
         });
       }
+      // Auto round wrap-up in News Room — big wins, close matches, any
+      // team that had a rough night. Only notify on the post's first
+      // appearance, not every time a later POTW vote refreshes it.
+      if (postOrUpdateRoundRecap(league, f.round)) {
+        league.teams.forEach((t) => {
+          notify(league, t.id, "news", "Round " + f.round + " wrap-up is posted in News Room.", { round: f.round });
+        });
+      }
     }
   }
 
@@ -2362,6 +2391,11 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   if (!league.potwVotes) league.potwVotes = {};
   if (!league.potwVotes[round]) league.potwVotes[round] = {};
   league.potwVotes[round][voterKey] = pairKey;
+  // The round's auto wrap-up almost never has a Pair of the Week winner
+  // yet at the moment it's first posted (voting only just opened) — a
+  // vote landing is exactly when that section becomes worth adding, so
+  // refresh the existing post rather than waiting for someone to notice.
+  postOrUpdateRoundRecap(league, round);
   store.saveLeague(league.id, league);
   res.json({ ok: true, tally: logic.potwTallyForRound(league, round) });
 });

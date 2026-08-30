@@ -367,6 +367,79 @@ function potwTallyForRound(league, round) {
   return { tally, winners };
 }
 
+// The auto-posted round wrap-up once every fixture in a round is
+// finalized — Pair of the Week (if voting's already landed by the time
+// this runs — usually it hasn't, since voting only opens once the round
+// is complete, so this section is normally added later by re-running
+// this same function from the vote route), any pair that won a rubber in
+// two dominant sets, any rubber that went the distance to a breaker or
+// decider, and any team that lost 3 or all 4 of its rubbers in one
+// night. Returns null if the round isn't actually fully finalized yet.
+function buildRoundRecap(league, round) {
+  const fixtures = league.fixtures.filter((f) => f.round === round && f.stage === "regular");
+  if (fixtures.length === 0 || !fixtures.every((f) => f.finalized)) return null;
+  const isPairs = league.format === "pairs";
+  const regulation = isPairs ? 1 : 4;
+  const teamById = (id) => league.teams.find((t) => t.id === id);
+  const pairNames = (team, pair) => {
+    if (!team || !pair) return null;
+    const names = pair.map((pid) => { const p = team.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+    return names.length === 2 ? names.join(" & ") : null;
+  };
+
+  const bigWins = [];
+  const closeMatches = [];
+  const roughNights = [];
+
+  fixtures.forEach((f) => {
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    if (!teamA || !teamB) return;
+    const label = teamA.name + " vs " + teamB.name;
+    if (!isPairs) {
+      const { winsA, winsB } = fixtureScore(f);
+      if (winsA <= 1 && winsB >= 3) roughNights.push({ team: teamA.name, against: teamB.name, winsFor: winsA, winsAgainst: winsB });
+      if (winsB <= 1 && winsA >= 3) roughNights.push({ team: teamB.name, against: teamA.name, winsFor: winsB, winsAgainst: winsA });
+    }
+    f.rubbers.slice(0, regulation).forEach((r, idx) => {
+      const w = rubberWinner(r);
+      if (!w) return;
+      const winnerTeam = w === "A" ? teamA : teamB;
+      const winnerSel = w === "A" ? f.selectionA : f.selectionB;
+      const pairText = winnerSel && winnerSel.pairs[idx] ? pairNames(winnerTeam, winnerSel.pairs[idx]) : null;
+      const scoreText = rubberScoreText(r);
+      const firstTwo = r.sets.slice(0, 2);
+      const straightSets = firstTwo.length === 2 && firstTwo.every((s) => setWinner(s) === w)
+        && firstTwo.every((s) => {
+          const a = Number(s[0]), b = Number(s[1]);
+          return Math.max(a, b) === 6 && Math.min(a, b) <= 1;
+        });
+      const wentTheDistance = needsTiebreak(r) && !!tiebreakWinner(r.tb);
+      const decidedByThirdSet = r.sets.length >= 3 && !!setWinner(r.sets[2]);
+      if (straightSets) bigWins.push({ teamName: winnerTeam.name, pairText, scoreText, label });
+      if (wentTheDistance || decidedByThirdSet) closeMatches.push({ teamName: winnerTeam.name, pairText, scoreText, label });
+    });
+  });
+
+  const potw = potwTallyForRound(league, round);
+
+  const lines = [];
+  if (potw.winners.length) {
+    lines.push("Pair of the Week: " + potw.winners.map((p) => p.playerAName + " & " + p.playerBName + " (" + p.teamName + ")").join(", ") + ".");
+  }
+  if (bigWins.length) {
+    lines.push("Big wins: " + bigWins.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" "));
+  }
+  if (closeMatches.length) {
+    lines.push("Went the distance: " + closeMatches.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" "));
+  }
+  if (roughNights.length) {
+    lines.push("Rough night: " + roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".").join(" "));
+  }
+  if (lines.length === 0) lines.push("A quiet one on the scoreline front — check the Table for how the standings moved.");
+
+  return { title: "Round " + round + " wrap-up", body: lines.join("\n\n") };
+}
+
 // Every not-yet-finalized fixture this player is selected into, both sides
 // submitted — the "upcoming" half of a player's profile, mirroring
 // playerMatchHistory's "played" half below almost exactly.
@@ -859,6 +932,7 @@ module.exports = {
   findPlayerUpcoming,
   potwEligiblePairs,
   potwTallyForRound,
+  buildRoundRecap,
   computeLeagueStats,
   restrictToGroup,
   allFixturesOf,
