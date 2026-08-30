@@ -3813,6 +3813,7 @@ function renderCourtScheduleGrid(fixtures) {
   if (myRole === "admin") wrap.appendChild(courtBalanceStrip());
 }
 function renderFixtures() {
+  el("fixtures-signup-banner").style.display = (!playerAccount && !fixturesBannerDismissed) ? "flex" : "none";
   renderRoundNav("round-nav-fixtures");
   const c = el("fixtures-container");
   c.innerHTML = "";
@@ -5298,6 +5299,18 @@ el("roster-signup-dismiss").onclick = () => {
   el("roster-signup-banner").style.display = "none";
 };
 el("roster-signup-cta").onclick = () => {
+  showHub();
+  switchHubTab("account");
+};
+// Same nudge, same reasoning, just on Fixtures too — someone browsing who's
+// actually playing tonight might land here first, before ever checking the
+// roster tab.
+let fixturesBannerDismissed = false;
+el("fixtures-signup-dismiss").onclick = () => {
+  fixturesBannerDismissed = true;
+  el("fixtures-signup-banner").style.display = "none";
+};
+el("fixtures-signup-cta").onclick = () => {
   showHub();
   switchHubTab("account");
 };
