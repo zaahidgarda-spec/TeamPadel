@@ -124,6 +124,7 @@ app.get("*", (req, res) => {
 store
   .init()
   .then(() => {
+    routes.backfillRoundRecaps();
     app.listen(PORT, () => {
       console.log("Padel league app running on http://localhost:" + PORT);
     });

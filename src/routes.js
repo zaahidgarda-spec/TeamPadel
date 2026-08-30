@@ -148,6 +148,27 @@ function postOrUpdateRoundRecap(league, round) {
   league.news.push({ id: logic.uid(), title: recap.title, body: recap.body, createdAt: Date.now(), auto: true, round });
   return true;
 }
+// Catches up any round that finished before the auto-recap feature existed
+// (or before a league even had it wired in) — walks every non-hidden
+// league's already-finalized regular rounds and posts whichever ones don't
+// already have an auto recap. Safe to run every boot: postOrUpdateRoundRecap
+// only writes when a round is actually complete, and only touches leagues
+// where it actually created something, so an already-caught-up league costs
+// nothing. Deliberately silent — no captain notifications for old news, and
+// no console noise on the common case of nothing to do.
+function backfillRoundRecaps() {
+  store.getIndex().forEach((entry) => {
+    if (entry.hidden) return;
+    const league = store.getLeague(entry.id);
+    if (!league || !league.fixtures) return;
+    const rounds = [...new Set(league.fixtures.filter((f) => f.stage === "regular").map((f) => f.round))];
+    let changed = false;
+    rounds.forEach((round) => {
+      if (postOrUpdateRoundRecap(league, round)) changed = true;
+    });
+    if (changed) store.saveLeague(league.id, league);
+  });
+}
 // No 0/O/1/I — avoids characters that look alike when a captain is reading
 // a code off a phone screen or someone's handwriting.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -2774,4 +2795,5 @@ router.delete("/leagues/:leagueId/sponsors/:sponsorId", requireAdmin, (req, res)
   res.json({ ok: true });
 });
 
+router.backfillRoundRecaps = backfillRoundRecaps;
 module.exports = router;
