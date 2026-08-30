@@ -159,6 +159,7 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .badge{font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:4px 9px;border-radius:var(--radius-sm);font-family:var(--font-display);font-weight:500;}
 .badge.done{background:var(--success-soft);color:var(--success);}
 .badge.pending{background:var(--panel-2);color:var(--text-dim);border:1px solid var(--line);}
+.badge.outstanding{background:var(--clay-soft);color:var(--clay);border:1px solid rgba(226,67,47,.35);}
 
 .bracket-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px;}
 .bracket-semis{margin-bottom:16px;}

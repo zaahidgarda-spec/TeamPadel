@@ -218,11 +218,23 @@ function sanitizeOne(f, isAdmin, teamId) {
 function leagueStatus(l) {
   return l.status || (l.fixtures.length > 0 ? "active" : "setup");
 }
+// A round normally only opens once every fixture in the previous round is
+// finalized. With allowRoundsByDate on, an admin can let the calendar
+// override that — once this round's own scheduled date has arrived, it
+// opens regardless, so one postponed/outstanding match doesn't freeze
+// every other team's season. Any match left unfinalized behind an
+// already-open later round is what the "outstanding" labeling elsewhere
+// (Fixtures) is watching for.
 function isRoundOpen(league, fixture) {
   if (fixture.stage === "regular") {
     if (fixture.round === 1) return true;
     const prev = league.fixtures.filter((f) => f.round === fixture.round - 1);
-    return prev.length > 0 && prev.every((f) => f.finalized);
+    if (prev.length > 0 && prev.every((f) => f.finalized)) return true;
+    if (league.allowRoundsByDate) {
+      const sched = league.schedule && league.schedule["r" + fixture.round];
+      if (sched && sched.date && sched.date <= new Date().toISOString().slice(0, 10)) return true;
+    }
+    return false;
   }
   if (fixture.stage === "semi") return true;
   if (fixture.stage === "final") return !!(fixture.teamA && fixture.teamB);
@@ -947,6 +959,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.courtSchedule) league.courtSchedule = {};
   if (league.tieringEnabled === undefined) league.tieringEnabled = false;
   if (!league.goldTierCount) league.goldTierCount = 0;
+  if (league.allowRoundsByDate === undefined) league.allowRoundsByDate = false;
   if (league.strength === undefined) league.strength = 0;
   if (!league.format) league.format = "teams";
   if (!league.groups) league.groups = [];
@@ -1663,6 +1676,13 @@ router.put("/leagues/:leagueId/tiering", requireAdmin, (req, res) => {
     league.goldTierCount = goldTierCount;
   }
   league.tieringEnabled = enabled;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.put("/leagues/:leagueId/allow-rounds-by-date", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  league.allowRoundsByDate = !!req.body.enabled;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

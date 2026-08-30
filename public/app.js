@@ -1319,11 +1319,24 @@ function isRoundOpen(key) {
   if (key.stage === "regular") {
     if (key.round === 1) return true;
     const prev = league.fixtures.filter((f) => f.round === key.round - 1);
-    return prev.length > 0 && prev.every((f) => f.finalized);
+    if (prev.length > 0 && prev.every((f) => f.finalized)) return true;
+    if (league.allowRoundsByDate) {
+      const sched = league.schedule && league.schedule["r" + key.round];
+      if (sched && sched.date && sched.date <= new Date().toISOString().slice(0, 10)) return true;
+    }
+    return false;
   }
   if (key.stage === "semi" || key.stage === "position") return true;
   if (key.stage === "final") { const f = league.playoffs && league.playoffs.final; return !!(f && f.teamA && f.teamB); }
   return false;
+}
+// A fixture left unfinalized while a later round has already opened
+// (only possible with allowRoundsByDate on) — surfaced as "Match
+// outstanding" wherever it shows up, since "Pending" alone reads as
+// routine, not as a match that should already have been played.
+function isFixtureOutstanding(f) {
+  if (f.finalized || f.stage !== "regular") return false;
+  return isRoundOpen({ stage: "regular", round: f.round + 1 });
 }
 // Keeps the current group if it's still valid, otherwise falls back to the
 // first one — the same "don't fight the user's navigation" rule used for
@@ -1862,6 +1875,27 @@ function renderRulesCard() {
   strengthWrap.appendChild(strengthClear);
   c.appendChild(strengthWrap);
   c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: "Tap a bar to set it — shown as a rating on this league's card on the homepage." }));
+
+  // Off by default: a round normally only opens once every match in the
+  // previous one is finalized. Some leagues would rather keep moving on
+  // the calendar and catch up an outstanding match later than have one
+  // team stall every other team's season.
+  const roundsByDateWrap = document.createElement("div");
+  roundsByDateWrap.className = "row"; roundsByDateWrap.style.cssText = "align-items:center;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);";
+  const roundsByDateToggle = document.createElement("input");
+  roundsByDateToggle.type = "checkbox"; roundsByDateToggle.id = "rounds-by-date-toggle";
+  roundsByDateToggle.checked = !!league.allowRoundsByDate;
+  roundsByDateToggle.onchange = async () => {
+    try { await api(`/leagues/${currentLeagueId}/allow-rounds-by-date`, { method: "PUT", body: { enabled: roundsByDateToggle.checked } }); await refreshLeague(); renderAll(); }
+    catch (e) { alert(e.message); roundsByDateToggle.checked = !roundsByDateToggle.checked; }
+  };
+  const roundsByDateLabel = document.createElement("label");
+  roundsByDateLabel.className = "note"; roundsByDateLabel.style.cssText = "display:flex;align-items:center;gap:6px;"; roundsByDateLabel.htmlFor = "rounds-by-date-toggle";
+  roundsByDateLabel.appendChild(roundsByDateToggle);
+  roundsByDateLabel.appendChild(document.createTextNode("Let later rounds open by date, even with outstanding matches"));
+  roundsByDateWrap.appendChild(roundsByDateLabel);
+  c.appendChild(roundsByDateWrap);
+  c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: "Normally a round only opens once every match in the one before it is finalized. Turn this on and a round opens on its own scheduled date regardless — any match still unplayed gets flagged \"Match outstanding\" on Fixtures instead of quietly blocking the rest of the season." }));
 
   // The "League admin login" panel on this page (Register/Log in) is a
   // single email+password slot scoped to just this league — separate from
@@ -2982,7 +3016,13 @@ function renderSelection() {
       : '<div class="card"><p class="empty">No fixtures this round yet.</p></div>';
     return;
   }
-  if (myRole !== "admin" && !isRoundOpen(viewingKey)) { c.innerHTML = '<div class="card"><p class="empty">This round opens once the previous round is finalized.</p></div>'; return; }
+  if (myRole !== "admin" && !isRoundOpen(viewingKey)) {
+    const msg = league.allowRoundsByDate
+      ? "This round opens once the previous round is finalized, or on its own scheduled date — whichever comes first."
+      : "This round opens once the previous round is finalized.";
+    c.innerHTML = `<div class="card"><p class="empty">${escapeHtml(msg)}</p></div>`;
+    return;
+  }
   fixtures.forEach((f) => c.appendChild(selectionCard(f)));
 }
 function selectionCard(f) {
@@ -3857,7 +3897,10 @@ function renderFixtures() {
     const { winsA, winsB } = fixtureScoreClient(f);
     const both = f.selectionA.submitted && f.selectionB.submitted;
     const headline = f.rubbers.length === 1 ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
-    let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${f.finalized ? "Final" : "Pending"}</span></div></div>`;
+    const outstanding = isFixtureOutstanding(f);
+    const badgeCls = f.finalized ? "done" : outstanding ? "outstanding" : "pending";
+    const badgeLabel = f.finalized ? "Final" : outstanding ? "Match outstanding" : "Pending";
+    let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${badgeCls}">${badgeLabel}</span></div></div>`;
     const sched = scheduleFor(stageKeyFor(f));
     const venue = effectiveVenue(stageKeyFor(f));
     if (sched.date || sched.time || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${sched.time ? "<span>" + fmtTime(sched.time) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
