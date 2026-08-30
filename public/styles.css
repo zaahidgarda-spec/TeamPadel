@@ -495,7 +495,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent::after{
   content:"";position:absolute;inset:0;pointer-events:none;opacity:.14;
   background-image:
-    linear-gradient(90deg,transparent 49%,#7FA8FF 49%,#7FA8FF 51%,transparent 51%),
     linear-gradient(0deg,transparent 12%,#7FA8FF 12%,#7FA8FF 12.8%,transparent 12.8%),
     linear-gradient(0deg,transparent 88%,#7FA8FF 88%,#7FA8FF 88.8%,transparent 88.8%);
 }
