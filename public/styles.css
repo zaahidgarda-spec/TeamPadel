@@ -1083,7 +1083,16 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .potw-team{font-size:10.5px;color:var(--text-dim);}
 .potw-league{font-size:9.5px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;}
 
-.interesting-row{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);}
-.interesting-row:last-child{border-bottom:none;padding-bottom:0;}
-.interesting-text{font-size:12.5px;line-height:1.5;color:var(--text);}
-.interesting-league{font-size:10.5px;color:var(--text-faint);margin-top:2px;text-transform:uppercase;letter-spacing:.04em;font-family:var(--font-display);}
+/* A horizontal card strip, same idea as the pairs-of-the-week row right
+   above it — the two read as one visual family. Scrolling does most of the
+   "show more" work; a trailing "+more" tile expands the rest inline for
+   anyone who doesn't scroll, same as the pairs strip caps at what fits. */
+.interesting-strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;margin:0 -18px;padding-left:18px;padding-right:18px;}
+.interesting-card{flex-shrink:0;width:126px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:12px 10px;}
+.interesting-card .nr-icon{width:24px;height:24px;font-size:10.5px;margin-bottom:9px;}
+.interesting-phrase{font-size:12px;font-weight:600;line-height:1.35;color:var(--text);margin-bottom:8px;min-height:32px;}
+.interesting-league{font-size:9px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-family:var(--font-display);font-weight:600;}
+.interesting-more{flex-shrink:0;width:90px;border:1px dashed var(--line);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:none;font-family:var(--font-body);}
+.interesting-more .n{font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--accent);}
+.interesting-more .lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;}
+.interesting-hidden{display:none;}

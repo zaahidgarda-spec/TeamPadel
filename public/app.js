@@ -362,10 +362,26 @@ async function renderHomepageHighlights() {
   const interestingCard = el("homepage-interesting-card");
   interestingCard.style.display = highlights.length ? "block" : "none";
   if (highlights.length) {
-    el("homepage-interesting-list").innerHTML = highlights.map((h) => {
+    // Only the first few show up front — the rest sit behind a "+N More"
+    // tile at the end of the strip, same shape as scrolling itself, for
+    // whoever's on a pointer device rather than swiping.
+    const shownUpfront = 4;
+    const cardHtml = (h, hidden) => {
       const [letter, cls] = NEWS_HIGHLIGHT_ICON[h.type] || ["–", "neutral"];
-      return `<div class="interesting-row"><div class="nr-icon ${cls}">${letter}</div><div><div class="interesting-text">${escapeHtml(h.text)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div></div>`;
-    }).join("");
+      return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"><div class="nr-icon ${cls}">${letter}</div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
+    };
+    const hiddenCount = Math.max(0, highlights.length - shownUpfront);
+    const moreTile = hiddenCount
+      ? `<button class="interesting-more" id="homepage-interesting-more-btn"><span class="n">+${hiddenCount}</span><span class="lbl">More</span></button>`
+      : "";
+    el("homepage-interesting-strip").innerHTML = highlights.map((h, i) => cardHtml(h, i >= shownUpfront)).join("") + moreTile;
+    const moreBtn = document.getElementById("homepage-interesting-more-btn");
+    if (moreBtn) {
+      moreBtn.onclick = () => {
+        el("homepage-interesting-strip").querySelectorAll(".interesting-hidden").forEach((n) => n.classList.remove("interesting-hidden"));
+        moreBtn.remove();
+      };
+    }
   }
 }
 function renderHub() {

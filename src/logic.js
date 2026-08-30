@@ -483,33 +483,38 @@ function buildRoundRecap(league, round, inForm) {
   }
   if (bigWins.length) {
     const text = bigWins.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" ");
-    highlights.push({ type: "bigwin", label: "Big win", text });
+    const short = (bigWins[0].pairText || bigWins[0].teamName) + " — " + bigWins[0].scoreText;
+    highlights.push({ type: "bigwin", label: "Big win", text, short });
     lines.push("Big wins: " + text);
   }
   if (closeMatches.length) {
     const text = closeMatches.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" ");
-    highlights.push({ type: "distance", label: "Went the distance", text });
+    const short = (closeMatches[0].pairText || closeMatches[0].teamName) + " — " + closeMatches[0].scoreText;
+    highlights.push({ type: "distance", label: "Went the distance", text, short });
     lines.push("Went the distance: " + text);
   }
   if (upsets.length) {
     const text = upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").").join(" ");
-    highlights.push({ type: "upset", label: "Surprising result", text });
+    const short = upsets[0].winner + " upset " + upsets[0].loser;
+    highlights.push({ type: "upset", label: "Surprising result", text, short });
     lines.push("Surprising result: " + text);
   }
   if (roughNights.length) {
     const text = roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".").join(" ");
-    highlights.push({ type: "rough", label: "Rough night", text });
+    const short = roughNights[0].team + " — rough night";
+    highlights.push({ type: "rough", label: "Rough night", text, short });
     lines.push("Rough night: " + text);
   }
   if (table.length) {
     const text = table[0].name + ".";
-    highlights.push({ type: "table", label: "Top of the table", text });
+    const short = table[0].name + " — top of the table";
+    highlights.push({ type: "table", label: "Top of the table", text, short });
     lines.push("Top of the table: " + text);
   }
   const inFormList = inForm && inForm.length ? inForm : [];
   if (inFormList.length) lines.push("In form right now: " + inFormList.map((p) => p.name + " (" + p.team + ")").join(", ") + ".");
   if (potwEntries.length === 0 && highlights.length === 0) {
-    highlights.push({ type: "quiet", label: "Scoreline", text: "A quiet one on the scoreline front — check the Table for how the standings moved." });
+    highlights.push({ type: "quiet", label: "Scoreline", text: "A quiet one on the scoreline front — check the Table for how the standings moved.", short: "A quiet one on the scoreline front" });
     lines.push(highlights[0].text);
   }
 

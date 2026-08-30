@@ -126,16 +126,18 @@ function notify(league, teamId, type, message, extra) {
 function postOrUpdateRoundRecap(league, round) {
   // The one place the (otherwise hidden, admin-only) rating engine feeds
   // something player-facing — just names, not the Ratings Preview numbers
-  // themselves. Prefers players past the provisional window so a single
-  // lucky game doesn't get someone called out as "in form." Purely a
-  // function of current rating (form), top 3 — never fewer than the pool
-  // has, never a ranking tie-break or anything besides the rating itself.
+  // themselves. "In form" means an actual current win streak — at least
+  // the last 2 results (stat.form is chronological, most recent last)
+  // both wins — not just whoever's rated highest right now. Among
+  // streaking players, still prefers ones past the provisional window and
+  // still ranked by rating, top 3.
   let inForm = [];
   try {
     const { ratingsData, identityOf } = loadGlobalRatings();
     const rankings = logic.leagueRankings(league, ratingsData, identityOf);
-    const established = rankings.filter((r) => !r.provisional);
-    const pool = established.length ? established : rankings;
+    const onStreak = rankings.filter((r) => r.form && r.form.length >= 2 && r.form.slice(-2).every((x) => x === "W"));
+    const established = onStreak.filter((r) => !r.provisional);
+    const pool = established.length ? established : onStreak;
     inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName }));
   } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
   const recap = logic.buildRoundRecap(league, round, inForm);
@@ -561,11 +563,14 @@ router.get("/homepage/highlights", (req, res) => {
     (latest.potw || []).forEach((p) => potw.push({ names: p.names, team: p.team, leagueId: league.id, leagueName: league.name }));
     (latest.highlights || []).forEach((h) => {
       if (h.type === "quiet") return;
-      highlights.push({ type: h.type, label: h.label, text: h.text, leagueId: league.id, leagueName: league.name, createdAt: latest.createdAt });
+      // `short` is a recent addition — a post saved before it existed won't
+      // have one, so fall back to the (longer) News Room text rather than
+      // showing a blank card.
+      highlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, createdAt: latest.createdAt });
     });
   });
   highlights.sort((a, b) => b.createdAt - a.createdAt);
-  res.json({ potw, highlights: highlights.slice(0, 6) });
+  res.json({ potw, highlights: highlights.slice(0, 9) });
 });
 
 /* ---------- "Interested to join a league" signups ---------- */
