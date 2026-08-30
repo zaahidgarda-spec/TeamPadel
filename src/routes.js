@@ -449,7 +449,8 @@ router.get("/players/tonight-matches", (req, res) => {
   if (!req.session.playerUser) return res.json({ matches: [] });
   const user = store.getUser(req.session.playerUser.id);
   if (!user) return res.json({ matches: [] });
-  const leagueIds = new Set((user.claims || []).map((c) => c.leagueId));
+  const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
+  const leagueIds = new Set((user.claims || []).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)));
   const leagues = Array.from(leagueIds)
     .map((id) => store.getLeague(id))
     .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
@@ -2605,8 +2606,12 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   if (player.claimedByUserId) {
     const user = store.getUser(player.claimedByUserId);
     if (user) {
+      // Same rule as everywhere else: a hidden league (data-only, feeds
+      // ratings but isn't a real league to browse) never surfaces as a tab
+      // here either.
+      const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
       otherLeagues = user.claims
-        .filter((c) => c.leagueId !== league.id)
+        .filter((c) => c.leagueId !== league.id && !hiddenLeagueIds.has(c.leagueId))
         .map((c) => {
           const otherLeague = store.getLeague(c.leagueId);
           const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
