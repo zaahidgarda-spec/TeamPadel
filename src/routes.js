@@ -125,16 +125,21 @@ function notify(league, teamId, type, message, extra) {
 // knows whether this is the moment to notify captains.
 function postOrUpdateRoundRecap(league, round) {
   // The one place the (otherwise hidden, admin-only) rating engine feeds
-  // something player-facing — just a name, not the Ratings Preview numbers
-  // themselves. Prefers a player past the provisional window so a single
-  // lucky game doesn't get called out as "in form."
+  // something player-facing — just names, not the Ratings Preview numbers
+  // themselves. Prefers players past the provisional window so a single
+  // lucky game doesn't get someone called out as "in form." Purely a
+  // function of current rating (form), top 3 — never fewer than the pool
+  // has, never a ranking tie-break or anything besides the rating itself.
   let ratingsTopLine = null;
   try {
     const { ratingsData, identityOf } = loadGlobalRatings();
     const rankings = logic.leagueRankings(league, ratingsData, identityOf);
     const established = rankings.filter((r) => !r.provisional);
-    const top = established.length ? established[0] : rankings[0];
-    if (top) ratingsTopLine = "In-form right now: " + top.playerName + " (" + top.teamName + ").";
+    const pool = established.length ? established : rankings;
+    const top = pool.slice(0, 3);
+    if (top.length) {
+      ratingsTopLine = "In form right now: " + top.map((r) => r.playerName + " (" + r.teamName + ")").join(", ") + ".";
+    }
   } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
   const recap = logic.buildRoundRecap(league, round, ratingsTopLine);
   if (!recap) return false;
@@ -167,6 +172,21 @@ function backfillRoundRecaps() {
       if (postOrUpdateRoundRecap(league, round)) changed = true;
     });
     if (changed) store.saveLeague(league.id, league);
+  });
+}
+// News Room order: round-based posts read newest-round-first, same as the
+// season itself unfolds — sorting by createdAt alone breaks this the moment
+// a round gets backfilled (every round caught up in the same boot lands
+// within the same millisecond or two, so raw timestamp order stops meaning
+// anything). A post with no round (a free-standing admin announcement)
+// always sorts above every round post, on the assumption it's about
+// something current, not a historical result.
+function sortNewsPosts(posts) {
+  return posts.slice().sort((a, b) => {
+    const ra = a.round === undefined || a.round === null ? Infinity : a.round;
+    const rb = b.round === undefined || b.round === null ? Infinity : b.round;
+    if (ra !== rb) return rb - ra;
+    return b.createdAt - a.createdAt;
   });
 }
 // No 0/O/1/I — avoids characters that look alike when a captain is reading
@@ -995,8 +1015,7 @@ router.get("/players/news", requirePlayerUser, (req, res) => {
     if (!league) return;
     (league.news || []).forEach((p) => posts.push({ ...p, leagueId: league.id, leagueName: league.name }));
   });
-  posts.sort((a, b) => b.createdAt - a.createdAt);
-  res.json(posts);
+  res.json(sortNewsPosts(posts));
 });
 
 router.post("/leagues", async (req, res) => {
@@ -2596,7 +2615,7 @@ router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => 
 router.get("/leagues/:leagueId/news", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  res.json((league.news || []).slice().sort((a, b) => b.createdAt - a.createdAt));
+  res.json(sortNewsPosts(league.news || []));
 });
 router.post("/leagues/:leagueId/news", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
