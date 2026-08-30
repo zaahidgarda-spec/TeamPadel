@@ -435,7 +435,6 @@ function buildRoundRecap(league, round, inForm) {
   fixtures.forEach((f) => {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     if (!teamA || !teamB) return;
-    const label = teamA.name + " vs " + teamB.name;
     if (!isPairs) {
       const { winsA, winsB } = fixtureScore(f);
       if (winsA <= 1 && winsB >= 3) roughNights.push({ team: teamA.name, against: teamB.name, winsFor: winsA, winsAgainst: winsB });
@@ -455,8 +454,13 @@ function buildRoundRecap(league, round, inForm) {
       const w = rubberWinner(r);
       if (!w) return;
       const winnerTeam = w === "A" ? teamA : teamB;
+      const loserTeam = w === "A" ? teamB : teamA;
       const winnerSel = w === "A" ? f.selectionA : f.selectionB;
-      const pairText = winnerSel && winnerSel.pairs[idx] ? pairNames(winnerTeam, winnerSel.pairs[idx]) : null;
+      // In a "pairs" (Vibora) league the team IS the pair — pairNames()
+      // would just rebuild the exact same two names team.name already is,
+      // "&"-joined instead of "/"-joined, so skip it there entirely rather
+      // than showing the same pair twice under two different labels.
+      const pairText = !isPairs && winnerSel && winnerSel.pairs[idx] ? pairNames(winnerTeam, winnerSel.pairs[idx]) : null;
       const scoreText = rubberScoreText(r);
       const firstTwo = r.sets.slice(0, 2);
       const straightSets = firstTwo.length === 2 && firstTwo.every((s) => setWinner(s) === w)
@@ -466,8 +470,9 @@ function buildRoundRecap(league, round, inForm) {
         });
       const wentTheDistance = needsTiebreak(r) && !!tiebreakWinner(r.tb);
       const decidedByThirdSet = r.sets.length >= 3 && !!setWinner(r.sets[2]);
-      if (straightSets) bigWins.push({ teamName: winnerTeam.name, pairText, scoreText, label });
-      if (wentTheDistance || decidedByThirdSet) closeMatches.push({ teamName: winnerTeam.name, pairText, scoreText, label });
+      const entry = { teamName: winnerTeam.name, pairText, scoreText, opponentName: loserTeam.name };
+      if (straightSets) bigWins.push(entry);
+      if (wentTheDistance || decidedByThirdSet) closeMatches.push(entry);
     });
   });
 
@@ -481,14 +486,18 @@ function buildRoundRecap(league, round, inForm) {
   if (potwEntries.length) {
     lines.push("Pair of the Week: " + potwEntries.map((p) => p.names + " (" + p.team + ")").join(", ") + ".");
   }
+  // "<pair> (<team>) <score> beat <opponent>" for a team league, or just
+  // "<pair> <score> beat <opponent>" for a pairs league, where the pair IS
+  // the team — naming both would just repeat the same two names twice.
+  const winFragment = (w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " beat " + w.opponentName;
   if (bigWins.length) {
-    const text = bigWins.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" ");
+    const text = bigWins.map((w) => winFragment(w) + ".").join(" ");
     const short = (bigWins[0].pairText || bigWins[0].teamName) + " — " + bigWins[0].scoreText;
     highlights.push({ type: "bigwin", label: "Big win", text, short });
     lines.push("Big wins: " + text);
   }
   if (closeMatches.length) {
-    const text = closeMatches.map((w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " in " + w.label + ".").join(" ");
+    const text = closeMatches.map((w) => winFragment(w) + ".").join(" ");
     const short = (closeMatches[0].pairText || closeMatches[0].teamName) + " — " + closeMatches[0].scoreText;
     highlights.push({ type: "distance", label: "Went the distance", text, short });
     lines.push("Went the distance: " + text);

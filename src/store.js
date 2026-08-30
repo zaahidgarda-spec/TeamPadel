@@ -72,6 +72,7 @@ async function init() {
     if (user) cache.set("user-" + entry.id, user);
   }
   cache.set("interest-signups", (await redis.get("interest-signups")) || []);
+  cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
 }
 
 // Lets the server wait for any in-flight writes before exiting on
@@ -161,6 +162,24 @@ function saveSignups(signups) {
   writeJsonFile("interest-signups", signups);
 }
 
+// Owner-only curation of the homepage's "Interesting this week" strip —
+// `dismissed` is a list of "leagueId:round:type" keys (a highlight's
+// stable identity, since a round recap has at most one highlight per
+// type) hiding an auto-generated card; `manual` is admin-authored cards
+// added on top of the auto ones.
+function getHomepageExtras() {
+  if (useRedis) return cache.get("homepage-extras") || { dismissed: [], manual: [] };
+  return readJsonFile("homepage-extras", { dismissed: [], manual: [] });
+}
+function saveHomepageExtras(extras) {
+  if (useRedis) {
+    cache.set("homepage-extras", extras);
+    persist("homepage-extras", extras);
+    return;
+  }
+  writeJsonFile("homepage-extras", extras);
+}
+
 module.exports = {
   init,
   flush,
@@ -176,4 +195,6 @@ module.exports = {
   deleteUser,
   getSignups,
   saveSignups,
+  getHomepageExtras,
+  saveHomepageExtras,
 };

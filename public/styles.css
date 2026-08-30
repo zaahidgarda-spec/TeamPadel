@@ -1088,11 +1088,15 @@ nav.tabs::-webkit-scrollbar{display:none;}
    "show more" work; a trailing "+more" tile expands the rest inline for
    anyone who doesn't scroll, same as the pairs strip caps at what fits. */
 .interesting-strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;margin:0 -18px;padding-left:18px;padding-right:18px;}
-.interesting-card{flex-shrink:0;width:126px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:12px 10px;}
+.interesting-card{position:relative;flex-shrink:0;width:126px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:12px 10px;}
 .interesting-card .nr-icon{width:24px;height:24px;font-size:10.5px;margin-bottom:9px;}
 .interesting-phrase{font-size:12px;font-weight:600;line-height:1.35;color:var(--text);margin-bottom:8px;min-height:32px;}
 .interesting-league{font-size:9px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-family:var(--font-display);font-weight:600;}
-.interesting-more{flex-shrink:0;width:90px;border:1px dashed var(--line);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:none;font-family:var(--font-body);}
-.interesting-more .n{font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--accent);}
-.interesting-more .lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;}
+.interesting-more,.interesting-add{flex-shrink:0;width:90px;border:1px dashed var(--line);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:none;font-family:var(--font-body);}
+.interesting-more .n,.interesting-add .n{font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--accent);}
+.interesting-more .lbl,.interesting-add .lbl{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;}
 .interesting-hidden{display:none;}
+/* Admin-only controls, kept small so they don't compete with the card's
+   own content for a guest who never sees them anyway. */
+.interesting-remove{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;border:none;background:var(--panel);color:var(--text-faint);font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow-sm);}
+.interesting-remove:hover{color:var(--clay);}

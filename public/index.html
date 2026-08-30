@@ -325,6 +325,23 @@
           <div id="combine-accounts-list"></div>
         </div>
       </section>
+
+      <div id="interesting-add-modal-backdrop" class="modal-backdrop">
+        <div class="modal-box" style="max-width:380px;">
+          <button class="modal-close" id="interesting-add-modal-close" aria-label="Close">&times;</button>
+          <h3 class="modal-title">Add to "Interesting this week"</h3>
+          <p class="note" style="margin:4px 0 14px;">A short line for the homepage card strip — keep it to a phrase, not a paragraph.</p>
+          <label class="sr-only" for="interesting-add-short">What's interesting</label>
+          <input type="text" id="interesting-add-short" placeholder="e.g. Season finals set for 14 Sept" style="width:100%;margin-bottom:10px;">
+          <label class="sr-only" for="interesting-add-league">League (optional)</label>
+          <input type="text" id="interesting-add-league" placeholder="League name (optional)" style="width:100%;">
+          <div class="error" id="interesting-add-error"></div>
+          <div class="row" style="margin-top:16px;justify-content:flex-end;">
+            <button class="secondary" id="interesting-add-cancel">Cancel</button>
+            <button class="primary" id="interesting-add-save">Add</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="view-league">

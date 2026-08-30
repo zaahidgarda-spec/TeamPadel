@@ -552,9 +552,11 @@ router.get("/homepage/highlights", (req, res) => {
   const leagues = visibleIndexEntries()
     .map((entry) => store.getLeague(entry.id))
     .filter((l) => l && leagueStatus(l) === "active");
+  const extras = store.getHomepageExtras();
+  const dismissed = new Set(extras.dismissed || []);
 
   const potw = [];
-  const highlights = [];
+  const autoHighlights = [];
   leagues.forEach((league) => {
     const latest = (league.news || [])
       .filter((p) => p.auto)
@@ -563,14 +565,63 @@ router.get("/homepage/highlights", (req, res) => {
     (latest.potw || []).forEach((p) => potw.push({ names: p.names, team: p.team, leagueId: league.id, leagueName: league.name }));
     (latest.highlights || []).forEach((h) => {
       if (h.type === "quiet") return;
+      const dismissKey = league.id + ":" + latest.round + ":" + h.type;
+      if (dismissed.has(dismissKey)) return;
       // `short` is a recent addition — a post saved before it existed won't
       // have one, so fall back to the (longer) News Room text rather than
       // showing a blank card.
-      highlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, createdAt: latest.createdAt });
+      autoHighlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, round: latest.round, createdAt: latest.createdAt });
     });
   });
-  highlights.sort((a, b) => b.createdAt - a.createdAt);
-  res.json({ potw, highlights: highlights.slice(0, 9) });
+  autoHighlights.sort((a, b) => b.createdAt - a.createdAt);
+  // Admin-authored cards always show, on top of (never counted against) the
+  // cap on auto-generated ones — they were deliberately added, not just
+  // whatever happened to be most recent.
+  const manualHighlights = (extras.manual || []).slice().sort((a, b) => b.createdAt - a.createdAt)
+    .map((m) => ({ type: "manual", label: "Added by admin", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id }));
+  res.json({ potw, highlights: manualHighlights.concat(autoHighlights.slice(0, 9)) });
+});
+
+// Owner-only curation of the auto-generated strip — hide a card that's
+// technically true but not worth surfacing (dismiss), or undo that.
+router.post("/admin/interesting/dismiss", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { leagueId, round, type } = req.body || {};
+  if (!leagueId || round === undefined || !type) return res.status(400).json({ error: "Missing leagueId, round, or type." });
+  const extras = store.getHomepageExtras();
+  const key = leagueId + ":" + round + ":" + type;
+  if (!extras.dismissed.includes(key)) extras.dismissed.push(key);
+  store.saveHomepageExtras(extras);
+  res.json({ ok: true });
+});
+router.post("/admin/interesting/restore", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { leagueId, round, type } = req.body || {};
+  const extras = store.getHomepageExtras();
+  const key = leagueId + ":" + round + ":" + type;
+  extras.dismissed = (extras.dismissed || []).filter((k) => k !== key);
+  store.saveHomepageExtras(extras);
+  res.json({ ok: true });
+});
+// A free-standing card the admin writes themselves — a season announcement,
+// a shoutout that doesn't fit any of the auto categories, whatever's
+// actually interesting that the recap engine has no way to know about.
+router.post("/admin/interesting/manual", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { short, leagueName } = req.body || {};
+  if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
+  const extras = store.getHomepageExtras();
+  if (!extras.manual) extras.manual = [];
+  extras.manual.push({ id: logic.uid(), short: short.trim(), leagueName: (leagueName || "").trim(), createdAt: Date.now() });
+  store.saveHomepageExtras(extras);
+  res.json({ ok: true });
+});
+router.delete("/admin/interesting/manual/:id", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const extras = store.getHomepageExtras();
+  extras.manual = (extras.manual || []).filter((m) => m.id !== req.params.id);
+  store.saveHomepageExtras(extras);
+  res.json({ ok: true });
 });
 
 /* ---------- "Interested to join a league" signups ---------- */

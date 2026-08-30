@@ -360,28 +360,51 @@ async function renderHomepageHighlights() {
   }
   const highlights = (data && data.highlights) || [];
   const interestingCard = el("homepage-interesting-card");
-  interestingCard.style.display = highlights.length ? "block" : "none";
-  if (highlights.length) {
-    // Only the first few show up front — the rest sit behind a "+N More"
-    // tile at the end of the strip, same shape as scrolling itself, for
-    // whoever's on a pointer device rather than swiping.
-    const shownUpfront = 4;
-    const cardHtml = (h, hidden) => {
-      const [letter, cls] = NEWS_HIGHLIGHT_ICON[h.type] || ["–", "neutral"];
-      return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"><div class="nr-icon ${cls}">${letter}</div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
+  // An owner with nothing to show yet still gets the card, just to reach
+  // the "+" add tile — a guest (or an owner once something's posted) sees
+  // it hide/show based on whether there's actually anything in it.
+  interestingCard.style.display = (highlights.length || isOwner) ? "block" : "none";
+  // Only the first few show up front — the rest sit behind a "+N More"
+  // tile at the end of the strip, same shape as scrolling itself, for
+  // whoever's on a pointer device rather than swiping.
+  const shownUpfront = 4;
+  const cardHtml = (h, hidden) => {
+    const [letter, cls] = NEWS_HIGHLIGHT_ICON[h.type] || ["–", "neutral"];
+    const removeBtn = isOwner ? `<button class="interesting-remove" type="button" aria-label="Remove">&times;</button>` : "";
+    const dataAttrs = h.manualId ? ` data-manual-id="${h.manualId}"` : ` data-league-id="${h.leagueId}" data-round="${h.round}" data-type="${h.type}"`;
+    return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"${dataAttrs}>${removeBtn}<div class="nr-icon ${cls}">${letter}</div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
+  };
+  const hiddenCount = Math.max(0, highlights.length - shownUpfront);
+  const moreTile = hiddenCount
+    ? `<button class="interesting-more" id="homepage-interesting-more-btn"><span class="n">+${hiddenCount}</span><span class="lbl">More</span></button>`
+    : "";
+  const addTile = isOwner ? `<button class="interesting-add" id="homepage-interesting-add-btn"><span class="n">+</span><span class="lbl">Add</span></button>` : "";
+  el("homepage-interesting-strip").innerHTML = highlights.map((h, i) => cardHtml(h, i >= shownUpfront)).join("") + moreTile + addTile;
+  const moreBtn = document.getElementById("homepage-interesting-more-btn");
+  if (moreBtn) {
+    moreBtn.onclick = () => {
+      el("homepage-interesting-strip").querySelectorAll(".interesting-hidden").forEach((n) => n.classList.remove("interesting-hidden"));
+      moreBtn.remove();
     };
-    const hiddenCount = Math.max(0, highlights.length - shownUpfront);
-    const moreTile = hiddenCount
-      ? `<button class="interesting-more" id="homepage-interesting-more-btn"><span class="n">+${hiddenCount}</span><span class="lbl">More</span></button>`
-      : "";
-    el("homepage-interesting-strip").innerHTML = highlights.map((h, i) => cardHtml(h, i >= shownUpfront)).join("") + moreTile;
-    const moreBtn = document.getElementById("homepage-interesting-more-btn");
-    if (moreBtn) {
-      moreBtn.onclick = () => {
-        el("homepage-interesting-strip").querySelectorAll(".interesting-hidden").forEach((n) => n.classList.remove("interesting-hidden"));
-        moreBtn.remove();
+  }
+  if (isOwner) {
+    document.getElementById("homepage-interesting-add-btn").onclick = () => {
+      el("interesting-add-short").value = ""; el("interesting-add-league").value = ""; el("interesting-add-error").textContent = "";
+      el("interesting-add-modal-backdrop").classList.add("open");
+    };
+    el("homepage-interesting-strip").querySelectorAll(".interesting-remove").forEach((btn) => {
+      btn.onclick = async () => {
+        const card = btn.closest(".interesting-card");
+        try {
+          if (card.dataset.manualId) {
+            await api(`/admin/interesting/manual/${card.dataset.manualId}`, { method: "DELETE" });
+          } else {
+            await api("/admin/interesting/dismiss", { method: "POST", body: { leagueId: card.dataset.leagueId, round: Number(card.dataset.round), type: card.dataset.type } });
+          }
+          renderHomepageHighlights();
+        } catch (e) { alert(e.message); }
       };
-    }
+    });
   }
 }
 function renderHub() {
@@ -4461,6 +4484,17 @@ el("round-complete-modal-vote").onclick = () => {
   el("round-complete-modal-backdrop").classList.remove("open");
   switchTab("awards");
 };
+el("interesting-add-modal-close").onclick = () => el("interesting-add-modal-backdrop").classList.remove("open");
+el("interesting-add-cancel").onclick = () => el("interesting-add-modal-backdrop").classList.remove("open");
+el("interesting-add-save").onclick = async () => {
+  const short = el("interesting-add-short").value.trim(), leagueName = el("interesting-add-league").value.trim();
+  if (!short) { el("interesting-add-error").textContent = "Enter something to show."; return; }
+  try {
+    await api("/admin/interesting/manual", { method: "POST", body: { short, leagueName } });
+    el("interesting-add-modal-backdrop").classList.remove("open");
+    renderHomepageHighlights();
+  } catch (e) { el("interesting-add-error").textContent = e.message; }
+};
 el("score-modal-close").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-cancel").onclick = () => el("score-modal-backdrop").classList.remove("open");
 el("score-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "score-modal-backdrop") el("score-modal-backdrop").classList.remove("open"); });
@@ -5852,6 +5886,7 @@ function renderAwards() {
 const NEWS_HIGHLIGHT_ICON = {
   bigwin: ["W", "accent"], distance: ["D", "accent"], upset: ["U", "clay"],
   rough: ["R", "neutral"], table: ["T", "success"], quiet: ["–", "neutral"],
+  manual: ["★", "accent"],
 };
 function playerInitials(name) {
   const parts = (name || "").trim().split(/\s+/);
