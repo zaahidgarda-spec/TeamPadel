@@ -690,7 +690,27 @@ router.post("/players/signup", loginLimiter, async (req, res) => {
   const normalized = normalizeEmail(email);
   if (!normalized || !normalized.includes("@")) return res.status(400).json({ error: "A valid email is required." });
   if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
-  if (findUserIdByEmail(normalized)) return res.status(400).json({ error: "An account with that email already exists." });
+  const existingId = findUserIdByEmail(normalized);
+  if (existingId) {
+    const existing = store.getUser(existingId);
+    // An admin can link a player's records to their email before that
+    // person has ever signed up themselves (see /admin/players/combine) —
+    // that account exists purely to hold the claims, with no password set,
+    // so login deliberately can't succeed on it yet (verifyPassword(pw,
+    // null) always fails). Don't block the real person from ever signing
+    // up with their own email just because it's already "taken" by their
+    // own placeholder — set the password on that same account instead of
+    // creating a duplicate, so they land on the records already linked to
+    // them rather than an empty new profile.
+    if (existing && !existing.passwordHash) {
+      existing.passwordHash = await hashPassword(password);
+      existing.name = name.trim();
+      store.saveUser(existing.id, existing);
+      req.session.playerUser = { id: existing.id };
+      return res.json({ id: existing.id, name: existing.name, email: existing.email });
+    }
+    return res.status(400).json({ error: "An account with that email already exists." });
+  }
   const id = logic.uid();
   const user = { id, email: normalized, passwordHash: await hashPassword(password), name: name.trim(), createdAt: Date.now(), claims: [] };
   store.saveUser(id, user);
@@ -970,8 +990,10 @@ router.post("/admin/players/combine", (req, res) => {
   } else {
     userId = logic.uid();
     // No password — this profile exists so its records show up combined,
-    // but nobody can log into it until the real player later sets one up
-    // themselves (not built yet; today it just can't be logged into).
+    // but nobody can log into it until the real player sets one up
+    // themselves. /players/signup, if it sees this exact email with no
+    // password set, adopts this account (setting the password on it)
+    // instead of blocking them or creating a duplicate.
     user = { id: userId, email: normalized, passwordHash: null, name: name.trim(), createdAt: Date.now(), claims: [] };
     const index = store.getUsersIndex();
     index.push({ id: userId, email: normalized });
