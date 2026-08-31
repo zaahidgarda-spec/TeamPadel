@@ -156,7 +156,7 @@ function postOrUpdateRoundRecap(league, round) {
       const onStreak = rankings.filter((r) => r.form && r.form.length >= 2 && r.form.slice(-2).every((x) => x === "W"));
       const established = onStreak.filter((r) => !r.provisional);
       const pool = established.length ? established : onStreak;
-      inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName }));
+      inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName, playerId: r.playerId, teamId: r.teamId }));
     } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
   }
   const recap = logic.buildRoundRecap(league, round, inForm);

@@ -461,6 +461,13 @@ function buildRoundRecap(league, round, inForm) {
       // "&"-joined instead of "/"-joined, so skip it there entirely rather
       // than showing the same pair twice under two different labels.
       const pairText = !isPairs && winnerSel && winnerSel.pairs[idx] ? pairNames(winnerTeam, winnerSel.pairs[idx]) : null;
+      // The actual player ids behind that pair — lets the News Room UI link
+      // each name to their profile instead of just printing text. A pairs
+      // (Vibora) team's own two players ARE the pair; a teams-format pair
+      // comes from that seed's submitted selection.
+      const winnerPlayers = isPairs
+        ? winnerTeam.players.slice(0, 2).map((p) => ({ id: p.id, name: p.name }))
+        : (winnerSel && winnerSel.pairs[idx] ? winnerSel.pairs[idx].map((pid) => winnerTeam.players.find((p) => p.id === pid)).filter(Boolean).map((p) => ({ id: p.id, name: p.name })) : []);
       const scoreText = rubberScoreText(r);
       const firstTwo = r.sets.slice(0, 2);
       const straightSets = firstTwo.length === 2 && firstTwo.every((s) => setWinner(s) === w)
@@ -470,7 +477,7 @@ function buildRoundRecap(league, round, inForm) {
         });
       const wentTheDistance = needsTiebreak(r) && !!tiebreakWinner(r.tb);
       const decidedByThirdSet = r.sets.length >= 3 && !!setWinner(r.sets[2]);
-      const entry = { teamName: winnerTeam.name, pairText, scoreText, opponentName: loserTeam.name };
+      const entry = { teamName: winnerTeam.name, pairText, scoreText, opponentName: loserTeam.name, winnerPlayers };
       if (straightSets) bigWins.push(entry);
       if (wentTheDistance || decidedByThirdSet) closeMatches.push(entry);
     });
@@ -479,7 +486,10 @@ function buildRoundRecap(league, round, inForm) {
   const potw = potwTallyForRound(league, round);
   const table = !isPairs ? computeStandings(league) : [];
 
-  const potwEntries = potw.winners.map((p) => ({ names: p.playerAName + " & " + p.playerBName, team: p.teamName }));
+  const potwEntries = potw.winners.map((p) => ({
+    names: p.playerAName + " & " + p.playerBName, team: p.teamName,
+    playerAId: p.playerAId, playerAName: p.playerAName, playerBId: p.playerBId, playerBName: p.playerBName, teamId: p.teamId,
+  }));
 
   const highlights = [];
   const lines = [];
@@ -493,18 +503,22 @@ function buildRoundRecap(league, round, inForm) {
   // `items` keeps each individual result as its own entry — a round with 5
   // rubbers that went the distance is 5 separate sentences, not one run-on
   // paragraph. `text` (all of them space-joined) sticks around only as the
-  // plain-text fallback for `body`; the News Room UI renders each of
-  // `items` on its own line instead of reading `text`.
+  // plain-text fallback for `body`. For bigwin/distance specifically, each
+  // item is a small object (not a plain string) carrying the winning
+  // pair's player ids so the News Room UI can link each name to their
+  // profile instead of just printing it — teamName is only set when it's
+  // worth showing alongside the pair (a teams-format league), same rule
+  // winFragment already applies for the plain-text version.
   if (bigWins.length) {
-    const items = bigWins.map((w) => winFragment(w) + ".");
-    const text = items.join(" ");
+    const text = bigWins.map((w) => winFragment(w) + ".").join(" ");
+    const items = bigWins.map((w) => ({ players: w.winnerPlayers, teamName: w.pairText ? w.teamName : null, scoreText: w.scoreText, opponentName: w.opponentName }));
     const short = (bigWins[0].pairText || bigWins[0].teamName) + " — " + bigWins[0].scoreText;
     highlights.push({ type: "bigwin", label: "Big win", text, items, short });
     lines.push("Big wins: " + text);
   }
   if (closeMatches.length) {
-    const items = closeMatches.map((w) => winFragment(w) + ".");
-    const text = items.join(" ");
+    const text = closeMatches.map((w) => winFragment(w) + ".").join(" ");
+    const items = closeMatches.map((w) => ({ players: w.winnerPlayers, teamName: w.pairText ? w.teamName : null, scoreText: w.scoreText, opponentName: w.opponentName }));
     const short = (closeMatches[0].pairText || closeMatches[0].teamName) + " — " + closeMatches[0].scoreText;
     highlights.push({ type: "distance", label: "Went the distance", text, items, short });
     lines.push("Went the distance: " + text);

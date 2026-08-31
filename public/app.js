@@ -5892,6 +5892,20 @@ function playerInitials(name) {
 // `leagueLabel` swaps the date-only byline for "League · date" in the
 // cross-league view; `onDelete`, if given, adds a delete control (in-league
 // admin view only — the cross-league view is read-only).
+// A player mention inside News Room links to their profile, same as
+// Results already does — but News Room can be viewed cross-league (the
+// homepage "News room" tab), where the global currentLeagueId is wrong or
+// unset, so every button carries its own league id rather than relying on
+// bindPlayerLinks' assumption that currentLeagueId is the right one.
+function newsPlayerLinkHtml(leagueId, ref) {
+  if (!ref || !ref.id || !leagueId) return escapeHtml(ref ? ref.name : "");
+  return `<button type="button" class="player-link" data-pid="${ref.id}" data-lid="${leagueId}">${escapeHtml(ref.name)}</button>`;
+}
+function bindNewsPlayerLinks(root) {
+  root.querySelectorAll(".player-link[data-lid]").forEach((btn) => {
+    btn.onclick = (e) => { e.stopPropagation(); openPlayerHistory(btn.dataset.lid, btn.dataset.pid); };
+  });
+}
 function newsPostCardHtml(p, leagueLabel) {
   const dateText = new Date(p.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   const byline = leagueLabel ? `${escapeHtml(leagueLabel)} · ${dateText}` : dateText;
@@ -5902,23 +5916,44 @@ function newsPostCardHtml(p, leagueLabel) {
       ${p.body ? `<p>${escapeHtml(p.body)}</p>` : ""}
     </div>`;
   }
+  // Cross-league posts (the homepage News Room tab) carry their own
+  // leagueId from /players/news; an in-league post relies on whichever
+  // league's page is currently open.
+  const lid = p.leagueId || currentLeagueId;
   const potw = p.potw || [];
   const roundLabel = leagueLabel ? escapeHtml(leagueLabel) : "Round " + p.round;
+  const potwNamesHtml = potw.map((x) =>
+    x.playerAId ? newsPlayerLinkHtml(lid, { id: x.playerAId, name: x.playerAName }) + " &amp; " + newsPlayerLinkHtml(lid, { id: x.playerBId, name: x.playerBName }) : escapeHtml(x.names)
+  ).join(", ");
   const heroInner = potw.length
-    ? `<p class="nr-potw-label">Pair of the week</p><div class="nr-potw-names">${potw.map((x) => escapeHtml(x.names)).join(", ")}</div><div class="nr-potw-team">${escapeHtml(potw.map((x) => x.team).join(", "))}</div>`
+    ? `<p class="nr-potw-label">Pair of the week</p><div class="nr-potw-names">${potwNamesHtml}</div><div class="nr-potw-team">${escapeHtml(potw.map((x) => x.team).join(", "))}</div>`
     : `<p class="nr-potw-label">${escapeHtml(p.title)}</p>`;
   // A category with several results (e.g. 5 rubbers that all went the
   // distance in one round) gets each on its own line — h.items, when
-  // present — instead of h.text's single run-on paragraph.
+  // present — instead of h.text's single run-on paragraph. bigwin/distance
+  // items are small objects (carrying the winning pair's player ids, so
+  // each name can link to their profile); upset/rough items are plain
+  // strings (team names only — nothing to link).
   const rows = (p.highlights || []).map((h) => {
-    const body = h.items && h.items.length
-      ? h.items.map((item) => `<div class="nr-row-item">${escapeHtml(item)}</div>`).join("")
-      : `<div class="nr-row-text">${escapeHtml(h.text)}</div>`;
+    let body;
+    if (h.items && h.items.length && typeof h.items[0] === "string") {
+      body = h.items.map((item) => `<div class="nr-row-item">${escapeHtml(item)}</div>`).join("");
+    } else if (h.items && h.items.length) {
+      body = h.items.map((item) => {
+        const namesHtml = item.players && item.players.length
+          ? item.players.map((pl) => newsPlayerLinkHtml(lid, pl)).join(" &amp; ")
+          : escapeHtml(item.teamName || "");
+        const teamSuffix = item.teamName && item.players && item.players.length ? ` (${escapeHtml(item.teamName)})` : "";
+        return `<div class="nr-row-item">${namesHtml}${teamSuffix} ${escapeHtml(item.scoreText)} beat ${escapeHtml(item.opponentName)}.</div>`;
+      }).join("");
+    } else {
+      body = `<div class="nr-row-text">${escapeHtml(h.text)}</div>`;
+    }
     return `<div class="nr-row"><div class="nr-row-label">${escapeHtml(h.label)}</div>${body}</div>`;
   }).join("");
   const formHtml = (p.inForm || []).length ? `<div class="nr-form">
       <p class="nr-form-label">In form right now</p>
-      <div class="nr-form-list">${p.inForm.map((f) => `<div class="nr-form-player"><div class="nr-form-avatar">${escapeHtml(playerInitials(f.name))}</div><div class="nr-form-name">${escapeHtml(f.name)}</div><div class="nr-form-team">${escapeHtml(f.team)}</div></div>`).join("")}</div>
+      <div class="nr-form-list">${p.inForm.map((f) => `<div class="nr-form-player"><div class="nr-form-avatar">${escapeHtml(playerInitials(f.name))}</div><div class="nr-form-name">${newsPlayerLinkHtml(lid, { id: f.playerId, name: f.name })}</div><div class="nr-form-team">${escapeHtml(f.team)}</div></div>`).join("")}</div>
     </div>` : "";
   return `<div class="nr-round" data-id="${p.id}">
     <div class="nr-hero">
@@ -5935,6 +5970,7 @@ async function renderNews() {
   const c = el("news-list");
   if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates posted yet.</p>'; return; }
   c.innerHTML = posts.map((p) => newsPostCardHtml(p)).join("");
+  bindNewsPlayerLinks(c);
   if (myRole === "admin") {
     c.querySelectorAll("[data-id]").forEach((div) => {
       const del = document.createElement("button"); del.className = "link"; del.textContent = "Delete"; del.style.margin = "8px 0 4px";
@@ -5952,6 +5988,7 @@ async function renderAccountNews() {
   const c = el("account-news-list");
   if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates yet from any league you play in.</p>'; return; }
   c.innerHTML = posts.map((p) => newsPostCardHtml(p, p.leagueName)).join("");
+  bindNewsPlayerLinks(c);
 }
 el("news-post-btn").onclick = async () => {
   const title = el("news-title").value.trim(), body = el("news-body").value.trim();
