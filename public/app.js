@@ -1436,6 +1436,7 @@ function fixturesForKey(key) {
   if (key.stage === "position") return league.playoffs ? league.playoffs.matches : [];
   return [];
 }
+const ROUND_OPEN_LEAD_DAYS = 5;
 function isRoundOpen(key) {
   if (!key) return false;
   if (key.stage === "regular") {
@@ -1444,7 +1445,11 @@ function isRoundOpen(key) {
     if (prev.length > 0 && prev.every((f) => f.finalized)) return true;
     if (league.allowRoundsByDate) {
       const sched = league.schedule && league.schedule["r" + key.round];
-      if (sched && sched.date && sched.date <= new Date().toISOString().slice(0, 10)) return true;
+      if (sched && sched.date) {
+        const opensOn = new Date(sched.date + "T00:00:00Z");
+        opensOn.setUTCDate(opensOn.getUTCDate() - ROUND_OPEN_LEAD_DAYS);
+        if (opensOn.toISOString().slice(0, 10) <= new Date().toISOString().slice(0, 10)) return true;
+      }
     }
     return false;
   }
@@ -2017,7 +2022,7 @@ function renderRulesCard() {
   roundsByDateLabel.appendChild(document.createTextNode("Let later rounds open by date, even with outstanding matches"));
   roundsByDateWrap.appendChild(roundsByDateLabel);
   c.appendChild(roundsByDateWrap);
-  c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: "Normally a round only opens once every match in the one before it is finalized. Turn this on and a round opens on its own scheduled date regardless — any match still unplayed gets flagged \"Match outstanding\" on Fixtures instead of quietly blocking the rest of the season." }));
+  c.appendChild(Object.assign(document.createElement("p"), { className: "note", style: "margin-top:6px;", textContent: `Normally a round only opens once every match in the one before it is finalized. Turn this on and a round opens ${ROUND_OPEN_LEAD_DAYS} days ahead of its own scheduled date regardless — giving teams time to set their line-up — and any match still unplayed gets flagged "Match outstanding" on Fixtures instead of quietly blocking the rest of the season.` }));
 
   // The "League admin login" panel on this page (Register/Log in) is a
   // single email+password slot scoped to just this league — separate from
@@ -3140,7 +3145,7 @@ function renderSelection() {
   }
   if (myRole !== "admin" && !isRoundOpen(viewingKey)) {
     const msg = league.allowRoundsByDate
-      ? "This round opens once the previous round is finalized, or on its own scheduled date — whichever comes first."
+      ? `This round opens once the previous round is finalized, or ${ROUND_OPEN_LEAD_DAYS} days before its own scheduled date — whichever comes first.`
       : "This round opens once the previous round is finalized.";
     c.innerHTML = `<div class="card"><p class="empty">${escapeHtml(msg)}</p></div>`;
     return;

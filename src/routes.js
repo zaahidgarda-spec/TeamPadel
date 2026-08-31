@@ -282,11 +282,16 @@ function leagueStatus(l) {
 }
 // A round normally only opens once every fixture in the previous round is
 // finalized. With allowRoundsByDate on, an admin can let the calendar
-// override that — once this round's own scheduled date has arrived, it
-// opens regardless, so one postponed/outstanding match doesn't freeze
-// every other team's season. Any match left unfinalized behind an
-// already-open later round is what the "outstanding" labeling elsewhere
-// (Fixtures) is watching for.
+// override that — teams can start submitting selections once this round's
+// own scheduled date is within ROUND_OPEN_LEAD_DAYS, not just on the day
+// itself, since a captain needs a few days' notice to actually organize a
+// line-up. This still doesn't touch whether the round's own matches can be
+// SCORED — that always needs both teams' fixture to actually exist and
+// selections in, regardless of the previous round. One postponed/
+// outstanding match doesn't freeze every other team's season. Any match
+// left unfinalized behind an already-open later round is what the
+// "outstanding" labeling elsewhere (Fixtures) is watching for.
+const ROUND_OPEN_LEAD_DAYS = 5;
 function isRoundOpen(league, fixture) {
   if (fixture.stage === "regular") {
     if (fixture.round === 1) return true;
@@ -294,7 +299,11 @@ function isRoundOpen(league, fixture) {
     if (prev.length > 0 && prev.every((f) => f.finalized)) return true;
     if (league.allowRoundsByDate) {
       const sched = league.schedule && league.schedule["r" + fixture.round];
-      if (sched && sched.date && sched.date <= new Date().toISOString().slice(0, 10)) return true;
+      if (sched && sched.date) {
+        const opensOn = new Date(sched.date + "T00:00:00Z");
+        opensOn.setUTCDate(opensOn.getUTCDate() - ROUND_OPEN_LEAD_DAYS);
+        if (opensOn.toISOString().slice(0, 10) <= new Date().toISOString().slice(0, 10)) return true;
+      }
     }
     return false;
   }
