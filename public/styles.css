@@ -1119,27 +1119,28 @@ nav.tabs::-webkit-scrollbar{display:none;}
    on the site, a vertical list here would push "Leagues" much further down
    the homepage than a quick scan wants. */
 .potw-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:2px;margin:0 -18px;padding-left:18px;padding-right:18px;}
-/* Same dark, etched-court-line "floodlit" treatment as .floodlit.urgent /
-   .interesting-card elsewhere on this homepage — every Pair of the Week
-   card gets it regardless of whether the team has a logo, so this strip
-   and Interesting This Week right above it finally read as one visual
-   family instead of two unrelated card styles. A logo, when there is
-   one, is a small badge in the corner — never blown up full-bleed, so
-   there's no pixelation or pale-logo legibility problem to solve. */
+/* "Gold Rare" — modeled on FIFA Ultimate Team's gold/rare item foil, not
+   the team's own logo or photo. A gold-to-bronze gradient plus a diagonal
+   shine sweep signals "this one's special" the way an award/trophy does,
+   which a court photo or a blurred logo never quite managed — and unlike
+   either of those, it looks equally good regardless of a team's logo
+   resolution or color, since the background never depends on it. The
+   logo, when there is one, is still a small sharp badge in the corner. */
 .potw-card{position:relative;flex-shrink:0;width:150px;border-radius:var(--radius);padding:14px 12px;text-align:center;overflow:hidden;
-  background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));border:1px solid rgba(96,150,255,.25);box-shadow:0 0 0 1px rgba(96,150,255,.08);}
-.potw-card::before{content:"";position:absolute;inset:0;pointer-events:none;
-  background:radial-gradient(120% 70% at 50% -10%,rgba(37,99,235,.32),transparent 60%);}
-.potw-card::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.14;
-  background-image:linear-gradient(0deg,transparent 12%,#7FA8FF 12%,#7FA8FF 12.8%,transparent 12.8%),linear-gradient(0deg,transparent 88%,#7FA8FF 88%,#7FA8FF 88.8%,transparent 88.8%);}
-.potw-badge{width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid rgba(127,168,255,.4);position:absolute;top:10px;right:10px;background:rgba(255,255,255,.08);}
+  background:linear-gradient(155deg,#FFF3C4 0%,#E8B84B 32%,#B9822A 62%,#7A4F16 100%);
+  border:1px solid #FFE9A8;box-shadow:0 0 0 1px rgba(120,80,10,.4),0 8px 20px rgba(90,60,10,.3);}
+.potw-card::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.55) 48%,transparent 56%);background-size:250% 250%;}
+.potw-card::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(40,24,4,.05),rgba(40,24,4,.5) 72%,rgba(40,24,4,.65));}
+.potw-badge{width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid #FFF3C4;position:absolute;top:10px;right:10px;box-shadow:0 2px 6px rgba(0,0,0,.4);background:#fff;}
 .potw-crown{font-size:20px;line-height:1;margin-bottom:8px;position:relative;}
 .potw-avatars{display:flex;justify-content:center;margin-bottom:10px;position:relative;}
-.potw-avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;border:2px solid rgba(127,168,255,.3);}
-.potw-avatar+.potw-avatar{margin-left:-10px;background:rgba(127,168,255,.22);}
-.potw-names{font-family:var(--font-display);font-size:13px;font-weight:600;line-height:1.3;margin-bottom:4px;position:relative;color:#F2F6FF;text-shadow:0 0 14px rgba(120,165,255,.4);}
-.potw-team{font-size:10.5px;position:relative;color:#B7C4E6;}
-.potw-league{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;position:relative;color:#8FB4FF;}
+.potw-avatar{width:34px;height:34px;border-radius:50%;background:rgba(122,79,22,.5);color:#FFF3C4;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;border:1px solid #FFE9A8;}
+.potw-avatar+.potw-avatar{margin-left:-10px;background:rgba(122,79,22,.7);}
+.potw-names{font-family:var(--font-display);font-size:13px;font-weight:700;line-height:1.3;margin-bottom:4px;position:relative;color:#3A2404;}
+.potw-team{font-size:10.5px;position:relative;color:#4A2F08;}
+.potw-league{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;position:relative;color:#5C3B0C;}
 
 /* A horizontal card strip, same idea as the pairs-of-the-week row right
    above it — the two read as one visual family. Scrolling does most of the
