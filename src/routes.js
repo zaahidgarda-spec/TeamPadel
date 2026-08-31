@@ -601,7 +601,7 @@ router.get("/homepage/highlights", (req, res) => {
   // cap on auto-generated ones — they were deliberately added, not just
   // whatever happened to be most recent.
   const manualHighlights = (extras.manual || []).slice().sort((a, b) => b.createdAt - a.createdAt)
-    .map((m) => ({ type: "manual", label: "Added by admin", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id }));
+    .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id }));
   res.json({ potw, highlights: manualHighlights.concat(autoHighlights.slice(0, 9)) });
 });
 
