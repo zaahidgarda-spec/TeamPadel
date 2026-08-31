@@ -1110,14 +1110,24 @@ nav.tabs::-webkit-scrollbar{display:none;}
    on the site, a vertical list here would push "Leagues" much further down
    the homepage than a quick scan wants. */
 .potw-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:2px;margin:0 -18px;padding-left:18px;padding-right:18px;}
-.potw-card{flex-shrink:0;width:150px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 12px;text-align:center;}
+.potw-card{position:relative;flex-shrink:0;width:150px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 12px;text-align:center;overflow:hidden;}
+/* The winning team's logo, when there is one, fills the card sharp and
+   full-bleed; .potw-glass sits over it as a translucent, blurred pane
+   (backdrop-filter blurs what's BEHIND it, not its own content) — the
+   logo reads as frosted glass, the text on top of it stays crisp. */
+.potw-card.has-logo{background-size:cover;background-position:center;border-color:transparent;}
+.potw-glass{position:absolute;inset:0;background:rgba(9,13,24,.58);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);}
+.potw-content{position:relative;}
 .potw-crown{font-size:20px;line-height:1;margin-bottom:8px;}
 .potw-avatars{display:flex;justify-content:center;margin-bottom:10px;}
 .potw-avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;border:2px solid var(--panel-2);}
 .potw-avatar+.potw-avatar{margin-left:-10px;background:#1c2f52;}
+.has-logo .potw-avatar{border-color:rgba(255,255,255,.4);}
 .potw-names{font-family:var(--font-display);font-size:13px;font-weight:600;line-height:1.3;margin-bottom:4px;}
 .potw-team{font-size:10.5px;color:var(--text-dim);}
 .potw-league{font-size:9.5px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;}
+.has-logo .potw-names,.has-logo .potw-team{color:#F2F6FF;}
+.has-logo .potw-league{color:#8FB4FF;}
 
 /* A horizontal card strip, same idea as the pairs-of-the-week row right
    above it — the two read as one visual family. Scrolling does most of the

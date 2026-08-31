@@ -560,7 +560,10 @@ router.get("/homepage/highlights", (req, res) => {
       .filter((p) => p.auto)
       .sort((a, b) => b.round - a.round)[0];
     if (!latest) return;
-    (latest.potw || []).forEach((p) => potw.push({ names: p.names, team: p.team, leagueId: league.id, leagueName: league.name }));
+    (latest.potw || []).forEach((p) => {
+      const team = p.teamId ? league.teams.find((t) => t.id === p.teamId) : null;
+      potw.push({ names: p.names, team: p.team, leagueId: league.id, leagueName: league.name, teamLogo: team ? team.logo || "" : "" });
+    });
     (latest.highlights || []).forEach((h) => {
       if (h.type === "quiet") return;
       const dismissKey = league.id + ":" + latest.round + ":" + h.type;
