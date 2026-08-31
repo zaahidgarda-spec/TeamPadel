@@ -349,11 +349,12 @@ async function renderHomepageHighlights() {
   if (potw.length) {
     el("homepage-potw-strip").innerHTML = potw.map((p) => {
       const avatars = p.names.split(" & ").map((n) => `<div class="potw-avatar">${escapeHtml(playerInitials(n))}</div>`).join("");
-      // Gold-foil "Rare" card treatment (see .potw-card in styles.css) —
-      // every card gets the same gold gradient regardless of whether the
-      // team has a logo, so it always looks finished. A logo, when there
-      // is one, is just a small corner badge — never blown up full-bleed,
-      // so there's no pixelation or pale-logo legibility problem to patch.
+      // Gold-foil "Rare" card, white body + gold trim (see .potw-card in
+      // styles.css) — every card gets the same treatment regardless of
+      // whether the team has a logo, so it always looks finished. A logo,
+      // when there is one, is just a small corner badge — never blown up
+      // full-bleed, so there's no pixelation or pale-logo legibility
+      // problem to patch.
       const badge = p.teamLogo ? `<img class="potw-badge" src="${p.teamLogo}" alt="">` : "";
       return `<div class="potw-card">
         ${badge}

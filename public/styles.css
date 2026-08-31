@@ -1119,28 +1119,25 @@ nav.tabs::-webkit-scrollbar{display:none;}
    on the site, a vertical list here would push "Leagues" much further down
    the homepage than a quick scan wants. */
 .potw-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:2px;margin:0 -18px;padding-left:18px;padding-right:18px;}
-/* "Gold Rare" — modeled on FIFA Ultimate Team's gold/rare item foil, not
-   the team's own logo or photo. A gold-to-bronze gradient plus a diagonal
-   shine sweep signals "this one's special" the way an award/trophy does,
-   which a court photo or a blurred logo never quite managed — and unlike
-   either of those, it looks equally good regardless of a team's logo
-   resolution or color, since the background never depends on it. The
-   logo, when there is one, is still a small sharp badge in the corner. */
+/* "Gold Rare" trim — a plain white card, same body as every other card
+   on the site, with a thin gold foil border and gold league label as the
+   only "this one's special" signal. Quietest of the variations tried —
+   looks equally good regardless of a team's logo resolution or colour
+   since the background never depends on it. The crown sits as its own
+   corner badge, top left, mirroring the logo badge (when there is one)
+   top right, rather than stacked in the text flow. */
 .potw-card{position:relative;flex-shrink:0;width:150px;border-radius:var(--radius);padding:14px 12px;text-align:center;overflow:hidden;
-  background:linear-gradient(155deg,#FFF3C4 0%,#E8B84B 32%,#B9822A 62%,#7A4F16 100%);
-  border:1px solid #FFE9A8;box-shadow:0 0 0 1px rgba(120,80,10,.4),0 8px 20px rgba(90,60,10,.3);}
-.potw-card::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
-  background-image:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.55) 48%,transparent 56%);background-size:250% 250%;}
-.potw-card::after{content:"";position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(180deg,rgba(40,24,4,.05),rgba(40,24,4,.5) 72%,rgba(40,24,4,.65));}
-.potw-badge{width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid #FFF3C4;position:absolute;top:10px;right:10px;box-shadow:0 2px 6px rgba(0,0,0,.4);background:#fff;}
-.potw-crown{font-size:20px;line-height:1;margin-bottom:8px;position:relative;}
-.potw-avatars{display:flex;justify-content:center;margin-bottom:10px;position:relative;}
-.potw-avatar{width:34px;height:34px;border-radius:50%;background:rgba(122,79,22,.5);color:#FFF3C4;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;border:1px solid #FFE9A8;}
-.potw-avatar+.potw-avatar{margin-left:-10px;background:rgba(122,79,22,.7);}
-.potw-names{font-family:var(--font-display);font-size:13px;font-weight:700;line-height:1.3;margin-bottom:4px;position:relative;color:#3A2404;}
-.potw-team{font-size:10.5px;position:relative;color:#4A2F08;}
-.potw-league{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;position:relative;color:#5C3B0C;}
+  background:var(--panel);border:1.5px solid #E8B84B;box-shadow:0 4px 14px rgba(18,32,58,.12);}
+.potw-card::before{content:"";position:absolute;left:6px;right:6px;top:6px;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,#E8B84B,transparent);}
+.potw-badge{width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid #E8B84B;position:absolute;top:9px;right:10px;box-shadow:0 2px 5px rgba(150,120,30,.2);background:#fff;}
+.potw-crown{position:absolute;top:8px;left:10px;font-size:17px;line-height:1;}
+.potw-avatars{display:flex;justify-content:center;margin:22px 0 10px;position:relative;}
+.potw-avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;border:2px solid var(--panel);}
+.potw-avatar+.potw-avatar{margin-left:-10px;background:#1c2f52;}
+.potw-names{font-family:var(--font-display);font-size:13px;font-weight:600;line-height:1.3;margin-bottom:4px;position:relative;color:var(--text);}
+.potw-team{font-size:10.5px;position:relative;color:var(--text-dim);}
+.potw-league{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;position:relative;color:#A6791B;}
 
 /* A horizontal card strip, same idea as the pairs-of-the-week row right
    above it — the two read as one visual family. Scrolling does most of the
