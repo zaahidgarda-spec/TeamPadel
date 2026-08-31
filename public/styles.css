@@ -813,6 +813,15 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .notif-msg{font-size:14px;color:var(--text-dim);flex:1;}
 .notif-time{font-size:11px;color:var(--text-dim);white-space:nowrap;}
 
+/* ---------- Admin change history (view-only audit log) ---------- */
+.audit-row{padding:12px 4px;border-bottom:1px solid var(--line);}
+.audit-row:last-child{border-bottom:none;}
+.audit-row-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.audit-action{font-size:13px;font-weight:600;color:var(--text);}
+.audit-fixture{font-size:12px;color:var(--text-dim);flex:1;}
+.audit-row-detail{font-size:13px;color:var(--text-dim);margin-top:4px;}
+.audit-row-actor{font-size:11px;color:var(--text-dim);margin-top:4px;font-style:italic;}
+
 /* A player-search result reads as a person's card — avatar, name, where
    they play — not a bare text row, whether it's the claim-search in My
    Profile or the read-only "Search players" tab. */

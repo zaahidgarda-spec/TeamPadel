@@ -115,6 +115,44 @@ function notify(league, teamId, type, message, extra) {
     sendMail({ to: team.notifyEmail, subject: league.name + ": " + type, text: message }).catch(() => {});
   }
 }
+
+// Who's making this change, for the audit log below — resolved the same
+// way isAdminSession does, just rendered as a readable label instead of
+// a boolean.
+function auditActor(req, league) {
+  if (isOwnerSession(req)) return "Owner";
+  const u = req.session.user;
+  if (u && u.leagueId === league.id) {
+    if (u.role === "admin") return "League admin";
+    if (u.role === "captain") {
+      const team = league.teams.find((t) => t.id === u.teamId);
+      return "Captain — " + (team ? team.name : "unknown team");
+    }
+  }
+  return "Unknown";
+}
+// A view-only history of score edits, finalize/unlock, and substitutions —
+// so a dispute like "this result changed and nobody knows who did it" can
+// actually be traced. Deliberately not revertible: this just records what
+// happened, restoring an old value is a manual re-entry same as any other
+// edit. Capped so a very active league's log can't grow unbounded.
+const AUDIT_LOG_MAX = 1000;
+function logAudit(league, req, f, action, detail) {
+  if (!league.auditLog) league.auditLog = [];
+  league.auditLog.push({
+    id: logic.uid(),
+    ts: Date.now(),
+    actor: auditActor(req, league),
+    action,
+    round: f ? f.round : null,
+    fixtureId: f ? f.id : null,
+    fixtureLabel: f ? fixtureLabel(league, f) : null,
+    ...detail,
+  });
+  if (league.auditLog.length > AUDIT_LOG_MAX) {
+    league.auditLog.splice(0, league.auditLog.length - AUDIT_LOG_MAX);
+  }
+}
 // Creates (or, if one already exists for this round, refreshes) the
 // auto-generated round wrap-up in News Room. Refreshing rather than
 // reposting matters because Pair of the Week voting only opens once the
@@ -261,7 +299,7 @@ function sanitize(league, req) {
     });
   }
 
-  const { adminPasswordHash, potwVotes, potwNotified, ...leagueRest } = league;
+  const { adminPasswordHash, potwVotes, potwNotified, auditLog, ...leagueRest } = league;
   return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote };
 }
 function sanitizeOne(f, isAdmin, teamId) {
@@ -2371,6 +2409,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock", requireAd
   const side = req.body.side;
   const selKey = side === "A" ? "selectionA" : "selectionB";
   f[selKey].submitted = false;
+  logAudit(league, req, f, "selection_unlock", { side });
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -2413,6 +2452,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/confirm", (
   const selKey = by === "A" ? "selectionA" : "selectionB";
   f[selKey].submitted = false;
   f.selectionUnlockRequest = null;
+  logAudit(league, req, f, "selection_unlock", { side: by, approvedByOpponent: true });
   const requesterTeamId = by === "A" ? f.teamA : f.teamB;
   notify(league, requesterTeamId, "selection_unlock", `Your request to revise your line-up for ${fixtureLabel(league, f)} was approved — you can resubmit now.`, { round: f.round });
   store.saveLeague(league.id, league);
@@ -2506,6 +2546,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req,
   const label = fixtureLabel(league, f);
   const oppTeamId = side === "A" ? f.teamB : f.teamA;
   notify(league, oppTeamId, "selection", `${team.name} made a substitution for ${label}: ${inName} is in for ${outName}.`);
+  logAudit(league, req, f, "substitute", { side, seedIdx: idx, teamName: team.name, outName, inName });
 
   store.saveLeague(league.id, league);
   res.json({ ok: true, pairs: sel.pairs });
@@ -2525,8 +2566,13 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
   if (f.finalized && !isAdmin) return res.status(400).json({ error: "This fixture is finalized — ask the admin to unlock it." });
   if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
 
+  const before = { sets: f.rubbers[idx].sets, tb: f.rubbers[idx].tb };
   if (req.body.sets) f.rubbers[idx].sets = req.body.sets;
   if (req.body.tb) f.rubbers[idx].tb = req.body.tb;
+  const after = { sets: f.rubbers[idx].sets, tb: f.rubbers[idx].tb };
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    logAudit(league, req, f, "score_edit", { seedIdx: idx, before, after, wasFinalized: f.finalized });
+  }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -2541,6 +2587,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
   if (!logic.requiredRubbersOk(f, league.format === "pairs")) return res.status(400).json({ error: "Enter a full score before finalizing." });
   f.finalized = true;
+  logAudit(league, req, f, "finalize", {});
   syncPlayoffs(league);
 
   // Once every regular-round fixture for this round is in, Pair of the Week
@@ -2719,8 +2766,19 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/unlock", (req, res) => {
   const isPlayer = league.format === "pairs" && u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
   f.finalized = false;
+  logAudit(league, req, f, "unlock", {});
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+router.get("/leagues/:leagueId/audit-log", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const round = req.query.round ? Number(req.query.round) : null;
+  let entries = league.auditLog || [];
+  if (round) entries = entries.filter((e) => e.round === round);
+  entries = entries.slice().sort((a, b) => b.ts - a.ts).slice(0, 300);
+  res.json({ entries });
 });
 
 router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => {

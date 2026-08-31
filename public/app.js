@@ -1774,6 +1774,62 @@ function renderAdmin() {
   renderAdminRoster();
   renderAdminFixtures();
   renderAdminSponsors();
+  renderAdminAuditLog();
+}
+// View-only change history for this league — who edited a score, finalized
+// or unlocked a fixture, or subbed a player, and when. Not revertible; this
+// is purely so a disputed result ("this changed and nobody knows who did
+// it") can actually be traced back.
+const AUDIT_ACTION_LABEL = {
+  score_edit: "Score edited",
+  finalize: "Fixture finalized",
+  unlock: "Fixture unlocked",
+  selection_unlock: "Line-up reopened",
+  substitute: "Player substituted",
+};
+function auditScoreText(snap) {
+  if (!snap || !snap.sets) return "—";
+  const text = rubberScoreText(snap);
+  return text || "no score yet";
+}
+function auditEntryDetailHtml(e) {
+  if (e.action === "score_edit") {
+    return `Seed ${e.seedIdx + 1}: <strong>${escapeHtml(auditScoreText(e.before))}</strong> → <strong>${escapeHtml(auditScoreText(e.after))}</strong>${e.wasFinalized ? " (fixture was already finalized)" : ""}`;
+  }
+  if (e.action === "substitute") {
+    return `${escapeHtml(e.teamName || "")}: <strong>${escapeHtml(e.inName || "")}</strong> in for <strong>${escapeHtml(e.outName || "")}</strong> (seed ${(e.seedIdx || 0) + 1})`;
+  }
+  if (e.action === "selection_unlock") {
+    return `Side ${escapeHtml(e.side || "")}${e.approvedByOpponent ? " — approved by opponent captain" : ""}`;
+  }
+  return "";
+}
+async function renderAdminAuditLog() {
+  const container = el("admin-audit-log-list");
+  if (!container) return;
+  container.innerHTML = `<p class="note">Loading…</p>`;
+  let entries;
+  try {
+    ({ entries } = await api(`/leagues/${currentLeagueId}/audit-log`));
+  } catch (e) {
+    container.innerHTML = `<p class="note">Couldn't load history.</p>`;
+    return;
+  }
+  if (!entries.length) {
+    container.innerHTML = `<p class="note">No changes recorded yet — this log started tracking from today onward, so anything before this won't appear here.</p>`;
+    return;
+  }
+  container.innerHTML = entries.map((e) => `
+    <div class="audit-row">
+      <div class="audit-row-top">
+        <span class="audit-action">${escapeHtml(AUDIT_ACTION_LABEL[e.action] || e.action)}</span>
+        <span class="audit-fixture">${escapeHtml(e.fixtureLabel || "")}</span>
+        <time class="notif-time">${fmtDateTime(e.ts)}</time>
+      </div>
+      <div class="audit-row-detail">${auditEntryDetailHtml(e)}</div>
+      <div class="audit-row-actor">by ${escapeHtml(e.actor)}</div>
+    </div>
+  `).join("");
 }
 function renderAdminGroups() {
   const list = el("admin-groups-list");
