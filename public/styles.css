@@ -1132,7 +1132,9 @@ nav.tabs::-webkit-scrollbar{display:none;}
   background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));}
 .interesting-card::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.12;
   background-image:linear-gradient(0deg,transparent 12%,#7FA8FF 12%,#7FA8FF 12.8%,transparent 12.8%),linear-gradient(0deg,transparent 88%,#7FA8FF 88%,#7FA8FF 88.8%,transparent 88.8%);}
-.interesting-label{position:relative;font-family:var(--font-display);font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:#7FA8FF;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid rgba(127,168,255,.22);}
+.interesting-label-row{position:relative;display:flex;align-items:center;gap:6px;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid rgba(127,168,255,.22);}
+.interesting-label{font-family:var(--font-display);font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:#7FA8FF;}
+.interesting-logo{width:16px;height:16px;border-radius:50%;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,.12);}
 .interesting-phrase{position:relative;font-size:12.5px;font-weight:600;line-height:1.4;color:#F2F6FF;margin-bottom:9px;}
 .interesting-league{position:relative;font-size:9px;color:#9FB0D6;text-transform:uppercase;letter-spacing:.05em;font-family:var(--font-display);font-weight:600;}
 .interesting-more,.interesting-add{flex-shrink:0;width:90px;border:1px dashed var(--line);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;background:none;font-family:var(--font-body);}

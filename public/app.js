@@ -371,7 +371,8 @@ async function renderHomepageHighlights() {
   const cardHtml = (h, hidden) => {
     const removeBtn = isOwner ? `<button class="interesting-remove" type="button" aria-label="Remove">&times;</button>` : "";
     const dataAttrs = h.manualId ? ` data-manual-id="${h.manualId}"` : ` data-league-id="${h.leagueId}" data-round="${h.round}" data-type="${h.type}"`;
-    return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"${dataAttrs}>${removeBtn}<div class="interesting-label">${escapeHtml(h.label)}</div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
+    const logoHtml = h.teamLogo ? `<img class="interesting-logo" src="${h.teamLogo}" alt="">` : "";
+    return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"${dataAttrs}>${removeBtn}<div class="interesting-label-row">${logoHtml}<span class="interesting-label">${escapeHtml(h.label)}</span></div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
   };
   const hiddenCount = Math.max(0, highlights.length - shownUpfront);
   const moreTile = hiddenCount
@@ -5682,12 +5683,16 @@ function mostCommonSeed(rows) {
 // Groups a player's match history by a key derived from each row (partner
 // name, or the joined opponent-pair name) into a W/L/D record — used for
 // both "Best partners" and "Head-to-head", the same shape either way.
-function groupedRecords(rows, keyFn) {
+// `logoFn`, if given, captures one representative extra value (the
+// opponent team's logo) from whichever row first creates that key's
+// bucket — every row sharing an exact key is the same real opponent team
+// in practice, so the first row's logo stands for the whole group.
+function groupedRecords(rows, keyFn, logoFn) {
   const byKey = {};
   rows.forEach((r) => {
     const key = keyFn(r);
     if (!key) return;
-    if (!byKey[key]) byKey[key] = { name: key, played: 0, won: 0, lost: 0, drawn: 0 };
+    if (!byKey[key]) byKey[key] = { name: key, played: 0, won: 0, lost: 0, drawn: 0, logo: logoFn ? logoFn(r) : "" };
     const s = byKey[key];
     s.played++;
     if (r.result === "W") s.won++;
@@ -5699,7 +5704,8 @@ function groupedRecords(rows, keyFn) {
 function insightRowsHtml(records) {
   return records.map((r) => {
     const wl = `${r.won}W${r.drawn ? " " + r.drawn + "D" : ""} ${r.lost}L`;
-    return `<div class="stat-row"><span>${escapeHtml(r.name)}</span><span class="pts">${wl} &middot; ${r.winPct}%</span></div>`;
+    const logoHtml = r.logo !== undefined ? avatarHtml({ logo: r.logo, name: r.name }) : "";
+    return `<div class="stat-row">${logoHtml}<span${logoHtml ? ' style="flex:1;margin-left:8px;"' : ""}>${escapeHtml(r.name)}</span><span class="pts">${wl} &middot; ${r.winPct}%</span></div>`;
   }).join("");
 }
 // The modal is one player's record, but that record can span several
@@ -5833,7 +5839,7 @@ function renderPlayerHistoryBody(data) {
     if (partners.length) html += `<p class="modal-subhead">Best partners</p>${insightRowsHtml(partners)}`;
   }
 
-  const opponents = groupedRecords(rows, (r) => (r.opponentPlayers && r.opponentPlayers.length ? r.opponentPlayers.join(" & ") : null))
+  const opponents = groupedRecords(rows, (r) => (r.opponentPlayers && r.opponentPlayers.length ? r.opponentPlayers.join(" & ") : null), (r) => r.opponentTeamLogo)
     .filter((s) => s.played >= MIN_MEETINGS)
     .sort((a, b) => a.winPct - b.winPct || b.played - a.played)
     .slice(0, 3);
@@ -5843,7 +5849,8 @@ function renderPlayerHistoryBody(data) {
   rows.forEach((r) => {
     const badgeCls = r.result === "W" ? "win" : r.result === "D" ? "draw" : "loss";
     const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
-    html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}${ratingDeltaHtml(r.ratingDelta)}</div></div>`;
+    const oppLogoHtml = avatarHtml({ logo: r.opponentTeamLogo, name: r.opponentTeam });
+    html += `<div class="history-row"><div class="history-top">${oppLogoHtml}<span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}${ratingDeltaHtml(r.ratingDelta)}</div></div>`;
   });
   return { statsHtml, bodyHtml: html };
 }

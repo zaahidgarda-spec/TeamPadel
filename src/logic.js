@@ -485,8 +485,8 @@ function buildRoundRecap(league, round) {
     if (!teamA || !teamB) return;
     if (!isPairs) {
       const { winsA, winsB } = fixtureScore(f);
-      if (winsA <= 1 && winsB >= 3) roughNights.push({ team: teamA.name, against: teamB.name, winsFor: winsA, winsAgainst: winsB });
-      if (winsB <= 1 && winsA >= 3) roughNights.push({ team: teamB.name, against: teamA.name, winsFor: winsB, winsAgainst: winsA });
+      if (winsA <= 1 && winsB >= 3) roughNights.push({ team: teamA.name, teamId: teamA.id, against: teamB.name, winsFor: winsA, winsAgainst: winsB });
+      if (winsB <= 1 && winsA >= 3) roughNights.push({ team: teamB.name, teamId: teamB.id, against: teamA.name, winsFor: winsB, winsAgainst: winsA });
       const winner = matchWinner(f);
       if (priorHasForm && winner) {
         const winnerTeam = winner === "A" ? teamA : teamB, loserTeam = winner === "A" ? teamB : teamA;
@@ -494,7 +494,7 @@ function buildRoundRecap(league, round) {
         // Higher array index = further down the table — the winner being
         // ranked below the team they just beat is the "surprising" part.
         if (winnerRank !== undefined && loserRank !== undefined && winnerRank > loserRank) {
-          upsets.push({ winner: winnerTeam.name, winnerRank: winnerRank + 1, loser: loserTeam.name, loserRank: loserRank + 1 });
+          upsets.push({ winner: winnerTeam.name, winnerId: winnerTeam.id, winnerRank: winnerRank + 1, loser: loserTeam.name, loserRank: loserRank + 1 });
         }
       }
     }
@@ -525,7 +525,7 @@ function buildRoundRecap(league, round) {
         });
       const wentTheDistance = needsTiebreak(r) && !!tiebreakWinner(r.tb);
       const decidedByThirdSet = r.sets.length >= 3 && !!setWinner(r.sets[2]);
-      const entry = { teamName: winnerTeam.name, pairText, scoreText, opponentName: loserTeam.name, winnerPlayers };
+      const entry = { teamName: winnerTeam.name, teamId: winnerTeam.id, pairText, scoreText, opponentName: loserTeam.name, winnerPlayers };
       if (straightSets) bigWins.push(entry);
       if (wentTheDistance || decidedByThirdSet) closeMatches.push(entry);
     });
@@ -561,34 +561,34 @@ function buildRoundRecap(league, round) {
     const text = bigWins.map((w) => winFragment(w) + ".").join(" ");
     const items = bigWins.map((w) => ({ players: w.winnerPlayers, teamName: w.pairText ? w.teamName : null, scoreText: w.scoreText, opponentName: w.opponentName }));
     const short = (bigWins[0].pairText || bigWins[0].teamName) + " — " + bigWins[0].scoreText;
-    highlights.push({ type: "bigwin", label: "Big win", text, items, short });
+    highlights.push({ type: "bigwin", label: "Big win", text, items, short, teamId: bigWins[0].teamId });
     lines.push("Big wins: " + text);
   }
   if (closeMatches.length) {
     const text = closeMatches.map((w) => winFragment(w) + ".").join(" ");
     const items = closeMatches.map((w) => ({ players: w.winnerPlayers, teamName: w.pairText ? w.teamName : null, scoreText: w.scoreText, opponentName: w.opponentName }));
     const short = (closeMatches[0].pairText || closeMatches[0].teamName) + " — " + closeMatches[0].scoreText;
-    highlights.push({ type: "distance", label: "Went the distance", text, items, short });
+    highlights.push({ type: "distance", label: "Went the distance", text, items, short, teamId: closeMatches[0].teamId });
     lines.push("Went the distance: " + text);
   }
   if (upsets.length) {
     const items = upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").");
     const text = items.join(" ");
     const short = upsets[0].winner + " upset " + upsets[0].loser;
-    highlights.push({ type: "upset", label: "Surprising result", text, items, short });
+    highlights.push({ type: "upset", label: "Surprising result", text, items, short, teamId: upsets[0].winnerId });
     lines.push("Surprising result: " + text);
   }
   if (roughNights.length) {
     const items = roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".");
     const text = items.join(" ");
     const short = roughNights[0].team + " — rough night";
-    highlights.push({ type: "rough", label: "Rough night", text, items, short });
+    highlights.push({ type: "rough", label: "Rough night", text, items, short, teamId: roughNights[0].teamId });
     lines.push("Rough night: " + text);
   }
   if (table.length) {
     const text = table[0].name + ".";
     const short = table[0].name + " — top of the table";
-    highlights.push({ type: "table", label: "Top of the table", text, short });
+    highlights.push({ type: "table", label: "Top of the table", text, short, teamId: table[0].id });
     lines.push("Top of the table: " + text);
   }
   const inFormList = inLeagueFormLeaders(league, round);
@@ -866,6 +866,8 @@ function playerMatchHistory(league, playerId, ratingsData) {
       rows.push({
         label: stageLabel(league, f),
         opponentTeam: oppTeam ? oppTeam.name : "?",
+        opponentTeamId: oppTeam ? oppTeam.id : null,
+        opponentTeamLogo: oppTeam ? oppTeam.logo || "" : "",
         opponentPlayers: oppNames,
         partner: partner ? partner.name : null,
         result: winner === null ? "D" : winner === mySide ? "W" : "L",

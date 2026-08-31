@@ -559,7 +559,8 @@ router.get("/homepage/highlights", (req, res) => {
       // `short` is a recent addition — a post saved before it existed won't
       // have one, so fall back to the (longer) News Room text rather than
       // showing a blank card.
-      autoHighlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, round: latest.round, createdAt: latest.createdAt });
+      const team = h.teamId ? league.teams.find((t) => t.id === h.teamId) : null;
+      autoHighlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, round: latest.round, createdAt: latest.createdAt, teamLogo: team ? team.logo || "" : "" });
     });
   });
   autoHighlights.sort((a, b) => b.createdAt - a.createdAt);
