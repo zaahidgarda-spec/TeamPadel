@@ -759,11 +759,24 @@
          hub too — e.g. the Search players tab and admin combine, which
          have no league open at all. -->
     <div id="player-modal-backdrop" class="modal-backdrop">
-      <div class="modal-box">
+      <div class="modal-box player-modal-box">
         <button class="modal-close" id="player-modal-close" aria-label="Close">&times;</button>
-        <h3 id="player-modal-name" class="modal-title"></h3>
-        <nav class="tabs tabs-sub" id="player-modal-league-tabs" style="display:none;margin-bottom:14px;"></nav>
-        <div id="player-modal-body"></div>
+        <div class="p-hero">
+          <div class="p-photo-wrap">
+            <div id="player-modal-photo-slot"></div>
+            <label class="p-edit-badge" id="player-modal-photo-edit" style="display:none;" title="Change photo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <input type="file" accept="image/*" id="player-modal-photo-input" style="display:none;">
+            </label>
+          </div>
+          <h3 id="player-modal-name" class="p-name"></h3>
+          <div class="p-tags" id="player-modal-tags"></div>
+        </div>
+        <div class="p-content-pad">
+          <nav class="tabs tabs-sub" id="player-modal-league-tabs" style="display:none;"></nav>
+        </div>
+        <div id="player-modal-stats" class="p-stats"></div>
+        <div id="player-modal-body" class="p-body"></div>
       </div>
     </div>
 

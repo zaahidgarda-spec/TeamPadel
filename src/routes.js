@@ -1428,6 +1428,36 @@ router.put(
   }
 );
 
+// A profile photo — set by an admin/captain on behalf of anyone on the
+// roster (same trust level that already lets them add/rename/remove
+// players), or by the player themselves once they've claimed this exact
+// record. Neither of the existing helpers (requireAdmin,
+// requireAdminOrCaptain) know about player-account claims, so this checks
+// all three paths inline rather than bolting a claims lookup onto those
+// shared middlewares.
+router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const player = team.players.find((p) => p.id === req.params.playerId);
+  if (!player) return res.status(404).json({ error: "Player not found." });
+
+  const isAdmin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
+  let isOwnProfile = false;
+  if (req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    isOwnProfile = !!(account && (account.claims || []).some((c) => c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
+  }
+  if (!isAdmin && !isCaptain && !isOwnProfile) return res.status(403).json({ error: "Not allowed." });
+
+  player.photo = req.body.photo || "";
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.put(
   "/leagues/:leagueId/teams/:teamId/notify-email",
   requireAdminOrCaptain((req) => req.params.teamId),
@@ -2839,18 +2869,29 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
         .filter(Boolean);
     }
   }
+  const isAdmin = isAdminSession(req, league.id);
+  const u = req.session.user;
+  const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
+  let isOwnProfile = false;
+  if (req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    isOwnProfile = !!(account && (account.claims || []).some((c) => c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
+  }
   res.json({
     leagueId: league.id,
     leagueName: league.name,
+    teamId: team.id,
     teamName: team.name,
     playerId: player.id,
     playerName: player.name,
+    photo: player.photo || "",
     isPairs: league.format === "pairs",
     rows,
     potwWins,
     hallOfFameTitles,
     otherLeagues,
     claimed: !!player.claimedByUserId,
+    canEditPhoto: isAdmin || isCaptain || isOwnProfile,
   });
 });
 

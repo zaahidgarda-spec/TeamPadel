@@ -5692,15 +5692,40 @@ function insightRowsHtml(records) {
 // so this never depends on some other league being loaded globally.
 async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
+  el("player-modal-stats").innerHTML = "";
+  el("player-modal-photo-slot").innerHTML = "";
+  el("player-modal-tags").innerHTML = "";
+  el("player-modal-photo-edit").style.display = "none";
   el("player-modal-league-tabs").style.display = "none";
   el("player-modal-league-tabs").innerHTML = "";
   el("player-modal-backdrop").classList.add("open");
   await loadPlayerHistoryTab(leagueId, playerId);
 }
+function playerPhotoHtml(photo, name) {
+  return photo
+    ? `<img class="p-photo" src="${photo}" alt="">`
+    : `<div class="p-photo-fallback">${escapeHtml(playerInitials(name))}</div>`;
+}
 async function loadPlayerHistoryTab(leagueId, playerId) {
   const data = await api(`/leagues/${leagueId}/players/${playerId}/history`).catch(() => null);
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
+  el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName);
+  el("player-modal-tags").innerHTML = `<span class="p-tag team">${escapeHtml(data.teamName)}</span>`
+    + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "");
+  const editBadge = el("player-modal-photo-edit");
+  const photoInput = el("player-modal-photo-input");
+  editBadge.style.display = data.canEditPhoto ? "flex" : "none";
+  if (data.canEditPhoto) {
+    photoInput.onchange = () => {
+      if (!photoInput.files[0]) return;
+      resizeImageToDataUrl(photoInput.files[0], 240, async (dataUrl) => {
+        await api(`/leagues/${leagueId}/teams/${data.teamId}/players/${playerId}/photo`, { method: "PUT", body: { photo: dataUrl } }).catch((e) => alert(e.message));
+        photoInput.value = "";
+        await loadPlayerHistoryTab(leagueId, playerId);
+      });
+    };
+  }
   // Sorted by name, not "current league first" — otherwise the tab order
   // reshuffles every time you switch (whichever league you just picked
   // becomes "current" and jumps to the front), so the same visual
@@ -5724,7 +5749,10 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
     tabsEl.style.display = "none";
     tabsEl.innerHTML = "";
   }
-  el("player-modal-body").innerHTML = renderPlayerHistoryBody(data);
+  const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data);
+  el("player-modal-stats").innerHTML = statsHtml;
+  el("player-modal-stats").style.display = statsHtml ? "grid" : "none";
+  el("player-modal-body").innerHTML = bodyHtml;
   const claimBtn = el("player-modal-body").querySelector(".claim-banner-btn");
   if (claimBtn) claimBtn.onclick = () => {
     el("player-modal-backdrop").classList.remove("open");
@@ -5735,6 +5763,9 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
     switchHubTab("account");
   };
 }
+// Returns the stats-tile row and the rest of the body separately — they're
+// two different DOM containers now (the tiles bleed edge-to-edge below the
+// photo hero, the body keeps its own padding).
 function renderPlayerHistoryBody(data) {
   // Whoever's looking isn't signed in, and this record hasn't been claimed
   // by anyone yet — could be the player themselves, or a teammate who
@@ -5743,21 +5774,31 @@ function renderPlayerHistoryBody(data) {
   const claimBanner = (!playerAccount && !data.claimed)
     ? `<div class="claim-banner"><span class="icon">👋</span><span class="txt">Is this <b>${escapeHtml(data.playerName)}</b>? Claim this profile to track your stats and get your next match up front.</span><button class="primary claim-banner-btn" type="button">Claim profile</button></div>`
     : "";
-  const { rows, isPairs, potwWins, hallOfFameTitles } = data;
-  const crownLine = potwWins > 0 ? `<p class="note" style="margin-bottom:10px;">👑 <span class="potw-crown-count">Pair of the Week × ${potwWins}</span></p>` : "";
+  const { rows, isPairs, hallOfFameTitles } = data;
   const titlesBlock = hallOfFameTitles.length
     ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
     : "";
-  if (rows.length === 0) return claimBanner + crownLine + titlesBlock + '<p class="empty">No completed matches yet.</p>';
+  if (rows.length === 0) return { statsHtml: "", bodyHtml: claimBanner + titlesBlock + '<p class="empty">No completed matches yet.</p>' };
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;
   const losses = rows.length - wins - draws;
+  const winPct = Math.round((wins / rows.length) * 100);
   // A Vibora (pairs) fixture has no seeding — a pair just plays whichever
-  // pair is next, not a ranked line-up slot — so the seed badge and tag are
-  // team-league-only.
+  // pair is next, not a ranked line-up slot — so the seed stat is
+  // team-league-only; a pairs profile gets a draws tile in its place when
+  // there are any (a pairs match can end level), since that's otherwise
+  // nowhere else on this profile.
   const commonSeed = !isPairs ? mostCommonSeed(rows) : null;
-  const seedTag = commonSeed ? `<span class="tag" style="margin-left:8px;">Seed ${commonSeed} player</span>` : "";
-  let html = claimBanner + crownLine + titlesBlock + `<p class="note" style="margin-bottom:12px;">${rows.length} matches played · ${wins}W ${draws ? draws + "D " : ""}${losses}L${seedTag}</p>`;
+  const fourthStat = commonSeed
+    ? { n: commonSeed, lbl: "Seed" }
+    : draws
+      ? { n: draws, lbl: "Drawn" }
+      : { n: winPct + "%", lbl: "Win rate" };
+  const statsHtml = `<div class="p-stat"><div class="n">${rows.length}</div><div class="lbl">Played</div></div>
+    <div class="p-stat"><div class="n">${wins}</div><div class="lbl">Won</div></div>
+    <div class="p-stat"><div class="n">${losses}</div><div class="lbl">Lost</div></div>
+    <div class="p-stat"><div class="n">${escapeHtml(String(fourthStat.n))}</div><div class="lbl">${fourthStat.lbl}</div></div>`;
+  let html = claimBanner + titlesBlock;
 
   // Best partners / toughest opponents — a minimum of 2 meetings so a
   // single fluke result doesn't crown a "100%" partner or a "0%" nemesis
@@ -5786,7 +5827,7 @@ function renderPlayerHistoryBody(data) {
     const seedNote = isPairs ? "" : ` <span class="note">· Seed ${r.seed}</span>`;
     html += `<div class="history-row"><div class="history-top"><span class="history-badge ${badgeCls}">${r.result}</span><span class="history-label">${escapeHtml(r.label)} vs ${escapeHtml(r.opponentTeam)}${seedNote}</span></div><div class="history-detail">${r.partner ? "with " + escapeHtml(r.partner) + " · " : ""}vs ${escapeHtml(r.opponentPlayers.join(" & ") || "?")} · ${escapeHtml(r.score)}${ratingDeltaHtml(r.ratingDelta)}</div></div>`;
   });
-  return html;
+  return { statsHtml, bodyHtml: html };
 }
 el("player-modal-close").onclick = () => el("player-modal-backdrop").classList.remove("open");
 el("player-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "player-modal-backdrop") el("player-modal-backdrop").classList.remove("open"); });
