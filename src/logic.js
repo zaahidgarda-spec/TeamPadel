@@ -388,6 +388,56 @@ function standingsBeforeRound(league, round) {
   return computeStandings(prior);
 }
 
+// Who's won their last 2+ finalized matches IN THIS LEAGUE, as of a given
+// round — deliberately NOT the shared cross-league rating engine's
+// stat.form, which blends a claimed player's results from every league
+// they're in. That let a player active in several leagues get flagged "in
+// form" on a league's post off wins earned somewhere else entirely (or
+// even while actually on a losing run in this specific league), while
+// genuinely hot players confined to just this one league — and so still
+// "provisional" by the global engine's standard — never got a look in.
+// Scoping strictly to this league's own fixtures up to `round` also means
+// every round's post gets its own historically-accurate answer, not
+// today's current form mislabeled under an old round.
+// Ranked by streak length (longest first), then by whoever played most
+// recently.
+function inLeagueFormLeaders(league, round) {
+  const regulation = league.format === "pairs" ? 1 : 4;
+  const teamById = (id) => league.teams.find((t) => t.id === id);
+  const sequences = new Map(); // playerId -> { name, teamId, teamName, results: [{round, result}] }
+  league.fixtures
+    .filter((f) => f.stage === "regular" && f.finalized && f.round <= round)
+    .sort((a, b) => a.round - b.round)
+    .forEach((f) => {
+      const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+      if (!teamA || !teamB) return;
+      const record = (team, pair, result) => {
+        if (!pair) return;
+        pair.forEach((pid) => {
+          if (!pid) return;
+          const p = team.players.find((x) => x.id === pid);
+          if (!p) return;
+          if (!sequences.has(pid)) sequences.set(pid, { name: p.name, teamId: team.id, teamName: team.name, results: [] });
+          sequences.get(pid).results.push({ round: f.round, result });
+        });
+      };
+      f.rubbers.slice(0, regulation).forEach((r, idx) => {
+        const w = rubberWinner(r);
+        if (!w) return;
+        record(teamA, f.selectionA.pairs[idx], w === "A" ? "W" : "L");
+        record(teamB, f.selectionB.pairs[idx], w === "B" ? "W" : "L");
+      });
+    });
+  const leaders = [];
+  sequences.forEach((entry, playerId) => {
+    let streak = 0;
+    for (let i = entry.results.length - 1; i >= 0 && entry.results[i].result === "W"; i--) streak++;
+    if (streak >= 2) leaders.push({ playerId, name: entry.name, teamId: entry.teamId, team: entry.teamName, streak, lastRound: entry.results[entry.results.length - 1].round });
+  });
+  leaders.sort((a, b) => b.streak - a.streak || b.lastRound - a.lastRound);
+  return leaders.slice(0, 3).map((r) => ({ playerId: r.playerId, name: r.name, teamId: r.teamId, team: r.team }));
+}
+
 // The auto-posted round wrap-up once every fixture in a round is
 // finalized — Pair of the Week (if voting's already landed by the time
 // this runs — usually it hasn't, since voting only opens once the round
@@ -396,11 +446,9 @@ function standingsBeforeRound(league, round) {
 // two dominant sets, any rubber that went the distance to a breaker or
 // decider, any team that lost 3 or all 4 of its rubbers in one night, any
 // team that beat a side ranked above it in the table before this round,
-// and who's currently top of the table. `inForm`, if given, is a list of
-// {name, team} — computing it needs cross-league claims data this pure
-// function doesn't have, so the caller (routes.js, which already has
-// that) builds it and passes it in. Returns null if the round isn't
-// actually fully finalized yet.
+// who's currently top of the table, and who's on a 2+ win streak within
+// this league (inLeagueFormLeaders above). Returns null if the round
+// isn't actually fully finalized yet.
 //
 // Returns structured data (`potw`, `highlights`, `inForm`), not just a
 // prose blob — the News Room UI renders each highlight as its own row
@@ -408,7 +456,7 @@ function standingsBeforeRound(league, round) {
 // `body` is still included as a plain-text join of the same content, kept
 // for anything reading a post's text (search, notifications) rather than
 // its structure.
-function buildRoundRecap(league, round, inForm) {
+function buildRoundRecap(league, round) {
   const fixtures = league.fixtures.filter((f) => f.round === round && f.stage === "regular");
   if (fixtures.length === 0 || !fixtures.every((f) => f.finalized)) return null;
   const isPairs = league.format === "pairs";
@@ -543,7 +591,7 @@ function buildRoundRecap(league, round, inForm) {
     highlights.push({ type: "table", label: "Top of the table", text, short });
     lines.push("Top of the table: " + text);
   }
-  const inFormList = inForm && inForm.length ? inForm : [];
+  const inFormList = inLeagueFormLeaders(league, round);
   if (inFormList.length) lines.push("In form right now: " + inFormList.map((p) => p.name + " (" + p.team + ")").join(", ") + ".");
   if (potwEntries.length === 0 && highlights.length === 0) {
     highlights.push({ type: "quiet", label: "Scoreline", text: "A quiet one on the scoreline front — check the Table for how the standings moved.", short: "A quiet one on the scoreline front" });

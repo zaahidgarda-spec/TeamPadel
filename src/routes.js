@@ -124,42 +124,7 @@ function notify(league, teamId, type, message, extra) {
 // Returns true only when a brand-new post was created, so the caller
 // knows whether this is the moment to notify captains.
 function postOrUpdateRoundRecap(league, round) {
-  // "In form right now" is inherently a snapshot of the CURRENT moment —
-  // loadGlobalRatings() always reflects today, not "as of round N". That's
-  // fine for the round that just finished (today genuinely is right after
-  // it), but backfillRoundRecaps() below can process several old rounds of
-  // the same league in one pass, and every one of them would otherwise get
-  // today's identical snapshot mislabeled as their own "right now" — e.g.
-  // round 1's post through round 5's post all claiming the exact same
-  // in-form player, months apart. Only the league's actual latest
-  // completed round is allowed to carry it; older rounds just omit the
-  // line rather than show something misleadingly stale.
-  const completedRounds = [...new Set(league.fixtures.filter((f) => f.stage === "regular").map((f) => f.round))]
-    .filter((r) => {
-      const rf = league.fixtures.filter((f) => f.round === r && f.stage === "regular");
-      return rf.length > 0 && rf.every((f) => f.finalized);
-    });
-  const isLatestCompletedRound = completedRounds.length > 0 && round === Math.max(...completedRounds);
-
-  // The one place the (otherwise hidden, admin-only) rating engine feeds
-  // something player-facing — just names, not the Ratings Preview numbers
-  // themselves. "In form" means an actual current win streak — at least
-  // the last 2 results (stat.form is chronological, most recent last)
-  // both wins — not just whoever's rated highest right now. Among
-  // streaking players, still prefers ones past the provisional window and
-  // still ranked by rating, top 3.
-  let inForm = [];
-  if (isLatestCompletedRound) {
-    try {
-      const { ratingsData, identityOf } = loadGlobalRatings();
-      const rankings = logic.leagueRankings(league, ratingsData, identityOf);
-      const onStreak = rankings.filter((r) => r.form && r.form.length >= 2 && r.form.slice(-2).every((x) => x === "W"));
-      const established = onStreak.filter((r) => !r.provisional);
-      const pool = established.length ? established : onStreak;
-      inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName, playerId: r.playerId, teamId: r.teamId }));
-    } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
-  }
-  const recap = logic.buildRoundRecap(league, round, inForm);
+  const recap = logic.buildRoundRecap(league, round);
   if (!recap) return false;
   if (!league.news) league.news = [];
   const existing = league.news.find((p) => p.auto && p.round === round);
@@ -176,15 +141,16 @@ function postOrUpdateRoundRecap(league, round) {
 // league's already-finalized regular rounds and posts whichever ones don't
 // already have an auto recap. Also doubles as a repair pass: it re-runs
 // postOrUpdateRoundRecap against every round with a post, not just missing
-// ones, so a correction to the recap logic (like the isLatestCompletedRound
-// gate above) actually reaches posts that were already created under the
-// old behavior — the very first version of this backfill, before that
-// gate existed, stamped every historical round it caught up in one pass
-// with that boot's current "in form" snapshot, so several different
-// rounds of the same league ended up with identical, wrongly-labeled
-// in-form data. Always saves (not just when a brand-new post appears) so
-// that correction actually persists. Deliberately silent either way — no
-// captain notifications for old news, no console noise on the common case.
+// ones, so a correction to the recap logic reaches posts that were already
+// created under older behavior — e.g. "in form" originally read the
+// shared cross-league rating engine's form, which could flag a
+// multi-league player as in-form off wins earned in a different league
+// entirely (or even while they were actually on a losing run in this
+// league), while a genuinely hot player confined to just this league
+// never showed up at all. Always saves (not just when a brand-new post
+// appears) so a correction like that actually persists. Deliberately
+// silent either way — no captain notifications for old news, no console
+// noise on the common case.
 function backfillRoundRecaps() {
   store.getIndex().forEach((entry) => {
     if (entry.hidden) return;
