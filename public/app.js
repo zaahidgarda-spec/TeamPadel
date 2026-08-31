@@ -4245,21 +4245,22 @@ function renderPotwCard(fixtures) {
   const data = (league.potwByRound && league.potwByRound[round]) || { tally: [], winners: [] };
   card.style.display = "block";
 
-  const pairLabel = (p) => `${p.playerAName} & ${p.playerBName}`;
+  const pairLinksHtml = (p) => playerLinkHtml({ id: p.playerAId, name: p.playerAName }) + " &amp; " + playerLinkHtml({ id: p.playerBId, name: p.playerBName });
   let html = '<h2 class="section-title">Pair of the week</h2>';
   if (data.winners && data.winners.length) {
     const tied = data.winners.length > 1;
-    const names = data.winners.map((w) => `<strong style="color:var(--accent);">${escapeHtml(pairLabel(w))}</strong> <span class="note">(${escapeHtml(w.teamName)})</span>`).join(" & ");
+    const names = data.winners.map((w) => `<strong style="color:var(--accent);">${pairLinksHtml(w)}</strong> <span class="note">(${escapeHtml(w.teamName)})</span>`).join(" & ");
     const voteWord = data.winners[0].votes === 1 ? "vote" : "votes";
     html += `<p class="note" style="margin-bottom:10px;">👑 ${tied ? "Tied" : "Leading"}: ${names} — ${data.winners[0].votes} ${voteWord}${tied ? " each" : ""}</p>`;
     if (data.tally.length > 1) {
       const winnerKeys = new Set(data.winners.map((w) => w.key));
-      html += '<div class="potw-tally">' + data.tally.map((t) => `<div class="potw-tally-row"><span>${winnerKeys.has(t.key) ? "👑 " : ""}${escapeHtml(pairLabel(t))} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
+      html += '<div class="potw-tally">' + data.tally.map((t) => `<div class="potw-tally-row"><span>${winnerKeys.has(t.key) ? "👑 " : ""}${pairLinksHtml(t)} <span class="note">(${escapeHtml(t.teamName)})</span></span><span class="tag">${t.votes}</span></div>`).join("") + "</div>";
     }
   } else {
     html += '<p class="note" style="margin-bottom:10px;">No votes yet — cast yours below.</p>';
   }
   card.innerHTML = html;
+  bindPlayerLinks(card);
 
   if (myRole === "captain" || myRole === "admin") {
     const eligible = potwEligiblePairsClient(fixtures);
@@ -5878,12 +5879,12 @@ function renderAwards() {
       return `<div class="stat-row"><span>${label}</span><span class="note">No votes yet</span></div>`;
     }
     const winnersHtml = data.winners.map((w) => {
-      const team = teamById(w.teamId);
-      const pairHtml = pairNamesGoldHtml(team, [w.playerAId, w.playerBId]);
+      const pairHtml = playerLinkHtml({ id: w.playerAId, name: w.playerAName }) + " &amp; " + playerLinkHtml({ id: w.playerBId, name: w.playerBName });
       return `👑 ${pairHtml} <span class="note">(${escapeHtml(w.teamName)})</span>`;
     }).join(" &nbsp;·&nbsp; ");
     return `<div class="stat-row"><span>${label}</span><span>${winnersHtml}</span></div>`;
   }).join("");
+  bindPlayerLinks(c);
 }
 
 /* ---------- News ---------- */
