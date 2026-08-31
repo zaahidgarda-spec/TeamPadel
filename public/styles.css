@@ -1121,19 +1121,25 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .potw-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:2px;margin:0 -18px;padding-left:18px;padding-right:18px;}
 .potw-card{position:relative;flex-shrink:0;width:150px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 12px;text-align:center;overflow:hidden;}
 /* The winning team's logo, when there is one, IS the card background —
-   just the photo, full-bleed, nothing layered over it. Text leans on a
-   drop shadow for contrast instead of a scrim panel over the image. */
-.potw-card.has-logo{background-size:cover;background-position:center;border-color:transparent;}
-.potw-crown{font-size:20px;line-height:1;margin-bottom:8px;}
-.potw-avatars{display:flex;justify-content:center;margin-bottom:10px;}
+   the crown and avatars sit on the untouched photo, full-bleed. A dark
+   fade covers only the bottom ~60% where the three text lines live, so
+   they read the same regardless of how light or busy that logo is,
+   without a panel sitting over the logo itself. A thin light-on-dark
+   border and a lift shadow keep every card reading as one deliberate
+   set rather than five unrelated photos pasted into a row. */
+.potw-card.has-logo{background-size:cover;background-position:center;border-color:rgba(255,255,255,.14);box-shadow:0 4px 14px rgba(18,32,58,.18);}
+.potw-card.has-logo::before{content:"";position:absolute;left:0;right:0;bottom:0;height:64%;
+  background:linear-gradient(180deg,transparent,rgba(6,10,20,.72) 55%,rgba(6,10,20,.86));pointer-events:none;}
+.potw-crown{font-size:20px;line-height:1;margin-bottom:8px;position:relative;}
+.potw-avatars{display:flex;justify-content:center;margin-bottom:10px;position:relative;}
 .potw-avatar{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;border:2px solid var(--panel-2);}
 .potw-avatar+.potw-avatar{margin-left:-10px;background:#1c2f52;}
 .has-logo .potw-avatar{border-color:rgba(255,255,255,.7);box-shadow:0 1px 4px rgba(0,0,0,.5);}
-.potw-names{font-family:var(--font-display);font-size:13px;font-weight:600;line-height:1.3;margin-bottom:4px;}
-.potw-team{font-size:10.5px;color:var(--text-dim);}
-.potw-league{font-size:9.5px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;}
-.has-logo .potw-crown{filter:drop-shadow(0 1px 3px rgba(0,0,0,.7));}
-.has-logo .potw-names,.has-logo .potw-team,.has-logo .potw-league{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85),0 0 10px rgba(0,0,0,.5);}
+.potw-names{font-family:var(--font-display);font-size:13px;font-weight:600;line-height:1.3;margin-bottom:4px;position:relative;}
+.potw-team{font-size:10.5px;color:var(--text-dim);position:relative;}
+.potw-league{font-size:9.5px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-display);font-weight:600;margin-top:6px;position:relative;}
+.has-logo .potw-crown{filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));}
+.has-logo .potw-names,.has-logo .potw-team,.has-logo .potw-league{color:#fff;}
 
 /* A horizontal card strip, same idea as the pairs-of-the-week row right
    above it — the two read as one visual family. Scrolling does most of the

@@ -2212,7 +2212,7 @@ function adminRosterBlock(t) {
   fileInput.type = "file"; fileInput.accept = "image/*"; fileInput.style.display = "none";
   fileInput.onchange = () => {
     if (!fileInput.files[0]) return;
-    resizeImageToDataUrl(fileInput.files[0], 128, async (dataUrl) => {
+    resizeImageToDataUrl(fileInput.files[0], 480, async (dataUrl) => {
       await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { logo: dataUrl } });
       await refreshLeague(); renderAdminRoster(); renderRoster();
     });
