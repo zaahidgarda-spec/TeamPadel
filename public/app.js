@@ -997,8 +997,26 @@ async function runPlayerSearch(q) {
     };
   });
 }
+// The photo on a claimed record only used to show up once you clicked into
+// that player's own profile popup — nowhere on My Profile itself. Shows
+// the first claimed record that has one set (an account can hold several,
+// one per league); clicking it opens that same profile popup, where the
+// existing edit badge already lets the player change it — no separate
+// upload flow to build here. Hidden entirely if nothing's claimed yet,
+// since there's nothing to click through to.
+function renderAccountAvatar(cards) {
+  const btn = el("account-avatar-btn");
+  if (!cards.length) { btn.style.display = "none"; return; }
+  const withPhoto = cards.find((c) => c.photo) || cards[0];
+  btn.style.display = "block";
+  btn.innerHTML = withPhoto.photo
+    ? `<img src="${withPhoto.photo}" alt="">`
+    : `<span class="fallback">${escapeHtml(playerInitials(playerAccount.name))}</span>`;
+  btn.onclick = () => openPlayerHistory(withPhoto.leagueId, withPhoto.playerId);
+}
 async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
+  renderAccountAvatar(cards);
   renderAccountNextMatch(cards);
   renderAccountLeaguesList(cards);
   await renderAccountStats(cards);

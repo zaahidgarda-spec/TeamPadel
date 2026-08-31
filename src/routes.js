@@ -1056,7 +1056,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
-      playerId: player.id, playerName: player.name,
+      playerId: player.id, playerName: player.name, photo: player.photo || "",
       upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
       results: logic.playerMatchHistory(league, claim.playerId, ratingsData),
       awards,
