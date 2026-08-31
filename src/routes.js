@@ -794,7 +794,7 @@ router.get("/players/me", (req, res) => {
     const team = league && league.teams.find((t) => t.id === c.teamId);
     if (!league || !team) { changed = true; return; } // team/league deleted since — drop quietly
     if (hiddenLeagueIds.has(c.leagueId)) return; // hidden league — data-only, never shown (captaincy itself stays intact)
-    captaincies.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name });
+    captaincies.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "" });
   });
   if (changed) {
     user.captaincies = captaincies.map((c) => ({ leagueId: c.leagueId, teamId: c.teamId }));

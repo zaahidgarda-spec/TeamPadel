@@ -1116,7 +1116,10 @@ function renderAccountLeaguesList(cards) {
       ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button>'
       : "";
     return `<div class="notif-row account-league-row" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}" style="cursor:pointer;">
-      <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${avatarHtml({ logo: card.teamLogo, name: card.teamName })}
+        <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
+      </div>
       <div style="display:flex;align-items:center;gap:12px;">
         <button class="link account-unclaim-btn" type="button">Remove</button>
         <span class="link">Open &rarr;</span>
@@ -1124,7 +1127,10 @@ function renderAccountLeaguesList(cards) {
     </div>`;
   });
   const captaincyRows = extraCaptaincies.map((cap) => `<div class="notif-row account-league-row" data-league="${cap.leagueId}" data-team="${cap.teamId}" style="cursor:pointer;">
-      <div><strong>${escapeHtml(cap.leagueName)}</strong> <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button><div class="note">${escapeHtml(cap.teamName)}</div></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${avatarHtml({ logo: cap.teamLogo, name: cap.teamName })}
+        <div><strong>${escapeHtml(cap.leagueName)}</strong> <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button><div class="note">${escapeHtml(cap.teamName)}</div></div>
+      </div>
       <div style="display:flex;align-items:center;gap:12px;">
         <span class="link">Open &rarr;</span>
       </div>
