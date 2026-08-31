@@ -6024,8 +6024,16 @@ function renderAwards() {
 
 /* ---------- News ---------- */
 
+// Zero-width/invisible characters (word joiner, ZWSP, ZWNJ/ZWJ, BOM) show
+// up in real player names copied from WhatsApp or Word — invisible in
+// running text, but [0] on a name starting with one grabs the invisible
+// character instead of the first real letter, leaving an empty avatar.
+// Production has hit this for real (a Killarney player's name).
+function stripInvisibleChars(s) {
+  return (s || "").replace(new RegExp("[\\u200B\\u200C\\u200D\\u2060\\uFEFF]", "g"), "");
+}
 function playerInitials(name) {
-  const parts = (name || "").trim().split(/\s+/);
+  const parts = stripInvisibleChars(name).trim().split(/\s+/);
   return ((parts[0] || "")[0] || "") + ((parts.length > 1 ? parts[parts.length - 1][0] : "") || "");
 }
 // One post's card — the round-recap shape (has `highlights`) gets the full
