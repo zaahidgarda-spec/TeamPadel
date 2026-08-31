@@ -349,13 +349,15 @@ async function renderHomepageHighlights() {
   if (potw.length) {
     el("homepage-potw-strip").innerHTML = potw.map((p) => {
       const avatars = p.names.split(" & ").map((n) => `<div class="potw-avatar">${escapeHtml(playerInitials(n))}</div>`).join("");
-      // Where the winning team has a logo, it IS the card background —
-      // just the photo, nothing layered over it. Text leans on a drop
-      // shadow (see .has-logo in styles.css) instead of a scrim panel for
-      // contrast against whatever's in the image.
-      const hasLogo = !!p.teamLogo;
-      const bgStyle = hasLogo ? ` style="background-image:url('${p.teamLogo}')"` : "";
-      return `<div class="potw-card${hasLogo ? " has-logo" : ""}"${bgStyle}>
+      // Same dark, etched-court-line "floodlit" treatment already used for
+      // the Interesting This Week strip right above this one — every card
+      // gets it regardless of whether the team has a logo, so the two
+      // strips finally read as one visual family. A logo, when there is
+      // one, is just a small corner badge — never blown up full-bleed, so
+      // there's no pixelation or pale-logo legibility problem to patch.
+      const badge = p.teamLogo ? `<img class="potw-badge" src="${p.teamLogo}" alt="">` : "";
+      return `<div class="potw-card">
+        ${badge}
         <div class="potw-crown">👑</div>
         <div class="potw-avatars">${avatars}</div>
         <div class="potw-names">${escapeHtml(p.names)}</div>
