@@ -594,14 +594,35 @@ router.get("/homepage/highlights", (req, res) => {
   const potw = [];
   const autoHighlights = [];
   leagues.forEach((league) => {
+    // Computed straight off the votes for the league's own most recent
+    // decided round, not off the latest auto-recap News post — a pairs-
+    // format league never gets an auto-recap (round wrap-ups are a
+    // team-league-only concept), so reading through the post silently
+    // dropped every pairs league from this strip even when it had a real
+    // Pair of the Week winner. Scanning rounds newest-first and taking the
+    // first one with an actual winner means a round nobody voted in just
+    // gets skipped rather than leaving the whole league off the homepage.
+    const rounds = [...new Set(league.fixtures.map((f) => f.round))].sort((a, b) => b - a);
+    for (const round of rounds) {
+      const tally = logic.potwTallyForRound(league, round);
+      if (!tally.winners.length) continue;
+      tally.winners.forEach((p) => {
+        const team = p.teamId ? league.teams.find((t) => t.id === p.teamId) : null;
+        potw.push({
+          names: p.playerAName + " & " + p.playerBName,
+          team: p.teamName,
+          leagueId: league.id,
+          leagueName: league.name,
+          teamLogo: team ? team.logo || "" : "",
+        });
+      });
+      break;
+    }
+
     const latest = (league.news || [])
       .filter((p) => p.auto)
       .sort((a, b) => b.round - a.round)[0];
     if (!latest) return;
-    (latest.potw || []).forEach((p) => {
-      const team = p.teamId ? league.teams.find((t) => t.id === p.teamId) : null;
-      potw.push({ names: p.names, team: p.team, leagueId: league.id, leagueName: league.name, teamLogo: team ? team.logo || "" : "" });
-    });
     (latest.highlights || []).forEach((h) => {
       if (h.type === "quiet") return;
       const dismissKey = league.id + ":" + latest.round + ":" + h.type;
