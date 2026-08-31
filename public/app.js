@@ -349,23 +349,18 @@ async function renderHomepageHighlights() {
   if (potw.length) {
     el("homepage-potw-strip").innerHTML = potw.map((p) => {
       const avatars = p.names.split(" & ").map((n) => `<div class="potw-avatar">${escapeHtml(playerInitials(n))}</div>`).join("");
-      // Where the winning team has a logo, it becomes a frosted-glass
-      // background behind the card instead of the plain panel fill — the
-      // logo sits sharp, a translucent blurred scrim (backdrop-filter, not
-      // a blur on the image itself) sits over it so the text stays crisp
-      // and readable regardless of how busy the logo image is.
+      // Where the winning team has a logo, it IS the card background —
+      // just the photo, nothing layered over it. Text leans on a drop
+      // shadow (see .has-logo in styles.css) instead of a scrim panel for
+      // contrast against whatever's in the image.
       const hasLogo = !!p.teamLogo;
       const bgStyle = hasLogo ? ` style="background-image:url('${p.teamLogo}')"` : "";
-      const glass = hasLogo ? '<div class="potw-glass"></div>' : "";
       return `<div class="potw-card${hasLogo ? " has-logo" : ""}"${bgStyle}>
-        ${glass}
-        <div class="potw-content">
-          <div class="potw-crown">👑</div>
-          <div class="potw-avatars">${avatars}</div>
-          <div class="potw-names">${escapeHtml(p.names)}</div>
-          <div class="potw-team">${escapeHtml(p.team)}</div>
-          <div class="potw-league">${escapeHtml(p.leagueName)}</div>
-        </div>
+        <div class="potw-crown">👑</div>
+        <div class="potw-avatars">${avatars}</div>
+        <div class="potw-names">${escapeHtml(p.names)}</div>
+        <div class="potw-team">${escapeHtml(p.team)}</div>
+        <div class="potw-league">${escapeHtml(p.leagueName)}</div>
       </div>`;
     }).join("");
   }
