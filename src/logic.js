@@ -490,28 +490,37 @@ function buildRoundRecap(league, round, inForm) {
   // "<pair> <score> beat <opponent>" for a pairs league, where the pair IS
   // the team — naming both would just repeat the same two names twice.
   const winFragment = (w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " beat " + w.opponentName;
+  // `items` keeps each individual result as its own entry — a round with 5
+  // rubbers that went the distance is 5 separate sentences, not one run-on
+  // paragraph. `text` (all of them space-joined) sticks around only as the
+  // plain-text fallback for `body`; the News Room UI renders each of
+  // `items` on its own line instead of reading `text`.
   if (bigWins.length) {
-    const text = bigWins.map((w) => winFragment(w) + ".").join(" ");
+    const items = bigWins.map((w) => winFragment(w) + ".");
+    const text = items.join(" ");
     const short = (bigWins[0].pairText || bigWins[0].teamName) + " — " + bigWins[0].scoreText;
-    highlights.push({ type: "bigwin", label: "Big win", text, short });
+    highlights.push({ type: "bigwin", label: "Big win", text, items, short });
     lines.push("Big wins: " + text);
   }
   if (closeMatches.length) {
-    const text = closeMatches.map((w) => winFragment(w) + ".").join(" ");
+    const items = closeMatches.map((w) => winFragment(w) + ".");
+    const text = items.join(" ");
     const short = (closeMatches[0].pairText || closeMatches[0].teamName) + " — " + closeMatches[0].scoreText;
-    highlights.push({ type: "distance", label: "Went the distance", text, short });
+    highlights.push({ type: "distance", label: "Went the distance", text, items, short });
     lines.push("Went the distance: " + text);
   }
   if (upsets.length) {
-    const text = upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").").join(" ");
+    const items = upsets.map((u) => u.winner + " (" + u.winnerRank + getOrdinalSuffix(u.winnerRank) + ") beat " + u.loser + " (" + u.loserRank + getOrdinalSuffix(u.loserRank) + ").");
+    const text = items.join(" ");
     const short = upsets[0].winner + " upset " + upsets[0].loser;
-    highlights.push({ type: "upset", label: "Surprising result", text, short });
+    highlights.push({ type: "upset", label: "Surprising result", text, items, short });
     lines.push("Surprising result: " + text);
   }
   if (roughNights.length) {
-    const text = roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".").join(" ");
+    const items = roughNights.map((r) => r.team + " lost " + r.winsAgainst + " of " + regulation + " to " + r.against + ".");
+    const text = items.join(" ");
     const short = roughNights[0].team + " — rough night";
-    highlights.push({ type: "rough", label: "Rough night", text, short });
+    highlights.push({ type: "rough", label: "Rough night", text, items, short });
     lines.push("Rough night: " + text);
   }
   if (table.length) {

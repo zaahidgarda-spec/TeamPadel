@@ -5907,9 +5907,15 @@ function newsPostCardHtml(p, leagueLabel) {
   const heroInner = potw.length
     ? `<p class="nr-potw-label">Pair of the week</p><div class="nr-potw-names">${potw.map((x) => escapeHtml(x.names)).join(", ")}</div><div class="nr-potw-team">${escapeHtml(potw.map((x) => x.team).join(", "))}</div>`
     : `<p class="nr-potw-label">${escapeHtml(p.title)}</p>`;
-  const rows = (p.highlights || []).map((h) =>
-    `<div class="nr-row"><div class="nr-row-label">${escapeHtml(h.label)}</div><div class="nr-row-text">${escapeHtml(h.text)}</div></div>`
-  ).join("");
+  // A category with several results (e.g. 5 rubbers that all went the
+  // distance in one round) gets each on its own line — h.items, when
+  // present — instead of h.text's single run-on paragraph.
+  const rows = (p.highlights || []).map((h) => {
+    const body = h.items && h.items.length
+      ? h.items.map((item) => `<div class="nr-row-item">${escapeHtml(item)}</div>`).join("")
+      : `<div class="nr-row-text">${escapeHtml(h.text)}</div>`;
+    return `<div class="nr-row"><div class="nr-row-label">${escapeHtml(h.label)}</div>${body}</div>`;
+  }).join("");
   const formHtml = (p.inForm || []).length ? `<div class="nr-form">
       <p class="nr-form-label">In form right now</p>
       <div class="nr-form-list">${p.inForm.map((f) => `<div class="nr-form-player"><div class="nr-form-avatar">${escapeHtml(playerInitials(f.name))}</div><div class="nr-form-name">${escapeHtml(f.name)}</div><div class="nr-form-team">${escapeHtml(f.team)}</div></div>`).join("")}</div>
