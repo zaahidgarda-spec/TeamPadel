@@ -124,6 +124,23 @@ function notify(league, teamId, type, message, extra) {
 // Returns true only when a brand-new post was created, so the caller
 // knows whether this is the moment to notify captains.
 function postOrUpdateRoundRecap(league, round) {
+  // "In form right now" is inherently a snapshot of the CURRENT moment —
+  // loadGlobalRatings() always reflects today, not "as of round N". That's
+  // fine for the round that just finished (today genuinely is right after
+  // it), but backfillRoundRecaps() below can process several old rounds of
+  // the same league in one pass, and every one of them would otherwise get
+  // today's identical snapshot mislabeled as their own "right now" — e.g.
+  // round 1's post through round 5's post all claiming the exact same
+  // in-form player, months apart. Only the league's actual latest
+  // completed round is allowed to carry it; older rounds just omit the
+  // line rather than show something misleadingly stale.
+  const completedRounds = [...new Set(league.fixtures.filter((f) => f.stage === "regular").map((f) => f.round))]
+    .filter((r) => {
+      const rf = league.fixtures.filter((f) => f.round === r && f.stage === "regular");
+      return rf.length > 0 && rf.every((f) => f.finalized);
+    });
+  const isLatestCompletedRound = completedRounds.length > 0 && round === Math.max(...completedRounds);
+
   // The one place the (otherwise hidden, admin-only) rating engine feeds
   // something player-facing — just names, not the Ratings Preview numbers
   // themselves. "In form" means an actual current win streak — at least
@@ -132,14 +149,16 @@ function postOrUpdateRoundRecap(league, round) {
   // streaking players, still prefers ones past the provisional window and
   // still ranked by rating, top 3.
   let inForm = [];
-  try {
-    const { ratingsData, identityOf } = loadGlobalRatings();
-    const rankings = logic.leagueRankings(league, ratingsData, identityOf);
-    const onStreak = rankings.filter((r) => r.form && r.form.length >= 2 && r.form.slice(-2).every((x) => x === "W"));
-    const established = onStreak.filter((r) => !r.provisional);
-    const pool = established.length ? established : onStreak;
-    inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName }));
-  } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
+  if (isLatestCompletedRound) {
+    try {
+      const { ratingsData, identityOf } = loadGlobalRatings();
+      const rankings = logic.leagueRankings(league, ratingsData, identityOf);
+      const onStreak = rankings.filter((r) => r.form && r.form.length >= 2 && r.form.slice(-2).every((x) => x === "W"));
+      const established = onStreak.filter((r) => !r.provisional);
+      const pool = established.length ? established : onStreak;
+      inForm = pool.slice(0, 3).map((r) => ({ name: r.playerName, team: r.teamName }));
+    } catch (e) { /* a ratings hiccup shouldn't block the rest of the recap */ }
+  }
   const recap = logic.buildRoundRecap(league, round, inForm);
   if (!recap) return false;
   if (!league.news) league.news = [];
@@ -155,22 +174,26 @@ function postOrUpdateRoundRecap(league, round) {
 // Catches up any round that finished before the auto-recap feature existed
 // (or before a league even had it wired in) — walks every non-hidden
 // league's already-finalized regular rounds and posts whichever ones don't
-// already have an auto recap. Safe to run every boot: postOrUpdateRoundRecap
-// only writes when a round is actually complete, and only touches leagues
-// where it actually created something, so an already-caught-up league costs
-// nothing. Deliberately silent — no captain notifications for old news, and
-// no console noise on the common case of nothing to do.
+// already have an auto recap. Also doubles as a repair pass: it re-runs
+// postOrUpdateRoundRecap against every round with a post, not just missing
+// ones, so a correction to the recap logic (like the isLatestCompletedRound
+// gate above) actually reaches posts that were already created under the
+// old behavior — the very first version of this backfill, before that
+// gate existed, stamped every historical round it caught up in one pass
+// with that boot's current "in form" snapshot, so several different
+// rounds of the same league ended up with identical, wrongly-labeled
+// in-form data. Always saves (not just when a brand-new post appears) so
+// that correction actually persists. Deliberately silent either way — no
+// captain notifications for old news, no console noise on the common case.
 function backfillRoundRecaps() {
   store.getIndex().forEach((entry) => {
     if (entry.hidden) return;
     const league = store.getLeague(entry.id);
     if (!league || !league.fixtures) return;
     const rounds = [...new Set(league.fixtures.filter((f) => f.stage === "regular").map((f) => f.round))];
-    let changed = false;
-    rounds.forEach((round) => {
-      if (postOrUpdateRoundRecap(league, round)) changed = true;
-    });
-    if (changed) store.saveLeague(league.id, league);
+    if (rounds.length === 0) return;
+    rounds.forEach((round) => postOrUpdateRoundRecap(league, round));
+    store.saveLeague(league.id, league);
   });
 }
 // News Room order: round-based posts read newest-round-first, same as the
