@@ -594,6 +594,14 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent table.court-schedule-table td.cs-drop-target{outline-color:#7FA8FF;background-color:rgba(127,168,255,.16) !important;}
 .floodlit.urgent .cs-balance{border-top-color:rgba(255,255,255,.12);}
 .floodlit.urgent .cs-balance-title{color:#7C8CB0;}
+/* The balance table reuses the plain light-theme table.log styling —
+   dark navy text, a light-grey tint on even rows — which is fine on the
+   rest of the (light) page, but every odd row here sat directly on the
+   dark floodlit background with no override at all, so its team name
+   and slot counts (default dark text) were nearly invisible. */
+.floodlit.urgent .cs-balance table.log th{color:#8FB4FF;border-bottom-color:rgba(96,150,255,.2);}
+.floodlit.urgent .cs-balance table.log td{color:#F2F6FF;border-bottom-color:rgba(255,255,255,.10);}
+.floodlit.urgent .cs-balance table.log tr:nth-child(even) td{background:rgba(255,255,255,.05);}
 .floodlit.urgent #court-schedule-grid::after{color:#7C8CB0;}
 /* .hscroll's own edge-fade trick paints an opaque var(--panel) (white)
    background behind the table — invisible against the rest of the light
