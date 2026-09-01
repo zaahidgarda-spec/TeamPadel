@@ -283,9 +283,14 @@ function predictionBarHtml(prediction, forceShow) {
 }
 // Same idea, but for a personal "your side" view — one number, not a bar
 // with two teams, since the player only cares about their own chances here.
-function personalPredictionHtml(prediction) {
-  if (!RATINGS_ENABLED || !prediction) return "";
-  return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>`;
+// `forceShow` mirrors predictionBarHtml's — used on My Profile's own
+// upcoming-match cards, which (like the site-wide Next Matches square)
+// should show the sister site's prediction regardless of whether this
+// site's own ratings UI is enabled.
+function personalPredictionHtml(prediction, forceShow) {
+  if ((!RATINGS_ENABLED && !forceShow) || !prediction) return "";
+  const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
+  return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>${powered}`;
 }
 async function renderNextMatches() {
   const card = el("next-matches-card");
@@ -1122,7 +1127,7 @@ async function renderAccountTonightMatches() {
         ${centerHtml}
         <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
       </div>
-      ${predictionBarHtml(m.prediction)}
+      ${predictionBarHtml(m.prediction, true)}
       <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · "))}</div>
     </div>`;
   }).join("");
@@ -1228,7 +1233,7 @@ function renderAccountNextMatch(cards) {
       <span class="vs">vs</span>
       <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span></span>
     </div>
-    ${personalPredictionHtml(m.prediction)}
+    ${personalPredictionHtml(m.prediction, true)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
 }
