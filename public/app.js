@@ -1342,12 +1342,6 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
-  // Tab stays admin-only and visible only for a gold-tier league — that's
-  // the ONLY thing it's for now, since it's Balwin Ladies/Men's Social's
-  // actual pairing-declaration screen, not just a toss. A non-tiering
-  // league (where this tab was only ever the fixture-level coin toss,
-  // FIXTURE_TOSS_ENABLED above) gets no tab at all.
-  if (myRole === "admin" && league.tieringEnabled) defs.push({ key: "toss", label: "Toss", wip: true });
   // A Vibora pair can play any opponent in any order — there's no fixed
   // weekly schedule to browse, so Fixtures collapses into Results: what's
   // been played, and who's left to play.
@@ -1361,10 +1355,6 @@ function tabDefs() {
   defs.push({ key: "predictions", label: "Predictions" });
   defs.push({ key: "table", label: "Table" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
-  // Admin-only, independent of RATINGS_ENABLED — a preview of what ratings
-  // could look like, not a toggle for showing it to everyone else. Still
-  // work in progress, hence the red flag on the tab.
-  if (myRole === "admin") defs.push({ key: "ratings-preview", label: "Ratings preview", wip: true });
   defs.push({ key: "stats", label: "Stats" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
@@ -1374,6 +1364,20 @@ function tabDefs() {
     const unread = myNotifications.filter((n) => !n.read).length;
     defs.push({ key: "notifications", label: unread ? `Notifications (${unread})` : "Notifications" });
   }
+  // Both pushed last, on purpose — these are internal tools the owner is
+  // still evaluating, not features for this league yet. Kept admin-only
+  // and out of the way at the end of the tab bar so captains never see
+  // them and they don't compete for attention with the real tabs.
+  // Tab stays admin-only and visible only for a gold-tier league — that's
+  // the ONLY thing it's for now, since it's Balwin Ladies/Men's Social's
+  // actual pairing-declaration screen, not just a toss. A non-tiering
+  // league (where this tab was only ever the fixture-level coin toss,
+  // FIXTURE_TOSS_ENABLED above) gets no tab at all.
+  if (myRole === "admin" && league.tieringEnabled) defs.push({ key: "toss", label: "Toss", wip: true });
+  // Admin-only, independent of RATINGS_ENABLED — a preview of what ratings
+  // could look like, not a toggle for showing it to everyone else. Still
+  // work in progress, hence the red flag on the tab.
+  if (myRole === "admin") defs.push({ key: "ratings-preview", label: "Ratings preview", wip: true });
   return defs;
 }
 function buildTabs() {
