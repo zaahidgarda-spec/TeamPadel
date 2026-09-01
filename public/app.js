@@ -3885,6 +3885,14 @@ function renderCourtScheduleGrid(fixtures) {
   const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
   const savedGrid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) => (rawGrid[s] && rawGrid[s][c]) || null));
   const options = courtScheduleOptions(fixtures);
+  // A seed can end up nowhere on the grid at all (never assigned, or
+  // dropped during a manual edit) — drag/tap-swap only ever rearranges
+  // cells that already hold something, so without this there's simply no
+  // way to get an orphaned seed onto the board again. Admin-only, same as
+  // the rest of direct grid editing.
+  const placedKeys = new Set();
+  savedGrid.forEach((row) => row.forEach((cell) => { if (cell) placedKeys.add(cell.fixtureId + ":" + cell.seed); }));
+  const unplaced = options.filter((o) => !placedKeys.has(o.fixtureId + ":" + o.seed));
 
   const wrap = el("court-schedule-grid");
   wrap.innerHTML = "";
@@ -4066,6 +4074,27 @@ function renderCourtScheduleGrid(fixtures) {
           box.ondragend = () => td.classList.remove("cs-dragging");
         }
         td.appendChild(box);
+      } else if (myRole === "admin" && unplaced.length) {
+        // An empty cell with at least one seed sitting nowhere on the grid
+        // — offer it directly, instead of leaving the gap with no way to
+        // fill it short of regenerating the whole round.
+        const select = document.createElement("select");
+        select.className = "cs-empty-picker";
+        select.innerHTML = '<option value="">— Empty —</option>' + unplaced.map((o) =>
+          `<option value="${o.fixtureId}:${o.seed}">${escapeHtml((o.teamA ? o.teamA.name : "TBD") + " vs " + (o.teamB ? o.teamB.name : "TBD") + " — " + o.shortLabel)}</option>`
+        ).join("");
+        select.onclick = (e) => e.stopPropagation();
+        select.onchange = async () => {
+          if (!select.value) return;
+          const [fixtureId, seedStr] = select.value.split(":");
+          try {
+            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: c, fixtureId, seed: Number(seedStr) } });
+            courtSwapNotice = "Placed — schedule updated.";
+            await refreshLeague(); renderAll();
+            setTimeout(() => { courtSwapNotice = null; renderFixtures(); }, 2200);
+          } catch (err) { alert(err.message); }
+        };
+        td.appendChild(select);
       } else {
         td.appendChild(document.createTextNode("—"));
       }
