@@ -1783,45 +1783,21 @@ router.get("/leagues/:leagueId/fixtures/:fixtureId/toss/public", (req, res) => {
     videoRoom: "TeamPadel-" + f.id,
   });
 });
+// Toss is turned off — every route that would start or advance a new toss
+// (fixture-level or per-pairing) refuses outright, on top of the tab being
+// gone client-side, so a direct API call can't bypass it either. Reading
+// what's already there (/toss/public, pair-toss GET) and resetting
+// (admin-only) still work — nothing here deletes past toss data, it just
+// stops new tosses from mattering.
+const TOSS_DISABLED_ERROR = { error: "The toss feature is currently turned off." };
 router.put("/leagues/:leagueId/fixtures/:fixtureId/toss/schedule", requireLeagueSession, (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  if (!fixtureSide(league, f, req, "A") && !fixtureSide(league, f, req, "B")) return res.status(403).json({ error: "You're not in this fixture." });
-  if (!f.toss) f.toss = {};
-  f.toss.scheduledAt = req.body.scheduledAt || null;
-  store.saveLeague(league.id, league);
-  res.json({ toss: f.toss });
+  res.status(400).json(TOSS_DISABLED_ERROR);
 });
 router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/call", requireLeagueSession, (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
-  const side = fixtureSide(league, f, req, req.body.side);
-  if (!side) return res.status(403).json({ error: "You're not in this fixture." });
-  const call = req.body.call;
-  if (call !== "heads" && call !== "tails") return res.status(400).json({ error: "Call heads or tails first." });
-  if (f.toss && f.toss.firstSide) return res.status(400).json({ error: "This toss is already decided — ask the admin to reset it to redo the flip." });
-  const result = Math.random() < 0.5 ? "heads" : "tails";
-  const winnerSide = call === result ? side : side === "A" ? "B" : "A";
-  f.toss = { scheduledAt: (f.toss && f.toss.scheduledAt) || null, call, result, callerSide: side, winnerSide, firstSide: null };
-  store.saveLeague(league.id, league);
-  res.json({ toss: f.toss });
+  res.status(400).json(TOSS_DISABLED_ERROR);
 });
 router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/choice", requireLeagueSession, (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  if (!f.toss || !f.toss.result) return res.status(400).json({ error: "Flip the coin first." });
-  if (f.toss.firstSide) return res.status(400).json({ error: "This toss is already decided." });
-  const side = fixtureSide(league, f, req, f.toss.winnerSide);
-  if (side !== f.toss.winnerSide) return res.status(403).json({ error: "Only the team that won the toss can make this choice." });
-  const choice = req.body.choice;
-  if (choice !== "self" && choice !== "opponent") return res.status(400).json({ error: "Choose self or opponent." });
-  f.toss.firstSide = choice === "self" ? f.toss.winnerSide : f.toss.winnerSide === "A" ? "B" : "A";
-  store.saveLeague(league.id, league);
-  res.json({ toss: f.toss });
+  res.status(400).json(TOSS_DISABLED_ERROR);
 });
 router.post("/leagues/:leagueId/fixtures/:fixtureId/toss/reset", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
@@ -1853,6 +1829,13 @@ function roundUnlocked(f, roundIdx) {
   if (roundIdx === 0) return true;
   return roundFilled(f, "A", roundIdx - 1) && roundFilled(f, "B", roundIdx - 1);
 }
+// Kept fully live, unlike the fixture-level toss above — Balwin Ladies
+// Social and Balwin Men's Social both have gold-tier seeding on, and
+// pair-toss/:round/pair (below) refuses to accept a declared pairing at
+// all until its round has a decided firstSide, which only /call + /choice
+// here can produce. Disabling this would have permanently locked both
+// leagues out of ever selecting a line-up again — a materially different
+// situation from the fixture-level toss, which nothing depends on.
 router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/call", requireLeagueSession, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
@@ -2432,13 +2415,9 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   if (f[selKey].submitted && f[oppKey].submitted) {
     return res.status(400).json({ error: "Both line-ups are already in — ask the admin to unlock it, or request it in Selection Room (needs the other captain's approval)." });
   }
-  // A toss can decide who declares first — the losing side of that choice
-  // has to wait and see the winner's pairs before submitting their own.
-  if (f.toss && f.toss.firstSide && f.toss.firstSide !== side && !f[oppKey].submitted) {
-    const firstTeamId = f.toss.firstSide === "A" ? f.teamA : f.teamB;
-    const firstTeam = league.teams.find((t) => t.id === firstTeamId);
-    return res.status(400).json({ error: (firstTeam ? firstTeam.name : "The other team") + " won the toss and goes first — wait for their line-up before submitting yours." });
-  }
+  // Toss is turned off — a fixture that already has a decided firstSide
+  // from before (the feature was briefly reachable through the admin Toss
+  // tab) no longer blocks submission order on it.
 
   const pairs = req.body.pairs;
   // Expected count comes from the fixture's own seed slots (4 for a team

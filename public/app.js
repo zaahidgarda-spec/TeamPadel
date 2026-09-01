@@ -5,6 +5,18 @@
 // run both ways (off here, on there) with no code difference at all.
 // Defaults to off until boot()'s config fetch resolves.
 let RATINGS_ENABLED = false;
+// The fixture-level coin toss (who declares first) is turned off at the
+// owner's request — reachable through the admin-only Toss tab (an admin
+// can run either side of it), it had locked at least one real fixture's
+// submission order without the owner ever having used the feature
+// themselves. The Toss tab's OTHER job — the gold-tier per-pairing
+// accordion two real leagues (Balwin Ladies/Men's Social) actually depend
+// on to declare their line-ups at all — is untouched; see the tab's own
+// tieringEnabled condition in tabDefs(). The fixture-level toss's own
+// server-side routes refuse outright now too (TOSS_DISABLED_ERROR in
+// routes.js), so this flag is really just about not rendering dead-end UI
+// for the part that's actually off.
+const FIXTURE_TOSS_ENABLED = false;
 let leaguesIndex = [];
 let currentLeagueId = null;
 let league = null;
@@ -1330,9 +1342,12 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
-  // Work in progress — admin-only for now (flagged red on the tab itself
-  // as a reminder) until it's ready for captains to see.
-  if (myRole === "admin") defs.push({ key: "toss", label: "Toss", wip: true });
+  // Tab stays admin-only and visible only for a gold-tier league — that's
+  // the ONLY thing it's for now, since it's Balwin Ladies/Men's Social's
+  // actual pairing-declaration screen, not just a toss. A non-tiering
+  // league (where this tab was only ever the fixture-level coin toss,
+  // FIXTURE_TOSS_ENABLED above) gets no tab at all.
+  if (myRole === "admin" && league.tieringEnabled) defs.push({ key: "toss", label: "Toss", wip: true });
   // A Vibora pair can play any opponent in any order — there's no fixed
   // weekly schedule to browse, so Fixtures collapses into Results: what's
   // been played, and who's left to play.
@@ -1589,7 +1604,7 @@ function renderAll() {
   renderPendingScoreBanner();
   if (myRole === "admin") renderAdmin();
   renderSelection();
-  renderToss();
+  if (myRole === "admin" && league.tieringEnabled) renderToss();
   renderFixtures();
   renderResults();
   renderPredictions();
@@ -2748,7 +2763,7 @@ function tossCard(f) {
 
   if (league.tieringEnabled && league.format !== "pairs") {
     stage.appendChild(pairTossAccordion(f, teamA, teamB, mySide));
-  } else {
+  } else if (FIXTURE_TOSS_ENABLED) {
   // --- the toss HUD, pulled up over the video's bottom edge ---
   const hud = document.createElement("div"); hud.className = "toss-hud";
   hud.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-label", textContent: "Coin toss" }));
