@@ -632,7 +632,7 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
             const myRating = (ratingOf(playerId) + ratingOf(partnerId)) / 2;
             const oppRating = (ratingOf(oppPair[0]) + ratingOf(oppPair[1])) / 2;
             const winPct = Math.round((1 / (1 + Math.pow(10, (oppRating - myRating) / ELO_SCALE))) * 100);
-            prediction = { winPct, provisional: [playerId, partnerId, oppPair[0], oppPair[1]].some(provisionalOf) };
+            prediction = { winPct, provisional: [playerId, partnerId, oppPair[0], oppPair[1]].some(provisionalOf), projectedScore: projectedScoreText(winPct) };
           }
           rows.push({
             label: stageLabel(league, f),
@@ -816,6 +816,29 @@ function leagueRankings(league, ratingsData, identityOf) {
   rows.sort((a, b) => b.rating - a.rating);
   return rows;
 }
+// A rough, bucketed scoreline for whichever side is favoured — NOT a
+// simulation of an actual match, just "the bigger the mismatch, the more
+// lopsided the sets look," using only real padel set scores. Always
+// labelled as a guess wherever it's shown (see projectedScore below);
+// this is deliberately coarse rather than a false show of precision.
+function projectedSetScores(favoritePct) {
+  if (favoritePct >= 90) return [[6, 1], [6, 2]];
+  if (favoritePct >= 80) return [[6, 2], [6, 3]];
+  if (favoritePct >= 70) return [[6, 3], [6, 4]];
+  if (favoritePct >= 60) return [[6, 4], [7, 5]];
+  if (favoritePct >= 55) return [[7, 5], [6, 4]];
+  return [[7, 6], [6, 4]];
+}
+// `winPctSide` is the win% of whichever side should come first in the
+// returned string (winPctA for an A-vs-B string, "my" win% for a
+// personal one) — the bucketed sets flip around it automatically so the
+// stronger side's games always lead, regardless of which side that is.
+function projectedScoreText(winPctSide) {
+  const sideIsFavorite = winPctSide >= 50;
+  const favoritePct = sideIsFavorite ? winPctSide : 100 - winPctSide;
+  const sets = projectedSetScores(favoritePct);
+  return sets.map(([fav, dog]) => (sideIsFavorite ? fav + "-" + dog : dog + "-" + fav)).join(", ");
+}
 // Win probability for a hypothetical/upcoming seed pairing, from current
 // (as of every finalized result so far, across every league) ratings —
 // same expectation formula the rating engine itself uses, just not
@@ -833,6 +856,7 @@ function predictSeed(league, pairA, pairB, ratingsData, identityOf) {
     ratingA: Math.round(ratingA),
     ratingB: Math.round(ratingB),
     provisional: [pairA[0], pairA[1], pairB[0], pairB[1]].some(provisionalOf),
+    projectedScore: projectedScoreText(winPctA),
   };
 }
 

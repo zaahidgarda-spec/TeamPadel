@@ -274,9 +274,14 @@ function predictionBarHtml(prediction, forceShow) {
   if ((!RATINGS_ENABLED && !forceShow) || !prediction) return "";
   const note = prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : "";
   const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
+  // A rough guess at the scoreline, not a second, more precise prediction —
+  // labelled "Projected score" (not "Predicted") to keep that distinction
+  // clear next to the actual win% the model is confident in.
+  const scoreHtml = prediction.projectedScore ? `<div class="mc-predict-score">Projected score: <strong>${escapeHtml(prediction.projectedScore)}</strong></div>` : "";
   return `<div class="mc-predict">
     <div class="mc-predict-bar"><span class="a" style="width:${prediction.winPctA}%"></span><span class="b" style="width:${prediction.winPctB}%"></span></div>
     <div class="mc-predict-pcts"><span>${prediction.winPctA}%</span><span>${prediction.winPctB}%</span></div>
+    ${scoreHtml}
     ${note}
     ${powered}
   </div>`;
@@ -290,7 +295,8 @@ function predictionBarHtml(prediction, forceShow) {
 function personalPredictionHtml(prediction, forceShow) {
   if ((!RATINGS_ENABLED && !forceShow) || !prediction) return "";
   const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
-  return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>${powered}`;
+  const scoreHtml = prediction.projectedScore ? `<div class="mc-predict-score">Projected score: <strong>${escapeHtml(prediction.projectedScore)}</strong></div>` : "";
+  return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>${scoreHtml}${powered}`;
 }
 async function renderNextMatches() {
   const card = el("next-matches-card");
@@ -4825,7 +4831,7 @@ async function generatePosterCanvas(mode, theme) {
   // absurdly huge) — leftover space is used to center the block instead
   // of stretching it, so two fixtures don't get blown up to fill a story.
   const baseHeaderBlockH = 108, baseRowGap = 16;
-  const basePairRowH = mode === "results" || mode === "predictions" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
+  const basePairRowH = mode === "predictions" ? 60 : mode === "results" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
   const fixtureMeta = fixtures.map((f) => {
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
     const blockH = baseHeaderBlockH + (revealed ? basePairsTopPad + 4 * basePairRowH + basePairsBottomPad : 0);
@@ -4973,15 +4979,18 @@ async function generatePosterCanvas(mode, theme) {
         } else if (mode === "predictions") {
           ctx.fillStyle = "#64748B";
           ctx.font = "500 " + sz(12) + "px Oswald, sans-serif";
-          ctx.fillText("SEED " + (i + 1), W / 2, py - sz(9));
+          ctx.fillText("SEED " + (i + 1), W / 2, py - sz(15));
           if (winner) {
             ctx.fillStyle = theme.win;
             ctx.font = "600 " + sz(18) + "px Oswald, sans-serif";
-            ctx.fillText(predEntry.score || "—", W / 2, py + sz(14));
+            ctx.fillText(predEntry.score || "—", W / 2, py + sz(8));
           } else if (predEntry && predEntry.prediction) {
             ctx.fillStyle = "#FFFFFF";
-            ctx.font = "700 " + sz(19) + "px Oswald, sans-serif";
-            ctx.fillText(predEntry.prediction.winPctA + "% – " + predEntry.prediction.winPctB + "%", W / 2, py + sz(14));
+            ctx.font = "700 " + sz(18) + "px Oswald, sans-serif";
+            ctx.fillText(predEntry.prediction.winPctA + "% – " + predEntry.prediction.winPctB + "%", W / 2, py + sz(6));
+            ctx.fillStyle = "#8FA9B4";
+            ctx.font = "500 " + sz(13) + "px Inter, sans-serif";
+            ctx.fillText(predEntry.prediction.projectedScore || "", W / 2, py + sz(26));
           } else {
             ctx.fillStyle = "#64748B";
             ctx.font = "500 " + sz(13) + "px Oswald, sans-serif";
