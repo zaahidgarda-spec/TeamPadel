@@ -2562,6 +2562,13 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req,
   // other seat (a different pair, elsewhere in sel.pairs) is untouched.
   sel.pairs = sel.pairs.map((pair, i) => (i === idx ? pair.map((pid) => (pid === outPlayerId ? incomingId : pid)) : pair));
 
+  // Flat list of every player who came in as a substitute on THIS side's
+  // line-up tonight — the client uses it to show a sub's name in a
+  // different colour wherever this selection gets rendered, without
+  // needing to reconstruct who-replaced-whom from the audit log.
+  if (!sel.subs) sel.subs = [];
+  if (!sel.subs.includes(incomingId)) sel.subs.push(incomingId);
+
   const outName = (team.players.find((p) => p.id === outPlayerId) || {}).name || "A player";
   const inName = (team.players.find((p) => p.id === incomingId) || {}).name || "Substitute";
   const label = fixtureLabel(league, f);

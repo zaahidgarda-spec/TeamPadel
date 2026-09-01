@@ -78,25 +78,35 @@ function ratingDeltaHtml(delta) {
 }
 function isGoldPlayer(p) { return !!(league && league.tieringEnabled && p && p.gold); }
 function goldPrefix(p) { return isGoldPlayer(p) ? "★ " : ""; }
-function goldNameHtml(p) {
+// `isSub` colours the name to flag a mid-fixture substitute — independent
+// of gold-tier (a sub can also be a gold player, so the ★ prefix and the
+// colour can both apply to the same name at once).
+function goldNameHtml(p, isSub) {
   if (!p) return "";
-  return isGoldPlayer(p) ? `<span class="gold-name">★ ${escapeHtml(p.name)}</span>` : escapeHtml(p.name);
+  const prefix = isGoldPlayer(p) ? "★ " : "";
+  const cls = [isGoldPlayer(p) ? "gold-name" : null, isSub ? "sub-name" : null].filter(Boolean).join(" ");
+  return cls ? `<span class="${cls}">${prefix}${escapeHtml(p.name)}</span>` : escapeHtml(p.name);
 }
-function pairNamesGoldHtml(team, pair) {
+// `sel` (a fixture's selectionA/selectionB) is optional — pass it whenever
+// available so a player listed in sel.subs renders in the substitute
+// colour; omit it only where no selection object exists in scope.
+function pairNamesGoldHtml(team, pair, sel) {
   if (!pair) return "—";
-  const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldNameHtml(p)).join(" & ");
+  const subs = (sel && sel.subs) || [];
+  const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => goldNameHtml(p, subs.includes(p.id))).join(" & ");
   return html || "—";
 }
-function playerLinkHtml(p) {
-  return `<button type="button" class="player-link" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${goldNameHtml(p)}</button>`;
+function playerLinkHtml(p, isSub) {
+  return `<button type="button" class="player-link" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${goldNameHtml(p, isSub)}</button>`;
 }
 // Same look as pairNamesGoldHtml, but each name is its own clickable link
 // to that player's profile — only used where the result actually gets
 // wired up with click handlers afterward (a static innerHTML use, like the
 // score modal's title, would render buttons that visibly do nothing).
-function pairNamesClickableHtml(team, pair) {
+function pairNamesClickableHtml(team, pair, sel) {
   if (!pair) return "—";
-  const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map(playerLinkHtml).join(" &amp; ");
+  const subs = (sel && sel.subs) || [];
+  const html = [playerById(team, pair[0]), playerById(team, pair[1])].filter(Boolean).map((p) => playerLinkHtml(p, subs.includes(p.id))).join(" &amp; ");
   return html || "—";
 }
 function bindPlayerLinks(root) {
@@ -3102,7 +3112,7 @@ function pairTossAccordion(f, teamA, teamB, mySide) {
         const sel = side === "A" ? f.selectionA : f.selectionB;
         panel.appendChild(Object.assign(document.createElement("p"), {
           className: "toss-hud-note", style: "margin-top:6px;",
-          innerHTML: `<strong style="color:#F2F6FF;">${escapeHtml(team.name)}:</strong> ${pairNamesGoldHtml(team, sel.pairs[idx])}`,
+          innerHTML: `<strong style="color:#F2F6FF;">${escapeHtml(team.name)}:</strong> ${pairNamesGoldHtml(team, sel.pairs[idx], sel)}`,
         }));
       } else if (!isFirst && !firstFilled) {
         panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:6px;", textContent: "Waiting on " + firstTeam.name + " to declare first." }));
@@ -3483,7 +3493,7 @@ function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
-    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesGoldHtml(team, pair)}</span></div>`;
+    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesGoldHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
   const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
@@ -4100,8 +4110,8 @@ function renderFixtures() {
         html += '<div class="rubbers">';
         f.selectionA.pairs.forEach((pairA, i) => {
           const pairB = f.selectionB.pairs[i];
-          const nameA = pairNamesGoldHtml(teamA, pairA);
-          const nameB = pairNamesGoldHtml(teamB, pairB);
+          const nameA = pairNamesGoldHtml(teamA, pairA, f.selectionA);
+          const nameB = pairNamesGoldHtml(teamB, pairB, f.selectionB);
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
           const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
@@ -4187,8 +4197,8 @@ function rubberScoreText(r) {
 // always has exactly one rubber (idx 0) and is never a knockout decider.
 function openScoreModalFor(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-  const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[0]);
-  const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[0]);
+  const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[0], f.selectionA);
+  const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[0], f.selectionB);
   openScoreModal(f, 0, f.rubbers[0], teamA, teamB, false, pairAHtml, pairBHtml);
 }
 // A Vibora pair plays every other pair in its group in whatever order suits
@@ -4441,12 +4451,12 @@ function resultsCard(f) {
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
-    const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[idx]);
-    const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[idx]);
+    const pairAHtml = pairNamesGoldHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
+    const pairBHtml = pairNamesGoldHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
     const potwWinners = (league.potwByRound && league.potwByRound[f.round] && league.potwByRound[f.round].winners) || [];
     const isPotwPair = (side) => !isDecider && potwWinners.some((w) => w.key === `${f.id}:${side}:${idx}`);
-    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairNamesClickableHtml(teamA, f.selectionA.pairs[idx]);
-    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairNamesClickableHtml(teamB, f.selectionB.pairs[idx]);
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : (isPotwPair("A") ? "👑 " : "") + pairNamesClickableHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : (isPotwPair("B") ? "👑 " : "") + pairNamesClickableHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
     bindPlayerLinks(pairADisplay); bindPlayerLinks(pairBDisplay);
 
     const scores = document.createElement("div"); scores.className = "score-summary-wrap";
