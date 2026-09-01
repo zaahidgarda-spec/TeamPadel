@@ -632,7 +632,7 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
             const myRating = (ratingOf(playerId) + ratingOf(partnerId)) / 2;
             const oppRating = (ratingOf(oppPair[0]) + ratingOf(oppPair[1])) / 2;
             const winPct = Math.round((1 / (1 + Math.pow(10, (oppRating - myRating) / ELO_SCALE))) * 100);
-            prediction = { winPct, provisional: [playerId, partnerId, oppPair[0], oppPair[1]].some(provisionalOf), projectedScore: projectedScoreText(winPct) };
+            prediction = { winPct, provisional: [playerId, partnerId, oppPair[0], oppPair[1]].some(provisionalOf), projectedScore: projectedScoreText(winPct, playerId + partnerId + oppPair[0] + oppPair[1]) };
           }
           rows.push({
             label: stageLabel(league, f),
@@ -821,22 +821,38 @@ function leagueRankings(league, ratingsData, identityOf) {
 // lopsided the sets look," using only real padel set scores. Always
 // labelled as a guess wherever it's shown (see projectedScore below);
 // this is deliberately coarse rather than a false show of precision.
-function projectedSetScores(favoritePct) {
-  if (favoritePct >= 90) return [[6, 1], [6, 2]];
-  if (favoritePct >= 80) return [[6, 2], [6, 3]];
-  if (favoritePct >= 70) return [[6, 3], [6, 4]];
-  if (favoritePct >= 60) return [[6, 4], [7, 5]];
-  if (favoritePct >= 55) return [[7, 5], [6, 4]];
-  return [[7, 6], [6, 4]];
+// Several plausible scorelines per tier, not one — a bucket this coarse
+// (five tiers covering 0-100%) puts a lot of real matchups in the same
+// bucket, and a single fixed template per tier meant every one of them
+// projected the identical score. Which template a given matchup gets is
+// picked deterministically (see hashKey in projectedScoreText) so the
+// SAME matchup always shows the same projection on reload, but different
+// matchups in the same tier don't all look identical.
+function projectedSetScoreTemplates(favoritePct) {
+  if (favoritePct >= 90) return [[[6, 0], [6, 1]], [[6, 1], [6, 2]], [[6, 0], [6, 2]]];
+  if (favoritePct >= 80) return [[[6, 2], [6, 3]], [[6, 1], [6, 3]], [[6, 2], [6, 4]]];
+  if (favoritePct >= 70) return [[[6, 3], [6, 4]], [[6, 3], [7, 5]], [[6, 4], [6, 3]]];
+  if (favoritePct >= 60) return [[[6, 4], [7, 5]], [[7, 5], [6, 4]], [[6, 4], [6, 4]]];
+  if (favoritePct >= 55) return [[[7, 5], [6, 4]], [[6, 4], [7, 6]], [[7, 6], [6, 4]]];
+  return [[[7, 6], [6, 4]], [[6, 4], [7, 6]], [[7, 6], [7, 5]]];
+}
+function hashKey(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }
 // `winPctSide` is the win% of whichever side should come first in the
 // returned string (winPctA for an A-vs-B string, "my" win% for a
 // personal one) — the bucketed sets flip around it automatically so the
 // stronger side's games always lead, regardless of which side that is.
-function projectedScoreText(winPctSide) {
+// `matchKey` (any string identifying this specific pairing, e.g. the four
+// player ids) picks which of the tier's templates applies — omit it and
+// the first template is always used.
+function projectedScoreText(winPctSide, matchKey) {
   const sideIsFavorite = winPctSide >= 50;
   const favoritePct = sideIsFavorite ? winPctSide : 100 - winPctSide;
-  const sets = projectedSetScores(favoritePct);
+  const templates = projectedSetScoreTemplates(favoritePct);
+  const sets = templates[matchKey ? hashKey(matchKey) % templates.length : 0];
   return sets.map(([fav, dog]) => (sideIsFavorite ? fav + "-" + dog : dog + "-" + fav)).join(", ");
 }
 // Win probability for a hypothetical/upcoming seed pairing, from current
@@ -856,7 +872,7 @@ function predictSeed(league, pairA, pairB, ratingsData, identityOf) {
     ratingA: Math.round(ratingA),
     ratingB: Math.round(ratingB),
     provisional: [pairA[0], pairA[1], pairB[0], pairB[1]].some(provisionalOf),
-    projectedScore: projectedScoreText(winPctA),
+    projectedScore: projectedScoreText(winPctA, pairA[0] + pairA[1] + pairB[0] + pairB[1]),
   };
 }
 
