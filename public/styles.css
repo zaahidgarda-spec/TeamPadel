@@ -537,16 +537,12 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mc-predict-bar .b{background:var(--text-faint);}
 .mc-predict-pcts{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-dim);margin-top:3px;font-variant-numeric:tabular-nums;}
 .mc-predict-note{font-size:10px;color:var(--text-faint);margin-top:3px;}
-.mc-predict-score{font-size:11.5px;color:var(--text-dim);margin-top:6px;text-align:center;}
-.mc-predict-score strong{color:var(--text);font-family:var(--font-display);font-variant-numeric:tabular-nums;}
 .mc-predict-solo{font-size:12.5px;font-weight:600;color:var(--accent);margin-top:9px;text-align:center;}
 .mc-predict-solo .note{font-weight:400;color:var(--text-faint);}
 .floodlit.urgent .mc-predict-bar{background:rgba(255,255,255,.12);}
 .floodlit.urgent .mc-predict-bar .a{background:#7FA8FF;}
 .floodlit.urgent .mc-predict-bar .b{background:rgba(255,255,255,.25);}
 .floodlit.urgent .mc-predict-pcts,.floodlit.urgent .mc-predict-note{color:#7C8CB0;}
-.floodlit.urgent .mc-predict-score{color:#9FB0D6;}
-.floodlit.urgent .mc-predict-score strong{color:#F2F6FF;}
 .floodlit.urgent .mc-predict-solo{color:#8FB4FF;}
 .mc-predict-powered{display:block;text-align:center;margin-top:6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;color:var(--text-faint);text-decoration:none;}
 .mc-predict-powered:hover{text-decoration:underline;}
