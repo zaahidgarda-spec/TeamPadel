@@ -4297,12 +4297,44 @@ function renderResults() {
   el("round-nav-results").style.display = "block";
   el("results-pending-card").style.display = "none";
   renderRoundNav("round-nav-results");
+  renderPotwNudge();
   const c = el("results-container");
   c.innerHTML = "";
   const fixtures = fixturesForKey(viewingKey);
   el("results-poster-row").style.display = myRole === "admin" && fixtures.length > 0 ? "flex" : "none";
   if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No fixtures this round yet.</p></div>'; return; }
   fixtures.forEach((f) => c.appendChild(resultsCard(f)));
+}
+// The one-time "Results are in, go vote" notification (sent the moment a
+// round finalizes) is easy to miss or dismiss and never see again — this
+// is a standing reminder instead: it reappears on the Results tab, the
+// page a captain/admin actually visits every week, for as long as the
+// most recently finalized round still has zero Pair of the Week votes.
+// Once someone votes, potwByRound picks up a winner and this stops
+// showing on its own — no dismiss state to track.
+function renderPotwNudge() {
+  const card = el("potw-nudge-card");
+  if (!card) return;
+  if (myRole !== "captain" && myRole !== "admin") { card.style.display = "none"; return; }
+  const rounds = [...new Set(league.fixtures.map((f) => f.round))]
+    .filter((r) => {
+      const rf = league.fixtures.filter((f) => f.round === r);
+      return rf.length > 0 && rf.every((f) => f.finalized);
+    })
+    .sort((a, b) => b - a);
+  const target = rounds.find((r) => {
+    const data = (league.potwByRound && league.potwByRound[r]) || { winners: [] };
+    return !data.winners || data.winners.length === 0;
+  });
+  if (target === undefined) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  card.innerHTML = `<h2 class="section-title">Pair of the week</h2><p class="note" style="margin-bottom:10px;">${escapeHtml(roundLabel(target))} is finalized but nobody's voted for Pair of the Week yet.</p><button class="secondary" id="potw-nudge-vote-btn">Vote now</button>`;
+  el("potw-nudge-vote-btn").onclick = () => {
+    const entry = getRoundsList().find((k) => k.stage === "regular" && k.round === target);
+    if (entry) viewingKey = entry;
+    switchTab("awards");
+    renderAll();
+  };
 }
 // Every specific partnership that played this round — one per seed per
 // side — as vote options. Mirrors potwEligiblePairs() server-side; the
@@ -4356,7 +4388,7 @@ function renderPotwCard(fixtures) {
     voteWrap.className = "row";
     voteWrap.style.marginTop = "12px";
     const select = document.createElement("select");
-    select.innerHTML = '<option value="">Choose a pair…</option>' + eligible.map((p) => `<option value="${p.key}">${escapeHtml(pairLabel(p))} (${escapeHtml(p.teamName)})</option>`).join("");
+    select.innerHTML = '<option value="">Choose a pair…</option>' + eligible.map((p) => `<option value="${p.key}">${escapeHtml(p.playerAName + " & " + p.playerBName)} (${escapeHtml(p.teamName)})</option>`).join("");
     const myVote = league.myPotwVote && league.myPotwVote[round];
     if (myVote) select.value = myVote;
     const btn = document.createElement("button");
@@ -4367,7 +4399,7 @@ function renderPotwCard(fixtures) {
       if (!pairKey) return;
       try {
         await api(`/leagues/${currentLeagueId}/pair-of-week/${round}/vote`, { method: "POST", body: { pairKey } });
-        await refreshLeague(); renderAwards();
+        await refreshLeague(); renderAwards(); renderPotwNudge();
       } catch (e) { alert(e.message); }
     };
     voteWrap.appendChild(select); voteWrap.appendChild(btn);
