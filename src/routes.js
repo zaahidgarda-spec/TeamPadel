@@ -579,6 +579,52 @@ router.get("/players/tonight-matches", (req, res) => {
   res.json({ matches: buildNextMatchesPairings(leagues, ratingsData, identityOf) });
 });
 
+// The in-league Predictions tab — every seed in the given round (team
+// leagues, round-scoped) or every not-yet-finalized seed across the whole
+// league (pairs leagues, which have no weekly round to browse — same
+// "Fixtures collapses into Results" reasoning as elsewhere). An already-
+// decided seed carries its actual score instead of a prediction, so a
+// partially-played round still shows something useful for what's left.
+router.get("/leagues/:leagueId/predictions", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const round = req.query.round !== undefined ? Number(req.query.round) : null;
+  const fixtures = (round !== null ? league.fixtures.filter((f) => f.round === round) : league.fixtures.filter((f) => !f.finalized));
+  const { ratingsData, identityOf } = loadGlobalRatings();
+
+  const out = fixtures.map((f) => {
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    if (!teamA || !teamB) return null;
+    const revealed = f.selectionA.submitted && f.selectionB.submitted;
+    const seeds = [];
+    if (revealed) {
+      f.selectionA.pairs.forEach((pairA, i) => {
+        const pairB = (f.selectionB.pairs || [])[i];
+        if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return;
+        const rubber = f.rubbers[i];
+        const winner = rubber ? logic.rubberWinner(rubber) : null;
+        seeds.push({
+          seed: i + 1,
+          pairA: pairA.map((id) => (teamA.players.find((p) => p.id === id) || {}).name).filter(Boolean),
+          pairB: pairB.map((id) => (teamB.players.find((p) => p.id === id) || {}).name).filter(Boolean),
+          winner,
+          score: winner ? logic.rubberScoreText(rubber) : null,
+          prediction: winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf),
+        });
+      });
+    }
+    return {
+      fixtureId: f.id, round: f.round, finalized: f.finalized, groupId: f.groupId || null,
+      teamAId: teamA.id, teamBId: teamB.id, teamAName: teamA.name, teamBName: teamB.name,
+      teamALogo: teamA.logo || "", teamBLogo: teamB.logo || "",
+      revealed, seeds,
+    };
+  }).filter(Boolean);
+
+  res.json({ round, fixtures: out });
+});
+
 // Homepage teasers, public and site-wide (not scoped to one league or one
 // signed-in player) — reuses the same structured data the round-recap news
 // post already carries, rather than recomputing anything. For each visible

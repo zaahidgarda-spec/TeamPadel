@@ -178,6 +178,11 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .rubbers{border-top:1px dashed var(--line);padding-top:10px;}
 .rubber-row{display:grid;grid-template-columns:56px 1fr auto 1fr;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);}
 .rubber-row:last-child{border-bottom:none;}
+/* One seed's pairing + win-probability bar on the Predictions tab — full
+   width and centered, unlike the narrow four-column .rubber-row grid,
+   since a probability bar needs more room than a "vs"/score ever did. */
+.predictions-seed{border-top:1px dashed var(--line);padding:14px 0;}
+.predictions-seed:first-child{border-top:none;padding-top:6px;}
 .seed{font-family:var(--font-display);font-size:11px;color:var(--text-dim);text-transform:uppercase;padding-top:8px;}
 .pair{font-size:13px;padding:9px 12px;background:var(--panel-2);border-radius:var(--radius-sm);border:1px solid var(--line);}
 .pair.won{border-color:var(--success);color:var(--success);background:var(--success-soft);font-weight:600;}

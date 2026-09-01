@@ -1338,6 +1338,12 @@ function tabDefs() {
   // been played, and who's left to play.
   if (!isPairs) defs.push({ key: "fixtures", label: "Fixtures" });
   defs.push({ key: "results", label: "Results" });
+  // Win-probability per undecided seed — always shown, same "force show,
+  // branded to the sister site" exception already made for the homepage
+  // carousel and My Profile's own next-match cards, independent of
+  // RATINGS_ENABLED (that flag is about this deployment's OWN ratings
+  // UI, not the prediction teaser this league-scoped tab is).
+  defs.push({ key: "predictions", label: "Predictions" });
   defs.push({ key: "table", label: "Table" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
   // Admin-only, independent of RATINGS_ENABLED — a preview of what ratings
@@ -1379,7 +1385,7 @@ function buildTabs() {
 // Tabs where "which group" is meaningless (admin manages every group at
 // once; news isn't scoped to one) — the selector only makes sense on the
 // tabs that actually show one group's fixtures/table/stats/pairs.
-const GROUP_SCOPED_TABS = ["fixtures", "results", "table", "stats", "roster"];
+const GROUP_SCOPED_TABS = ["fixtures", "results", "predictions", "table", "stats", "roster"];
 function switchTab(key) {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
   document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
@@ -1586,6 +1592,7 @@ function renderAll() {
   renderToss();
   renderFixtures();
   renderResults();
+  renderPredictions();
   renderTable();
   if (RATINGS_ENABLED) renderRankings();
   if (myRole === "admin") renderRatingsPreview();
@@ -4351,6 +4358,59 @@ function renderPotwNudge() {
     renderAll();
   };
 }
+// The Predictions tab — win-probability per undecided seed, from
+// /leagues/:id/predictions (round-scoped for a team league, whole-league
+// for a pairs league — see the route's own comment). Reuses
+// predictionBarHtml with forceShow, the same "branded to the sister
+// site" exception already made everywhere else a prediction shows on
+// this deployment (RATINGS_ENABLED is about this site's OWN ratings UI,
+// not this teaser).
+async function renderPredictions() {
+  const c = el("predictions-container");
+  if (!c) return;
+  const isPairs = league.format === "pairs";
+  el("round-nav-predictions").style.display = isPairs ? "none" : "block";
+  el("predictions-poster-row").style.display = !isPairs && myRole === "admin" ? "flex" : "none";
+  if (!isPairs) {
+    if (!viewingKey || viewingKey.stage !== "regular") { c.innerHTML = '<div class="card"><p class="empty">No predictions for this stage.</p></div>'; return; }
+    renderRoundNav("round-nav-predictions");
+  }
+  const qs = isPairs ? "" : `?round=${viewingKey.round}`;
+  const data = await api(`/leagues/${currentLeagueId}/predictions${qs}`).catch(() => ({ fixtures: [] }));
+  let fixtures = data.fixtures || [];
+  if (viewingGroupId) fixtures = fixtures.filter((f) => f.groupId === viewingGroupId);
+
+  c.innerHTML = "";
+  if (fixtures.length === 0) { c.innerHTML = '<div class="card"><p class="empty">Nothing to predict yet.</p></div>'; return; }
+  fixtures.forEach((f) => c.appendChild(predictionsFixtureCard(f)));
+}
+function predictionsFixtureCard(f) {
+  const card = document.createElement("div"); card.className = "fixture-card";
+  const logoHtml = (logo, name) => (logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "");
+  let html = `<div class="fixture-head"><div class="fixture-title">${logoHtml(f.teamALogo, f.teamAName)} ${escapeHtml(f.teamAName)} <span class="vs">vs</span> ${escapeHtml(f.teamBName)} ${logoHtml(f.teamBLogo, f.teamBName)}</div></div>`;
+  if (!f.revealed) {
+    html += `<p class="note" style="margin-top:8px;">Line-ups not yet revealed — check Selection Room.</p>`;
+  } else if (f.seeds.length === 0) {
+    html += `<p class="note" style="margin-top:8px;">Nothing to predict here.</p>`;
+  } else {
+    html += f.seeds.map((s) => {
+      const seedLabel = f.seeds.length > 1 ? `<div class="mc-league">Seed ${s.seed}</div>` : "";
+      const centerHtml = s.winner ? `<span class="vs mc-score">${escapeHtml(s.score || "")}</span>` : `<span class="vs">vs</span>`;
+      const predHtml = s.winner ? "" : (s.prediction ? predictionBarHtml(s.prediction, true) : '<p class="note" style="margin-top:8px;">No prediction yet — not enough rated matches.</p>');
+      return `<div class="predictions-seed">
+        ${seedLabel}
+        <div class="mc-pairing">
+          <span class="mc-pair-row"><span class="mc-pair${s.winner === "A" ? " won" : ""}">${escapeHtml(s.pairA.join(" & ") || "—")}</span></span>
+          ${centerHtml}
+          <span class="mc-pair-row"><span class="mc-pair${s.winner === "B" ? " won" : ""}">${escapeHtml(s.pairB.join(" & ") || "—")}</span></span>
+        </div>
+        ${predHtml}
+      </div>`;
+    }).join("");
+  }
+  card.innerHTML = html;
+  return card;
+}
 // Every specific partnership that played this round — one per seed per
 // side — as vote options. Mirrors potwEligiblePairs() server-side; the
 // server re-validates on submit so this is just for building the dropdown.
@@ -4742,6 +4802,17 @@ async function generatePosterCanvas(mode, theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey).slice(0, 8);
   const sponsors = (league.sponsors || []).slice(0, 5);
+  // Predictions mode needs win% per seed, which fixturesForKey's plain
+  // fixture objects don't carry — fetched once here into a fixtureId:seed
+  // lookup, same round the on-screen tab is scoped to.
+  let predMap = null;
+  if (mode === "predictions") {
+    predMap = {};
+    const data = await api(`/leagues/${currentLeagueId}/predictions?round=${viewingKey.round}`).catch(() => ({ fixtures: [] }));
+    (data.fixtures || []).forEach((pf) => {
+      pf.seeds.forEach((s) => { predMap[pf.fixtureId + ":" + (s.seed - 1)] = s; });
+    });
+  }
   // Fixed 9:16 canvas (Instagram Story/Reel size) — content scales to fit
   // instead of the canvas growing to fit the content.
   const W = 1080, H = 1920;
@@ -4754,7 +4825,7 @@ async function generatePosterCanvas(mode, theme) {
   // absurdly huge) — leftover space is used to center the block instead
   // of stretching it, so two fixtures don't get blown up to fill a story.
   const baseHeaderBlockH = 108, baseRowGap = 16;
-  const basePairRowH = mode === "results" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
+  const basePairRowH = mode === "results" || mode === "predictions" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
   const fixtureMeta = fixtures.map((f) => {
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
     const blockH = baseHeaderBlockH + (revealed ? basePairsTopPad + 4 * basePairRowH + basePairsBottomPad : 0);
@@ -4789,7 +4860,7 @@ async function generatePosterCanvas(mode, theme) {
 
   ctx.fillStyle = "#FFFFFF";
   ctx.font = "700 68px Oswald, sans-serif";
-  ctx.fillText(mode === "results" ? "RESULTS" : "FIXTURES", W / 2, 168);
+  ctx.fillText(mode === "results" ? "RESULTS" : mode === "predictions" ? "PREDICTIONS" : "FIXTURES", W / 2, 168);
 
   ctx.fillStyle = "#8FA9B4";
   ctx.font = "500 28px Oswald, sans-serif";
@@ -4878,7 +4949,8 @@ async function generatePosterCanvas(mode, theme) {
       for (let i = 0; i < 4; i++) {
         const namesA = playerNamesForShort(teamA, f.selectionA.pairs[i]);
         const namesB = playerNamesForShort(teamB, f.selectionB.pairs[i]);
-        const winner = f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
+        const predEntry = mode === "predictions" && predMap ? predMap[f.id + ":" + i] : null;
+        const winner = mode === "predictions" ? (predEntry ? predEntry.winner : null) : f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
 
         ctx.textAlign = "left";
         ctx.fillStyle = winner === "A" ? theme.win : "#C6D2E3";
@@ -4898,6 +4970,23 @@ async function generatePosterCanvas(mode, theme) {
           ctx.fillStyle = "#FFFFFF";
           ctx.font = "600 " + sz(18) + "px Oswald, sans-serif";
           ctx.fillText(rubberScoreText(f.rubbers[i]) || "—", W / 2, py + sz(14));
+        } else if (mode === "predictions") {
+          ctx.fillStyle = "#64748B";
+          ctx.font = "500 " + sz(12) + "px Oswald, sans-serif";
+          ctx.fillText("SEED " + (i + 1), W / 2, py - sz(9));
+          if (winner) {
+            ctx.fillStyle = theme.win;
+            ctx.font = "600 " + sz(18) + "px Oswald, sans-serif";
+            ctx.fillText(predEntry.score || "—", W / 2, py + sz(14));
+          } else if (predEntry && predEntry.prediction) {
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "700 " + sz(19) + "px Oswald, sans-serif";
+            ctx.fillText(predEntry.prediction.winPctA + "% – " + predEntry.prediction.winPctB + "%", W / 2, py + sz(14));
+          } else {
+            ctx.fillStyle = "#64748B";
+            ctx.font = "500 " + sz(13) + "px Oswald, sans-serif";
+            ctx.fillText("—", W / 2, py + sz(9));
+          }
         } else {
           ctx.fillStyle = "#64748B";
           ctx.font = "500 " + sz(15) + "px Oswald, sans-serif";
@@ -5327,7 +5416,7 @@ async function generateTablePosterCanvas(theme) {
   return canvas;
 }
 async function openPosterModal(mode) {
-  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster" };
+  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster", predictions: "Predictions poster" };
   el("poster-modal-title").textContent = titles[mode] || "Fixtures poster";
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
@@ -5351,6 +5440,7 @@ async function openPosterModal(mode) {
 el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.remove("open");
 el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
 el("generate-results-poster-btn").onclick = () => openPosterModal("results");
+el("generate-predictions-poster-btn").onclick = () => openPosterModal("predictions");
 el("generate-court-schedule-poster-btn").onclick = () => openPosterModal("court-schedule");
 el("generate-table-poster-btn").onclick = () => openPosterModal("table");
 el("generate-court-rotation-btn").onclick = async () => {
