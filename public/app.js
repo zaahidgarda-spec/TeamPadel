@@ -1238,12 +1238,17 @@ function renderAccountNextMatch(cards) {
   // same numbering, not a different "Seed" label for the same thing.
   const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   const logoHtml = (logo, name) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "";
+  // Same "favorite" edge as the Predictions tab (>=60% either way) — just
+  // mapped onto the single personal winPct instead of a two-side split.
+  const favTag = '<span class="predictions-favorite-tag">Favorite</span>';
+  const favMine = m.prediction && m.prediction.winPct >= 60;
+  const favOpp = m.prediction && m.prediction.winPct <= 40;
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
     <div class="mc-pairing">
-      <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair">${escapeHtml([m.playerName, m.partner].filter(Boolean).join(" & "))}</span></span>
+      <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair${favMine ? " favorite" : ""}">${escapeHtml([m.playerName, m.partner].filter(Boolean).join(" & "))}</span>${favMine ? favTag : ""}</span>
       <span class="vs">vs</span>
-      <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span></span>
+      <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair${favOpp ? " favorite" : ""}">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span>${favOpp ? favTag : ""}</span>
     </div>
     ${personalPredictionHtml(m.prediction, true)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
