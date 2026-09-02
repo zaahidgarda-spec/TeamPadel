@@ -490,12 +490,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 @keyframes league-live-pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 .league-card.has-photo .league-status-live{background:var(--clay);border-color:var(--clay);color:#fff;}
 
-/* Public activity signal on the hub — green, not the match-live red above,
-   so it doesn't read as "a match is happening" at a glance. */
-.online-count-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--success);background:var(--success-soft);border:1px solid rgba(23,138,76,.25);border-radius:var(--radius-full);padding:4px 12px;margin-top:6px;}
-.online-dot{width:6px;height:6px;border-radius:50%;background:var(--success);animation:league-live-pulse 1.6s ease-in-out infinite;}
-@media (prefers-reduced-motion: reduce){.online-dot{animation:none;}}
-
 /* ---------- Home page: Next matches carousel ---------- */
 /* One real pairing at a time (not the team names) — auto-rotating, so it
    stays compact instead of a stacked list that pushes the rest of the

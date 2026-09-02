@@ -559,10 +559,8 @@ router.post("/presence/ping", async (req, res) => {
   await store.touchPresence(visitorId);
   res.json({ ok: true });
 });
-// Public — shown on the hub page for every visitor, not just the Admin
-// tab (which reads this same route), since a live count is more of an
-// activity signal for anyone browsing than sensitive admin data.
-router.get("/live-count", async (req, res) => {
+router.get("/admin/live-count", async (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   res.json({ count: await store.getLiveVisitorCount() });
 });
 

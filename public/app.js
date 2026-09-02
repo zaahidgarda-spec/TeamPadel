@@ -235,13 +235,6 @@ function showHub() {
   // double up the /api/next-matches request on every hub visit.
   renderNextMatches();
   renderHomepageHighlights();
-  renderHubOnlineCount();
-}
-async function renderHubOnlineCount() {
-  const data = await api("/live-count").catch(() => null);
-  if (!data) return;
-  el("hub-online-num").textContent = data.count;
-  el("hub-online-badge").style.display = "inline-flex";
 }
 const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
@@ -713,7 +706,7 @@ async function refreshOwnerStatus() {
 // Owner-only — refetched each time the Admin tab is (re)entered rather than
 // polled continuously, since it's a glance-at stat, not a live dashboard.
 async function renderLiveCount() {
-  const data = await api("/live-count").catch(() => null);
+  const data = await api("/admin/live-count").catch(() => null);
   el("live-count-num").textContent = data ? data.count : "—";
 }
 // The owner's full list of every league — including hidden ones, which
