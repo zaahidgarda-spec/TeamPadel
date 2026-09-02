@@ -527,6 +527,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    pair gets the same checkmark/success treatment as the results list. */
 .mc-pair.won{color:var(--success);}
 .mc-pair.won::before{content:"✓ ";}
+/* Pre-match favorite, not a result — bold accent instead of the
+   green success color so it never reads as an already-decided win. */
+.mc-pair.favorite{color:var(--accent);}
+.predictions-favorite-tag{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:2px 7px;border-radius:5px;}
 .mc-pair-row{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mc-team-logo{width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--panel-2);border:1px solid var(--line);}
 .floodlit.urgent .mc-team-logo{border-color:rgba(255,255,255,.3);}

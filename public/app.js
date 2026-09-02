@@ -4445,12 +4445,17 @@ function predictionsFixtureCard(f) {
       const seedLabel = f.seeds.length > 1 ? `<div class="mc-league">Seed ${s.seed}</div>` : "";
       const centerHtml = s.winner ? `<span class="vs mc-score">${escapeHtml(s.score || "")}</span>` : `<span class="vs">vs</span>`;
       const predHtml = s.winner ? "" : (s.prediction ? predictionBarHtml(s.prediction, true) : '<p class="note" style="margin-top:8px;">No prediction yet — not enough rated matches.</p>');
+      // Only flag a favorite when it's a real edge, not a coin-flip — a
+      // 51/49 tag would be noise, not a highlight.
+      const favSide = (!s.winner && s.prediction && Math.max(s.prediction.winPctA, s.prediction.winPctB) >= 60)
+        ? (s.prediction.winPctA >= s.prediction.winPctB ? "A" : "B") : null;
+      const favTag = '<span class="predictions-favorite-tag">Favorite</span>';
       return `<div class="predictions-seed">
         ${seedLabel}
         <div class="mc-pairing">
-          <span class="mc-pair-row"><span class="mc-pair${s.winner === "A" ? " won" : ""}">${escapeHtml(s.pairA.join(" & ") || "—")}</span></span>
+          <span class="mc-pair-row"><span class="mc-pair${s.winner === "A" ? " won" : favSide === "A" ? " favorite" : ""}">${escapeHtml(s.pairA.join(" & ") || "—")}</span>${favSide === "A" ? favTag : ""}</span>
           ${centerHtml}
-          <span class="mc-pair-row"><span class="mc-pair${s.winner === "B" ? " won" : ""}">${escapeHtml(s.pairB.join(" & ") || "—")}</span></span>
+          <span class="mc-pair-row"><span class="mc-pair${s.winner === "B" ? " won" : favSide === "B" ? " favorite" : ""}">${escapeHtml(s.pairB.join(" & ") || "—")}</span>${favSide === "B" ? favTag : ""}</span>
         </div>
         ${predHtml}
       </div>`;
