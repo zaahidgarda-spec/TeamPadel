@@ -210,11 +210,28 @@ function showHub() {
 }
 const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+// A round's schedule entry is one date/time for the whole night — matches
+// don't have individual end times, so "live" is approximated as a fixed
+// 4-hour window from kickoff (18:30 to 22:30 is the normal matchday shape).
+// Checked against the viewer's own clock, same as relativeDayLabel's
+// "Tonight" — correct without any server-side timezone handling.
+const LIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
+function leagueIsLiveNow(l) {
+  const sched = l.schedule || {};
+  const now = Date.now();
+  return Object.values(sched).some((s) => {
+    if (!s || !s.date || !s.time) return false;
+    const start = new Date(s.date + "T" + s.time + ":00").getTime();
+    if (isNaN(start)) return false;
+    return now >= start && now <= start + LIVE_WINDOW_MS;
+  });
+}
 function leagueCardHtml(l) {
   // Setup-phase leagues are a teaser for the public — visible, but only the
   // owner (who's actually building it) can click through.
   const locked = l.status === "setup" && !isOwner;
-  const statusLabel = l.status === "active" ? "Active" : locked ? "Coming soon" : "In setup";
+  const live = l.status === "active" && leagueIsLiveNow(l);
+  const statusLabel = live ? "Live now" : l.status === "active" ? "Active" : locked ? "Coming soon" : "In setup";
   const teams = l.teams || [];
   const maxShown = 8;
   const shown = teams.slice(0, maxShown);
@@ -236,7 +253,7 @@ function leagueCardHtml(l) {
   return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}${l.courtPhoto ? " has-photo" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}${photoStyle}>
     <div class="league-card-top">
       ${nameHtml}
-      <div class="row" style="gap:6px;">${viboraTag}<span class="tag league-status-${l.status}">${statusLabel}</span></div>
+      <div class="row" style="gap:6px;">${viboraTag}<span class="tag league-status-${l.status}${live ? " league-status-live" : ""}">${statusLabel}</span></div>
     </div>
     ${strengthHtml}
     ${logos}

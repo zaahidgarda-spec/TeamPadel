@@ -401,6 +401,10 @@ router.get("/leagues", (req, res) => {
       strength: league ? (league.strength || 0) : 0,
       format: league ? (league.format || "teams") : "teams",
       courtPhoto: league ? (league.courtPhoto || "") : "",
+      // Every round/stage's {date,time,venue} — small enough to ship whole,
+      // and the hub card needs it to work out "is a match live right now"
+      // against the viewer's own clock (see leagueIsLiveNow client-side).
+      schedule: league ? (league.schedule || {}) : {},
       // Just enough for a logo strip on the league card — never codes/emails.
       teams: league ? league.teams.map((t) => ({ name: t.name, logo: t.logo })) : [],
     };

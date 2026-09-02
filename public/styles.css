@@ -480,6 +480,16 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.has-photo .league-card-logos .avatar-fb{border-color:rgba(255,255,255,.5);}
 .league-card.has-photo .league-copy-codes-btn{color:#93c5fd;}
 
+/* Only shown during a round's scheduled 4-hour window (leagueIsLiveNow) —
+   overrides the plain "Active" tag, on both the plain and photo card
+   variants, so a matchday in progress stands out from a league that's
+   just generically active. */
+.league-status-live{color:#fff;border-color:var(--clay);background:var(--clay);}
+.league-status-live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:5px;vertical-align:1px;animation:league-live-pulse 1.6s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){.league-status-live::before{animation:none;}}
+@keyframes league-live-pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+.league-card.has-photo .league-status-live{background:var(--clay);border-color:var(--clay);color:#fff;}
+
 /* ---------- Home page: Next matches carousel ---------- */
 /* One real pairing at a time (not the team names) — auto-rotating, so it
    stays compact instead of a stacked list that pushes the rest of the
