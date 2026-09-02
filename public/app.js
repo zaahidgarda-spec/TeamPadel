@@ -210,6 +210,15 @@ async function boot() {
   // blue status-bar strip on top of a black screen) — back to the site's
   // own blue now that the real app is actually on screen.
   el("theme-color-meta").setAttribute("content", "#2563EB");
+  // Checked before the normal league route — a no-login pay link has to
+  // work standalone, without the visitor ever touching the hub or being
+  // signed into anything, and even for a hidden league (same "reachable
+  // at its own link" exception hidden leagues already get elsewhere).
+  const payLinkMatch = window.location.hash.match(/^#pay-link\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/);
+  if (payLinkMatch) {
+    await openPayLink(...payLinkMatch.slice(1));
+    return;
+  }
   const m = window.location.hash.match(/^#league\/(.+)$/);
   if (m && leaguesIndex.find((l) => l.id === m[1])) {
     await openLeague(m[1]);
@@ -223,6 +232,45 @@ async function boot() {
 // recognizes (the hub, a league) sends its own virtual pageview.
 function trackPageView(path, title) {
   if (typeof gtag === "function") gtag("event", "page_view", { page_path: path, page_title: title });
+}
+// A standalone page for someone who isn't signed into anything — a
+// teammate without a player account, paying their own share off a link
+// the captain sent them. Bypasses the hub/league chrome entirely.
+async function openPayLink(leagueId, teamId, playerId, token) {
+  el("view-hub").style.display = "none";
+  el("view-league").style.display = "none";
+  el("view-pay-link").style.display = "block";
+  const content = el("pay-link-content");
+  const data = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}`).catch(() => null);
+  if (!data) {
+    content.innerHTML = '<p class="note">This payment link isn\'t valid — ask your captain for a fresh one.</p>';
+    return;
+  }
+  trackPageView(`/pay-link/${leagueId}`, `Pay — ${data.playerName}`);
+  const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:10px;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
+  if (data.paid) {
+    content.innerHTML = `
+      <h2 class="section-title">${escapeHtml(data.playerName)}</h2>
+      <p class="note">${escapeHtml(data.teamName)} · ${escapeHtml(data.leagueName)}</p>
+      <p style="margin-top:12px;">✓ Already paid.</p>
+    `;
+    return;
+  }
+  content.innerHTML = `
+    <h2 class="section-title">${escapeHtml(data.playerName)}</h2>
+    <p class="note">${escapeHtml(data.teamName)} · ${escapeHtml(data.leagueName)}</p>
+    <p style="margin-top:12px;">Your share: <strong>${fmtRands(data.amountCents)}</strong></p>
+    <button class="primary" id="pay-link-btn" style="margin-top:10px;">Pay with PayFast</button>
+    <div class="error" id="pay-link-error"></div>
+    ${sandboxNote}
+  `;
+  el("pay-link-btn").onclick = async () => {
+    el("pay-link-error").textContent = "";
+    try {
+      const checkout = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}/checkout`);
+      submitPayfastCheckout(checkout);
+    } catch (e) { el("pay-link-error").textContent = e.message; }
+  };
 }
 function showHub() {
   currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
@@ -1114,6 +1162,34 @@ function renderAccountAvatar(cards) {
     : `<span class="fallback">${escapeHtml(playerInitials(playerAccount.name))}</span>`;
   btn.onclick = () => openPlayerHistory(withPhoto.leagueId, withPhoto.playerId);
 }
+// Every outstanding split-mode share across every league this account has
+// a claimed record in — a claimed player pays their own share right here,
+// no separate login/link needed (that's only for someone without an
+// account, see openPayLink).
+async function renderAccountDues() {
+  const dues = await api("/players/dues").catch(() => []);
+  el("account-dues-section").style.display = dues.length ? "block" : "none";
+  if (!dues.length) return;
+  const list = el("account-dues-list");
+  list.innerHTML = dues.map((d) => `
+    <div class="notif-row" data-league="${d.leagueId}" data-team="${d.teamId}" data-player="${d.playerId}">
+      <div><strong>${fmtRands(d.amountCents)}</strong><div class="note">${escapeHtml(d.teamName)} · ${escapeHtml(d.leagueName)}</div></div>
+      <button class="primary account-dues-pay-btn" type="button">Pay now</button>
+      <div class="error account-dues-error"></div>
+    </div>
+  `).join("");
+  list.querySelectorAll(".account-dues-pay-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest(".notif-row");
+      const errEl = row.querySelector(".account-dues-error");
+      errEl.textContent = "";
+      try {
+        const checkout = await api(`/leagues/${row.dataset.league}/teams/${row.dataset.team}/players/${row.dataset.player}/pay/checkout`);
+        submitPayfastCheckout(checkout);
+      } catch (e) { errEl.textContent = e.message; }
+    };
+  });
+}
 async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
   renderAccountAvatar(cards);
@@ -1125,6 +1201,7 @@ async function renderAccountProfile() {
   // call, not just the one at login — folded in here rather than making
   // every caller remember to refresh both.
   renderAccountTonightMatches();
+  renderAccountDues();
   const c = el("account-form-list");
   if (cards.length === 0) { c.innerHTML = '<p class="empty">Claim a player record below to see your matches, results, and awards here.</p>'; return; }
   // One combined view across every claimed record — Sandton and Killarney
@@ -1717,6 +1794,102 @@ function submitPayfastCheckout(checkout) {
   document.body.appendChild(form);
   form.submit();
 }
+function paymentModeChooserHtml(teamId) {
+  return `
+    <p class="note" style="margin-bottom:8px;">Choose how this team pays before anyone can pay.</p>
+    <div class="row">
+      <button class="secondary pay-mode-btn" type="button" data-team="${teamId}" data-mode="team">One payment for the team</button>
+      <button class="secondary pay-mode-btn" type="button" data-team="${teamId}" data-mode="split">Split among players</button>
+    </div>
+  `;
+}
+// The full payment picture for one team — a mode-choice prompt (unset), a
+// single lump-sum flow ("team" mode), or a per-player list ("split" mode).
+// isAdminView adds the manual paid/unpaid escape hatch a captain doesn't get.
+function teamPayDetailHtml(t, isAdminView) {
+  if (!t.paymentMode) return paymentModeChooserHtml(t.id);
+  if (t.paymentMode === "team") {
+    if (t.paymentStatus === "paid") {
+      return `<p class="note">✓ Paid${t.paymentMethod === "manual" ? " (recorded by admin)" : ""}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
+        + (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "");
+    }
+    return `
+      <p>Registration fee: <strong>${fmtRands(league.registrationFeeCents)}</strong></p>
+      <button class="primary pay-now-btn" type="button">Pay with PayFast</button>
+      ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark paid manually</button>` : ""}
+      <div class="error pay-now-error"></div>
+    `;
+  }
+  // split — each player owes an even share; a claimed player can also pay
+  // this same share from their own My Profile (renderAccountDues), so it's
+  // not a dead end if a captain never gets around to sharing the link.
+  const share = league.registrationFeeCents ? Math.round(league.registrationFeeCents / (t.players.length || 1)) : 0;
+  const rows = t.players.map((p) => `
+    <div class="notif-row" data-player="${p.id}">
+      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${fmtRands(share)}${p.paymentStatus === "paid" ? ` · Paid${p.paymentMethod === "manual" ? " manually" : ""}` : ""}</div></div>
+      <span class="badge ${p.paymentStatus === "paid" ? "done" : "outstanding"}">${p.paymentStatus === "paid" ? "Paid" : "Unpaid"}</span>
+      ${p.paymentStatus === "paid"
+        ? (isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
+        : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>` : ""}`}
+    </div>
+  `).join("");
+  return `<div class="combine-claim-list">${rows}</div><p class="note" style="margin-top:8px;">A player with their own account can also pay this from My Profile.</p>`;
+}
+// Wires up every interactive element teamPayDetailHtml can render, for
+// whichever container it was just injected into (the admin's per-team
+// block, or the captain's own card) — same markup, same handlers either way.
+function bindPayDetailHandlers(container, t) {
+  container.querySelectorAll(".pay-mode-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await api(`/leagues/${currentLeagueId}/teams/${t.id}/payment-mode`, { method: "PUT", body: { mode: btn.dataset.mode } });
+        await refreshLeague(); renderPay();
+      } catch (e) { alert(e.message); }
+    };
+  });
+  const toggleBtn = container.querySelector(".pay-toggle-btn");
+  if (toggleBtn) {
+    toggleBtn.onclick = async () => {
+      const paid = toggleBtn.dataset.paid === "true";
+      await api(`/leagues/${currentLeagueId}/teams/${t.id}/payment-status`, { method: "PUT", body: { paid } }).catch(() => {});
+      await refreshLeague(); renderPay();
+    };
+  }
+  const payBtn = container.querySelector(".pay-now-btn");
+  if (payBtn) {
+    payBtn.onclick = async () => {
+      const errEl = container.querySelector(".pay-now-error");
+      if (errEl) errEl.textContent = "";
+      try {
+        const checkout = await api(`/leagues/${currentLeagueId}/teams/${t.id}/pay/checkout`);
+        submitPayfastCheckout(checkout);
+      } catch (e) { if (errEl) errEl.textContent = e.message; }
+    };
+  }
+  container.querySelectorAll(".notif-row[data-player]").forEach((row) => {
+    const playerId = row.dataset.player;
+    const toggle = row.querySelector(".pay-player-toggle-btn");
+    if (toggle) {
+      toggle.onclick = async () => {
+        const paid = toggle.dataset.paid === "true";
+        await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/payment-status`, { method: "PUT", body: { paid } }).catch(() => {});
+        await refreshLeague(); renderPay();
+      };
+    }
+    const copyBtn = row.querySelector(".pay-link-copy-btn");
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          const { url } = await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/pay-link`);
+          await navigator.clipboard.writeText(url);
+          const original = copyBtn.textContent;
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => { copyBtn.textContent = original; }, 1500);
+        } catch (e) { alert("Couldn't copy the link: " + e.message); }
+      };
+    }
+  });
+}
 function renderPay() {
   el("pay-sandbox-banner").style.display = PAYFAST_SANDBOX ? "block" : "none";
   const isAdmin = myRole === "admin";
@@ -1726,45 +1899,35 @@ function renderPay() {
 
   if (isAdmin) {
     el("pay-fee-input").value = (league.registrationFeeCents || 0) / 100;
-    el("pay-teams-list").innerHTML = league.teams.map((t) => `
-      <div class="notif-row" data-team="${t.id}">
-        <div>
-          <strong>${escapeHtml(t.name)}</strong>
-          <div class="note">${t.paymentStatus === "paid" ? `Paid ${t.paymentMethod === "manual" ? "manually" : "via PayFast"}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}` : "Unpaid"}</div>
+    const list = el("pay-teams-list");
+    list.innerHTML = league.teams.map((t) => {
+      const summary = !t.paymentMode ? "Payment method not chosen"
+        : t.paymentMode === "team" ? (t.paymentStatus === "paid" ? "Paid" : "Unpaid")
+        : `${t.players.filter((p) => p.paymentStatus === "paid").length} of ${t.players.length} players paid`;
+      return `
+        <div class="pay-team-block" data-team="${t.id}" style="padding:14px 0;border-bottom:1px solid var(--line);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong>${escapeHtml(t.name)}</strong>
+            <span class="note">${summary}</span>
+          </div>
+          <div class="pay-team-detail">${teamPayDetailHtml(t, true)}</div>
         </div>
-        <span class="badge ${t.paymentStatus === "paid" ? "done" : "outstanding"}">${t.paymentStatus === "paid" ? "Paid" : "Unpaid"}</span>
-        <button class="link pay-toggle-btn" type="button" data-paid="${t.paymentStatus !== "paid"}">${t.paymentStatus === "paid" ? "Mark unpaid" : "Mark paid"}</button>
-      </div>
-    `).join("");
-    el("pay-teams-list").querySelectorAll(".pay-toggle-btn").forEach((btn) => {
-      btn.onclick = async () => {
-        const teamId = btn.closest(".notif-row").dataset.team;
-        const paid = btn.dataset.paid === "true";
-        await api(`/leagues/${currentLeagueId}/teams/${teamId}/payment-status`, { method: "PUT", body: { paid } }).catch(() => {});
-        await refreshLeague(); renderPay();
-      };
+      `;
+    }).join("");
+    league.teams.forEach((t) => {
+      const detail = list.querySelector(`.pay-team-block[data-team="${t.id}"] .pay-team-detail`);
+      if (detail) bindPayDetailHandlers(detail, t);
     });
   }
 
   if (myRole === "captain") {
     const t = teamById(myTeamId);
+    const content = el("pay-captain-content");
     if (!(league.registrationFeeCents > 0)) {
-      el("pay-captain-content").innerHTML = '<p class="note">No registration fee set for this league.</p>';
-    } else if (t && t.paymentStatus === "paid") {
-      el("pay-captain-content").innerHTML = `<p class="note">✓ Paid${t.paymentMethod === "manual" ? " (recorded by admin)" : ""}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`;
-    } else {
-      el("pay-captain-content").innerHTML = `
-        <p>Registration fee: <strong>${fmtRands(league.registrationFeeCents)}</strong></p>
-        <button class="primary" id="pay-now-btn">Pay with PayFast</button>
-        <div class="error" id="pay-now-error"></div>
-      `;
-      el("pay-now-btn").onclick = async () => {
-        el("pay-now-error").textContent = "";
-        try {
-          const checkout = await api(`/leagues/${currentLeagueId}/teams/${t.id}/pay/checkout`);
-          submitPayfastCheckout(checkout);
-        } catch (e) { el("pay-now-error").textContent = e.message; }
-      };
+      content.innerHTML = '<p class="note">No registration fee set for this league.</p>';
+    } else if (t) {
+      content.innerHTML = teamPayDetailHtml(t, false);
+      bindPayDetailHandlers(content, t);
     }
   }
 }

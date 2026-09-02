@@ -256,7 +256,11 @@ function sanitize(league, req) {
   const teams = league.teams.map((t) => {
     const { code, notifyEmail, ...rest } = t;
     const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
-    return { ...rest, code: viewerIsThisTeam ? code : undefined, notifyEmail: viewerIsThisTeam ? notifyEmail : undefined };
+    // A pay-link token stands in for auth on its own public route — never
+    // ships in the general league payload, only ever handed out via the
+    // dedicated pay-link fetch route to someone already allowed to see it.
+    const players = rest.players.map(({ payLinkToken, ...p }) => p);
+    return { ...rest, players, code: viewerIsThisTeam ? code : undefined, notifyEmail: viewerIsThisTeam ? notifyEmail : undefined };
   });
 
   const fixtures = league.fixtures.map((f) => {
@@ -1328,6 +1332,10 @@ router.get("/leagues/:leagueId", (req, res) => {
   league.teams.forEach((t) => {
     if (!t.code) { t.code = genTeamCode(league); migrated = true; }
     if (!t.paymentStatus) { t.paymentStatus = "unpaid"; migrated = true; }
+    if (t.paymentMode === undefined) { t.paymentMode = null; migrated = true; }
+    t.players.forEach((p) => {
+      if (!p.paymentStatus) { p.paymentStatus = "unpaid"; migrated = true; }
+    });
   });
   if (migrated) store.saveLeague(league.id, league);
   res.json(sanitize(league, req));
@@ -2351,12 +2359,34 @@ router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
 });
 
 /* ---------- Payments (PayFast) ----------
-   One flat registration fee per league, owed by each team. PayFast needs a
-   real browser form POST to its own hosted checkout (not an API call), so
-   the server's job is just: hand the client a signed set of form fields
-   to submit, then trust nothing until PayFast's own server-to-server ITN
-   webhook confirms the payment (see /payfast/notify below) — a captain
-   redirecting back to the site isn't itself proof anything was paid. */
+   One flat registration fee per league. Each team's captain (or admin)
+   picks how it gets paid — one lump sum for the whole team, or split
+   evenly and paid per-player — and that choice locks in the moment
+   anyone's actually paid, so a mid-collection mode switch can never
+   orphan a payment already made under the old one.
+
+   PayFast needs a real browser form POST to its own hosted checkout (not
+   an API call), so the server's job is just: hand the client a signed set
+   of form fields to submit, then trust nothing until PayFast's own
+   server-to-server ITN webhook confirms the payment (see /payfast/notify
+   below) — landing back on the site is never itself proof of payment. */
+
+function playerShareCents(league, team) {
+  const n = team.players.length || 1;
+  return Math.round((league.registrationFeeCents || 0) / n);
+}
+// True once switching modes would orphan a payment already made — a lump
+// payment already taken, or any one player already paid their share.
+function paymentModeLocked(team) {
+  if (team.paymentMode === "team") return team.paymentStatus === "paid";
+  if (team.paymentMode === "split") return team.players.some((p) => p.paymentStatus === "paid");
+  return false;
+}
+function findTeamAndPlayer(league, teamId, playerId) {
+  const team = league.teams.find((t) => t.id === teamId);
+  const player = team && team.players.find((p) => p.id === playerId);
+  return { team, player };
+}
 
 router.put("/leagues/:leagueId/registration-fee", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
@@ -2369,12 +2399,28 @@ router.put("/leagues/:leagueId/registration-fee", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+router.put("/leagues/:leagueId/teams/:teamId/payment-mode", requireAdminOrCaptain(), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const mode = req.body.mode;
+  if (mode !== "team" && mode !== "split") return res.status(400).json({ error: "Invalid payment mode." });
+  if (team.paymentMode && team.paymentMode !== mode && paymentModeLocked(team)) {
+    return res.status(400).json({ error: "Can't change how this team pays — someone's already paid under the current mode." });
+  }
+  team.paymentMode = mode;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.get("/leagues/:leagueId/teams/:teamId/pay/checkout", requireAdminOrCaptain(), (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
   if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
+  if (team.paymentMode !== "team") return res.status(400).json({ error: "This team is set to pay per-player, not as one lump sum." });
   if (team.paymentStatus === "paid") return res.status(400).json({ error: "This team is already marked as paid." });
   const base = `${req.protocol}://${req.get("host")}`;
   const checkout = payfast.buildCheckout({
@@ -2405,6 +2451,121 @@ router.put("/leagues/:leagueId/teams/:teamId/payment-status", requireAdmin, (req
   res.json({ ok: true });
 });
 
+// A claimed player pays their own share from their own player account —
+// req.session.playerUser, a completely separate auth axis from the
+// team/admin session above (see the player-accounts section further up).
+router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay/checkout", requirePlayerUser, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  if (player.claimedByUserId !== req.session.playerUser.id) return res.status(403).json({ error: "This isn't your record." });
+  if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
+  if (team.paymentMode !== "split") return res.status(400).json({ error: "This team isn't set to pay per-player." });
+  if (player.paymentStatus === "paid") return res.status(400).json({ error: "You're already marked as paid." });
+  const base = `${req.protocol}://${req.get("host")}`;
+  const checkout = payfast.buildCheckout({
+    amountRands: playerShareCents(league, team) / 100,
+    itemName: `${league.name} registration — ${player.name}`.slice(0, 100),
+    returnUrl: `${base}/#league/${league.id}`,
+    cancelUrl: `${base}/#league/${league.id}`,
+    notifyUrl: `${base}/api/payfast/notify`,
+    customStr1: league.id,
+    customStr2: team.id,
+    customStr3: player.id,
+  });
+  res.json(checkout);
+});
+
+// A no-login link for a player who hasn't (or won't) sign up for an
+// account — the token is the only thing standing in for auth here, so it's
+// random and only ever handed out to someone who's already allowed to see
+// it (the captain/admin fetching it below).
+router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link", requireAdminOrCaptain(), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  if (!player.payLinkToken) {
+    player.payLinkToken = crypto.randomBytes(16).toString("hex");
+    store.saveLeague(league.id, league);
+  }
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.json({ url: `${base}/#pay-link/${league.id}/${team.id}/${player.id}/${player.payLinkToken}` });
+});
+
+// Public read (no session) — the page behind a pay-link needs to show the
+// player's name/amount/status before anyone commits to paying.
+router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link/:token", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Link not found." });
+  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
+  if (!team || !player || !player.payLinkToken || player.payLinkToken !== req.params.token) {
+    return res.status(404).json({ error: "This payment link is invalid." });
+  }
+  res.json({
+    leagueName: league.name, teamName: team.name, playerName: player.name,
+    amountCents: playerShareCents(league, team), paid: player.paymentStatus === "paid",
+  });
+});
+
+router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link/:token/checkout", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
+  if (!team || !player || !player.payLinkToken || player.payLinkToken !== req.params.token) {
+    return res.status(404).json({ error: "This payment link is invalid." });
+  }
+  if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
+  if (team.paymentMode !== "split") return res.status(400).json({ error: "This team isn't set to pay per-player." });
+  if (player.paymentStatus === "paid") return res.status(400).json({ error: "This player is already marked as paid." });
+  const base = `${req.protocol}://${req.get("host")}`;
+  const checkout = payfast.buildCheckout({
+    amountRands: playerShareCents(league, team) / 100,
+    itemName: `${league.name} registration — ${player.name}`.slice(0, 100),
+    returnUrl: `${base}/#pay-link/${league.id}/${team.id}/${player.id}/${player.payLinkToken}`,
+    cancelUrl: `${base}/#pay-link/${league.id}/${team.id}/${player.id}/${player.payLinkToken}`,
+    notifyUrl: `${base}/api/payfast/notify`,
+    customStr1: league.id,
+    customStr2: team.id,
+    customStr3: player.id,
+  });
+  res.json(checkout);
+});
+
+router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/payment-status", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  const paid = !!req.body.paid;
+  player.paymentStatus = paid ? "paid" : "unpaid";
+  player.paymentMethod = paid ? "manual" : null;
+  player.paymentRef = paid ? null : player.paymentRef;
+  player.paidAt = paid ? Date.now() : null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// Every league a signed-in player has a claimed record in, where that
+// team is paying per-player and this specific player hasn't paid yet —
+// the "what you owe" list shown on My Profile.
+router.get("/players/dues", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const dues = [];
+  (user.claims || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    if (!league || !league.registrationFeeCents) return;
+    const { team, player } = findTeamAndPlayer(league, c.teamId, c.playerId);
+    if (!team || !player || team.paymentMode !== "split" || player.paymentStatus === "paid") return;
+    dues.push({
+      leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
+      playerId: player.id, playerName: player.name, amountCents: playerShareCents(league, team),
+    });
+  });
+  res.json(dues);
+});
+
 // PayFast calls this directly — never a browser, no session, and the body
 // is application/x-www-form-urlencoded (not JSON), hence the dedicated
 // raw-body middleware just on this one route.
@@ -2417,19 +2578,32 @@ router.post("/payfast/notify", express.raw({ type: "application/x-www-form-urlen
     const validated = await payfast.validateWithPayfast(rawBody.toString("utf8"));
     if (!validated) return console.error("PayFast ITN: failed server-to-server validation", fields);
     if (fields.payment_status !== "COMPLETE") return; // PENDING/FAILED etc. — nothing to record yet
-    const leagueId = fields.custom_str1, teamId = fields.custom_str2;
+    const leagueId = fields.custom_str1, teamId = fields.custom_str2, playerId = fields.custom_str3 || null;
     const league = store.getLeague(leagueId);
     const team = league && league.teams.find((t) => t.id === teamId);
     if (!league || !team) return console.error("PayFast ITN: unknown league/team", leagueId, teamId);
-    const expectedRands = (league.registrationFeeCents || 0) / 100;
     const paidRands = Number(fields.amount_gross);
-    if (Math.abs(paidRands - expectedRands) > 0.01) {
-      return console.error(`PayFast ITN: amount mismatch for ${teamId} — expected ${expectedRands}, got ${paidRands}`);
+    if (playerId) {
+      const player = team.players.find((p) => p.id === playerId);
+      if (!player) return console.error("PayFast ITN: unknown player", playerId);
+      const expectedRands = playerShareCents(league, team) / 100;
+      if (Math.abs(paidRands - expectedRands) > 0.01) {
+        return console.error(`PayFast ITN: amount mismatch for player ${playerId} — expected ${expectedRands}, got ${paidRands}`);
+      }
+      player.paymentStatus = "paid";
+      player.paymentMethod = "payfast";
+      player.paymentRef = fields.pf_payment_id || null;
+      player.paidAt = Date.now();
+    } else {
+      const expectedRands = (league.registrationFeeCents || 0) / 100;
+      if (Math.abs(paidRands - expectedRands) > 0.01) {
+        return console.error(`PayFast ITN: amount mismatch for team ${teamId} — expected ${expectedRands}, got ${paidRands}`);
+      }
+      team.paymentStatus = "paid";
+      team.paymentMethod = "payfast";
+      team.paymentRef = fields.pf_payment_id || null;
+      team.paidAt = Date.now();
     }
-    team.paymentStatus = "paid";
-    team.paymentMethod = "payfast";
-    team.paymentRef = fields.pf_payment_id || null;
-    team.paidAt = Date.now();
     store.saveLeague(league.id, league);
   } catch (e) {
     console.error("PayFast ITN handling failed:", e.message);
