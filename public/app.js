@@ -5,6 +5,10 @@
 // run both ways (off here, on there) with no code difference at all.
 // Defaults to off until boot()'s config fetch resolves.
 let RATINGS_ENABLED = false;
+// True until the site owner sets real PayFast credentials AND explicitly
+// turns sandbox off (src/payfast.js) — shown as a "test mode" notice on
+// the Pay tab so nobody mistakes a sandbox checkout for a real one.
+let PAYFAST_SANDBOX = true;
 // The fixture-level coin toss (who declares first) is turned off at the
 // owner's request — reachable through the admin-only Toss tab (an admin
 // can run either side of it), it had locked at least one real fixture's
@@ -195,8 +199,9 @@ function startPresencePing() {
   document.addEventListener("visibilitychange", ping);
 }
 async function boot() {
-  const config = await api("/config").catch(() => ({ ratingsEnabled: false }));
+  const config = await api("/config").catch(() => ({ ratingsEnabled: false, payfastSandbox: true }));
   RATINGS_ENABLED = !!config.ratingsEnabled;
+  PAYFAST_SANDBOX = config.payfastSandbox !== false;
   leaguesIndex = await api("/leagues").catch(() => []);
   startPresencePing();
   el("loading").style.display = "none";
@@ -1407,6 +1412,9 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
+  // Admin always sees it (that's where the fee gets set up in the first
+  // place); a captain only once there's actually something to pay.
+  if (myRole === "admin" || (myRole === "captain" && league.registrationFeeCents > 0)) defs.push({ key: "pay", label: "Pay" });
   // A Vibora pair can play any opponent in any order — there's no fixed
   // weekly schedule to browse, so Fixtures collapses into Results: what's
   // been played, and who's left to play.
@@ -1672,6 +1680,7 @@ function renderAll() {
 
   renderPendingScoreBanner();
   if (myRole === "admin") renderAdmin();
+  if (myRole === "admin" || myRole === "captain") renderPay();
   renderSelection();
   if (myRole === "admin" && league.tieringEnabled) renderToss();
   renderFixtures();
@@ -1691,6 +1700,81 @@ function renderAll() {
   const unit = league.format === "pairs" ? "pair" : "team";
   el("team-count-label").textContent = `${league.teams.length} ${unit}${league.teams.length === 1 ? "" : "s"} · ${league.fixtures.length} fixture${league.fixtures.length === 1 ? "" : "s"}`;
 }
+function fmtRands(cents) {
+  return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format((cents || 0) / 100);
+}
+// PayFast requires an actual browser form POST to its own hosted checkout
+// page — there's no API call that substitutes for this.
+function submitPayfastCheckout(checkout) {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = checkout.action;
+  Object.entries(checkout.fields).forEach(([k, v]) => {
+    const input = document.createElement("input");
+    input.type = "hidden"; input.name = k; input.value = v;
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+function renderPay() {
+  el("pay-sandbox-banner").style.display = PAYFAST_SANDBOX ? "block" : "none";
+  const isAdmin = myRole === "admin";
+  el("pay-admin-setup-card").style.display = isAdmin ? "block" : "none";
+  el("pay-admin-teams-card").style.display = isAdmin ? "block" : "none";
+  el("pay-captain-card").style.display = !isAdmin && myRole === "captain" ? "block" : "none";
+
+  if (isAdmin) {
+    el("pay-fee-input").value = (league.registrationFeeCents || 0) / 100;
+    el("pay-teams-list").innerHTML = league.teams.map((t) => `
+      <div class="notif-row" data-team="${t.id}">
+        <div>
+          <strong>${escapeHtml(t.name)}</strong>
+          <div class="note">${t.paymentStatus === "paid" ? `Paid ${t.paymentMethod === "manual" ? "manually" : "via PayFast"}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}` : "Unpaid"}</div>
+        </div>
+        <span class="badge ${t.paymentStatus === "paid" ? "done" : "outstanding"}">${t.paymentStatus === "paid" ? "Paid" : "Unpaid"}</span>
+        <button class="link pay-toggle-btn" type="button" data-paid="${t.paymentStatus !== "paid"}">${t.paymentStatus === "paid" ? "Mark unpaid" : "Mark paid"}</button>
+      </div>
+    `).join("");
+    el("pay-teams-list").querySelectorAll(".pay-toggle-btn").forEach((btn) => {
+      btn.onclick = async () => {
+        const teamId = btn.closest(".notif-row").dataset.team;
+        const paid = btn.dataset.paid === "true";
+        await api(`/leagues/${currentLeagueId}/teams/${teamId}/payment-status`, { method: "PUT", body: { paid } }).catch(() => {});
+        await refreshLeague(); renderPay();
+      };
+    });
+  }
+
+  if (myRole === "captain") {
+    const t = teamById(myTeamId);
+    if (!(league.registrationFeeCents > 0)) {
+      el("pay-captain-content").innerHTML = '<p class="note">No registration fee set for this league.</p>';
+    } else if (t && t.paymentStatus === "paid") {
+      el("pay-captain-content").innerHTML = `<p class="note">✓ Paid${t.paymentMethod === "manual" ? " (recorded by admin)" : ""}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`;
+    } else {
+      el("pay-captain-content").innerHTML = `
+        <p>Registration fee: <strong>${fmtRands(league.registrationFeeCents)}</strong></p>
+        <button class="primary" id="pay-now-btn">Pay with PayFast</button>
+        <div class="error" id="pay-now-error"></div>
+      `;
+      el("pay-now-btn").onclick = async () => {
+        el("pay-now-error").textContent = "";
+        try {
+          const checkout = await api(`/leagues/${currentLeagueId}/teams/${t.id}/pay/checkout`);
+          submitPayfastCheckout(checkout);
+        } catch (e) { el("pay-now-error").textContent = e.message; }
+      };
+    }
+  }
+}
+el("pay-fee-save-btn").onclick = async () => {
+  el("pay-fee-error").textContent = "";
+  try {
+    await api(`/leagues/${currentLeagueId}/registration-fee`, { method: "PUT", body: { amountRands: Number(el("pay-fee-input").value) } });
+    await refreshLeague(); renderPay();
+  } catch (e) { el("pay-fee-error").textContent = e.message; }
+};
 // A captain's own overdue-but-unscored match, surfaced above whichever tab
 // they land on — not just inside Results, since a team captain's default
 // landing tab is Selection Room, not Results. "Overdue" means lineups are

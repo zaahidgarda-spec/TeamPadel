@@ -549,6 +549,29 @@
         </div>
       </section>
 
+      <section class="view" id="view-pay">
+        <div class="card" id="pay-sandbox-banner" style="display:none;margin-bottom:16px;">
+          <p class="note" style="margin:0;"><strong>Test mode.</strong> PayFast isn't configured with real credentials yet — any "Pay now" here goes through PayFast's sandbox, not a real transaction.</p>
+        </div>
+        <div class="card" id="pay-admin-setup-card" style="display:none;margin-bottom:16px;">
+          <h2 class="section-title">Registration fee</h2>
+          <p class="note" style="margin-bottom:10px;">One flat fee per team, in Rands. Leave at 0 to turn payments off — the Pay tab stays hidden from captains until this is set.</p>
+          <div class="row">
+            <input type="number" id="pay-fee-input" min="0" step="1" style="max-width:140px;">
+            <button class="primary" id="pay-fee-save-btn">Save</button>
+          </div>
+          <div class="error" id="pay-fee-error"></div>
+        </div>
+        <div class="card" id="pay-captain-card" style="display:none;margin-bottom:16px;">
+          <h2 class="section-title">Registration fee</h2>
+          <div id="pay-captain-content"></div>
+        </div>
+        <div class="card" id="pay-admin-teams-card" style="display:none;">
+          <h2 class="section-title">Team payment status</h2>
+          <div id="pay-teams-list"></div>
+        </div>
+      </section>
+
       <section class="view" id="view-selection">
         <div class="card" style="margin-bottom:16px;">
           <h2 class="section-title">Selection room</h2>

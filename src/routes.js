@@ -4,6 +4,7 @@ const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail } = require("./mailer");
+const payfast = require("./payfast");
 
 const router = express.Router();
 
@@ -385,7 +386,7 @@ function syncPlayoffs(league) {
 // site, shown on another deployment (a second site sharing this same
 // backend/database) without anything else differing between them.
 router.get("/config", (req, res) => {
-  res.json({ ratingsEnabled: process.env.RATINGS_ENABLED === "true" });
+  res.json({ ratingsEnabled: process.env.RATINGS_ENABLED === "true", payfastSandbox: payfast.config().sandbox });
 });
 
 /* ---------- Leagues ---------- */
@@ -1315,6 +1316,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.format) league.format = "teams";
   if (!league.groups) league.groups = [];
   if (!league.hallOfFame) league.hallOfFame = [];
+  if (!league.registrationFeeCents) league.registrationFeeCents = 0;
   // Lives on the leagues-index entry, not this document — surfaced here
   // (harmless either way) so the owner-only "hide from lists" toggle in
   // Admin knows its current state without a separate lookup.
@@ -1325,6 +1327,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   // give them one automatically so every captain can log in.
   league.teams.forEach((t) => {
     if (!t.code) { t.code = genTeamCode(league); migrated = true; }
+    if (!t.paymentStatus) { t.paymentStatus = "unpaid"; migrated = true; }
   });
   if (migrated) store.saveLeague(league.id, league);
   res.json(sanitize(league, req));
@@ -2345,6 +2348,92 @@ router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
   league.slotCount = slotCount;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+/* ---------- Payments (PayFast) ----------
+   One flat registration fee per league, owed by each team. PayFast needs a
+   real browser form POST to its own hosted checkout (not an API call), so
+   the server's job is just: hand the client a signed set of form fields
+   to submit, then trust nothing until PayFast's own server-to-server ITN
+   webhook confirms the payment (see /payfast/notify below) — a captain
+   redirecting back to the site isn't itself proof anything was paid. */
+
+router.put("/leagues/:leagueId/registration-fee", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const amountRands = Number(req.body.amountRands);
+  if (!Number.isFinite(amountRands) || amountRands < 0 || amountRands > 100000) {
+    return res.status(400).json({ error: "Enter a fee between R0 and R100,000." });
+  }
+  league.registrationFeeCents = Math.round(amountRands * 100);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.get("/leagues/:leagueId/teams/:teamId/pay/checkout", requireAdminOrCaptain(), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
+  if (team.paymentStatus === "paid") return res.status(400).json({ error: "This team is already marked as paid." });
+  const base = `${req.protocol}://${req.get("host")}`;
+  const checkout = payfast.buildCheckout({
+    amountRands: league.registrationFeeCents / 100,
+    itemName: `${league.name} registration — ${team.name}`.slice(0, 100),
+    returnUrl: `${base}/#league/${league.id}`,
+    cancelUrl: `${base}/#league/${league.id}`,
+    notifyUrl: `${base}/api/payfast/notify`,
+    customStr1: league.id,
+    customStr2: team.id,
+  });
+  res.json(checkout);
+});
+
+// Cash/EFT collected outside PayFast still needs to be reflected here —
+// very much the norm for a local sports league treasurer, not an edge case.
+router.put("/leagues/:leagueId/teams/:teamId/payment-status", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const paid = !!req.body.paid;
+  team.paymentStatus = paid ? "paid" : "unpaid";
+  team.paymentMethod = paid ? "manual" : null;
+  team.paymentRef = paid ? null : team.paymentRef;
+  team.paidAt = paid ? Date.now() : null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// PayFast calls this directly — never a browser, no session, and the body
+// is application/x-www-form-urlencoded (not JSON), hence the dedicated
+// raw-body middleware just on this one route.
+router.post("/payfast/notify", express.raw({ type: "application/x-www-form-urlencoded" }), async (req, res) => {
+  const rawBody = req.body;
+  res.status(200).end(); // PayFast only needs a 200 — everything else happens after
+  try {
+    const fields = payfast.parseItnBody(rawBody);
+    if (!payfast.verifySignature(fields)) return console.error("PayFast ITN: signature mismatch", fields);
+    const validated = await payfast.validateWithPayfast(rawBody.toString("utf8"));
+    if (!validated) return console.error("PayFast ITN: failed server-to-server validation", fields);
+    if (fields.payment_status !== "COMPLETE") return; // PENDING/FAILED etc. — nothing to record yet
+    const leagueId = fields.custom_str1, teamId = fields.custom_str2;
+    const league = store.getLeague(leagueId);
+    const team = league && league.teams.find((t) => t.id === teamId);
+    if (!league || !team) return console.error("PayFast ITN: unknown league/team", leagueId, teamId);
+    const expectedRands = (league.registrationFeeCents || 0) / 100;
+    const paidRands = Number(fields.amount_gross);
+    if (Math.abs(paidRands - expectedRands) > 0.01) {
+      return console.error(`PayFast ITN: amount mismatch for ${teamId} — expected ${expectedRands}, got ${paidRands}`);
+    }
+    team.paymentStatus = "paid";
+    team.paymentMethod = "payfast";
+    team.paymentRef = fields.pf_payment_id || null;
+    team.paidAt = Date.now();
+    store.saveLeague(league.id, league);
+  } catch (e) {
+    console.error("PayFast ITN handling failed:", e.message);
+  }
 });
 
 router.put("/leagues/:leagueId/court-names", requireAdmin, (req, res) => {
