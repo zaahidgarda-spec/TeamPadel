@@ -857,6 +857,7 @@ async function renderCombineAccounts() {
     <div class="notif-row">
       <div style="flex:1;">
         <strong>${escapeHtml(a.name)}</strong> <span class="note">${escapeHtml(a.email)}</span>
+        ${a.online ? '<span class="badge done" style="margin-left:6px;" title="Has a live session right now">Online</span>' : ""}
         ${a.claims.length ? `<div class="combine-claim-list">${a.claims.map((cl) => `
           <div class="combine-claim-row" data-user="${a.id}" data-league="${cl.leagueId}" data-team="${cl.teamId}" data-player="${cl.playerId}">
             <span class="note">${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>

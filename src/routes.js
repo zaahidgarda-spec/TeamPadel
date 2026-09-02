@@ -1161,8 +1161,9 @@ router.post("/admin/players/combine", async (req, res) => {
 });
 // A simple read-back of every player account and what it's linked to —
 // so combining someone isn't a write-only black box for the admin.
-router.get("/admin/players/accounts", (req, res) => {
+router.get("/admin/players/accounts", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const activeIds = new Set(await store.getActivePlayerUserIds());
   const accounts = store.getUsersIndex().map((entry) => {
     const user = store.getUser(entry.id);
     const claims = (user.claims || [])
@@ -1174,7 +1175,7 @@ router.get("/admin/players/accounts", (req, res) => {
         return { leagueId: c.leagueId, teamId: c.teamId, playerId: c.playerId, leagueName: league.name, teamName: team.name, playerName: player.name };
       })
       .filter(Boolean);
-    return { id: user.id, name: user.name, email: user.email, claims };
+    return { id: user.id, name: user.name, email: user.email, claims, online: activeIds.has(user.id) };
   });
   res.json(accounts);
 });

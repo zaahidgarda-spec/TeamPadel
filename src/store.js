@@ -65,6 +65,21 @@ function remove(key) {
     .catch((e) => console.error("Failed to delete " + key + " from Redis:", e.message));
 }
 
+// Every account with a live (unexpired) session right now — reads the
+// same "sess:*" keys sessionStore.js writes, straight from Redis rather
+// than the in-memory cache, since sessions aren't cached here at all.
+// Any key that still exists hasn't hit its TTL, so nothing needs a
+// separate staleness check.
+async function getActivePlayerUserIds() {
+  if (!useRedis) return [];
+  const keys = await redis.keys("sess:*");
+  if (!keys.length) return [];
+  const sessions = await Promise.all(keys.map((k) => redis.get(k).catch(() => null)));
+  const ids = new Set();
+  sessions.forEach((s) => { if (s && s.playerUser && s.playerUser.id) ids.add(s.playerUser.id); });
+  return Array.from(ids);
+}
+
 // Must be awaited before the server starts accepting requests: it pulls
 // everything Redis has into the in-memory cache so reads below can stay
 // synchronous instead of forcing every route handler to become async.
@@ -229,6 +244,7 @@ module.exports = {
   saveUser,
   saveUserDurable,
   deleteUser,
+  getActivePlayerUserIds,
   getSignups,
   saveSignups,
   getHomepageExtras,
