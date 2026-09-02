@@ -1489,9 +1489,6 @@ function tabDefs() {
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
   if (!isPairs && (myRole === "admin" || myRole === "captain")) defs.push({ key: "selection", label: "Selection room" });
-  // Admin always sees it (that's where the fee gets set up in the first
-  // place); a captain only once there's actually something to pay.
-  if (myRole === "admin" || (myRole === "captain" && league.registrationFeeCents > 0)) defs.push({ key: "pay", label: "Pay" });
   // A Vibora pair can play any opponent in any order — there's no fixed
   // weekly schedule to browse, so Fixtures collapses into Results: what's
   // been played, and who's left to play.
@@ -1528,6 +1525,12 @@ function tabDefs() {
   // could look like, not a toggle for showing it to everyone else. Still
   // work in progress, hence the red flag on the tab.
   if (myRole === "admin") defs.push({ key: "ratings-preview", label: "Ratings preview", wip: true });
+  // Admin-only while PayFast payments are still being rolled out — a
+  // captain doesn't see this tab (or any way to choose their team's
+  // payment mode or pay) yet. The underlying split-payment logic is fully
+  // built and working either way; this is purely a visibility/rollout
+  // gate, same pattern as Toss/Ratings preview above.
+  if (myRole === "admin") defs.push({ key: "pay", label: "Pay", wip: true });
   return defs;
 }
 function buildTabs() {
@@ -1757,7 +1760,7 @@ function renderAll() {
 
   renderPendingScoreBanner();
   if (myRole === "admin") renderAdmin();
-  if (myRole === "admin" || myRole === "captain") renderPay();
+  if (myRole === "admin") renderPay();
   renderSelection();
   if (myRole === "admin" && league.tieringEnabled) renderToss();
   renderFixtures();
