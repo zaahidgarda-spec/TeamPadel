@@ -1164,8 +1164,12 @@ router.post("/admin/players/combine", async (req, res) => {
 router.get("/admin/players/accounts", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const activeIds = new Set(await store.getActivePlayerUserIds());
+  // An index entry with no matching user record (the account write never
+  // landed, or landed and was later deleted without cleaning up the
+  // index) shouldn't crash the whole list — skip it instead.
   const accounts = store.getUsersIndex().map((entry) => {
     const user = store.getUser(entry.id);
+    if (!user) return null;
     const claims = (user.claims || [])
       .map((c) => {
         const league = store.getLeague(c.leagueId);
@@ -1176,7 +1180,7 @@ router.get("/admin/players/accounts", async (req, res) => {
       })
       .filter(Boolean);
     return { id: user.id, name: user.name, email: user.email, claims, online: activeIds.has(user.id) };
-  });
+  }).filter(Boolean);
   res.json(accounts);
 });
 // Undo one link from an admin combine (or a self-claim) — lets the owner

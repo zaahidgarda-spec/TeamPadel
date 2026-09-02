@@ -6,6 +6,18 @@ const routes = require("./src/routes");
 const store = require("./src/store");
 const { createSessionStore } = require("./src/sessionStore");
 
+// An async route handler (router.get(path, async (req, res) => {...})) that
+// throws or rejects doesn't get caught by Express 4's own error handling —
+// it becomes an unhandled promise rejection, and Node treats those as fatal
+// by default (crashes the whole process, taking every other request down
+// with it, not just the one that hit the bug — this is what actually
+// happened on 2026-09-02: one bad record in /admin/players/accounts crash-
+// looped the entire site for hours). Log it and let the one request that
+// caused it fail/hang instead of killing the process for everyone else.
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection (request may have failed, server stays up):", err);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-in-production";
