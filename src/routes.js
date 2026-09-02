@@ -1066,16 +1066,23 @@ function absorbPlaceholderAccount(user, placeholder) {
   store.saveUsersIndex(index.filter((e) => e.id !== placeholder.id));
   store.deleteUser(placeholder.id);
 }
-router.post("/players/claims", requirePlayerUser, (req, res) => {
+router.post("/players/claims", requirePlayerUser, async (req, res) => {
   const { leagueId, teamId, playerId } = req.body || {};
   const user = store.getUser(req.session.playerUser.id);
   try {
     claimPlayerRecord(user, leagueId, teamId, playerId);
-    store.saveUser(user.id, user);
-    res.json({ ok: true });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    return res.status(400).json({ error: e.message });
   }
+  // A claim is as much "the real signup" as the account itself — same
+  // durability reasoning as /players/signup, so it doesn't silently fail
+  // to save while still telling the player "this is me" worked.
+  try {
+    await store.saveUserDurable(user.id, user);
+  } catch (e) {
+    return res.status(503).json({ error: "Couldn't save just now — try again in a moment." });
+  }
+  res.json({ ok: true });
 });
 router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, (req, res) => {
   const { leagueId, teamId, playerId } = req.params;
