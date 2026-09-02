@@ -47,6 +47,17 @@ function persist(key, value) {
     .then(() => redis.set(key, value))
     .catch((e) => console.error("Failed to persist " + key + " to Redis:", e.message));
 }
+// Same queue/ordering as persist(), but hands the real success/failure of
+// THIS write back to the caller instead of always swallowing it — for the
+// handful of writes (new account, new signup) where silently losing the
+// data is worse than a request briefly waiting on Redis. The shared queue
+// itself still never rejects, or every write queued after this one would
+// silently stop happening too.
+function persistDurable(key, value) {
+  const result = writeQueue.then(() => redis.set(key, value));
+  writeQueue = result.catch((e) => console.error("Failed to persist " + key + " to Redis:", e.message));
+  return result;
+}
 
 function remove(key) {
   writeQueue = writeQueue
@@ -127,6 +138,16 @@ function saveUsersIndex(index) {
   }
   writeJsonFile("users-index", index);
 }
+// Same as saveUsersIndex, but the caller can await it to know the write
+// actually reached Redis before telling a new signup "you're in."
+function saveUsersIndexDurable(index) {
+  if (useRedis) {
+    cache.set("users-index", index);
+    return persistDurable("users-index", index);
+  }
+  writeJsonFile("users-index", index);
+  return Promise.resolve();
+}
 function getUser(id) {
   if (useRedis) return cache.get("user-" + id) || null;
   return readJsonFile("user-" + id, null);
@@ -138,6 +159,19 @@ function saveUser(id, user) {
     return;
   }
   writeJsonFile("user-" + id, user);
+}
+// Same as saveUser, but the caller can await Redis confirmation — used
+// wherever a brand-new account is created, so the write can't silently
+// vanish (session survives a restart either way, since sessions live in
+// their own always-awaited Redis store; the account record doesn't,
+// unless a call site opts into this).
+function saveUserDurable(id, user) {
+  if (useRedis) {
+    cache.set("user-" + id, user);
+    return persistDurable("user-" + id, user);
+  }
+  writeJsonFile("user-" + id, user);
+  return Promise.resolve();
 }
 function deleteUser(id) {
   if (useRedis) {
@@ -190,8 +224,10 @@ module.exports = {
   deleteLeague,
   getUsersIndex,
   saveUsersIndex,
+  saveUsersIndexDurable,
   getUser,
   saveUser,
+  saveUserDurable,
   deleteUser,
   getSignups,
   saveSignups,

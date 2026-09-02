@@ -826,7 +826,11 @@ router.post("/players/signup", loginLimiter, async (req, res) => {
     if (existing && !existing.passwordHash) {
       existing.passwordHash = await hashPassword(password);
       existing.name = name.trim();
-      store.saveUser(existing.id, existing);
+      try {
+        await store.saveUserDurable(existing.id, existing);
+      } catch (e) {
+        return res.status(503).json({ error: "Couldn't save your account just now — try again in a moment." });
+      }
       req.session.playerUser = { id: existing.id };
       return res.json({ id: existing.id, name: existing.name, email: existing.email });
     }
@@ -834,10 +838,19 @@ router.post("/players/signup", loginLimiter, async (req, res) => {
   }
   const id = logic.uid();
   const user = { id, email: normalized, passwordHash: await hashPassword(password), name: name.trim(), createdAt: Date.now(), claims: [] };
-  store.saveUser(id, user);
   const index = store.getUsersIndex();
   index.push({ id, email: normalized });
-  store.saveUsersIndex(index);
+  // Both writes must actually land before this signup counts as real —
+  // otherwise a request that 200s right before a restart (or a transient
+  // Redis hiccup) can leave someone logged in (sessions are always
+  // durable, see sessionStore.js) with an account that silently never
+  // existed anywhere an admin — or their own next login — could find it.
+  try {
+    await store.saveUserDurable(id, user);
+    await store.saveUsersIndexDurable(index);
+  } catch (e) {
+    return res.status(503).json({ error: "Couldn't save your account just now — try again in a moment." });
+  }
   req.session.playerUser = { id };
   res.json({ id, name: user.name, email: user.email });
 });
@@ -1097,7 +1110,7 @@ router.get("/admin/players/suggestions", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   res.json(findPlayerNameSuggestions());
 });
-router.post("/admin/players/combine", (req, res) => {
+router.post("/admin/players/combine", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const { name, email, records } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
@@ -1118,7 +1131,11 @@ router.post("/admin/players/combine", (req, res) => {
     user = { id: userId, email: normalized, passwordHash: null, name: name.trim(), createdAt: Date.now(), claims: [] };
     const index = store.getUsersIndex();
     index.push({ id: userId, email: normalized });
-    store.saveUsersIndex(index);
+    try {
+      await store.saveUsersIndexDurable(index);
+    } catch (e) {
+      return res.status(503).json({ error: "Couldn't save just now — try again in a moment." });
+    }
   }
   // All-or-nothing: if any one record is already claimed by a different
   // profile, reject the whole combine rather than silently applying half
@@ -1128,7 +1145,11 @@ router.post("/admin/players/combine", (req, res) => {
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
-  store.saveUser(user.id, user);
+  try {
+    await store.saveUserDurable(user.id, user);
+  } catch (e) {
+    return res.status(503).json({ error: "Couldn't save just now — try again in a moment." });
+  }
   res.json({ ok: true, userId: user.id });
 });
 // A simple read-back of every player account and what it's linked to —
