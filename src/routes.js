@@ -550,6 +550,20 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
   return pairings;
 }
 
+// Public, unauthenticated — every visitor pings this (public/app.js), not
+// just logged-in ones, since "how many are on the app right now" should
+// count guests browsing fixtures/results too, not just accounts.
+router.post("/presence/ping", async (req, res) => {
+  const visitorId = ((req.body && req.body.visitorId) || "").slice(0, 100);
+  if (!/^[a-zA-Z0-9-]{8,100}$/.test(visitorId)) return res.status(400).json({ error: "Invalid visitor id." });
+  await store.touchPresence(visitorId);
+  res.json({ ok: true });
+});
+router.get("/admin/live-count", async (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  res.json({ count: await store.getLiveVisitorCount() });
+});
+
 router.get("/next-matches", (req, res) => {
   const myLeagueId = req.session.user && req.session.user.leagueId;
   const index = visibleIndexEntries();

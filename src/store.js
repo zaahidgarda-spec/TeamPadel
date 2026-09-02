@@ -80,6 +80,26 @@ async function getActivePlayerUserIds() {
   return Array.from(ids);
 }
 
+// A genuine "on the app right now" count, distinct from the session store
+// above — the auth session lasts 14 days and is only ever created for
+// someone who logs in, so it can't answer "how many people, logged in or
+// not, are actually browsing right now." Instead the client pings this
+// with a per-browser id (public/app.js) every ~60s while its tab is
+// visible; each ping just refreshes a short-lived key, so the count of
+// keys still alive is the count of browsers that pinged in the last
+// PRESENCE_TTL_SECONDS — no separate cleanup pass needed, Redis expires
+// the key on its own.
+const PRESENCE_TTL_SECONDS = 90;
+async function touchPresence(visitorId) {
+  if (!useRedis || !visitorId) return;
+  await redis.set("presence:" + visitorId, Date.now(), { ex: PRESENCE_TTL_SECONDS }).catch((e) => console.error("Failed to touch presence:", e.message));
+}
+async function getLiveVisitorCount() {
+  if (!useRedis) return 0;
+  const keys = await redis.keys("presence:*");
+  return keys.length;
+}
+
 // Must be awaited before the server starts accepting requests: it pulls
 // everything Redis has into the in-memory cache so reads below can stay
 // synchronous instead of forcing every route handler to become async.
@@ -245,6 +265,8 @@ module.exports = {
   saveUserDurable,
   deleteUser,
   getActivePlayerUserIds,
+  touchPresence,
+  getLiveVisitorCount,
   getSignups,
   saveSignups,
   getHomepageExtras,

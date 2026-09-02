@@ -174,10 +174,31 @@ async function api(path, opts) {
   return data;
 }
 
+// A per-browser id, stable across visits (not per-session — a guest who's
+// never logged in still needs to count once, not once per page load), used
+// only to dedupe presence pings. Not an identity of any kind.
+function visitorId() {
+  let id = localStorage.getItem("visitorId");
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem("visitorId", id);
+  }
+  return id;
+}
+// Pings once now and every 60s after, but only while the tab is actually
+// visible — a background tab shouldn't count as "on the app right now."
+// Matches the server's 90s presence TTL with room for a missed beat.
+function startPresencePing() {
+  const ping = () => { if (document.visibilityState === "visible") api("/presence/ping", { method: "POST", body: { visitorId: visitorId() } }).catch(() => {}); };
+  ping();
+  setInterval(ping, 60000);
+  document.addEventListener("visibilitychange", ping);
+}
 async function boot() {
   const config = await api("/config").catch(() => ({ ratingsEnabled: false }));
   RATINGS_ENABLED = !!config.ratingsEnabled;
   leaguesIndex = await api("/leagues").catch(() => []);
+  startPresencePing();
   el("loading").style.display = "none";
   el("app").style.display = "block";
   // Black while the splash/loading screen is up (matches it exactly, no
@@ -551,6 +572,9 @@ function switchHubTab(name) {
   document.querySelectorAll(".hub-view").forEach((v) => v.classList.remove("active"));
   document.querySelector(`.hub-tab-btn[data-hubview="${name}"]`).classList.add("active");
   el("hub-view-" + name).classList.add("active");
+  // A glance-at stat, not a live dashboard — refreshed on entering the tab
+  // rather than polled continuously in the background.
+  if (name === "admin" && isOwner) renderLiveCount();
 }
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
   btn.onclick = () => switchHubTab(btn.dataset.hubview);
@@ -662,14 +686,21 @@ async function refreshOwnerStatus() {
   el("manage-leagues-card").style.display = isOwner ? "block" : "none";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
+  el("live-count-card").style.display = isOwner ? "block" : "none";
   // Not a login entry point anymore (that's the unified box on My Profile)
   // — with nothing to show a guest, the tab itself only makes sense once
   // there's actually something behind it.
   const adminTabBtn = document.querySelector('.hub-tab-btn[data-hubview="admin"]');
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); }
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); }
   renderHub();
+}
+// Owner-only — refetched each time the Admin tab is (re)entered rather than
+// polled continuously, since it's a glance-at stat, not a live dashboard.
+async function renderLiveCount() {
+  const data = await api("/admin/live-count").catch(() => null);
+  el("live-count-num").textContent = data ? data.count : "—";
 }
 // The owner's full list of every league — including hidden ones, which
 // drop out of every other list on the site the moment they're hidden.
