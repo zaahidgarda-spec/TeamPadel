@@ -480,13 +480,13 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.has-photo .league-card-logos .avatar-fb{border-color:rgba(255,255,255,.5);}
 .league-card.has-photo .league-copy-codes-btn{color:#93c5fd;}
 
-/* Only shown during a round's scheduled 4-hour window (leagueIsLiveNow) —
-   overrides the plain "Active" tag, on both the plain and photo card
-   variants, so a matchday in progress stands out from a league that's
-   just generically active. */
-.league-status-live{color:#fff;border-color:var(--clay);background:var(--clay);}
-.league-status-live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:5px;vertical-align:1px;animation:league-live-pulse 1.6s ease-in-out infinite;}
-@media (prefers-reduced-motion: reduce){.league-status-live::before{animation:none;}}
+/* Only shown during a round's scheduled 4-hour window (isWithinLiveWindow) —
+   on the league card this overrides the plain "Active" tag (both the plain
+   and photo card variants); on the homepage carousel it sits alongside the
+   existing title. Same pulsing-dot treatment in both places. */
+.league-status-live,.badge-live{color:#fff;border-color:var(--clay);background:var(--clay);}
+.league-status-live::before,.badge-live::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:5px;vertical-align:1px;animation:league-live-pulse 1.6s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){.league-status-live::before,.badge-live::before{animation:none;}}
 @keyframes league-live-pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 .league-card.has-photo .league-status-live{background:var(--clay);border-color:var(--clay);color:#fff;}
 
@@ -520,6 +520,7 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 }
 .floodlit.urgent .section-title{color:#8FB4FF;border-bottom-color:rgba(96,150,255,.2);}
 .floodlit.urgent .tag{background:rgba(127,168,255,.14);border-color:rgba(96,150,255,.35);color:#8FB4FF;}
+.floodlit.urgent .badge-live{background:var(--clay);border-color:var(--clay);color:#fff;}
 .floodlit.urgent .mc-league{color:#8FB4FF;}
 .floodlit.urgent .mc-pair{color:#F2F6FF;text-shadow:0 0 14px rgba(120,165,255,.55);}
 .floodlit.urgent .mc-meta{color:#7C8CB0;}

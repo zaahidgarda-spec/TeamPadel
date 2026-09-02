@@ -216,15 +216,16 @@ const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="non
 // Checked against the viewer's own clock, same as relativeDayLabel's
 // "Tonight" — correct without any server-side timezone handling.
 const LIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
+function isWithinLiveWindow(date, time) {
+  if (!date || !time) return false;
+  const start = new Date(date + "T" + time + ":00").getTime();
+  if (isNaN(start)) return false;
+  const now = Date.now();
+  return now >= start && now <= start + LIVE_WINDOW_MS;
+}
 function leagueIsLiveNow(l) {
   const sched = l.schedule || {};
-  const now = Date.now();
-  return Object.values(sched).some((s) => {
-    if (!s || !s.date || !s.time) return false;
-    const start = new Date(s.date + "T" + s.time + ":00").getTime();
-    if (isNaN(start)) return false;
-    return now >= start && now <= start + LIVE_WINDOW_MS;
-  });
+  return Object.values(sched).some((s) => s && isWithinLiveWindow(s.date, s.time));
 }
 function leagueCardHtml(l) {
   // Setup-phase leagues are a teaser for the public — visible, but only the
@@ -355,6 +356,8 @@ function renderNextMatchSlide() {
   // apart instead.
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
   const meta = [m.teamAName + " vs " + m.teamBName, when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  const liveTag = el("next-matches-live-tag");
+  if (liveTag) liveTag.style.display = isWithinLiveWindow(m.date, m.time) ? "inline-block" : "none";
   const slide = el("next-matches-slide");
   // A seed already scored (captains enter results one at a time through
   // the night) shows that score in place of a bare "vs", with the winning
