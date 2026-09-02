@@ -213,12 +213,19 @@ async function boot() {
   }
 }
 
+// This is a single-page app — a hash change never triggers a real
+// navigation GA would see on its own, so each route the app itself
+// recognizes (the hub, a league) sends its own virtual pageview.
+function trackPageView(path, title) {
+  if (typeof gtag === "function") gtag("event", "page_view", { page_path: path, page_title: title });
+}
 function showHub() {
   currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
   window.location.hash = "";
   el("view-hub").style.display = "block";
   el("view-league").style.display = "none";
   document.body.className = "role-guest";
+  trackPageView("/", "Team Padel — Leagues");
   refreshOwnerStatus();
   refreshAccountStatus();
   renderHub();
@@ -1320,6 +1327,7 @@ async function openLeague(id) {
   switchTab(myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : isPairs ? "results" : "fixtures");
   initViewingKey();
   renderAll();
+  trackPageView("/league/" + id, league.name);
 }
 async function refreshMe() {
   const me = await api(`/leagues/${currentLeagueId}/me`).catch(() => ({ role: "guest" }));

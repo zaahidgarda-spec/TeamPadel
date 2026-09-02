@@ -3,6 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Google Analytics (GA4) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-YJ52353W9E"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  // This is a single-page app — a hash change (opening a league) never
+  // triggers a real navigation GA would see automatically. The initial
+  // automatic pageview would also always log "/" even when someone lands
+  // directly on a shared league link, before the app knows better — so
+  // it's turned off here in favor of app.js's own trackPageView() calls,
+  // which fire once boot() actually knows which route was requested.
+  gtag('config', 'G-YJ52353W9E', { send_page_view: false });
+</script>
 <title>Team Padel</title>
 <meta name="description" content="Run and follow padel leagues — fixtures, results, live standings, and player stats for every team.">
 <link rel="manifest" href="/manifest.json">
