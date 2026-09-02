@@ -756,8 +756,12 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    after that, and every platform where a manifest splash doesn't apply. */
 .loading{position:fixed;inset:0;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#000;text-align:center;animation:loading-fade-in .3s ease;}
 .loading-logo{width:180px;height:auto;}
+.loading-bar-track{width:120px;height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden;}
+.loading-bar-fill{width:40%;height:100%;border-radius:2px;background:var(--accent);animation:loading-bar-slide 1.3s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){.loading-bar-fill{animation:none;width:100%;}}
 .loading-caption{font-family:var(--font-display);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.45);}
 @keyframes loading-fade-in{from{opacity:0;}to{opacity:1;}}
+@keyframes loading-bar-slide{0%{transform:translateX(-100%);}50%{transform:translateX(60%);}100%{transform:translateX(220%);}}
 footer.actions{display:flex;justify-content:space-between;align-items:center;margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--text-dim);flex-wrap:wrap;gap:10px;}
 
 /* ---------- Mobile ---------- */
