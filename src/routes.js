@@ -2205,6 +2205,22 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Pauses an already-started league between seasons — unlike season/reset,
+// nothing gets wiped (fixtures, playoffs, results all stay exactly as they
+// are); this just flips the hub card to "Off season" and unclickable for
+// everyone but the owner (see leagueCardHtml's `locked` check), same
+// treatment a not-yet-started "setup" league already gets, just for a
+// different reason.
+router.put("/leagues/:leagueId/season-status", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const status = req.body.status;
+  if (status !== "active" && status !== "offseason") return res.status(400).json({ error: "Invalid status." });
+  if (leagueStatus(league) === "setup") return res.status(400).json({ error: "Start the season before setting an off-season status." });
+  league.status = status;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.put("/leagues/:leagueId/default-venue", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   league.defaultVenue = (req.body.venue || "").trim();

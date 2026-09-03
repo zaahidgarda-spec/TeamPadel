@@ -310,10 +310,13 @@ function leagueIsLiveNow(l) {
 }
 function leagueCardHtml(l) {
   // Setup-phase leagues are a teaser for the public — visible, but only the
-  // owner (who's actually building it) can click through.
-  const locked = l.status === "setup" && !isOwner;
+  // owner (who's actually building it) can click through. An offseason
+  // league (a real, already-started league taking a break between
+  // seasons) gets the identical treatment — visible, unclickable, owner
+  // still gets in — just for a different reason than "not built yet".
+  const locked = (l.status === "setup" || l.status === "offseason") && !isOwner;
   const live = l.status === "active" && leagueIsLiveNow(l);
-  const statusLabel = live ? "Live now" : l.status === "active" ? "Active" : locked ? "Coming soon" : "In setup";
+  const statusLabel = live ? "Live now" : l.status === "active" ? "Active" : l.status === "offseason" ? "Off season" : locked ? "Coming soon" : "In setup";
   const teams = l.teams || [];
   const maxShown = 8;
   const shown = teams.slice(0, maxShown);
@@ -554,6 +557,7 @@ function renderHub() {
   if (query && filtered.length === 0) { list.innerHTML = `<p class="empty">No leagues match “${escapeHtml(el("hub-league-search").value.trim())}”.</p>`; return; }
   const groups = [
     { key: "active", label: "Active leagues" },
+    { key: "offseason", label: "Off season" },
     { key: "setup", label: isOwner ? "In setup" : "Coming soon" },
   ];
   groups.forEach((g) => {
@@ -2520,6 +2524,22 @@ function renderRulesCard() {
       await refreshLeague(); initViewingKey(); renderAll();
     };
     actionsWrap.appendChild(resetBtn);
+
+    // Pauses between seasons without wiping anything (unlike Reset above)
+    // — the hub card goes unclickable for everyone but the owner, same
+    // treatment a not-yet-started league already gets.
+    const offseasonBtn = document.createElement("button");
+    offseasonBtn.className = "secondary";
+    offseasonBtn.textContent = status === "offseason" ? "Bring back into season" : "Take off season";
+    offseasonBtn.onclick = async () => {
+      const goingOffseason = status !== "offseason";
+      if (goingOffseason && !confirm(`Take "${league.name}" off season? It stays exactly as-is (nothing is cleared) but becomes unclickable on the hub for everyone except you.`)) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/season-status`, { method: "PUT", body: { status: goingOffseason ? "offseason" : "active" } });
+        await refreshLeague(); initViewingKey(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    actionsWrap.appendChild(offseasonBtn);
   }
   if (isOwner) {
     const hideBtn = document.createElement("button");
