@@ -5979,7 +5979,7 @@ async function renderSeasonHistory() {
     ? list.map((s) => `
       <div class="notif-row season-history-row" data-id="${s.id}" style="cursor:pointer;">
         <div>
-          <strong>${escapeHtml(s.label)}</strong>
+          <strong>Season ${s.season} — ${escapeHtml(s.label)}</strong>
           <div class="note">${s.teamCount} team${s.teamCount === 1 ? "" : "s"}${s.champion ? ` · Champion: ${escapeHtml(s.champion)}` : ""}</div>
         </div>
         <span class="note">${new Date(s.archivedAt).toLocaleDateString()}</span>
@@ -5999,7 +5999,16 @@ async function openArchivedSeason(seasonId) {
   const snapshot = await api(`/leagues/${currentLeagueId}/season-history/${seasonId}`).catch(() => null);
   if (!snapshot) { detail.innerHTML = '<p class="empty">Couldn\'t load that season.</p>'; return; }
   const isPairs = snapshot.format === "pairs";
-  let html = `<div class="card" style="margin-top:16px;"><h2 class="section-title">${escapeHtml(snapshot.label)}</h2>${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
+  const hof = snapshot.hallOfFame || [];
+  let html = `<div class="card" style="margin-top:16px;"><h2 class="section-title">Season ${snapshot.season} — ${escapeHtml(snapshot.label)}</h2>`;
+  if (hof.length) {
+    html += `<div class="hof-row-list" style="margin-bottom:16px;">${hof.map((h) => `
+      <div class="notif-row">
+        <div><strong>${escapeHtml(h.label)}</strong></div>
+        <span class="note">${escapeHtml(h.winner)}</span>
+      </div>`).join("")}</div>`;
+  }
+  html += `${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
   if (snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
     const [s0, s1] = snapshot.playoffs.semis, fin = snapshot.playoffs.final;
     html += `<div class="card" style="margin-top:16px;"><h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin, snapshot.teams, snapshot.schedule, snapshot.defaultVenue)}</div>`;

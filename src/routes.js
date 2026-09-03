@@ -2206,8 +2206,14 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   if (league.fixtures.length > 0) {
     if (!league.seasonHistory) league.seasonHistory = [];
     const label = (req.body && req.body.seasonLabel && req.body.seasonLabel.trim()) || `Season ending ${new Date().toISOString().slice(0, 10)}`;
+    // Same season numbering Hall of Fame entries already use (a plain
+    // integer, 1 for the first season ever archived) — this is what lets
+    // the archive view cross-reference "who was MVP that season" instead
+    // of the two features living totally unlinked.
+    const season = league.seasonHistory.length + 1;
     league.seasonHistory.unshift({
       id: logic.uid(),
+      season,
       label,
       archivedAt: Date.now(),
       name: league.name,
@@ -2242,21 +2248,31 @@ function archivedSeasonChampion(snapshot) {
 // Every past season this league has archived (via season/reset above) —
 // summaries only, so browsing the list doesn't ship every fixture/rubber
 // for every past season at once.
+// Entries archived before the season-number field existed have no `season`
+// — same fallback in both routes below: position from the end of the
+// (newest-first) list, so "the very first one ever archived" is still 1.
+function seasonNumberOf(history, s) {
+  return s.season || history.length - history.indexOf(s);
+}
 router.get("/leagues/:leagueId/season-history", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
-  const summaries = (league.seasonHistory || []).map((s) => ({
-    id: s.id, label: s.label, archivedAt: s.archivedAt, teamCount: s.teams.length, champion: archivedSeasonChampion(s),
+  const history = league.seasonHistory || [];
+  const summaries = history.map((s) => ({
+    id: s.id, season: seasonNumberOf(history, s), label: s.label, archivedAt: s.archivedAt, teamCount: s.teams.length, champion: archivedSeasonChampion(s),
   }));
   res.json(summaries);
 });
 router.get("/leagues/:leagueId/season-history/:seasonId", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
-  const snapshot = (league.seasonHistory || []).find((s) => s.id === req.params.seasonId);
+  const history = league.seasonHistory || [];
+  const snapshot = history.find((s) => s.id === req.params.seasonId);
   if (!snapshot) return res.status(404).json({ error: "That season isn't archived here." });
   const standings = logic.computeStandings(snapshot);
-  res.json({ ...snapshot, standings });
+  const season = seasonNumberOf(history, snapshot);
+  const hallOfFame = (league.hallOfFame || []).filter((e) => e.season === season);
+  res.json({ ...snapshot, season, standings, hallOfFame });
 });
 
 // Pauses an already-started league between seasons — unlike season/reset,
