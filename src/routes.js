@@ -2356,6 +2356,30 @@ router.put("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/rubb
   res.json({ ok: true });
 });
 
+// For the rare case where a whole match got attributed to the wrong two
+// teams (not just a wrong score) — swaps only teamA/teamB, leaving the
+// rubbers exactly as recorded, so whichever side already won the match
+// keeps that result under the correct team. Deliberately does NOT touch
+// selectionA/selectionB: each team's roster has its own player records
+// (never shared between teams, even for a same-named player), so the old
+// selections would no longer resolve to real names under the new team —
+// that half of the fix needs an admin to re-pick the real line-up
+// themselves, with a human's knowledge of who actually played.
+router.put("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/swap-teams", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const snapshot = (league.seasonHistory || []).find((s) => s.id === req.params.seasonId);
+  if (!snapshot) return res.status(404).json({ error: "That season isn't archived here." });
+  const f = findArchivedFixture(snapshot, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Match not found in that season." });
+  const teamA = f.teamA, teamB = f.teamB;
+  f.teamA = teamB; f.teamB = teamA;
+  f.selectionA = { submitted: false, pairs: f.selectionA.pairs.map(() => [null, null]) };
+  f.selectionB = { submitted: false, pairs: f.selectionB.pairs.map(() => [null, null]) };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 // Pauses an already-started league between seasons — unlike season/reset,
 // nothing gets wiped (fixtures, playoffs, results all stay exactly as they
 // are); this just flips the hub card to "Off season" and unclickable for

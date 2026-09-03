@@ -6042,6 +6042,23 @@ function archivedFixtureCard(seasonId, f, teams) {
   const isSingleMatch = f.rubbers.length === 1;
   const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
   card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${avatarHtml(teamA)} <span class="fx-name">${escapeHtml(teamA.name)}</span> <span class="vs">vs</span> <span class="fx-name">${escapeHtml(teamB.name)}</span> ${avatarHtml(teamB)}</div><div><span class="night-score">${headline.a} - ${headline.b}</span></div></div>`;
+  // Rare, so tucked away as a small link rather than a prominent button —
+  // for when the whole match got attributed to the wrong two teams (not
+  // just a wrong score). Keeps the recorded result exactly as-is, just
+  // reassigns which team it counts for; clears both line-ups since a
+  // player selected under the old team's roster can't resolve under the
+  // new one — re-picking the real pairs after is a separate, manual step.
+  const swapBtn = document.createElement("button");
+  swapBtn.className = "link"; swapBtn.style.cssText = "font-size:11px;margin-top:4px;";
+  swapBtn.textContent = "Swap teams on this match";
+  swapBtn.onclick = async () => {
+    if (!confirm(`Swap which team this match counts for — ${teamB.name} keeps ${teamA.name}'s result and vice versa, current score unchanged. This also clears both line-ups here (they won't resolve under the new team), so you'll need to re-pick the real pairs afterward. Continue?`)) return;
+    try {
+      await api(`/leagues/${currentLeagueId}/season-history/${seasonId}/fixtures/${f.id}/swap-teams`, { method: "PUT" });
+      openArchivedSeason(seasonId);
+    } catch (e) { alert(e.message); }
+  };
+  card.appendChild(swapBtn);
   if (!(f.selectionA.submitted && f.selectionB.submitted)) {
     card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "No line-up recorded for this match." }));
     return card;
