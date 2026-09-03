@@ -299,12 +299,17 @@ async function renderHomepageHallOfFame() {
   card.style.display = data.length ? "block" : "none";
   if (!data.length) return;
   el("homepage-hof-list").innerHTML = data.map((l) => `
-    <div style="margin-bottom:14px;">
+    <div style="margin-bottom:20px;">
       <div class="note" style="font-weight:600;margin-bottom:6px;">${escapeHtml(l.leagueName)}</div>
-      ${l.entries.map((e) => `
-        <div class="notif-row">
-          <div><strong>${escapeHtml(e.label)}</strong><div class="note">Season ${e.season}</div></div>
-          <span class="note">${escapeHtml(e.winner)}</span>
+      ${l.seasons.map((s) => `
+        <div style="margin-bottom:10px;">
+          <div class="note" style="margin-bottom:4px;">Season ${s.season}</div>
+          ${s.entries.map((e) => `
+            <div class="notif-row">
+              <div><strong>${escapeHtml(e.label)}</strong></div>
+              <span class="note">${escapeHtml(e.winner)}</span>
+            </div>`).join("")}
+          ${s.standings ? `<div style="margin-top:8px;">${standingsRowsHtml(s.standings, s.isPairs)}</div>` : ""}
         </div>`).join("")}
     </div>`).join("");
 }

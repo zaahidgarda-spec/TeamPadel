@@ -691,11 +691,24 @@ router.get("/homepage/hall-of-fame", (req, res) => {
   const leagues = visibleIndexEntries()
     .map((entry) => store.getLeague(entry.id))
     .filter((l) => l && (l.hallOfFame || []).length > 0);
-  const result = leagues.map((league) => ({
-    leagueId: league.id,
-    leagueName: league.name,
-    entries: league.hallOfFame.slice().sort((a, b) => b.season - a.season),
-  }));
+  const result = leagues.map((league) => {
+    const entries = league.hallOfFame.slice();
+    const history = league.seasonHistory || [];
+    const seasonNums = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
+    // Same grouping the in-league Hall of Fame tab uses — a season's table
+    // sits with its awards when that season happens to be archived here
+    // too; an entry with no matching archive just shows its awards alone.
+    const seasons = seasonNums.map((season) => {
+      const snapshot = history.find((s) => seasonNumberOf(history, s) === season);
+      return {
+        season,
+        entries: entries.filter((e) => e.season === season),
+        standings: snapshot ? logic.computeStandings(snapshot) : null,
+        isPairs: snapshot ? snapshot.format === "pairs" : false,
+      };
+    });
+    return { leagueId: league.id, leagueName: league.name, seasons };
+  });
   res.json(result);
 });
 router.get("/homepage/highlights", (req, res) => {
