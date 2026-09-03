@@ -288,6 +288,25 @@ function showHub() {
   // double up the /api/next-matches request on every hub visit.
   renderNextMatches();
   renderHomepageHighlights();
+  renderHomepageHallOfFame();
+}
+// Hall of Fame lives inside each league's own page — this pulls it onto
+// the homepage too (every league that has at least one entry), grouped by
+// league, so a visitor sees a league's champions without opening it first.
+async function renderHomepageHallOfFame() {
+  const data = await api("/homepage/hall-of-fame").catch(() => []);
+  const card = el("homepage-hof-card");
+  card.style.display = data.length ? "block" : "none";
+  if (!data.length) return;
+  el("homepage-hof-list").innerHTML = data.map((l) => `
+    <div style="margin-bottom:14px;">
+      <div class="note" style="font-weight:600;margin-bottom:6px;">${escapeHtml(l.leagueName)}</div>
+      ${l.entries.map((e) => `
+        <div class="notif-row">
+          <div><strong>${escapeHtml(e.label)}</strong><div class="note">Season ${e.season}</div></div>
+          <span class="note">${escapeHtml(e.winner)}</span>
+        </div>`).join("")}
+    </div>`).join("");
 }
 const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';

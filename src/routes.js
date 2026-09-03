@@ -680,6 +680,24 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
 // post already carries, rather than recomputing anything. For each visible
 // league, its most recently posted round recap supplies that league's
 // current Pair of the Week (if any) and a few non-"quiet" highlights.
+// Hall of Fame entries live inside each league's own page (Admin to edit,
+// a public "Hall of Fame" tab to view) — this surfaces them on the
+// homepage too, so a visitor sees a league's champions without having to
+// find and open that specific league first. Every visible league is
+// included regardless of current status (active/setup/offseason) — a past
+// champion is a historical fact, not tied to whether the league happens to
+// be running a season right now.
+router.get("/homepage/hall-of-fame", (req, res) => {
+  const leagues = visibleIndexEntries()
+    .map((entry) => store.getLeague(entry.id))
+    .filter((l) => l && (l.hallOfFame || []).length > 0);
+  const result = leagues.map((league) => ({
+    leagueId: league.id,
+    leagueName: league.name,
+    entries: league.hallOfFame.slice().sort((a, b) => b.season - a.season),
+  }));
+  res.json(result);
+});
 router.get("/homepage/highlights", (req, res) => {
   const leagues = visibleIndexEntries()
     .map((entry) => store.getLeague(entry.id))
