@@ -5944,14 +5944,7 @@ function renderTable() {
   } else if (league.playoffs) {
     koCard.style.display = "block";
     const [s0, s1] = league.playoffs.semis, fin = league.playoffs.final;
-    const champion = fin.finalized ? teamById(matchWinnerClient(fin) === "A" ? fin.teamA : fin.teamB) : null;
-    koCard.innerHTML = `<h2 class="section-title">Knockout stage</h2>
-      <div class="bracket-grid bracket-semis">
-        ${matchCardHtml("Semi 1", s0.teamA, s0.teamB, s0)}
-        ${matchCardHtml("Semi 2", s1.teamA, s1.teamB, s1)}
-      </div>
-      <div class="bracket-final-wrap">${matchCardHtml("Final", fin.teamA, fin.teamB, fin)}</div>
-      ${champion ? `<p class="note" style="margin-top:10px;text-align:center;">Champion: <strong style="color:var(--accent);">${escapeHtml(champion.name)}</strong></p>` : ""}`;
+    koCard.innerHTML = `<h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin)}`;
   } else { koCard.style.display = "none"; }
 }
 // Player ELO leaderboard — same self-labeling .rank-row idiom as the
@@ -6093,6 +6086,92 @@ function renderTrendSpark(svgId, points) {
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+// One box per side of a match, with the aggregate rubber score and (if any
+// seed needed one) a super tie-break caption — used inside the SVG bracket
+// below, not the plain matchCardHtml grid the "position" format still uses.
+function bracketMatchBoxSvg(x, y, teamA, teamB, f) {
+  const { winsA, winsB } = f ? fixtureScoreClient(f) : { winsA: 0, winsB: 0 };
+  // Nothing decided yet and not finalized — a real "hasn't started" match,
+  // not a genuine 0-0, so no score renders (matches matchCardHtml's
+  // hasScore precedent) rather than showing a slightly misleading "0".
+  const hasScore = f && (winsA > 0 || winsB > 0 || f.finalized);
+  const winner = f ? matchWinnerClient(f) : null;
+  const nameA = escapeHtml(teamA ? teamA.name : "TBD"), nameB = escapeHtml(teamB ? teamB.name : "TBD");
+  const initialA = escapeHtml(teamA ? teamA.name.charAt(0).toUpperCase() : "?");
+  const initialB = escapeHtml(teamB ? teamB.name.charAt(0).toUpperCase() : "?");
+  const aWon = winner === "A", bWon = winner === "B";
+  const rowSvg = (ry, name, initial, won, score, logo) => `
+    <circle cx="${x + 22}" cy="${ry + 23}" r="13" fill="${won ? "#178A4C" : "#EEF2F9"}"/>
+    ${logo ? `<clipPath id="clip-${x}-${ry}"><circle cx="${x + 22}" cy="${ry + 23}" r="13"/></clipPath><image href="${logo}" x="${x + 9}" y="${ry + 10}" width="26" height="26" clip-path="url(#clip-${x}-${ry})" preserveAspectRatio="xMidYMid slice"/>`
+      : `<text x="${x + 22}" y="${ry + 27}" text-anchor="middle" class="disp" font-size="11" font-weight="700" fill="${won ? "#FFFFFF" : "#64748B"}">${initial}</text>`}
+    <text x="${x + 42}" y="${ry + 22}" class="disp" font-size="13" font-weight="${won ? 700 : 600}" fill="${won ? "#178A4C" : "#12203A"}">${name}</text>
+    <text x="${x + 220}" y="${ry + 27}" text-anchor="end" class="disp" font-size="16" font-weight="700" fill="${won ? "#178A4C" : "#94A3B8"}">${score}</text>`;
+  return `
+    <rect x="${x}" y="${y}" width="240" height="94" rx="8" fill="#FFFFFF" stroke="${f && f.finalized ? "#2563EB" : "#DCE3F0"}" stroke-width="1.5"/>
+    ${rowSvg(y + 6, nameA, initialA, aWon, hasScore ? winsA : "", teamA && teamA.logo)}
+    <line x1="${x + 14}" y1="${y + 47}" x2="${x + 226}" y2="${y + 47}" stroke="#EEF2F9" stroke-width="1"/>
+    ${rowSvg(y + 52, nameB, initialB, bWon, hasScore ? winsB : "", teamB && teamB.logo)}`;
+}
+// A super tie-break is a per-seed thing (one pairing's rubber going to a
+// match tie-break, not the whole tie) — this pulls out which seed(s) it
+// happened in and how it went, so the bracket can actually show it instead
+// of just the aggregate rubber count.
+function stbCaptionSvg(x, y, teamA, teamB, f) {
+  if (!f || !f.finalized) return "";
+  const lines = [];
+  (f.rubbers || []).slice(0, 4).forEach((r, i) => {
+    if (!(needsTiebreakClient(r) && tiebreakWinnerClient(r.tb))) return;
+    const w = rubberWinnerClient(r);
+    const pairA = f.selectionA && f.selectionA.pairs[i], pairB = f.selectionB && f.selectionB.pairs[i];
+    const winnerNames = w === "A" ? playerNamesForShort(teamA, pairA) : playerNamesForShort(teamB, pairB);
+    const tbText = rubberScoreText(r).match(/\[([^\]]+)\]/);
+    lines.push(`Seed ${i + 1} — ${escapeHtml(winnerNames)} won a super tie-break${tbText ? " " + tbText[1] : ""}`);
+  });
+  if (!lines.length) return "";
+  // Each line already went through escapeHtml() individually above —
+  // escaping the joined string again would double-escape the "&" inside
+  // it (renders as the literal text "&amp;" instead of "&").
+  return `<text x="${x}" y="${y}" font-size="10" fill="#E2432F">${lines.join("  &#183;  ")}</text>`;
+}
+function knockoutBracketSvg(s0, s1, fin) {
+  const s0A = s0.teamA ? teamById(s0.teamA) : null, s0B = s0.teamB ? teamById(s0.teamB) : null;
+  const s1A = s1.teamA ? teamById(s1.teamA) : null, s1B = s1.teamB ? teamById(s1.teamB) : null;
+  const finA = fin.teamA ? teamById(fin.teamA) : null, finB = fin.teamB ? teamById(fin.teamB) : null;
+  const semisSched = scheduleFor("semis"), finalSched = scheduleFor("final");
+  const semisSub = [semisSched.date ? fmtDate(semisSched.date) : "", effectiveVenue("semis")].filter(Boolean).join(" · ");
+  const finalSub = [finalSched.date ? fmtDate(finalSched.date) : "", effectiveVenue("final")].filter(Boolean).join(" · ");
+  const champion = fin.finalized ? (matchWinnerClient(fin) === "A" ? finA : finB) : null;
+  return `<svg viewBox="0 0 780 470" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%;height:auto;font-family:Inter,sans-serif;">
+<title>Knockout stage bracket</title>
+<style>.disp{font-family:'Oswald',sans-serif;}</style>
+<rect x="0" y="0" width="780" height="470" rx="16" fill="#F7F9FC"/>
+
+<circle cx="390" cy="235" r="40" fill="#EEF2F9" stroke="#DCE3F0"/>
+<path d="M376 221 h28 v13 a14 14 0 0 1 -28 0 z" fill="none" stroke="#2563EB" stroke-width="2.2"/>
+<path d="M376 225 h-7 v5 a7 7 0 0 0 7 5" fill="none" stroke="#2563EB" stroke-width="2.2"/>
+<path d="M404 225 h7 v5 a7 7 0 0 1 -7 5" fill="none" stroke="#2563EB" stroke-width="2.2"/>
+<rect x="386" y="248" width="8" height="9" fill="#2563EB"/>
+<rect x="379" y="257" width="22" height="4.5" rx="2" fill="#2563EB"/>
+
+<text x="40" y="34" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#64748B">SEMI FINAL</text>
+${semisSub ? `<text x="40" y="48" font-size="9.5" fill="#94A3B8">${escapeHtml(semisSub)}</text>` : ""}
+${bracketMatchBoxSvg(20, 58, s0A, s0B, s0)}
+${stbCaptionSvg(20, 168, s0A, s0B, s0)}
+
+${bracketMatchBoxSvg(20, 190, s1A, s1B, s1)}
+${stbCaptionSvg(20, 300, s1A, s1B, s1)}
+
+<path d="M260 105 h30 v108 h230" fill="none" stroke="#93C5FD" stroke-width="2"/>
+<path d="M260 237 h30 v23 h230" fill="none" stroke="#93C5FD" stroke-width="2"/>
+
+<text x="740" y="34" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#64748B">FINAL</text>
+${finalSub ? `<text x="740" y="48" text-anchor="end" font-size="9.5" fill="#94A3B8">${escapeHtml(finalSub)}</text>` : ""}
+${bracketMatchBoxSvg(520, 190, finA, finB, fin.teamA && fin.teamB ? fin : null)}
+${stbCaptionSvg(520, 300, finA, finB, fin)}
+
+${champion ? `<rect x="520" y="330" width="240" height="34" rx="8" fill="#EEF2F9"/><text x="640" y="352" text-anchor="middle" font-size="11" font-weight="700" fill="#178A4C">${escapeHtml(champion.name)} — CHAMPIONS</text>` : ""}
+</svg>`;
 }
 function matchCardHtml(label, teamAId, teamBId, f) {
   const teamA = teamAId ? teamById(teamAId) : null;
