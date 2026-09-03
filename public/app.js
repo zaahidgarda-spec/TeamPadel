@@ -1427,6 +1427,21 @@ async function openLeague(id) {
   el("view-league").style.display = "block";
   await refreshMe();
   await refreshLeague();
+  // The hub card already refuses to link into an off-season league for
+  // anyone but the owner, but that's only a click gate — a direct/bookmarked
+  // link to #league/<id> skipped it entirely and showed every fixture and
+  // score same as always. This closes that gap: fixtures/results/table stay
+  // hidden behind a plain "Off season" notice for everyone except admin,
+  // no matter how they got here.
+  const offseasonLocked = league.status === "offseason" && myRole !== "admin";
+  el("league-offseason-notice").style.display = offseasonLocked ? "block" : "none";
+  el("tabs").style.display = offseasonLocked ? "none" : "flex";
+  if (offseasonLocked) {
+    document.querySelectorAll("#view-league .view").forEach((v) => { v.style.display = "none"; });
+    el("pending-score-banner").style.display = "none";
+    trackPageView("/league/" + id, league.name);
+    return;
+  }
   buildTabs();
   const isPairs = league.format === "pairs";
   switchTab(myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : isPairs ? "results" : "fixtures");
