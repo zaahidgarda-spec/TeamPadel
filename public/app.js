@@ -6140,7 +6140,11 @@ async function openArchivedSeason(seasonId) {
       </div>`).join("")}</div>`;
   }
   html += `${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
-  if (snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
+  // Match-level results (the knockout bracket's scores, and every regular-
+  // season score) stay admin-only — a past season's standings table is the
+  // one thing meant to be public here; individual results are for the
+  // admin to review/correct, not for a general viewer to see.
+  if (myRole === "admin" && snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
     const [s0, s1] = snapshot.playoffs.semis, fin = snapshot.playoffs.final;
     html += `<div class="card" style="margin-top:16px;"><h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin, snapshot.teams, snapshot.schedule, snapshot.defaultVenue)}</div>`;
   }
