@@ -6796,17 +6796,35 @@ async function renderStats() {
 
 /* ---------- Hall of Fame ---------- */
 
-function renderHallOfFame() {
+// A season's final table sits right alongside its Champions/MVP/etc
+// entries here — pulled in from that season's archive (see season-history)
+// when one exists, so a visitor doesn't have to separately find Past
+// Seasons to see how a season actually finished. A hallOfFame entry
+// predating the season-archive feature (or a season nobody archived)
+// just shows its awards with no table, same as before.
+async function renderHallOfFame() {
   const c = el("hof-container");
   if (!c) return;
   const entries = league.hallOfFame || [];
   if (entries.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No past champions recorded yet.</p></div>'; return; }
   const seasons = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
-  c.innerHTML = seasons.map((s) => `
+  const history = await api(`/leagues/${currentLeagueId}/season-history`).catch(() => []);
+  const tablesBySeason = {};
+  await Promise.all(seasons.map(async (s) => {
+    const summary = history.find((h) => h.season === s);
+    if (!summary) return;
+    const detail = await api(`/leagues/${currentLeagueId}/season-history/${summary.id}`).catch(() => null);
+    if (detail) tablesBySeason[s] = { standings: detail.standings, isPairs: detail.format === "pairs" };
+  }));
+  c.innerHTML = seasons.map((s) => {
+    const table = tablesBySeason[s];
+    return `
     <div class="card" style="margin-bottom:16px;">
       <h2 class="section-title">Season ${s}</h2>
       ${entries.filter((e) => e.season === s).map((e) => `<div class="hof-row"><span>${escapeHtml(e.label)}</span><span class="pts">${escapeHtml(e.winner)}</span></div>`).join("")}
-    </div>`).join("");
+      ${table ? `<div style="margin-top:14px;">${standingsRowsHtml(table.standings, table.isPairs)}</div>` : ""}
+    </div>`;
+  }).join("");
 }
 
 /* ---------- Awards ---------- */
