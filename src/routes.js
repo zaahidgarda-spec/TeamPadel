@@ -388,6 +388,30 @@ function syncPlayoffs(league) {
   return changed;
 }
 
+// A handful of leagues (Premier League among them) built their semis+final
+// before the playoffs.semis_final model existed — those matches are just
+// sitting in league.fixtures as regular-looking rounds, tagged stage:"semi"
+// /"final" by whatever older flow created them. That leaves two problems:
+// the table wrongly counts them as extra round-robin rounds (no roundMeta
+// toggle can exclude them either, since that route only recognizes
+// stage:"regular" rounds), and the knockout bracket view never shows them
+// (it only reads from league.playoffs). This migrates that exact legacy
+// shape — precisely 2 "semi" fixtures and 1 "final" fixture, only when the
+// league hasn't already been set up with playoffs the current way — into a
+// real playoffs.semis_final object, moving (not duplicating) those fixtures
+// out of league.fixtures so the regular-season table and the bracket both
+// pick them up correctly from here on.
+function migrateLegacyKnockoutRounds(league) {
+  if (league.playoffs || (league.playoffFormat && league.playoffFormat !== "none")) return false;
+  const semis = league.fixtures.filter((f) => f.stage === "semi");
+  const finals = league.fixtures.filter((f) => f.stage === "final");
+  if (semis.length !== 2 || finals.length !== 1) return false;
+  league.fixtures = league.fixtures.filter((f) => f.stage !== "semi" && f.stage !== "final");
+  league.playoffs = { format: "semis_final", semis, final: finals[0] };
+  league.playoffFormat = "semis_final";
+  return true;
+}
+
 // Read once at boot, before the hub or any league renders — lets the exact
 // same codebase run two ways from one env var: ratings hidden on this
 // site, shown on another deployment (a second site sharing this same
@@ -1330,6 +1354,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   const indexEntry = store.getIndex().find((e) => e.id === league.id);
   league.hidden = !!(indexEntry && indexEntry.hidden);
   let migrated = syncPlayoffs(league);
+  if (migrateLegacyKnockoutRounds(league)) migrated = true;
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
   league.teams.forEach((t) => {
