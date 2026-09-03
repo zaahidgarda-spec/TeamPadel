@@ -4990,7 +4990,8 @@ function resultsCard(f) {
 // keystroke. Cells commit on blur/change rather than on every keystroke —
 // re-rendering on each keypress would rebuild the DOM and kick focus out
 // of the field, making it impossible to type a 2-digit tie-break score.
-function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml) {
+function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml, opts) {
+  opts = opts || {};
   const isPairsRubber = rubber.sets.length >= 3;
   const state = {
     sets: rubber.sets.map((s) => [s[0] === null || s[0] === "" ? null : Number(s[0]), s[1] === null || s[1] === "" ? null : Number(s[1])]),
@@ -5061,19 +5062,21 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   async function saveScore() {
     const body = { sets: state.sets };
     if (showTb()) body.tb = state.tb;
+    const endpointBase = opts.endpointBase || `/leagues/${currentLeagueId}/fixtures/${f.id}`;
     try {
-      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}`, { method: "PUT", body });
+      await api(`${endpointBase}/rubbers/${idx}`, { method: "PUT", body });
       let finalizeRes = null;
-      if (isPairsRubber) {
+      if (isPairsRubber && !opts.skipFinalize) {
         // A pairs fixture is exactly one rubber, so a decisive score IS the
         // whole result — finalize right away instead of making the pair
         // come back for a separate step. If it's not decided yet (a
         // half-entered score, or a draw still waiting on an optional 3rd
         // set), the server just says so and this is a no-op.
-        finalizeRes = await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/finalize`, { method: "POST" }).catch(() => null);
+        finalizeRes = await api(`${endpointBase}/finalize`, { method: "POST" }).catch(() => null);
       }
       el("score-modal-backdrop").classList.remove("open");
-      await refreshLeague(); renderResults();
+      if (opts.onSaved) await opts.onSaved();
+      else { await refreshLeague(); renderResults(); }
       if (finalizeRes) maybePromptRoundComplete(finalizeRes);
     } catch (e) { alert(e.message); }
   }
@@ -5992,6 +5995,83 @@ async function renderSeasonHistory() {
   // detail pane — this tab exists specifically to look at one.
   if (list.length && !el("season-history-detail").dataset.loaded) openArchivedSeason(list[0].id);
 }
+// A trimmed, admin-only version of resultsCard() for a fixture inside an
+// archived season — same per-rubber "Edit score" affordance (reusing
+// openScoreModal with an overridden endpoint), but no finalize/unlock
+// footer, since an archived match is always already finalized and there's
+// no round-completion flow to trigger for a season that's already over.
+function archivedFixtureCard(seasonId, f, teams) {
+  const teamA = teams.find((t) => t.id === f.teamA), teamB = teams.find((t) => t.id === f.teamB);
+  const card = document.createElement("div"); card.className = "fixture-card";
+  if (!teamA || !teamB) return card;
+  const { winsA, winsB } = fixtureScoreClient(f);
+  const isSingleMatch = f.rubbers.length === 1;
+  const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${avatarHtml(teamA)} <span class="fx-name">${escapeHtml(teamA.name)}</span> <span class="vs">vs</span> <span class="fx-name">${escapeHtml(teamB.name)}</span> ${avatarHtml(teamB)}</div><div><span class="night-score">${headline.a} - ${headline.b}</span></div></div>`;
+  if (!(f.selectionA.submitted && f.selectionB.submitted)) {
+    card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "No line-up recorded for this match." }));
+    return card;
+  }
+  const rubbersWrap = document.createElement("div"); rubbersWrap.className = "rubbers";
+  f.rubbers.forEach((rubber, idx) => {
+    const isDecider = idx === 4;
+    if (isDecider) { const { winsA: wa, winsB: wb } = fixtureScoreClient(f); if (wa !== wb) return; }
+    const row = document.createElement("div"); row.className = "rubber-row";
+    const winner = rubberWinnerClient(rubber);
+    const seedTag = document.createElement("div"); seedTag.className = "seed";
+    seedTag.textContent = isDecider ? "Decider" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
+    const pairAHtml = isDecider ? escapeHtml(teamA.name) : pairNamesGoldHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
+    const pairBHtml = isDecider ? escapeHtml(teamB.name) : pairNamesGoldHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = pairAHtml;
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = pairBHtml;
+    const scores = document.createElement("div"); scores.className = "score-summary-wrap";
+    const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
+    scoreText.textContent = rubberScoreText(rubber) || "Not played";
+    scores.appendChild(scoreText);
+    const editBtn = document.createElement("button"); editBtn.className = "secondary score-edit-btn";
+    editBtn.textContent = "Edit score";
+    editBtn.onclick = () => openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml, {
+      endpointBase: `/leagues/${currentLeagueId}/season-history/${seasonId}/fixtures/${f.id}`,
+      skipFinalize: true,
+      onSaved: () => openArchivedSeason(seasonId),
+    });
+    scores.appendChild(editBtn);
+    row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
+    rubbersWrap.appendChild(row);
+  });
+  card.appendChild(rubbersWrap);
+  return card;
+}
+function archivedResultsSection(seasonId, snapshot) {
+  const wrap = document.createElement("div"); wrap.className = "card"; wrap.style.marginTop = "16px";
+  wrap.innerHTML = '<h2 class="section-title">Results</h2><p class="note" style="margin-bottom:12px;">Admin only — correct a score if something was entered wrong.</p>';
+  const rounds = [...new Set(snapshot.fixtures.map((f) => f.round))].sort((a, b) => a - b);
+  if (rounds.length === 0) {
+    wrap.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "No regular-season fixtures recorded for this season." }));
+    return wrap;
+  }
+  rounds.forEach((r) => {
+    const heading = document.createElement("div"); heading.className = "note"; heading.style.cssText = "margin:12px 0 6px;font-weight:600;";
+    heading.textContent = "Round " + r;
+    wrap.appendChild(heading);
+    snapshot.fixtures.filter((f) => f.round === r).forEach((f) => wrap.appendChild(archivedFixtureCard(seasonId, f, snapshot.teams)));
+  });
+  return wrap;
+}
+function archivedKnockoutEditSection(seasonId, snapshot) {
+  const wrap = document.createElement("div"); wrap.className = "card"; wrap.style.marginTop = "16px";
+  wrap.innerHTML = '<h2 class="section-title">Edit knockout scores</h2><p class="note" style="margin-bottom:12px;">Admin only.</p>';
+  const semis = snapshot.playoffs.semis || [];
+  const labeled = [[semis[0], "Semi-final 1"], [semis[1], "Semi-final 2"], [snapshot.playoffs.final, "Final"]];
+  labeled.forEach(([f, label]) => {
+    if (!f || !f.teamA || !f.teamB) return;
+    const heading = document.createElement("div"); heading.className = "note"; heading.style.cssText = "margin:12px 0 6px;font-weight:600;";
+    heading.textContent = label;
+    wrap.appendChild(heading);
+    wrap.appendChild(archivedFixtureCard(seasonId, f, snapshot.teams));
+  });
+  return wrap;
+}
 async function openArchivedSeason(seasonId) {
   const detail = el("season-history-detail");
   detail.dataset.loaded = seasonId;
@@ -6015,6 +6095,12 @@ async function openArchivedSeason(seasonId) {
   }
   detail.innerHTML = html;
   bindPlayerLinks(detail);
+  if (myRole === "admin") {
+    detail.appendChild(archivedResultsSection(seasonId, snapshot));
+    if (snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
+      detail.appendChild(archivedKnockoutEditSection(seasonId, snapshot));
+    }
+  }
 }
 // Player ELO leaderboard — same self-labeling .rank-row idiom as the
 // standings table above, just keyed by rating instead of league points.

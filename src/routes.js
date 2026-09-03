@@ -2275,6 +2275,44 @@ router.get("/leagues/:leagueId/season-history/:seasonId", (req, res) => {
   res.json({ ...snapshot, season, standings, hallOfFame });
 });
 
+// Same lookup as findFixture(), just scoped to one archived snapshot
+// instead of the live league — a past season's fixtures/playoffs are a
+// frozen copy with the identical shape, so this only differs in what it
+// searches.
+function findArchivedFixture(snapshot, fixtureId) {
+  let f = snapshot.fixtures.find((x) => x.id === fixtureId);
+  if (f) return f;
+  if (snapshot.playoffs) {
+    if (snapshot.playoffs.format === "position") {
+      f = (snapshot.playoffs.matches || []).find((x) => x.id === fixtureId);
+      if (f) return f;
+    } else {
+      if (snapshot.playoffs.final && snapshot.playoffs.final.id === fixtureId) return snapshot.playoffs.final;
+      f = (snapshot.playoffs.semis || []).find((x) => x.id === fixtureId);
+      if (f) return f;
+    }
+  }
+  return null;
+}
+// Lets an admin correct a score after the fact — a past season is archived,
+// not frozen. Standings and the bracket are always recomputed fresh from
+// the snapshot on read (see the route above), so editing a rubber here is
+// the only write needed for the correction to show up everywhere.
+router.put("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/rubbers/:idx", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const snapshot = (league.seasonHistory || []).find((s) => s.id === req.params.seasonId);
+  if (!snapshot) return res.status(404).json({ error: "That season isn't archived here." });
+  const f = findArchivedFixture(snapshot, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Match not found in that season." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  if (req.body.sets) f.rubbers[idx].sets = req.body.sets;
+  if (req.body.tb) f.rubbers[idx].tb = req.body.tb;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 // Pauses an already-started league between seasons — unlike season/reset,
 // nothing gets wiped (fixtures, playoffs, results all stay exactly as they
 // are); this just flips the hub card to "Off season" and unclickable for
