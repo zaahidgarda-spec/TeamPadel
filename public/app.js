@@ -2831,6 +2831,26 @@ function renderAdminFixtures() {
     venueInput.style.cssText = "font-size:12px;padding:6px 8px;flex:1;min-width:140px;max-width:260px;";
     venueInput.onchange = async () => { await api(`/leagues/${currentLeagueId}/schedule/${w.key}`, { method: "PUT", body: { venue: venueInput.value } }); await refreshLeague(); };
     row.appendChild(label); row.appendChild(dateInput); row.appendChild(timeInput); row.appendChild(venueInput);
+    // Only a real regular-season round can be toggled — semis/final/final-
+    // spot playoffs live outside league.fixtures' round numbering entirely
+    // and are already structurally excluded from the table.
+    const roundMatch = w.key.match(/^r(\d+)$/);
+    if (roundMatch) {
+      const round = Number(roundMatch[1]);
+      const counts = roundCountsToTable(round);
+      const toggleBtn = document.createElement("button");
+      toggleBtn.className = "link";
+      toggleBtn.style.cssText = "font-size:12px;white-space:nowrap;";
+      toggleBtn.textContent = counts ? "Counts toward table" : "Excluded from table";
+      toggleBtn.title = counts ? "Click to exclude this round from the league table" : "Click to include this round in the league table";
+      toggleBtn.onclick = async () => {
+        try {
+          await api(`/leagues/${currentLeagueId}/rounds/${round}/table-count`, { method: "PUT", body: { counts: !counts } });
+          await refreshLeague(); initViewingKey(); renderAll();
+        } catch (e) { alert(e.message); }
+      };
+      row.appendChild(toggleBtn);
+    }
     c.appendChild(row);
   });
 }

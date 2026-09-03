@@ -2723,6 +2723,26 @@ router.post("/leagues/:leagueId/rounds", requireAdmin, (req, res) => {
   res.json({ ok: true, round: nextRound });
 });
 
+// Unlike the route above (which only ever sets type for a brand-new
+// admin-added round), this retroactively flips whether an EXISTING round —
+// including one from the auto-generated round robin — counts toward the
+// table. For a round with no roundMeta entry yet (the normal case for an
+// auto-generated round), this creates one; existing label is preserved.
+router.put("/leagues/:leagueId/rounds/:round/table-count", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const round = Number(req.params.round);
+  if (!Number.isInteger(round) || round < 1) return res.status(400).json({ error: "Invalid round." });
+  if (!league.fixtures.some((f) => f.round === round && f.stage === "regular")) {
+    return res.status(404).json({ error: "That round doesn't exist." });
+  }
+  const counts = !!req.body.counts;
+  if (!league.roundMeta) league.roundMeta = {};
+  const existing = league.roundMeta[round];
+  league.roundMeta[round] = { label: (existing && existing.label) || "Round " + round, type: counts ? "table" : "knockout" };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
