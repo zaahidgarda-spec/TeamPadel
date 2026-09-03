@@ -304,8 +304,11 @@ function sanitize(league, req) {
     });
   }
 
-  const { adminPasswordHash, potwVotes, potwNotified, auditLog, ...leagueRest } = league;
-  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote };
+  // Past seasons have their own dedicated routes (/season-history) so the
+  // main league payload doesn't balloon with every archived fixture/rubber
+  // every time anyone just loads the league.
+  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, ...leagueRest } = league;
+  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote, seasonHistoryCount: (seasonHistory || []).length };
 }
 function sanitizeOne(f, isAdmin, teamId) {
   const copy = JSON.parse(JSON.stringify(f));
@@ -2196,6 +2199,28 @@ router.put("/leagues/:leagueId/admin-email", requireAdmin, (req, res) => {
 
 router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
+  // Reset always archives first — there's no separate "remember to save
+  // before you wipe" step to forget. A season with no fixtures yet (still
+  // in setup) has nothing worth keeping, so it's skipped rather than
+  // saving an empty snapshot.
+  if (league.fixtures.length > 0) {
+    if (!league.seasonHistory) league.seasonHistory = [];
+    const label = (req.body && req.body.seasonLabel && req.body.seasonLabel.trim()) || `Season ending ${new Date().toISOString().slice(0, 10)}`;
+    league.seasonHistory.unshift({
+      id: logic.uid(),
+      label,
+      archivedAt: Date.now(),
+      name: league.name,
+      format: league.format,
+      teams: league.teams,
+      fixtures: league.fixtures,
+      playoffs: league.playoffs,
+      playoffFormat: league.playoffFormat,
+      roundMeta: league.roundMeta,
+      schedule: league.schedule,
+      defaultVenue: league.defaultVenue,
+    });
+  }
   league.fixtures = [];
   league.byes = [];
   league.playoffs = null;
@@ -2203,6 +2228,35 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   league.status = "setup";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+function archivedSeasonChampion(snapshot) {
+  if (!snapshot.playoffs) return null;
+  const fin = snapshot.playoffs.format === "position" ? null : snapshot.playoffs.final;
+  if (!fin || !fin.finalized) return null;
+  const { winsA, winsB } = logic.fixtureScore(fin);
+  const winnerId = winsA > winsB ? fin.teamA : fin.teamB;
+  const team = snapshot.teams.find((t) => t.id === winnerId);
+  return team ? team.name : null;
+}
+// Every past season this league has archived (via season/reset above) —
+// summaries only, so browsing the list doesn't ship every fixture/rubber
+// for every past season at once.
+router.get("/leagues/:leagueId/season-history", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const summaries = (league.seasonHistory || []).map((s) => ({
+    id: s.id, label: s.label, archivedAt: s.archivedAt, teamCount: s.teams.length, champion: archivedSeasonChampion(s),
+  }));
+  res.json(summaries);
+});
+router.get("/leagues/:leagueId/season-history/:seasonId", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const snapshot = (league.seasonHistory || []).find((s) => s.id === req.params.seasonId);
+  if (!snapshot) return res.status(404).json({ error: "That season isn't archived here." });
+  const standings = logic.computeStandings(snapshot);
+  res.json({ ...snapshot, standings });
 });
 
 // Pauses an already-started league between seasons — unlike season/reset,

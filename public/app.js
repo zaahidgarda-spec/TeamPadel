@@ -1505,6 +1505,7 @@ function tabDefs() {
   // UI, not the prediction teaser this league-scoped tab is).
   defs.push({ key: "predictions", label: "Predictions" });
   defs.push({ key: "table", label: "Table" });
+  if ((league.seasonHistoryCount || 0) > 0) defs.push({ key: "season-history", label: "Past seasons" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
   defs.push({ key: "stats", label: "Stats" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
@@ -1771,6 +1772,7 @@ function renderAll() {
   renderResults();
   renderPredictions();
   renderTable();
+  if (league.seasonHistoryCount > 0) renderSeasonHistory();
   if (RATINGS_ENABLED) renderRankings();
   if (myRole === "admin") renderRatingsPreview();
   renderRoster();
@@ -2519,8 +2521,10 @@ function renderRulesCard() {
     const resetBtn = document.createElement("button");
     resetBtn.className = "danger"; resetBtn.textContent = "Reset season";
     resetBtn.onclick = async () => {
-      if (!confirm("This clears the schedule, results and knockout stage. Continue?")) return;
-      await api(`/leagues/${currentLeagueId}/season/reset`, { method: "POST" });
+      if (!confirm("This clears the schedule, results and knockout stage to start a new season. The finished season itself is archived first, not lost — you'll find it under \"Past seasons\" afterward. Continue?")) return;
+      const seasonLabel = prompt("Name this season for the archive (optional):", "");
+      if (seasonLabel === null) return; // cancelled the prompt itself, not just left it blank
+      await api(`/leagues/${currentLeagueId}/season/reset`, { method: "POST", body: { seasonLabel } });
       await refreshLeague(); initViewingKey(); renderAll();
     };
     actionsWrap.appendChild(resetBtn);
@@ -5907,36 +5911,7 @@ function renderTable() {
   el("table-poster-row").style.display = canPoster ? "flex" : "none";
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
-    const isPairs = league.format === "pairs";
-    let html = '<div class="leaderboard">';
-    rows.forEach((r, i) => {
-      const isLeader = i === 0 && r.played > 0;
-      const diffText = (r.diff > 0 ? "+" : "") + r.diff;
-      const stats = [
-        { v: r.played, l: "P" },
-        { v: r.rubbersWon, l: "Won" },
-        ...(isPairs ? [{ v: r.nightsDrawn, l: "Drawn" }] : []),
-        { v: r.rubbersLost, l: "Lost" },
-        { v: diffText, l: isPairs ? "Set diff" : "Diff" },
-      ];
-      const summary = `${r.played} played · ${stats.slice(1).map((s) => `${s.v} ${s.l.toLowerCase()}`).join(" · ")}`;
-      // A pair's row IS two people — link each one to their own profile,
-      // same real names either way, whether or not the pair's been given a
-      // nickname (see the "signed in as" precedent elsewhere in the app).
-      // A team-league row is a whole roster, not two people, so it isn't.
-      const nameHtml = isPairs && r.players && r.players.length
-        ? r.players.map(playerLinkHtml).join(" / ")
-        : escapeHtml(r.name);
-      html += `<div class="rank-row${isLeader ? " leader" : ""}">
-        <div class="rank-badge">${i + 1}</div>
-        <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span></div>
-        <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
-        <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
-        <div class="rank-summary">${escapeHtml(summary)}</div>
-      </div>`;
-    });
-    html += "</div>";
-    c.innerHTML = html;
+    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs");
     bindPlayerLinks(c);
   }
   const koCard = el("knockout-card");
@@ -5966,6 +5941,71 @@ function renderTable() {
     const [s0, s1] = league.playoffs.semis, fin = league.playoffs.final;
     koCard.innerHTML = `<h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin)}`;
   } else { koCard.style.display = "none"; }
+}
+// The same .rank-row markup renderTable() uses, pulled out so the season-
+// history archive view (a read-only look at a past, no-longer-live season)
+// can show an identical-looking table from its own precomputed rows,
+// without duplicating the row-building logic.
+function standingsRowsHtml(rows, isPairs) {
+  let html = '<div class="leaderboard">';
+  rows.forEach((r, i) => {
+    const isLeader = i === 0 && r.played > 0;
+    const diffText = (r.diff > 0 ? "+" : "") + r.diff;
+    const stats = [
+      { v: r.played, l: "P" },
+      { v: r.rubbersWon, l: "Won" },
+      ...(isPairs ? [{ v: r.nightsDrawn, l: "Drawn" }] : []),
+      { v: r.rubbersLost, l: "Lost" },
+      { v: diffText, l: isPairs ? "Set diff" : "Diff" },
+    ];
+    const summary = `${r.played} played · ${stats.slice(1).map((s) => `${s.v} ${s.l.toLowerCase()}`).join(" · ")}`;
+    const nameHtml = isPairs && r.players && r.players.length
+      ? r.players.map(playerLinkHtml).join(" / ")
+      : escapeHtml(r.name);
+    html += `<div class="rank-row${isLeader ? " leader" : ""}">
+      <div class="rank-badge">${i + 1}</div>
+      <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span></div>
+      <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
+      <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
+      <div class="rank-summary">${escapeHtml(summary)}</div>
+    </div>`;
+  });
+  html += "</div>";
+  return html;
+}
+async function renderSeasonHistory() {
+  const list = await api(`/leagues/${currentLeagueId}/season-history`).catch(() => []);
+  el("season-history-list").innerHTML = list.length
+    ? list.map((s) => `
+      <div class="notif-row season-history-row" data-id="${s.id}" style="cursor:pointer;">
+        <div>
+          <strong>${escapeHtml(s.label)}</strong>
+          <div class="note">${s.teamCount} team${s.teamCount === 1 ? "" : "s"}${s.champion ? ` · Champion: ${escapeHtml(s.champion)}` : ""}</div>
+        </div>
+        <span class="note">${new Date(s.archivedAt).toLocaleDateString()}</span>
+      </div>`).join("")
+    : '<p class="empty">No past seasons archived yet — they show up here once this league is reset for a new one.</p>';
+  el("season-history-list").querySelectorAll(".season-history-row").forEach((row) => {
+    row.onclick = () => openArchivedSeason(row.dataset.id);
+  });
+  // Land on the most recent past season automatically rather than an empty
+  // detail pane — this tab exists specifically to look at one.
+  if (list.length && !el("season-history-detail").dataset.loaded) openArchivedSeason(list[0].id);
+}
+async function openArchivedSeason(seasonId) {
+  const detail = el("season-history-detail");
+  detail.dataset.loaded = seasonId;
+  detail.innerHTML = '<p class="empty">Loading…</p>';
+  const snapshot = await api(`/leagues/${currentLeagueId}/season-history/${seasonId}`).catch(() => null);
+  if (!snapshot) { detail.innerHTML = '<p class="empty">Couldn\'t load that season.</p>'; return; }
+  const isPairs = snapshot.format === "pairs";
+  let html = `<div class="card" style="margin-top:16px;"><h2 class="section-title">${escapeHtml(snapshot.label)}</h2>${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
+  if (snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
+    const [s0, s1] = snapshot.playoffs.semis, fin = snapshot.playoffs.final;
+    html += `<div class="card" style="margin-top:16px;"><h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin, snapshot.teams, snapshot.schedule, snapshot.defaultVenue)}</div>`;
+  }
+  detail.innerHTML = html;
+  bindPlayerLinks(detail);
 }
 // Player ELO leaderboard — same self-labeling .rank-row idiom as the
 // standings table above, just keyed by rating instead of league points.
@@ -6154,13 +6194,21 @@ function stbCaptionSvg(x, y, teamA, teamB, f) {
   // it (renders as the literal text "&amp;" instead of "&").
   return `<text x="${x}" y="${y}" font-size="10" fill="#E2432F">${lines.join("  &#183;  ")}</text>`;
 }
-function knockoutBracketSvg(s0, s1, fin) {
-  const s0A = s0.teamA ? teamById(s0.teamA) : null, s0B = s0.teamB ? teamById(s0.teamB) : null;
-  const s1A = s1.teamA ? teamById(s1.teamA) : null, s1B = s1.teamB ? teamById(s1.teamB) : null;
-  const finA = fin.teamA ? teamById(fin.teamA) : null, finB = fin.teamB ? teamById(fin.teamB) : null;
-  const semisSched = scheduleFor("semis"), finalSched = scheduleFor("final");
-  const semisSub = [semisSched.date ? fmtDate(semisSched.date) : "", effectiveVenue("semis")].filter(Boolean).join(" · ");
-  const finalSub = [finalSched.date ? fmtDate(finalSched.date) : "", effectiveVenue("final")].filter(Boolean).join(" · ");
+// teams/schedule/defaultVenue default to the live league so every existing
+// call site keeps working unchanged — the season-history archive view is
+// the only caller that passes its own snapshot's values instead, since an
+// archived season's teams/schedule aren't the live league's anymore.
+function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
+  teams = teams || league.teams;
+  schedule = schedule || league.schedule || {};
+  defaultVenue = defaultVenue !== undefined ? defaultVenue : league.defaultVenue;
+  const findTeam = (id) => teams.find((t) => t.id === id) || null;
+  const s0A = s0.teamA ? findTeam(s0.teamA) : null, s0B = s0.teamB ? findTeam(s0.teamB) : null;
+  const s1A = s1.teamA ? findTeam(s1.teamA) : null, s1B = s1.teamB ? findTeam(s1.teamB) : null;
+  const finA = fin.teamA ? findTeam(fin.teamA) : null, finB = fin.teamB ? findTeam(fin.teamB) : null;
+  const semisSched = schedule.semis || { date: "", venue: "" }, finalSched = schedule.final || { date: "", venue: "" };
+  const semisSub = [semisSched.date ? fmtDate(semisSched.date) : "", semisSched.venue || defaultVenue || ""].filter(Boolean).join(" · ");
+  const finalSub = [finalSched.date ? fmtDate(finalSched.date) : "", finalSched.venue || defaultVenue || ""].filter(Boolean).join(" · ");
   const champion = fin.finalized ? (matchWinnerClient(fin) === "A" ? finA : finB) : null;
   return `<svg viewBox="0 0 780 470" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%;height:auto;font-family:Inter,sans-serif;">
 <title>Knockout stage bracket</title>
