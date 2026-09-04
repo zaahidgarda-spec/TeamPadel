@@ -5420,16 +5420,24 @@ async function generatePosterCanvas(mode, theme) {
         const namesB = playerNamesForShort(teamB, f.selectionB.pairs[i]);
         const predEntry = mode === "predictions" && predMap ? predMap[f.id + ":" + i] : null;
         const winner = mode === "predictions" ? (predEntry ? predEntry.winner : null) : f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
+        // Same 60%-or-better bar the live Predictions tab uses for its
+        // "Favorite" tag — only flagged on a seed that isn't decided yet,
+        // and styled distinctly from an actual winner (theme.accent + 600
+        // weight here vs. theme.win + 700 for a real result) so a poster
+        // glanced at mid-round never reads a favorite as already settled.
+        const favSide = mode === "predictions" && !winner && predEntry && predEntry.prediction && Math.max(predEntry.prediction.winPctA, predEntry.prediction.winPctB) >= 60
+          ? (predEntry.prediction.winPctA >= predEntry.prediction.winPctB ? "A" : "B")
+          : null;
 
         ctx.textAlign = "left";
-        ctx.fillStyle = winner === "A" ? theme.win : "#C6D2E3";
-        const fittedA = fitText(ctx, namesA, pairMaxWidth, pairNameSize, winner === "A" ? "700" : "400", "Inter, sans-serif", pairNameSize);
-        ctx.fillText(fittedA, 90, py + sz(6));
+        ctx.fillStyle = winner === "A" ? theme.win : favSide === "A" ? theme.accent : "#C6D2E3";
+        const fittedA = fitText(ctx, namesA, pairMaxWidth, pairNameSize, winner === "A" ? "700" : favSide === "A" ? "700" : "400", "Inter, sans-serif", pairNameSize);
+        ctx.fillText((favSide === "A" ? "★ " : "") + fittedA, 90, py + sz(6));
 
         ctx.textAlign = "right";
-        ctx.fillStyle = winner === "B" ? theme.win : "#C6D2E3";
-        const fittedB = fitText(ctx, namesB, pairMaxWidth, pairNameSize, winner === "B" ? "700" : "400", "Inter, sans-serif", pairNameSize);
-        ctx.fillText(fittedB, W - 90, py + sz(6));
+        ctx.fillStyle = winner === "B" ? theme.win : favSide === "B" ? theme.accent : "#C6D2E3";
+        const fittedB = fitText(ctx, namesB, pairMaxWidth, pairNameSize, winner === "B" ? "700" : favSide === "B" ? "700" : "400", "Inter, sans-serif", pairNameSize);
+        ctx.fillText(fittedB + (favSide === "B" ? " ★" : ""), W - 90, py + sz(6));
 
         ctx.textAlign = "center";
         if (mode === "results" && f.finalized) {
