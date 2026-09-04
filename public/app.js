@@ -6754,12 +6754,13 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   el("player-modal-stats").innerHTML = statsHtml;
   el("player-modal-stats").style.display = statsHtml ? "grid" : "none";
   el("player-modal-body").innerHTML = bodyHtml;
-  const h2hToggle = el("player-modal-body").querySelector(".h2h-toggle");
-  if (h2hToggle) h2hToggle.onclick = () => {
-    const box = el("player-modal-body").querySelector(".h2h-results");
-    box.hidden = !box.hidden;
-    h2hToggle.setAttribute("aria-expanded", String(!box.hidden));
-  };
+  el("player-modal-body").querySelectorAll(".h2h-toggle").forEach((toggle) => {
+    toggle.onclick = () => {
+      const box = toggle.parentElement.querySelector(".h2h-results");
+      box.hidden = !box.hidden;
+      toggle.setAttribute("aria-expanded", String(!box.hidden));
+    };
+  });
   const claimBtn = el("player-modal-body").querySelector(".claim-banner-btn");
   if (claimBtn) claimBtn.onclick = () => {
     el("player-modal-backdrop").classList.remove("open");
@@ -6785,17 +6786,25 @@ function renderPlayerHistoryBody(data, h2h) {
   const titlesBlock = hallOfFameTitles.length
     ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
     : "";
-  // Collapsed by default — a link, not an always-open section, since it's
-  // extra context on TOP of this player's own history, not part of it.
-  const h2hBlock = (h2h && h2h.eligible && h2h.matches.length > 0)
+  // Collapsed by default — links, not always-open sections, since these
+  // are extra context on TOP of this player's own history below, not part
+  // of it. Two independent records: opponents (head-to-head) and, when
+  // you've actually been paired together at least once, teammates too —
+  // shown separately since they answer different questions ("do I beat
+  // them" vs. "do we work well together") and either can be empty on its
+  // own (you might only ever have faced them, or only partnered them).
+  const h2hResultRow = (m, detail) => `<div class="history-row"><div class="history-top"><span class="history-badge ${m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss"}">${m.result}</span><span class="history-label">${escapeHtml(m.label)}</span></div><div class="history-detail">${detail} · ${escapeHtml(m.score)}</div></div>`;
+  const h2hRecordBlock = (label, rec, rowFn) => (rec && rec.matches.length > 0)
     ? `<div class="h2h-block" style="margin-bottom:12px;">
-        <button type="button" class="link h2h-toggle" aria-expanded="false">Head-to-head vs you (${h2h.wins}W-${h2h.losses}L${h2h.draws ? "-" + h2h.draws + "D" : ""})</button>
-        <div class="h2h-results" hidden style="margin-top:8px;">${h2h.matches.map((m) => {
-          const oppNames = [data.playerName, m.opponentPartner].filter(Boolean).join(" & ");
-          return `<div class="history-row"><div class="history-top"><span class="history-badge ${m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss"}">${m.result}</span><span class="history-label">${escapeHtml(m.label)}</span></div><div class="history-detail">${m.myPartner ? "You with " + escapeHtml(m.myPartner) + " " : "You "}vs ${escapeHtml(oppNames)} · ${escapeHtml(m.score)}</div></div>`;
-        }).join("")}</div>
+        <button type="button" class="link h2h-toggle" aria-expanded="false">${escapeHtml(label)} (${rec.wins}W-${rec.losses}L${rec.draws ? "-" + rec.draws + "D" : ""})</button>
+        <div class="h2h-results" hidden style="margin-top:8px;">${rec.matches.map(rowFn).join("")}</div>
       </div>`
     : "";
+  const h2hOpponentBlock = h2h && h2h.eligible ? h2hRecordBlock("Head-to-head vs you", h2h.opponent, (m) =>
+    h2hResultRow(m, `${m.myPartner ? "You with " + escapeHtml(m.myPartner) + " " : "You "}vs ${escapeHtml([data.playerName, m.opponentPartner].filter(Boolean).join(" & "))}`)) : "";
+  const h2hPartnerBlock = h2h && h2h.eligible ? h2hRecordBlock("Played together", h2h.partner, (m) =>
+    h2hResultRow(m, `You &amp; ${escapeHtml(data.playerName)} vs ${escapeHtml(m.opponentNames.join(" & ") || "?")}`)) : "";
+  const h2hBlock = h2hOpponentBlock + h2hPartnerBlock;
   if (rows.length === 0) return { statsHtml: "", bodyHtml: claimBanner + titlesBlock + h2hBlock + '<p class="empty">No completed matches yet.</p>' };
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;

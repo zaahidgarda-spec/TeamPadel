@@ -3597,8 +3597,12 @@ router.get("/leagues/:leagueId/players/:playerId/head-to-head", (req, res) => {
   const myTeam = league.teams.find((t) => t.id === myClaim.teamId);
   const myPlayer = myTeam && myTeam.players.find((p) => p.id === myClaim.playerId);
   if (!myPlayer) return res.json({ eligible: false });
-  const h2h = logic.headToHead(league, myClaim.playerId, req.params.playerId);
-  res.json({ eligible: true, myName: myPlayer.name, ...h2h });
+  res.json({
+    eligible: true,
+    myName: myPlayer.name,
+    opponent: logic.headToHead(league, myClaim.playerId, req.params.playerId),
+    partner: logic.partnerRecord(league, myClaim.playerId, req.params.playerId),
+  });
 });
 
 /* ---------- Notifications ---------- */

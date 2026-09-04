@@ -886,47 +886,84 @@ function playerMatchHistory(league, playerId, ratingsData) {
   return rows;
 }
 
-// Every finalized rubber where these two specific players were on
-// opposing sides (partners can differ match to match — a pair rotates
-// seeds week to week) — from myPlayerId's perspective. Used for the
-// "Head-to-head vs you" link on another player's profile, so only ever
-// called for one league at a time (a match can't span leagues).
-function headToHead(league, myPlayerId, otherPlayerId) {
-  const matches = [];
-  const nameOf = (team, pid) => { const p = team && team.players.find((x) => x.id === pid); return p ? p.name : null; };
+// Shared scan behind headToHead/partnerRecord below — walks every finalized,
+// decided rubber where the two given players share a side (sameSide) or
+// face each other (!sameSide), hands each one to the callback already
+// resolved to "my" perspective. Only ever called for one league at a time
+// (a match/partnership can't span leagues).
+function forEachSharedRubber(league, myPlayerId, otherPlayerId, sameSide, cb) {
   allFixturesOf(league).forEach((f) => {
     if (!f.finalized) return;
     for (let idx = 0; idx < f.rubbers.length && idx < 4; idx++) {
       const pairA = f.selectionA.pairs[idx], pairB = f.selectionB.pairs[idx];
       if (!pairA || !pairB) continue;
       let mySide = null;
-      if (pairA.includes(myPlayerId) && pairB.includes(otherPlayerId)) mySide = "A";
-      else if (pairB.includes(myPlayerId) && pairA.includes(otherPlayerId)) mySide = "B";
+      if (sameSide) {
+        if (pairA.includes(myPlayerId) && pairA.includes(otherPlayerId)) mySide = "A";
+        else if (pairB.includes(myPlayerId) && pairB.includes(otherPlayerId)) mySide = "B";
+      } else {
+        if (pairA.includes(myPlayerId) && pairB.includes(otherPlayerId)) mySide = "A";
+        else if (pairB.includes(myPlayerId) && pairA.includes(otherPlayerId)) mySide = "B";
+      }
       if (!mySide) continue;
       const rubber = f.rubbers[idx];
       const winner = rubberWinner(rubber);
       const played = setWinner(rubber.sets[0]) && setWinner(rubber.sets[1]);
       if (!winner && !played) continue;
-      const myTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamA : f.teamB));
-      const oppTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
-      const myPair = mySide === "A" ? pairA : pairB;
-      const oppPair = mySide === "A" ? pairB : pairA;
-      matches.push({
-        label: stageLabel(league, f),
-        myPartner: nameOf(myTeam, myPair.find((id) => id !== myPlayerId)),
-        opponentPartner: nameOf(oppTeam, oppPair.find((id) => id !== otherPlayerId)),
-        result: winner === null ? "D" : winner === mySide ? "W" : "L",
-        score: rubberScoreText(rubber, mySide === "B"),
-        seed: idx + 1,
-      });
+      cb({ f, idx, rubber, mySide, winner, pairA, pairB });
     }
   });
+}
+function tallyRecord(matches) {
   return {
     wins: matches.filter((m) => m.result === "W").length,
     losses: matches.filter((m) => m.result === "L").length,
     draws: matches.filter((m) => m.result === "D").length,
     matches,
   };
+}
+// Every finalized rubber where these two specific players were on
+// opposing sides (partners can differ match to match — a pair rotates
+// seeds week to week) — from myPlayerId's perspective. Used for the
+// "Head-to-head vs you" link on another player's profile.
+function headToHead(league, myPlayerId, otherPlayerId) {
+  const matches = [];
+  const nameOf = (team, pid) => { const p = team && team.players.find((x) => x.id === pid); return p ? p.name : null; };
+  forEachSharedRubber(league, myPlayerId, otherPlayerId, false, ({ f, idx, rubber, mySide, winner, pairA, pairB }) => {
+    const myTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamA : f.teamB));
+    const oppTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
+    const myPair = mySide === "A" ? pairA : pairB;
+    const oppPair = mySide === "A" ? pairB : pairA;
+    matches.push({
+      label: stageLabel(league, f),
+      myPartner: nameOf(myTeam, myPair.find((id) => id !== myPlayerId)),
+      opponentPartner: nameOf(oppTeam, oppPair.find((id) => id !== otherPlayerId)),
+      result: winner === null ? "D" : winner === mySide ? "W" : "L",
+      score: rubberScoreText(rubber, mySide === "B"),
+      seed: idx + 1,
+    });
+  });
+  return tallyRecord(matches);
+}
+// Every finalized rubber where these two specific players were PAIRED
+// TOGETHER on the same side — "your pair record with them" on another
+// player's profile, alongside (not instead of) the opponents-only
+// head-to-head above.
+function partnerRecord(league, myPlayerId, otherPlayerId) {
+  const matches = [];
+  forEachSharedRubber(league, myPlayerId, otherPlayerId, true, ({ f, idx, rubber, mySide, winner }) => {
+    const oppTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
+    const oppPair = mySide === "A" ? f.selectionB.pairs[idx] : f.selectionA.pairs[idx];
+    const opponentNames = oppPair.map((pid) => { const p = oppTeam && oppTeam.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+    matches.push({
+      label: stageLabel(league, f),
+      opponentNames,
+      result: winner === null ? "D" : winner === mySide ? "W" : "L",
+      score: rubberScoreText(rubber, mySide === "B"),
+      seed: idx + 1,
+    });
+  });
+  return tallyRecord(matches);
 }
 
 function teamTiebreakStats(league) {
@@ -1129,6 +1166,7 @@ module.exports = {
   validateRoundPair,
   playerMatchHistory,
   headToHead,
+  partnerRecord,
   computeGlobalRatings,
   leagueRankings,
   predictSeed,
