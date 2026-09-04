@@ -5294,6 +5294,13 @@ async function generatePosterCanvas(mode, theme) {
     posterLabel = viewingKey ? viewingKey.label : "";
     schedKey = viewingKey ? viewingKey.key : "";
   }
+  // Per-match caption above each box, playoffs mode only — position format
+  // reuses the same "1v2 is the Final" naming as the Table tab; semis_final
+  // labels each box by its actual position in the fixtures array built
+  // above (semi 1, semi 2, then the final only when it made the cut).
+  const matchLabelFor = mode !== "playoffs" || !league.playoffs ? null
+    : league.playoffs.format === "position" ? (i) => positionMatchLabel(i)
+    : (i) => (i === 0 ? "Semi Final 1" : i === 1 ? "Semi Final 2" : "Final");
   const sponsors = (league.sponsors || []).slice(0, 5);
   // Predictions mode needs win% per seed, which fixturesForKey's plain
   // fixture objects don't carry — fetched once here into a fixtureId:seed
@@ -5317,7 +5324,7 @@ async function generatePosterCanvas(mode, theme) {
   // round to fit and grows a light one (capped, so text never gets
   // absurdly huge) — leftover space is used to center the block instead
   // of stretching it, so two fixtures don't get blown up to fill a story.
-  const baseHeaderBlockH = 108, baseRowGap = 16;
+  const baseHeaderBlockH = matchLabelFor ? 134 : 108, baseRowGap = 16;
   const basePairRowH = mode === "results" || mode === "predictions" || mode === "playoffs" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
   const fixtureMeta = fixtures.map((f) => {
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
@@ -5393,12 +5400,20 @@ async function generatePosterCanvas(mode, theme) {
   const pairNameSize = pairNamesAll.length ? fitUniformSize(ctx, pairNamesAll, pairMaxWidth, sz(20), "700", "Inter, sans-serif", Math.max(11, sz(12))) : sz(20);
 
   let y = startY;
-  for (const { f, revealed } of fixtureMeta) {
+  for (let matchIdx = 0; matchIdx < fixtureMeta.length; matchIdx++) {
+    const { f, revealed } = fixtureMeta[matchIdx];
     const blockH = headerBlockH + (revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0);
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     ctx.fillStyle = "rgba(255,255,255,0.07)";
     roundRectPath(ctx, 56, y, W - 112, blockH, sz(18));
     ctx.fill();
+
+    if (matchLabelFor) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = theme.accent;
+      ctx.font = "600 " + sz(20) + "px Oswald, sans-serif";
+      ctx.fillText(matchLabelFor(matchIdx).toUpperCase(), W / 2, y + sz(28));
+    }
 
     const headerMidY = y + headerBlockH / 2;
     const logoCenterOffset = sz(40) + logoRadius;
@@ -6023,7 +6038,7 @@ function renderTable() {
     koCard.style.display = "block";
     let html = `<h2 class="section-title">Final spot playoffs</h2><div class="bracket-grid">`;
     league.playoffs.matches.forEach((m, i) => {
-      html += matchCardHtml(ordinal(i * 2 + 1) + " v " + ordinal(i * 2 + 2), m.teamA, m.teamB, m);
+      html += matchCardHtml(positionMatchLabel(i), m.teamA, m.teamB, m);
     });
     html += `</div>`;
     if (myRole === "admin") html += `<div class="row" style="margin-top:14px;"><button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
@@ -6355,6 +6370,12 @@ function renderTrendSpark(svgId, points) {
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+// Final-spot playoffs' top match (1st v 2nd) decides the actual champion —
+// it's the Final, not just another placing decider, and reads that way
+// everywhere this format shows up (Table tab, poster).
+function positionMatchLabel(i) {
+  return i === 0 ? "Final" : ordinal(i * 2 + 1) + " v " + ordinal(i * 2 + 2);
 }
 // One box per side of a match, with the aggregate rubber score and (if any
 // seed needed one) a super tie-break caption — used inside the SVG bracket
