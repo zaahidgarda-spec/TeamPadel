@@ -1348,23 +1348,28 @@ function renderAccountLeaguesList(cards) {
   const cardRows = uniq.map((card) => {
     const seed = mostCommonCardSeed(card);
     const isCaptain = captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId);
-    const captainTag = isCaptain
-      ? '<span class="account-league-captain-tag">Captain</span> <button class="link account-remove-captaincy-btn" type="button" style="font-size:9.5px;" title="Stop managing this team as captain">Remove</button>'
-      : "";
-    return `<div class="account-league-row${isCaptain ? " is-captain" : ""}" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
+    // "Captain controls" sits below the row's own info, on its own line —
+    // deliberately not next to the name/tag, which is the row's main tap
+    // target — so removing captaincy takes a second, separate tap plus the
+    // confirm below, not a stray brush against the row you meant to open.
+    const captainTag = isCaptain ? '<span class="account-league-captain-tag">Captain</span>' : "";
+    const captainControls = isCaptain ? '<button class="link account-remove-captaincy-btn" type="button">Captain controls</button>' : "";
+    return `<div class="account-league-row${isCaptain ? " is-captain" : ""}" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}" data-league-name="${escapeHtml(card.leagueName)}" data-team-name="${escapeHtml(card.teamName)}">
       ${crestHtml(card.teamLogo, card.teamName)}
       <div class="account-league-text">
         <div class="account-league-name">${escapeHtml(card.leagueName)}${captainTag}</div>
         <div class="account-league-team">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div>
+        ${captainControls}
       </div>
       <button class="account-league-remove account-unclaim-btn" type="button" title="Remove this player record" aria-label="Remove this player record">&times;</button>
     </div>`;
   });
-  const captaincyRows = extraCaptaincies.map((cap) => `<div class="account-league-row is-captain" data-league="${cap.leagueId}" data-team="${cap.teamId}">
+  const captaincyRows = extraCaptaincies.map((cap) => `<div class="account-league-row is-captain" data-league="${cap.leagueId}" data-team="${cap.teamId}" data-league-name="${escapeHtml(cap.leagueName)}" data-team-name="${escapeHtml(cap.teamName)}">
       ${crestHtml(cap.teamLogo, cap.teamName)}
       <div class="account-league-text">
-        <div class="account-league-name">${escapeHtml(cap.leagueName)}<span class="account-league-captain-tag">Captain</span> <button class="link account-remove-captaincy-btn" type="button" style="font-size:9.5px;" title="Stop managing this team as captain">Remove</button></div>
+        <div class="account-league-name">${escapeHtml(cap.leagueName)}<span class="account-league-captain-tag">Captain</span></div>
         <div class="account-league-team">${escapeHtml(cap.teamName)}</div>
+        <button class="link account-remove-captaincy-btn" type="button">Captain controls</button>
       </div>
     </div>`);
   c.innerHTML = `<div class="account-leagues-grid">${cardRows.concat(captaincyRows).join("")}</div>`;
@@ -1383,6 +1388,7 @@ function renderAccountLeaguesList(cards) {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const row = btn.closest(".account-league-row");
+      if (!confirm(`Stop managing ${row.dataset.teamName} (${row.dataset.leagueName}) as captain? You can regain captaincy any time with the team code.`)) return;
       await api("/captain-logout", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team } });
       // captaincies live on playerAccount, not the cards this list was built
       // from — re-fetch it too, or the tag/link would still show as captain.
