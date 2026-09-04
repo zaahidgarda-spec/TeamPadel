@@ -1041,11 +1041,12 @@ async function refreshAccountStatus() {
     switchHubTab("account");
   }
 }
-el("toggle-claim-panel").onclick = () => {
+function openClaimPanel() {
   const panel = el("claim-panel");
   panel.style.display = panel.style.display === "none" ? "block" : "none";
   if (panel.style.display === "block") el("account-search-input").focus();
-};
+}
+el("toggle-claim-panel").onclick = openClaimPanel;
 el("toggle-captain-panel").onclick = () => {
   const panel = el("captain-panel");
   panel.style.display = panel.style.display === "none" ? "block" : "none";
@@ -1335,7 +1336,11 @@ function renderAccountLeaguesList(cards) {
   // A captaincy with no claimed player record in that league has no card to
   // attach to — give it its own row so it's still visible (and removable).
   const extraCaptaincies = captaincies.filter((cap) => !cards.some((card) => card.leagueId === cap.leagueId && card.teamId === cap.teamId));
-  if (uniq.length === 0 && extraCaptaincies.length === 0) { el("account-leagues-list").innerHTML = '<p class="empty">No leagues yet — claim a player record below to see your leagues here.</p>'; return; }
+  if (uniq.length === 0 && extraCaptaincies.length === 0) {
+    el("account-leagues-list").innerHTML = '<button type="button" class="account-leagues-empty" id="account-leagues-empty-cta">No leagues yet — tap to find your player record</button>';
+    el("account-leagues-empty-cta").onclick = openClaimPanel;
+    return;
+  }
   const c = el("account-leagues-list");
   const cardRows = uniq.map((card) => {
     const seed = mostCommonCardSeed(card);

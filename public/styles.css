@@ -702,6 +702,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-utility{margin-top:6px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;}
 .pd-utility-link{background:transparent;border:none;color:var(--text-faint);font-size:12px;font-weight:600;cursor:pointer;padding:0;}
 .pd-utility-link:hover{color:var(--text-dim);}
+.pd-utility-link-primary{color:var(--accent);}
+.pd-utility-link-primary:hover{color:var(--accent);text-decoration:underline;}
+.account-leagues-empty{display:block;width:100%;border:1px dashed var(--line);border-radius:var(--radius);padding:28px 16px;text-align:center;background:transparent;color:var(--text-dim);font-size:14px;font-family:inherit;cursor:pointer;}
+.account-leagues-empty:hover{background:var(--panel-2);border-color:var(--accent);color:var(--text);}
 
 @media (max-width:760px){
   .pd-stats{grid-template-columns:1fr 1fr;}
