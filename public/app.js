@@ -6702,7 +6702,13 @@ function playerPhotoHtml(photo, name) {
     : `<div class="p-photo-fallback">${escapeHtml(playerInitials(name))}</div>`;
 }
 async function loadPlayerHistoryTab(leagueId, playerId) {
-  const data = await api(`/leagues/${leagueId}/players/${playerId}/history`).catch(() => null);
+  // Only worth asking for if someone's actually signed in — a guest has no
+  // claimed record to be "you" in "head-to-head vs you" at all, so skip
+  // the request rather than firing it just to get back {eligible:false}.
+  const [data, h2h] = await Promise.all([
+    api(`/leagues/${leagueId}/players/${playerId}/history`).catch(() => null),
+    playerAccount ? api(`/leagues/${leagueId}/players/${playerId}/head-to-head`).catch(() => ({ eligible: false })) : Promise.resolve({ eligible: false }),
+  ]);
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName);
@@ -6744,10 +6750,16 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
     tabsEl.style.display = "none";
     tabsEl.innerHTML = "";
   }
-  const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data);
+  const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);
   el("player-modal-stats").innerHTML = statsHtml;
   el("player-modal-stats").style.display = statsHtml ? "grid" : "none";
   el("player-modal-body").innerHTML = bodyHtml;
+  const h2hToggle = el("player-modal-body").querySelector(".h2h-toggle");
+  if (h2hToggle) h2hToggle.onclick = () => {
+    const box = el("player-modal-body").querySelector(".h2h-results");
+    box.hidden = !box.hidden;
+    h2hToggle.setAttribute("aria-expanded", String(!box.hidden));
+  };
   const claimBtn = el("player-modal-body").querySelector(".claim-banner-btn");
   if (claimBtn) claimBtn.onclick = () => {
     el("player-modal-backdrop").classList.remove("open");
@@ -6761,7 +6773,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
 // Returns the stats-tile row and the rest of the body separately — they're
 // two different DOM containers now (the tiles bleed edge-to-edge below the
 // photo hero, the body keeps its own padding).
-function renderPlayerHistoryBody(data) {
+function renderPlayerHistoryBody(data, h2h) {
   // Whoever's looking isn't signed in, and this record hasn't been claimed
   // by anyone yet — could be the player themselves, or a teammate who
   // knows them, either way worth a nudge right where their own stats are
@@ -6773,7 +6785,18 @@ function renderPlayerHistoryBody(data) {
   const titlesBlock = hallOfFameTitles.length
     ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
     : "";
-  if (rows.length === 0) return { statsHtml: "", bodyHtml: claimBanner + titlesBlock + '<p class="empty">No completed matches yet.</p>' };
+  // Collapsed by default — a link, not an always-open section, since it's
+  // extra context on TOP of this player's own history, not part of it.
+  const h2hBlock = (h2h && h2h.eligible && h2h.matches.length > 0)
+    ? `<div class="h2h-block" style="margin-bottom:12px;">
+        <button type="button" class="link h2h-toggle" aria-expanded="false">Head-to-head vs you (${h2h.wins}W-${h2h.losses}L${h2h.draws ? "-" + h2h.draws + "D" : ""})</button>
+        <div class="h2h-results" hidden style="margin-top:8px;">${h2h.matches.map((m) => {
+          const oppNames = [data.playerName, m.opponentPartner].filter(Boolean).join(" & ");
+          return `<div class="history-row"><div class="history-top"><span class="history-badge ${m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss"}">${m.result}</span><span class="history-label">${escapeHtml(m.label)}</span></div><div class="history-detail">${m.myPartner ? "You with " + escapeHtml(m.myPartner) + " " : "You "}vs ${escapeHtml(oppNames)} · ${escapeHtml(m.score)}</div></div>`;
+        }).join("")}</div>
+      </div>`
+    : "";
+  if (rows.length === 0) return { statsHtml: "", bodyHtml: claimBanner + titlesBlock + h2hBlock + '<p class="empty">No completed matches yet.</p>' };
   const wins = rows.filter((r) => r.result === "W").length;
   const draws = rows.filter((r) => r.result === "D").length;
   const losses = rows.length - wins - draws;
@@ -6793,7 +6816,7 @@ function renderPlayerHistoryBody(data) {
     <div class="p-stat"><div class="n">${wins}</div><div class="lbl">Won</div></div>
     <div class="p-stat"><div class="n">${losses}</div><div class="lbl">Lost</div></div>
     <div class="p-stat"><div class="n">${escapeHtml(String(fourthStat.n))}</div><div class="lbl">${fourthStat.lbl}</div></div>`;
-  let html = claimBanner + titlesBlock;
+  let html = claimBanner + titlesBlock + h2hBlock;
 
   // Best partners / toughest opponents — a minimum of 2 meetings so a
   // single fluke result doesn't crown a "100%" partner or a "0%" nemesis

@@ -3583,6 +3583,24 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   });
 });
 
+// Whether the logged-in viewer even HAS a claimed record in this same
+// league (a match can't span leagues, so head-to-head only ever makes
+// sense scoped to one) — not an error if not, just nothing to show, same
+// as a guest viewing this profile at all.
+router.get("/leagues/:leagueId/players/:playerId/head-to-head", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Not found." });
+  if (!req.session.playerUser) return res.json({ eligible: false });
+  const account = store.getUser(req.session.playerUser.id);
+  const myClaim = account && (account.claims || []).find((c) => c.leagueId === league.id);
+  if (!myClaim || myClaim.playerId === req.params.playerId) return res.json({ eligible: false });
+  const myTeam = league.teams.find((t) => t.id === myClaim.teamId);
+  const myPlayer = myTeam && myTeam.players.find((p) => p.id === myClaim.playerId);
+  if (!myPlayer) return res.json({ eligible: false });
+  const h2h = logic.headToHead(league, myClaim.playerId, req.params.playerId);
+  res.json({ eligible: true, myName: myPlayer.name, ...h2h });
+});
+
 /* ---------- Notifications ---------- */
 
 router.get("/leagues/:leagueId/notifications", (req, res) => {
