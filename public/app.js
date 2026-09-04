@@ -1342,33 +1342,38 @@ function renderAccountLeaguesList(cards) {
     return;
   }
   const c = el("account-leagues-list");
+  // A filled, checked badge marks the league(s) you captain — everything
+  // else about the row (crest, name, team) looks the same either way, so
+  // captain status reads at a glance without needing to scan for a tag.
+  const badgeHtml = (isCaptain) => `<div class="account-league-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>`;
+  const crestHtml = (logo, name) => logo
+    ? `<img class="account-league-crest" style="width:40px;height:40px;object-fit:cover;" src="${logo}" alt="">`
+    : `<span class="account-league-crest avatar-fb" style="width:40px;height:40px;font-size:15px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
   const cardRows = uniq.map((card) => {
     const seed = mostCommonCardSeed(card);
     const isCaptain = captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId);
     const captainTag = isCaptain
-      ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button>'
+      ? '<span class="account-league-captain-tag">Captain</span> <button class="link account-remove-captaincy-btn" type="button" style="font-size:9.5px;" title="Stop managing this team as captain">Remove</button>'
       : "";
-    return `<div class="notif-row notif-clickable account-league-row" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
-      <div style="display:flex;align-items:center;gap:10px;">
-        ${avatarHtml({ logo: card.teamLogo, name: card.teamName })}
-        <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
+    return `<div class="account-league-row${isCaptain ? " is-captain" : ""}" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
+      ${badgeHtml(isCaptain)}
+      ${crestHtml(card.teamLogo, card.teamName)}
+      <div class="account-league-text">
+        <div class="account-league-name">${escapeHtml(card.leagueName)}${captainTag}</div>
+        <div class="account-league-team">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button class="account-league-remove account-unclaim-btn" type="button" title="Remove this player record" aria-label="Remove this player record">&times;</button>
-        <span class="account-league-chevron">&rsaquo;</span>
-      </div>
+      <button class="account-league-remove account-unclaim-btn" type="button" title="Remove this player record" aria-label="Remove this player record">&times;</button>
     </div>`;
   });
-  const captaincyRows = extraCaptaincies.map((cap) => `<div class="notif-row notif-clickable account-league-row" data-league="${cap.leagueId}" data-team="${cap.teamId}">
-      <div style="display:flex;align-items:center;gap:10px;">
-        ${avatarHtml({ logo: cap.teamLogo, name: cap.teamName })}
-        <div><strong>${escapeHtml(cap.leagueName)}</strong> <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button><div class="note">${escapeHtml(cap.teamName)}</div></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span class="account-league-chevron">&rsaquo;</span>
+  const captaincyRows = extraCaptaincies.map((cap) => `<div class="account-league-row is-captain" data-league="${cap.leagueId}" data-team="${cap.teamId}">
+      ${badgeHtml(true)}
+      ${crestHtml(cap.teamLogo, cap.teamName)}
+      <div class="account-league-text">
+        <div class="account-league-name">${escapeHtml(cap.leagueName)}<span class="account-league-captain-tag">Captain</span> <button class="link account-remove-captaincy-btn" type="button" style="font-size:9.5px;" title="Stop managing this team as captain">Remove</button></div>
+        <div class="account-league-team">${escapeHtml(cap.teamName)}</div>
       </div>
     </div>`);
-  c.innerHTML = cardRows.concat(captaincyRows).join("");
+  c.innerHTML = `<div class="account-leagues-grid">${cardRows.concat(captaincyRows).join("")}</div>`;
   c.querySelectorAll(".account-league-row").forEach((row) => {
     row.onclick = (e) => { if (!e.target.classList.contains("account-unclaim-btn") && !e.target.classList.contains("account-remove-captaincy-btn")) openLeague(row.dataset.league); };
   });
