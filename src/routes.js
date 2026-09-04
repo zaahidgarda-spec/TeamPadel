@@ -3583,26 +3583,54 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   });
 });
 
-// Whether the logged-in viewer even HAS a claimed record in this same
-// league (a match can't span leagues, so head-to-head only ever makes
-// sense scoped to one) — not an error if not, just nothing to show, same
-// as a guest viewing this profile at all.
+// Not scoped to just this one league — a single match can't span leagues,
+// but the SAME two real people can easily share more than one (a claimed
+// account already tracks every league it plays in, same idea the ratings
+// engine uses to follow a player across leagues). So: find every league
+// where BOTH the viewer's claimed account and the viewed player's claimed
+// account (if they have one — an unclaimed record only exists in this one
+// league, so that's the only one it can contribute) hold a record, run the
+// existing per-league scan in each, and add the totals together.
 router.get("/leagues/:leagueId/players/:playerId/head-to-head", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
   if (!req.session.playerUser) return res.json({ eligible: false });
-  const account = store.getUser(req.session.playerUser.id);
-  const myClaim = account && (account.claims || []).find((c) => c.leagueId === league.id);
-  if (!myClaim || myClaim.playerId === req.params.playerId) return res.json({ eligible: false });
-  const myTeam = league.teams.find((t) => t.id === myClaim.teamId);
-  const myPlayer = myTeam && myTeam.players.find((p) => p.id === myClaim.playerId);
-  if (!myPlayer) return res.json({ eligible: false });
-  res.json({
-    eligible: true,
-    myName: myPlayer.name,
-    opponent: logic.headToHead(league, myClaim.playerId, req.params.playerId),
-    partner: logic.partnerRecord(league, myClaim.playerId, req.params.playerId),
+  const myAccount = store.getUser(req.session.playerUser.id);
+  if (!myAccount) return res.json({ eligible: false });
+  const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
+  const viewedPlayer = team && team.players.find((p) => p.id === req.params.playerId);
+  if (!viewedPlayer) return res.json({ eligible: false });
+
+  let viewedClaims = [{ leagueId: league.id, teamId: team.id, playerId: viewedPlayer.id }];
+  if (viewedPlayer.claimedByUserId) {
+    const viewedAccount = store.getUser(viewedPlayer.claimedByUserId);
+    if (viewedAccount && viewedAccount.claims) viewedClaims = viewedAccount.claims;
+  }
+  const hiddenLeagueIds = new Set(store.getIndex().filter((e) => e.hidden).map((e) => e.id));
+  const opponent = { wins: 0, losses: 0, draws: 0, matches: [] };
+  const partner = { wins: 0, losses: 0, draws: 0, matches: [] };
+  let myName = null, sharedAny = false;
+
+  (myAccount.claims || []).forEach((mine) => {
+    if (hiddenLeagueIds.has(mine.leagueId)) return;
+    const theirs = viewedClaims.find((v) => v.leagueId === mine.leagueId);
+    if (!theirs || mine.playerId === theirs.playerId) return;
+    const lg = store.getLeague(mine.leagueId);
+    const myTeam = lg && lg.teams.find((t) => t.id === mine.teamId);
+    const myPlayer = myTeam && myTeam.players.find((p) => p.id === mine.playerId);
+    if (!myPlayer) return;
+    sharedAny = true;
+    myName = myPlayer.name;
+    const opp = logic.headToHead(lg, mine.playerId, theirs.playerId);
+    const part = logic.partnerRecord(lg, mine.playerId, theirs.playerId);
+    opponent.wins += opp.wins; opponent.losses += opp.losses; opponent.draws += opp.draws;
+    opponent.matches.push(...opp.matches.map((m) => ({ ...m, leagueName: lg.name })));
+    partner.wins += part.wins; partner.losses += part.losses; partner.draws += part.draws;
+    partner.matches.push(...part.matches.map((m) => ({ ...m, leagueName: lg.name })));
   });
+
+  if (!sharedAny) return res.json({ eligible: false });
+  res.json({ eligible: true, myName, opponent, partner });
 });
 
 /* ---------- Notifications ---------- */

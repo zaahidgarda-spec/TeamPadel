@@ -6793,7 +6793,10 @@ function renderPlayerHistoryBody(data, h2h) {
   // shown separately since they answer different questions ("do I beat
   // them" vs. "do we work well together") and either can be empty on its
   // own (you might only ever have faced them, or only partnered them).
-  const h2hResultRow = (m, detail) => `<div class="history-row"><div class="history-top"><span class="history-badge ${m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss"}">${m.result}</span><span class="history-label">${escapeHtml(m.label)}</span></div><div class="history-detail">${detail} · ${escapeHtml(m.score)}</div></div>`;
+  // leagueName is now always present (see the head-to-head endpoint) since
+  // these can span every league the two of you actually share, not just
+  // whichever one this profile modal happens to be open on.
+  const h2hResultRow = (m, detail) => `<div class="history-row"><div class="history-top"><span class="history-badge ${m.result === "W" ? "win" : m.result === "D" ? "draw" : "loss"}">${m.result}</span><span class="history-label">${escapeHtml(m.leagueName)} · ${escapeHtml(m.label)}</span></div><div class="history-detail">${detail} · ${escapeHtml(m.score)}</div></div>`;
   const h2hRecordBlock = (label, rec, rowFn) => (rec && rec.matches.length > 0)
     ? `<div class="h2h-block" style="margin-bottom:12px;">
         <button type="button" class="link h2h-toggle" aria-expanded="false">${escapeHtml(label)} (${rec.wins}W-${rec.losses}L${rec.draws ? "-" + rec.draws + "D" : ""})</button>
