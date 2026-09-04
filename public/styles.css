@@ -974,6 +974,10 @@ nav.tabs::-webkit-scrollbar{display:none;}
 }
 .p-photo-wrap{position:relative;display:inline-block;margin-bottom:14px;z-index:1;}
 .p-photo{width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,.25);display:block;background:var(--panel-2);}
+/* A team-crest fallback needs contain (not cover) so a square badge logo
+   isn't cropped the way a real cover-fit photo would be, plus a little
+   padding so it doesn't touch the circle's edge. */
+.p-photo.p-photo-team-fallback{object-fit:contain;padding:10px;box-sizing:border-box;}
 .p-photo-fallback{width:88px;height:88px;border-radius:50%;border:3px solid rgba(255,255,255,.25);background:linear-gradient(135deg,var(--accent),#1d4ed8);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:30px;font-weight:700;color:#fff;}
 .p-edit-badge{position:absolute;bottom:0;right:0;width:30px;height:30px;border-radius:50%;background:var(--accent);border:3px solid #0d1830;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .p-edit-badge svg{width:14px;height:14px;}

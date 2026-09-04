@@ -3570,6 +3570,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     leagueName: league.name,
     teamId: team.id,
     teamName: team.name,
+    teamLogo: team.logo || "",
     playerId: player.id,
     playerName: player.name,
     photo: player.photo || "",

@@ -6696,10 +6696,13 @@ async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-backdrop").classList.add("open");
   await loadPlayerHistoryTab(leagueId, playerId);
 }
-function playerPhotoHtml(photo, name) {
-  return photo
-    ? `<img class="p-photo" src="${photo}" alt="">`
-    : `<div class="p-photo-fallback">${escapeHtml(playerInitials(name))}</div>`;
+// Falls back to the player's own team crest (not just initials) when they
+// haven't set a real photo yet — a placeholder that's actually theirs,
+// not a generic gray circle, until they get around to changing it.
+function playerPhotoHtml(photo, name, teamLogo) {
+  if (photo) return `<img class="p-photo" src="${photo}" alt="">`;
+  if (teamLogo) return `<img class="p-photo p-photo-team-fallback" src="${teamLogo}" alt="">`;
+  return `<div class="p-photo-fallback">${escapeHtml(playerInitials(name))}</div>`;
 }
 async function loadPlayerHistoryTab(leagueId, playerId) {
   // Only worth asking for if someone's actually signed in — a guest has no
@@ -6711,7 +6714,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   ]);
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
-  el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName);
+  el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
   el("player-modal-tags").innerHTML = `<span class="p-tag team">${escapeHtml(data.teamName)}</span>`
     + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "");
   const editBadge = el("player-modal-photo-edit");
