@@ -695,7 +695,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-tonight-card .vs{margin-left:27px;}
 .pd-tonight-card .mc-meta{font-size:10.5px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);}
 
-.pd-cols{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;align-items:start;}
 .pd-card-list{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:2px 16px;}
 .pd-card-list .empty{border:none;padding:14px 0;}
 
@@ -711,7 +710,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 
 @media (max-width:760px){
   .pd-stats{grid-template-columns:1fr 1fr;}
-  .pd-cols{grid-template-columns:1fr;}
 }
 
 .news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
