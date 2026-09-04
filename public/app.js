@@ -5420,13 +5420,15 @@ async function generatePosterCanvas(mode, theme) {
         const namesB = playerNamesForShort(teamB, f.selectionB.pairs[i]);
         const predEntry = mode === "predictions" && predMap ? predMap[f.id + ":" + i] : null;
         const winner = mode === "predictions" ? (predEntry ? predEntry.winner : null) : f.finalized ? rubberWinnerClient(f.rubbers[i]) : null;
-        // Same 60%-or-better bar the live Predictions tab uses for its
-        // "Favorite" tag — only flagged on a seed that isn't decided yet,
-        // and styled distinctly from an actual winner (theme.accent + 600
-        // weight here vs. theme.win + 700 for a real result) so a poster
-        // glanced at mid-round never reads a favorite as already settled.
-        const favSide = mode === "predictions" && !winner && predEntry && predEntry.prediction && Math.max(predEntry.prediction.winPctA, predEntry.prediction.winPctB) >= 60
-          ? (predEntry.prediction.winPctA >= predEntry.prediction.winPctB ? "A" : "B")
+        // Poster-specific bar: any real lean at all, not the 60%-or-better
+        // threshold the live Predictions tab uses for its own "Favorite"
+        // tag. A true 50/50 is the only thing that stays neutral — 51/49
+        // still has a favourite. Styled distinctly from an actual winner
+        // (theme.accent + 600 weight here vs. theme.win + 700 for a real
+        // result) so a poster glanced at mid-round never reads a favourite
+        // as already settled.
+        const favSide = mode === "predictions" && !winner && predEntry && predEntry.prediction && predEntry.prediction.winPctA !== predEntry.prediction.winPctB
+          ? (predEntry.prediction.winPctA > predEntry.prediction.winPctB ? "A" : "B")
           : null;
 
         ctx.textAlign = "left";
