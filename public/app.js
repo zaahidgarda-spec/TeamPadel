@@ -5269,7 +5269,31 @@ function pickPosterTheme() {
 }
 async function generatePosterCanvas(mode, theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
-  const fixtures = fixturesForKey(viewingKey).slice(0, 8);
+  // Playoffs mode is triggered from the Table tab, which isn't scoped to
+  // any particular round — so unlike every other mode here, it can't lean
+  // on viewingKey for which fixtures to show or what to caption them with.
+  // It pulls straight from league.playoffs instead, and skips the final
+  // if it's still TBD (a semi hasn't been finalized yet) rather than
+  // showing a "TBD vs TBD" box.
+  let fixtures, posterLabel, schedKey;
+  if (mode === "playoffs") {
+    if (league.playoffs && league.playoffs.format === "position") {
+      fixtures = league.playoffs.matches.slice(0, 8);
+      posterLabel = "Final spot playoffs";
+      schedKey = "positions";
+    } else if (league.playoffs) {
+      const [s0, s1] = league.playoffs.semis;
+      fixtures = [s0, s1, league.playoffs.final].filter((f) => f && f.teamA && f.teamB).slice(0, 8);
+      posterLabel = "Semi finals & final";
+      schedKey = "final";
+    } else {
+      fixtures = []; posterLabel = "Playoffs"; schedKey = "";
+    }
+  } else {
+    fixtures = fixturesForKey(viewingKey).slice(0, 8);
+    posterLabel = viewingKey ? viewingKey.label : "";
+    schedKey = viewingKey ? viewingKey.key : "";
+  }
   const sponsors = (league.sponsors || []).slice(0, 5);
   // Predictions mode needs win% per seed, which fixturesForKey's plain
   // fixture objects don't carry — fetched once here into a fixtureId:seed
@@ -5294,7 +5318,7 @@ async function generatePosterCanvas(mode, theme) {
   // absurdly huge) — leftover space is used to center the block instead
   // of stretching it, so two fixtures don't get blown up to fill a story.
   const baseHeaderBlockH = 108, baseRowGap = 16;
-  const basePairRowH = mode === "results" || mode === "predictions" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
+  const basePairRowH = mode === "results" || mode === "predictions" || mode === "playoffs" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
   const fixtureMeta = fixtures.map((f) => {
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
     const blockH = baseHeaderBlockH + (revealed ? basePairsTopPad + 4 * basePairRowH + basePairsBottomPad : 0);
@@ -5329,14 +5353,14 @@ async function generatePosterCanvas(mode, theme) {
 
   ctx.fillStyle = "#FFFFFF";
   ctx.font = "700 68px Oswald, sans-serif";
-  ctx.fillText(mode === "results" ? "RESULTS" : mode === "predictions" ? "PREDICTIONS" : "FIXTURES", W / 2, 168);
+  ctx.fillText(mode === "results" ? "RESULTS" : mode === "predictions" ? "PREDICTIONS" : mode === "playoffs" ? "PLAYOFFS" : "FIXTURES", W / 2, 168);
 
   ctx.fillStyle = "#8FA9B4";
   ctx.font = "500 28px Oswald, sans-serif";
-  ctx.fillText((viewingKey ? viewingKey.label : "").toUpperCase(), W / 2, 210);
+  ctx.fillText((posterLabel || "").toUpperCase(), W / 2, 210);
 
-  const sched = viewingKey ? scheduleFor(viewingKey.key) : {};
-  const venue = viewingKey ? effectiveVenue(viewingKey.key) : "";
+  const sched = schedKey ? scheduleFor(schedKey) : {};
+  const venue = schedKey ? effectiveVenue(schedKey) : "";
   const subParts = [];
   if (sched.date) subParts.push(fmtDate(sched.date));
   if (sched.time) subParts.push(fmtTime(sched.time));
@@ -5350,7 +5374,7 @@ async function generatePosterCanvas(mode, theme) {
   // Results mode draws a wider score (e.g. "10 - 8") in the middle than
   // fixtures mode's small "VS", so it needs more clearance to avoid the
   // team name running into it.
-  const nameMaxWidth = W / 2 - sz(mode === "results" ? 280 : 220);
+  const nameMaxWidth = W / 2 - sz(mode === "results" || mode === "playoffs" ? 280 : 220);
   // One size for every team name on the poster (picked from the widest),
   // instead of each row shrinking independently — see fitUniformSize.
   const teamNamesAll = fixtureMeta.map(({ f }) => (teamById(f.teamA) || {}).name || "TBD").concat(fixtureMeta.map(({ f }) => (teamById(f.teamB) || {}).name || "TBD"));
@@ -5395,7 +5419,7 @@ async function generatePosterCanvas(mode, theme) {
     ctx.fillText(nameB, W - 56 - nameStartOffset, headerMidY + sz(10));
 
     ctx.textAlign = "center";
-    if (mode === "results" && f.finalized) {
+    if ((mode === "results" || mode === "playoffs") && f.finalized) {
       const { winsA, winsB } = fixtureScoreClient(f);
       ctx.fillStyle = theme.accent;
       ctx.font = "700 " + sz(42) + "px Oswald, sans-serif";
@@ -5442,7 +5466,7 @@ async function generatePosterCanvas(mode, theme) {
         ctx.fillText(fittedB, W - 90, py + sz(6));
 
         ctx.textAlign = "center";
-        if (mode === "results" && f.finalized) {
+        if ((mode === "results" || mode === "playoffs") && f.finalized) {
           ctx.fillStyle = "#64748B";
           ctx.font = "500 " + sz(12) + "px Oswald, sans-serif";
           ctx.fillText("SEED " + (i + 1), W / 2, py - sz(9));
@@ -5895,7 +5919,7 @@ async function generateTablePosterCanvas(theme) {
   return canvas;
 }
 async function openPosterModal(mode) {
-  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster", predictions: "Predictions poster" };
+  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster", predictions: "Predictions poster", playoffs: "Playoffs poster" };
   el("poster-modal-title").textContent = titles[mode] || "Fixtures poster";
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
@@ -6002,11 +6026,16 @@ function renderTable() {
       html += matchCardHtml(ordinal(i * 2 + 1) + " v " + ordinal(i * 2 + 2), m.teamA, m.teamB, m);
     });
     html += `</div>`;
+    if (myRole === "admin") html += `<div class="row" style="margin-top:14px;"><button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
     koCard.innerHTML = html;
+    if (myRole === "admin") el("gen-playoffs-poster-btn").onclick = () => openPosterModal("playoffs");
   } else if (league.playoffs) {
     koCard.style.display = "block";
     const [s0, s1] = league.playoffs.semis, fin = league.playoffs.final;
-    koCard.innerHTML = `<h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin)}`;
+    let html = `<h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin)}`;
+    if (myRole === "admin") html += `<div class="row" style="margin-top:14px;"><button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
+    koCard.innerHTML = html;
+    if (myRole === "admin") el("gen-playoffs-poster-btn").onclick = () => openPosterModal("playoffs");
   } else { koCard.style.display = "none"; }
 }
 // The same .rank-row markup renderTable() uses, pulled out so the season-
