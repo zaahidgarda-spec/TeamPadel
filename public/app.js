@@ -1343,24 +1343,24 @@ function renderAccountLeaguesList(cards) {
     const captainTag = isCaptain
       ? ' <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button>'
       : "";
-    return `<div class="notif-row account-league-row" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}" style="cursor:pointer;">
+    return `<div class="notif-row notif-clickable account-league-row" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
       <div style="display:flex;align-items:center;gap:10px;">
         ${avatarHtml({ logo: card.teamLogo, name: card.teamName })}
         <div><strong>${escapeHtml(card.leagueName)}</strong>${captainTag}<div class="note">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div></div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <button class="link account-unclaim-btn" type="button">Remove</button>
-        <span class="link">Open &rarr;</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="account-league-remove account-unclaim-btn" type="button" title="Remove this player record" aria-label="Remove this player record">&times;</button>
+        <span class="account-league-chevron">&rsaquo;</span>
       </div>
     </div>`;
   });
-  const captaincyRows = extraCaptaincies.map((cap) => `<div class="notif-row account-league-row" data-league="${cap.leagueId}" data-team="${cap.teamId}" style="cursor:pointer;">
+  const captaincyRows = extraCaptaincies.map((cap) => `<div class="notif-row notif-clickable account-league-row" data-league="${cap.leagueId}" data-team="${cap.teamId}">
       <div style="display:flex;align-items:center;gap:10px;">
         ${avatarHtml({ logo: cap.teamLogo, name: cap.teamName })}
         <div><strong>${escapeHtml(cap.leagueName)}</strong> <span class="tag" style="color:var(--accent);border-color:var(--accent);">Captain</span> <button class="link account-remove-captaincy-btn" type="button" title="Stop managing this team as captain">Remove captaincy</button><div class="note">${escapeHtml(cap.teamName)}</div></div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span class="link">Open &rarr;</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="account-league-chevron">&rsaquo;</span>
       </div>
     </div>`);
   c.innerHTML = cardRows.concat(captaincyRows).join("");

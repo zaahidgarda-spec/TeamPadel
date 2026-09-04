@@ -848,6 +848,10 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .notif-row.unread .notif-msg{color:var(--text);font-weight:600;}
 .notif-row.unread::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-right:4px;}
 .notif-msg{font-size:14px;color:var(--text-dim);flex:1;}
+.account-league-remove{background:transparent;border:none;color:var(--text-dim);font-size:20px;line-height:1;cursor:pointer;padding:4px 8px;border-radius:var(--radius-sm);}
+.account-league-remove:hover{color:var(--clay);background:var(--clay-soft);}
+.account-league-chevron{font-size:22px;color:var(--text-dim);line-height:1;padding:0 2px;}
+.account-league-row:hover .account-league-chevron{color:var(--accent);}
 .notif-time{font-size:11px;color:var(--text-dim);white-space:nowrap;}
 
 /* ---------- Admin change history (view-only audit log) ---------- */
