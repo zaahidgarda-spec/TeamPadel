@@ -115,6 +115,16 @@ function pairNamesGoldHtml(team, pair, sel) {
 function playerLinkHtml(p, isSub) {
   return `<button type="button" class="player-link" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${goldNameHtml(p, isSub)}</button>`;
 }
+// Cross-league version — takes {id,name} refs the server already resolved
+// (no team object to look them up from here) plus an explicit leagueId, for
+// widgets spanning multiple leagues at once (the homepage carousel, a
+// signed-in player's own cross-league cards) where currentLeagueId — what
+// bindPlayerLinks assumes — is wrong or unset. Pairs with newsPlayerLinkHtml
+// / bindNewsPlayerLinks below.
+function pairRefsLinksHtml(leagueId, pair) {
+  if (!pair || !pair.length) return "—";
+  return pair.map((p) => newsPlayerLinkHtml(leagueId, p)).join(" &amp; ");
+}
 // Same look as pairNamesGoldHtml, but each name is its own clickable link
 // to that player's profile — only used where the result actually gets
 // wired up with click handlers afterward (a static innerHTML use, like the
@@ -480,13 +490,14 @@ function renderNextMatchSlide() {
   slide.innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
     <div class="mc-pairing">
-      <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair${m.winner === "A" ? " won" : ""}">${escapeHtml(m.pairA.join(" & "))}</span></span>
+      <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair${m.winner === "A" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairA)}</span></span>
       ${centerHtml}
-      <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
+      <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairB)}</span></span>
     </div>
     ${predictionBarHtml(m.prediction, true)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
+  bindNewsPlayerLinks(slide);
   // Re-trigger the slide-in animation on every rotation, not just the first
   // render — swapping innerHTML alone doesn't replay a CSS animation
   // already attached to the (unchanged) element.
@@ -520,11 +531,12 @@ async function renderHomepageHighlights() {
         ${badge}
         <div class="potw-crown">👑</div>
         <div class="potw-avatars">${avatars}</div>
-        <div class="potw-names">${escapeHtml(p.names)}</div>
+        <div class="potw-names">${pairRefsLinksHtml(p.leagueId, [{ id: p.playerAId, name: p.playerAName }, { id: p.playerBId, name: p.playerBName }])}</div>
         <div class="potw-team">${escapeHtml(p.team)}</div>
         <div class="potw-league">${escapeHtml(p.leagueName)}</div>
       </div>`;
     }).join("");
+    bindNewsPlayerLinks(el("homepage-potw-strip"));
   }
   const highlights = (data && data.highlights) || [];
   const interestingCard = el("homepage-interesting-card");
@@ -1310,14 +1322,15 @@ async function renderAccountTonightMatches() {
     return `<div class="pd-tonight-card">
       <span class="league-tag">${escapeHtml(m.leagueName)}</span>
       <div class="mc-pairing">
-        <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair${m.winner === "A" ? " won" : ""}">${escapeHtml(m.pairA.join(" & "))}</span></span>
+        <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair${m.winner === "A" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairA)}</span></span>
         ${centerHtml}
-        <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${escapeHtml(m.pairB.join(" & "))}</span></span>
+        <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairB)}</span></span>
       </div>
       ${predictionBarHtml(m.prediction, true)}
       <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, `Seed ${m.seed}`, m.venue].filter(Boolean).join(" · "))}</div>
     </div>`;
   }).join("");
+  bindNewsPlayerLinks(el("account-tonight-scroll"));
 }
 // Whichever seed number shows up most often across a card's played and
 // upcoming matches — "Killarney Seed 1," not a bare league name — so a
@@ -1403,7 +1416,7 @@ function renderAccountLeaguesList(cards) {
 function renderAccountNextMatch(cards) {
   const rows = [];
   cards.forEach((card) => {
-    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo, playerName: card.playerName }, r)));
+    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueId: card.leagueId, leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, playerName: card.playerName }, r)));
   });
   const wrap = el("account-next-match-card");
   if (rows.length === 0) { wrap.style.display = "none"; return; }
@@ -1427,16 +1440,18 @@ function renderAccountNextMatch(cards) {
   const favTag = '<span class="predictions-favorite-tag">Favorite</span>';
   const favMine = m.prediction && m.prediction.winPct >= 60;
   const favOpp = m.prediction && m.prediction.winPct <= 40;
+  const mySideRefs = [{ id: m.playerId, name: m.playerName }, m.partnerId ? { id: m.partnerId, name: m.partner } : null].filter(Boolean);
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
     <div class="mc-pairing">
-      <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair${favMine ? " favorite" : ""}">${escapeHtml([m.playerName, m.partner].filter(Boolean).join(" & "))}</span>${favMine ? favTag : ""}</span>
+      <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair${favMine ? " favorite" : ""}">${pairRefsLinksHtml(m.leagueId, mySideRefs)}</span>${favMine ? favTag : ""}</span>
       <span class="vs">vs</span>
-      <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair${favOpp ? " favorite" : ""}">${escapeHtml(m.opponentPlayers.join(" & ") || "?")}</span>${favOpp ? favTag : ""}</span>
+      <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair${favOpp ? " favorite" : ""}">${m.opponentPlayerRefs && m.opponentPlayerRefs.length ? pairRefsLinksHtml(m.leagueId, m.opponentPlayerRefs) : "?"}</span>${favOpp ? favTag : ""}</span>
     </div>
     ${personalPredictionHtml(m.prediction, true)}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
+  bindNewsPlayerLinks(el("account-next-match-slide"));
 }
 
 async function openLeague(id) {
@@ -3110,8 +3125,9 @@ function tossCard(f) {
   [teamA, teamB].forEach((team) => {
     const col = document.createElement("div");
     col.innerHTML = `<h4>${escapeHtml(team.name)}</h4><ul class="toss-roster-list">${
-      team.players.length ? team.players.map((p) => `<li>${goldNameHtml(p)}</li>`).join("") : '<li class="empty">No players yet.</li>'
+      team.players.length ? team.players.map((p) => `<li>${playerLinkHtml(p)}</li>`).join("") : '<li class="empty">No players yet.</li>'
     }</ul>`;
+    bindPlayerLinks(col);
     rosters.appendChild(col);
   });
   card.appendChild(rosters);
@@ -3554,10 +3570,12 @@ function pairTossAccordion(f, teamA, teamB, mySide) {
       const filled = roundFilledLocal(side, idx);
       if (filled) {
         const sel = side === "A" ? f.selectionA : f.selectionB;
-        panel.appendChild(Object.assign(document.createElement("p"), {
+        const note = Object.assign(document.createElement("p"), {
           className: "toss-hud-note", style: "margin-top:6px;",
-          innerHTML: `<strong style="color:#F2F6FF;">${escapeHtml(team.name)}:</strong> ${pairNamesGoldHtml(team, sel.pairs[idx], sel)}`,
-        }));
+          innerHTML: `<strong style="color:#F2F6FF;">${escapeHtml(team.name)}:</strong> ${pairNamesClickableHtml(team, sel.pairs[idx], sel)}`,
+        });
+        bindPlayerLinks(note);
+        panel.appendChild(note);
       } else if (!isFirst && !firstFilled) {
         panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:6px;", textContent: "Waiting on " + firstTeam.name + " to declare first." }));
       } else {
@@ -3937,9 +3955,10 @@ function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
-    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesGoldHtml(team, pair, sel)}</span></div>`;
+    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
+  bindPlayerLinks(div);
   const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
   if (myRole === "admin") {
     const reset = document.createElement("button");
@@ -4583,8 +4602,8 @@ function renderFixtures() {
         html += '<div class="rubbers">';
         f.selectionA.pairs.forEach((pairA, i) => {
           const pairB = f.selectionB.pairs[i];
-          const nameA = pairNamesGoldHtml(teamA, pairA, f.selectionA);
-          const nameB = pairNamesGoldHtml(teamB, pairB, f.selectionB);
+          const nameA = pairNamesClickableHtml(teamA, pairA, f.selectionA);
+          const nameB = pairNamesClickableHtml(teamB, pairB, f.selectionB);
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
           const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
@@ -4596,6 +4615,7 @@ function renderFixtures() {
       }
     }
     card.innerHTML = html;
+    bindPlayerLinks(card);
     c.appendChild(card);
   });
 }
@@ -4866,15 +4886,16 @@ function predictionsFixtureCard(f) {
       return `<div class="predictions-seed">
         ${seedLabel}
         <div class="mc-pairing">
-          <span class="mc-pair-row"><span class="mc-pair${s.winner === "A" ? " won" : favSide === "A" ? " favorite" : ""}">${escapeHtml(s.pairA.join(" & ") || "—")}</span>${favSide === "A" ? favTag : ""}</span>
+          <span class="mc-pair-row"><span class="mc-pair${s.winner === "A" ? " won" : favSide === "A" ? " favorite" : ""}">${pairRefsLinksHtml(currentLeagueId, s.pairA)}</span>${favSide === "A" ? favTag : ""}</span>
           ${centerHtml}
-          <span class="mc-pair-row"><span class="mc-pair${s.winner === "B" ? " won" : favSide === "B" ? " favorite" : ""}">${escapeHtml(s.pairB.join(" & ") || "—")}</span>${favSide === "B" ? favTag : ""}</span>
+          <span class="mc-pair-row"><span class="mc-pair${s.winner === "B" ? " won" : favSide === "B" ? " favorite" : ""}">${pairRefsLinksHtml(currentLeagueId, s.pairB)}</span>${favSide === "B" ? favTag : ""}</span>
         </div>
         ${predHtml}
       </div>`;
     }).join("");
   }
   card.innerHTML = html;
+  bindNewsPlayerLinks(card);
   return card;
 }
 // Every specific partnership that played this round — one per seed per
@@ -6145,10 +6166,14 @@ function archivedFixtureCard(seasonId, f, teams) {
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     seedTag.textContent = isDecider ? "Decider" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
+    // Plain (non-clickable) versions still feed the score modal's title,
+    // which is a one-shot innerHTML use with no click handlers wired up
+    // afterward — clickable-looking buttons there would just do nothing.
     const pairAHtml = isDecider ? escapeHtml(teamA.name) : pairNamesGoldHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
     const pairBHtml = isDecider ? escapeHtml(teamB.name) : pairNamesGoldHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
-    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = pairAHtml;
-    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = pairBHtml;
+    const pairADisplay = document.createElement("div"); pairADisplay.className = "pair" + (winner === "A" ? " won" : ""); pairADisplay.innerHTML = isDecider ? escapeHtml(teamA.name) : pairNamesClickableHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
+    const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : pairNamesClickableHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
+    bindPlayerLinks(pairADisplay); bindPlayerLinks(pairBDisplay);
     const scores = document.createElement("div"); scores.className = "score-summary-wrap";
     const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
     scoreText.textContent = rubberScoreText(rubber) || "Not played";
@@ -6278,9 +6303,9 @@ async function renderRatingsPreview() {
     el("rp-matchup").innerHTML = `
       <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
       <div class="mc-pairing">
-        <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair">${escapeHtml(m.pairA.join(" & "))}</span></span>
+        <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair">${pairRefsLinksHtml(m.leagueId, m.pairA)}</span></span>
         <span class="vs">vs</span>
-        <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair">${escapeHtml(m.pairB.join(" & "))}</span></span>
+        <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair">${pairRefsLinksHtml(m.leagueId, m.pairB)}</span></span>
       </div>
       <div class="mc-predict">
         <div class="mc-predict-bar"><span class="a" style="width:${m.prediction.winPctA}%"></span><span class="b" style="width:${m.prediction.winPctB}%"></span></div>
@@ -6289,6 +6314,7 @@ async function renderRatingsPreview() {
       </div>
       <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, m.venue].filter(Boolean).join(" · "))}</div>
     `;
+    bindNewsPlayerLinks(el("rp-matchup"));
   } else {
     el("rp-matchup").innerHTML = '<p class="note">No undecided, fully-selected seed to preview right now.</p>';
   }
@@ -6337,10 +6363,11 @@ async function renderRatingsPreview() {
   if (data.recap.length) {
     rCard.style.display = "block";
     el("rp-recap").innerHTML = data.recap.map((r) => {
-      const favName = r.favoriteSide === "A" ? r.pairA.join(" & ") : r.pairB.join(" & ");
-      const otherName = r.favoriteSide === "A" ? r.pairB.join(" & ") : r.pairA.join(" & ");
-      return `<div class="history-row"><div class="history-top"><span class="history-badge ${r.hit ? "win" : "loss"}">${r.hit ? "✓" : "✗"}</span><span class="history-label">${escapeHtml(favName)} (${r.winPct}% favorite) ${r.hit ? "beat" : "lost to"} ${escapeHtml(otherName)}</span></div></div>`;
+      const favHtml = pairRefsLinksHtml(r.leagueId, r.favoriteSide === "A" ? r.pairA : r.pairB);
+      const otherHtml = pairRefsLinksHtml(r.leagueId, r.favoriteSide === "A" ? r.pairB : r.pairA);
+      return `<div class="history-row"><div class="history-top"><span class="history-badge ${r.hit ? "win" : "loss"}">${r.hit ? "✓" : "✗"}</span><span class="history-label">${favHtml} (${r.winPct}% favorite) ${r.hit ? "beat" : "lost to"} ${otherHtml}</span></div></div>`;
     }).join("");
+    bindNewsPlayerLinks(el("rp-recap"));
   } else {
     rCard.style.display = "none";
   }
@@ -6904,7 +6931,8 @@ async function renderStats() {
   if (!isPairs) {
     const pt = el("stats-partnerships");
     pt.innerHTML = stats.partnerships.length === 0 ? '<p class="empty">Need at least 2 matches together to qualify.</p>' :
-      stats.partnerships.map((p, i) => `<div class="stat-rank-row"><div class="rank-badge">${i + 1}</div><div class="stat-rank-name">${escapeHtml(p.names.join(" & "))} <span class="note">${escapeHtml(p.team)}</span></div><div class="stat-rank-value">${p.won}/${p.played}</div></div>`).join("");
+      stats.partnerships.map((p, i) => `<div class="stat-rank-row"><div class="rank-badge">${i + 1}</div><div class="stat-rank-name">${p.refs && p.refs.length ? pairRefsLinksHtml(currentLeagueId, p.refs) : escapeHtml(p.names.join(" & "))} <span class="note">${escapeHtml(p.team)}</span></div><div class="stat-rank-value">${p.won}/${p.played}</div></div>`).join("");
+    bindNewsPlayerLinks(pt);
   }
 
   const st = el("stats-streaks");

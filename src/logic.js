@@ -625,7 +625,8 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
           const partnerId = pair[0] === playerId ? pair[1] : pair[0];
           const partner = team.players.find((p) => p.id === partnerId);
           const oppPair = oppSelection.pairs[idx] || [null, null];
-          const oppNames = oppPair.map((pid) => { const p = oppTeam.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+          const oppRefs = oppPair.map((pid) => { const p = oppTeam.players.find((x) => x.id === pid); return p ? { id: p.id, name: p.name } : null; }).filter(Boolean);
+          const oppNames = oppRefs.map((r) => r.name);
           const sched = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
           let prediction = null;
           if (partnerId && oppPair[0] && oppPair[1]) {
@@ -639,7 +640,9 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
             opponentTeam: oppTeam.name,
             opponentLogo: oppTeam.logo || "",
             opponentPlayers: oppNames,
+            opponentPlayerRefs: oppRefs,
             partner: partner ? partner.name : null,
+            partnerId: partnerId || null,
             seed: idx + 1,
             date: sched.date || "",
             time: sched.time || "",
@@ -1021,7 +1024,12 @@ function bestPartnerships(league, minMatches, limit) {
         if (!map[key]) {
           const p1 = t.players.find((p) => p.id === pair[0]);
           const p2 = t.players.find((p) => p.id === pair[1]);
-          map[key] = { team: t.name, names: [p1 ? p1.name : "?", p2 ? p2.name : "?"], played: 0, won: 0 };
+          map[key] = {
+            team: t.name,
+            names: [p1 ? p1.name : "?", p2 ? p2.name : "?"],
+            refs: [p1, p2].filter(Boolean).map((p) => ({ id: p.id, name: p.name })),
+            played: 0, won: 0,
+          };
         }
         map[key].played++;
         if (winner === mySide) map[key].won++;

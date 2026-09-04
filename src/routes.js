@@ -515,9 +515,12 @@ function loadGlobalRatings() {
 // different set of leagues (every active league vs. just the ones this
 // player is in).
 function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
-  const playerName = (team, id) => {
+  // {id, name} rather than a bare name — the client links each one to that
+  // player's profile, which needs their id (and, per pairing, which league
+  // they belong to — this carousel spans every league at once).
+  const playerRef = (team, id) => {
     const p = team && team.players.find((pl) => pl.id === id);
-    return p ? p.name : null;
+    return p ? { id: p.id, name: p.name } : null;
   };
 
   const fixtures = [];
@@ -568,9 +571,9 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
   sameNight.forEach(({ league, f, teamA, teamB, sched }) => {
     f.selectionA.pairs.forEach((pairA, i) => {
       const pairB = f.selectionB.pairs[i];
-      const namesA = [playerName(teamA, pairA[0]), playerName(teamA, pairA[1])].filter(Boolean);
-      const namesB = [playerName(teamB, pairB[0]), playerName(teamB, pairB[1])].filter(Boolean);
-      if (namesA.length !== 2 || namesB.length !== 2) return;
+      const refsA = [playerRef(teamA, pairA[0]), playerRef(teamA, pairA[1])].filter(Boolean);
+      const refsB = [playerRef(teamB, pairB[0]), playerRef(teamB, pairB[1])].filter(Boolean);
+      if (refsA.length !== 2 || refsB.length !== 2) return;
       // A seed can already be decided while the rest of the night's
       // fixture is still open (captains score them one at a time) — once
       // it is, the card shows that result instead of a bare "vs".
@@ -580,14 +583,15 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
       const prediction = winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
       if (!byLeague.has(league.id)) byLeague.set(league.id, []);
       byLeague.get(league.id).push({
+        leagueId: league.id,
         leagueName: league.name,
         teamAName: teamA.name,
         teamBName: teamB.name,
         teamALogo: teamA.logo || "",
         teamBLogo: teamB.logo || "",
         seed: i + 1,
-        pairA: namesA,
-        pairB: namesB,
+        pairA: refsA,
+        pairB: refsB,
         date: sched.date || "",
         time: sched.time || "",
         venue: sched.venue || league.defaultVenue || "",
@@ -689,10 +693,12 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
         if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return;
         const rubber = f.rubbers[i];
         const winner = rubber ? logic.rubberWinner(rubber) : null;
+        const refA = (id) => { const p = teamA.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; };
+        const refB = (id) => { const p = teamB.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; };
         seeds.push({
           seed: i + 1,
-          pairA: pairA.map((id) => (teamA.players.find((p) => p.id === id) || {}).name).filter(Boolean),
-          pairB: pairB.map((id) => (teamB.players.find((p) => p.id === id) || {}).name).filter(Boolean),
+          pairA: pairA.map(refA).filter(Boolean),
+          pairB: pairB.map(refB).filter(Boolean),
           winner,
           score: winner ? logic.rubberScoreText(rubber) : null,
           prediction: winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf),
@@ -741,6 +747,8 @@ router.get("/homepage/highlights", (req, res) => {
         const team = p.teamId ? league.teams.find((t) => t.id === p.teamId) : null;
         potw.push({
           names: p.playerAName + " & " + p.playerBName,
+          playerAId: p.playerAId, playerAName: p.playerAName,
+          playerBId: p.playerBId, playerBName: p.playerBName,
           team: p.teamName,
           leagueId: league.id,
           leagueName: league.name,
@@ -3496,8 +3504,9 @@ router.get("/leagues/:leagueId/admin/ratings-preview", requireAdmin, (req, res) 
       const winPctA = Math.round(logic.expectedScore(ratingA, ratingB) * 100);
       const favoriteSide = winPctA >= 50 ? "A" : "B";
       recapAll.push({
-        pairA: pairA.map((id) => (teamA.players.find((p) => p.id === id) || {}).name).filter(Boolean),
-        pairB: pairB.map((id) => (teamB.players.find((p) => p.id === id) || {}).name).filter(Boolean),
+        leagueId: league.id,
+        pairA: pairA.map((id) => { const p = teamA.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; }).filter(Boolean),
+        pairB: pairB.map((id) => { const p = teamB.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; }).filter(Boolean),
         winPct: favoriteSide === "A" ? winPctA : 100 - winPctA,
         favoriteSide, hit: favoriteSide === winner,
       });
