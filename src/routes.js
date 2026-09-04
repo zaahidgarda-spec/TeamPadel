@@ -420,6 +420,41 @@ router.get("/config", (req, res) => {
   res.json({ ratingsEnabled: process.env.RATINGS_ENABLED === "true", payfastSandbox: payfast.config().sandbox });
 });
 
+// The in-league "Score not entered yet" banner only reaches a captain once
+// they've already clicked into their league — this is the homepage's own
+// version of it, gated to a round's actual kickoff time (not just its
+// date) so it doesn't show all day before matches even start. A captain
+// is logged into exactly one league at a time, so this reads that same
+// session the league page already uses; nothing new to log in to.
+router.get("/me/pending-score", (req, res) => {
+  const u = req.session.user;
+  if (!u || u.role !== "captain") return res.json({});
+  const league = store.getLeague(u.leagueId);
+  if (!league || league.format === "pairs") return res.json({});
+  const now = Date.now();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const candidates = league.fixtures
+    .filter((f) => !f.finalized && (f.teamA === u.teamId || f.teamB === u.teamId) && f.selectionA.submitted && f.selectionB.submitted)
+    .filter((f) => {
+      const sched = (league.schedule && league.schedule["r" + f.round]) || {};
+      if (!sched.date) return true; // nothing scheduled to gate against — same permissive fallback the in-league banner uses
+      if (sched.date < todayStr) return true; // a past matchday is well past kickoff either way
+      if (sched.date > todayStr) return false;
+      if (!sched.time) return true;
+      return now >= new Date(sched.date + "T" + sched.time + ":00").getTime();
+    })
+    .sort((a, b) => a.round - b.round);
+  const f = candidates[0];
+  if (!f) return res.json({});
+  const myTeam = league.teams.find((t) => t.id === u.teamId);
+  const opp = league.teams.find((t) => t.id === (f.teamA === u.teamId ? f.teamB : f.teamA));
+  res.json({
+    leagueId: league.id, leagueName: league.name, round: f.round, fixtureId: f.id,
+    myTeamName: myTeam ? myTeam.name : "Your team", myTeamLogo: myTeam ? myTeam.logo || "" : "",
+    opponentName: opp ? opp.name : "TBD", opponentLogo: opp ? opp.logo || "" : "",
+  });
+});
+
 /* ---------- Leagues ---------- */
 
 router.get("/leagues", (req, res) => {

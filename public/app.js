@@ -288,6 +288,35 @@ function showHub() {
   // double up the /api/next-matches request on every hub visit.
   renderNextMatches();
   renderHomepageHighlights();
+  renderHomepagePendingScore();
+}
+// Homepage counterpart to the in-league "Score not entered yet" banner —
+// reaches a logged-in captain the moment they land on the site, not just
+// once they've clicked into their league. The server already gates this to
+// a round's actual kickoff time, so it only appears once a match is
+// genuinely live or past.
+async function renderHomepagePendingScore() {
+  const data = await api("/me/pending-score").catch(() => ({}));
+  const banner = el("homepage-pending-score-banner");
+  if (!data.fixtureId) { banner.style.display = "none"; return; }
+  banner.style.display = "flex";
+  el("homepage-pending-score-logos").innerHTML = `${avatarHtml({ logo: data.myTeamLogo, name: data.myTeamName })}<span class="vs">VS</span>${avatarHtml({ logo: data.opponentLogo, name: data.opponentName })}`;
+  el("homepage-pending-score-text").textContent = `Round ${data.round} vs ${data.opponentName} — enter it now.`;
+  el("homepage-pending-score-btn").onclick = async () => {
+    await openLeague(data.leagueId);
+    const key = getRoundsList().find((k) => k.stage === "regular" && k.round === data.round);
+    if (key) viewingKey = key;
+    switchTab("results");
+    renderAll();
+    setTimeout(() => {
+      const c = document.querySelector(`#results-container .fixture-card[data-fixture-id="${data.fixtureId}"]`);
+      if (!c) return;
+      c.scrollIntoView({ behavior: "smooth", block: "center" });
+      c.style.transition = "box-shadow .3s ease";
+      c.style.boxShadow = "0 0 0 2px var(--accent)";
+      setTimeout(() => { c.style.boxShadow = ""; }, 2000);
+    }, 50);
+  };
 }
 const ICON_PEOPLE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 const ICON_CALENDAR = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
