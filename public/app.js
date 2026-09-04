@@ -1342,10 +1342,6 @@ function renderAccountLeaguesList(cards) {
     return;
   }
   const c = el("account-leagues-list");
-  // A filled, checked badge marks the league(s) you captain — everything
-  // else about the row (crest, name, team) looks the same either way, so
-  // captain status reads at a glance without needing to scan for a tag.
-  const badgeHtml = (isCaptain) => `<div class="account-league-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>`;
   const crestHtml = (logo, name) => logo
     ? `<img class="account-league-crest" style="width:40px;height:40px;object-fit:cover;" src="${logo}" alt="">`
     : `<span class="account-league-crest avatar-fb" style="width:40px;height:40px;font-size:15px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
@@ -1356,7 +1352,6 @@ function renderAccountLeaguesList(cards) {
       ? '<span class="account-league-captain-tag">Captain</span> <button class="link account-remove-captaincy-btn" type="button" style="font-size:9.5px;" title="Stop managing this team as captain">Remove</button>'
       : "";
     return `<div class="account-league-row${isCaptain ? " is-captain" : ""}" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}">
-      ${badgeHtml(isCaptain)}
       ${crestHtml(card.teamLogo, card.teamName)}
       <div class="account-league-text">
         <div class="account-league-name">${escapeHtml(card.leagueName)}${captainTag}</div>
@@ -1366,7 +1361,6 @@ function renderAccountLeaguesList(cards) {
     </div>`;
   });
   const captaincyRows = extraCaptaincies.map((cap) => `<div class="account-league-row is-captain" data-league="${cap.leagueId}" data-team="${cap.teamId}">
-      ${badgeHtml(true)}
       ${crestHtml(cap.teamLogo, cap.teamName)}
       <div class="account-league-text">
         <div class="account-league-name">${escapeHtml(cap.leagueName)}<span class="account-league-captain-tag">Captain</span> <button class="link account-remove-captaincy-btn" type="button" style="font-size:9.5px;" title="Stop managing this team as captain">Remove</button></div>

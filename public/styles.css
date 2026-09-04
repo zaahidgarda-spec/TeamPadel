@@ -865,10 +865,6 @@ nav.tabs::-webkit-scrollbar{display:none;}
 @media (max-width:560px){.account-leagues-grid{grid-template-columns:1fr;}}
 .account-league-row{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-full);padding:6px 14px 6px 6px;cursor:pointer;transition:background .15s ease,border-color .15s ease;}
 .account-league-row:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);}
-.account-league-badge{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,.25);flex-shrink:0;display:flex;align-items:center;justify-content:center;}
-.account-league-badge svg{width:13px;height:13px;display:none;}
-.account-league-row.is-captain .account-league-badge{border-color:var(--accent);background:var(--accent);}
-.account-league-row.is-captain .account-league-badge svg{display:block;}
 .account-league-crest{border-radius:50%;border:2px solid rgba(255,255,255,.15) !important;transition:border-color .15s ease,transform .15s ease;}
 .account-league-row:hover .account-league-crest{border-color:var(--accent);transform:scale(1.06);}
 .account-league-text{min-width:0;flex:1;}
