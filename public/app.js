@@ -5434,12 +5434,12 @@ async function generatePosterCanvas(mode, theme) {
         ctx.textAlign = "left";
         ctx.fillStyle = winner === "A" ? theme.win : favSide === "A" ? theme.accent : "#C6D2E3";
         const fittedA = fitText(ctx, namesA, pairMaxWidth, pairNameSize, winner === "A" ? "700" : favSide === "A" ? "700" : "400", "Inter, sans-serif", pairNameSize);
-        ctx.fillText((favSide === "A" ? "★ " : "") + fittedA, 90, py + sz(6));
+        ctx.fillText(fittedA, 90, py + sz(6));
 
         ctx.textAlign = "right";
         ctx.fillStyle = winner === "B" ? theme.win : favSide === "B" ? theme.accent : "#C6D2E3";
         const fittedB = fitText(ctx, namesB, pairMaxWidth, pairNameSize, winner === "B" ? "700" : favSide === "B" ? "700" : "400", "Inter, sans-serif", pairNameSize);
-        ctx.fillText(fittedB + (favSide === "B" ? " ★" : ""), W - 90, py + sz(6));
+        ctx.fillText(fittedB, W - 90, py + sz(6));
 
         ctx.textAlign = "center";
         if (mode === "results" && f.finalized) {
