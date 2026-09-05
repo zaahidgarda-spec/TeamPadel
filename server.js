@@ -137,6 +137,12 @@ store
   .init()
   .then(() => {
     routes.backfillRoundRecaps();
+    // 36-hours-before-kickoff line-up reminders — run once immediately
+    // (so a redeploy doesn't leave captains waiting up to LINEUP_CHECK_MS
+    // for the first check) and then on the same interval forever.
+    routes.checkLineupReminders();
+    const LINEUP_CHECK_MS = 15 * 60 * 1000;
+    setInterval(routes.checkLineupReminders, LINEUP_CHECK_MS).unref();
     app.listen(PORT, () => {
       console.log("Padel league app running on http://localhost:" + PORT);
     });

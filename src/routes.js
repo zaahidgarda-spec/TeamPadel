@@ -190,6 +190,57 @@ function postOrUpdateRoundRecap(league, round) {
 // appears) so a correction like that actually persists. Deliberately
 // silent either way — no captain notifications for old news, no console
 // noise on the common case.
+// The only genuinely time-triggered notification in the app — everything
+// else notify() sends fires off some action a captain/admin just took;
+// this one fires because a kickoff is approaching whether or not anyone's
+// looking. Run periodically (see server.js), not computed on request,
+// since the whole point is a captain who ISN'T in the app right now still
+// gets pinged (in-league notification + email, same as any other
+// notify() call). Fires once per side per fixture — f.lineupReminders.A/B
+// is the same once-only guard league.potwNotified uses for the round-
+// complete notification — the first check that lands inside the window
+// sends it; if the server was down for the whole window, it still fires
+// (late) next time it comes back up rather than never firing.
+//
+// Timezone note: like every other date+time compare in this codebase
+// (see the "Tonight" comment in public/app.js), this assumes the server
+// and the league's real-world matches share a timezone — nothing here
+// stores a per-league offset to do otherwise.
+const LINEUP_REMINDER_WINDOW_MS = 36 * 60 * 60 * 1000;
+function checkLineupReminders() {
+  const now = Date.now();
+  store.getIndex().forEach((entry) => {
+    if (entry.hidden) return;
+    const league = store.getLeague(entry.id);
+    // Pairs leagues have no line-up step at all — a pair IS the entry, so
+    // there's nothing here for a "captain" to submit.
+    if (!league || league.format === "pairs" || leagueStatus(league) !== "active") return;
+    let changed = false;
+    logic.allFixturesOf(league).forEach((f) => {
+      if (f.finalized || !f.teamA || !f.teamB) return;
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      if (!sched.date) return; // nothing scheduled yet — no kickoff to count down to
+      const kickoffMs = new Date(sched.date + "T" + (sched.time || "00:00") + ":00").getTime();
+      if (Number.isNaN(kickoffMs) || kickoffMs - now > LINEUP_REMINDER_WINDOW_MS) return;
+      if (!f.lineupReminders) f.lineupReminders = {};
+      const teamA = league.teams.find((t) => t.id === f.teamA);
+      const teamB = league.teams.find((t) => t.id === f.teamB);
+      const when = sched.date + (sched.time ? " at " + sched.time : "");
+      const label = fixtureLabel(league, f);
+      [
+        { side: "A", sel: f.selectionA, teamId: f.teamA, oppName: teamB ? teamB.name : "your opponent" },
+        { side: "B", sel: f.selectionB, teamId: f.teamB, oppName: teamA ? teamA.name : "your opponent" },
+      ].forEach(({ side, sel, teamId, oppName }) => {
+        if (sel.submitted || f.lineupReminders[side]) return;
+        notify(league, teamId, "lineup_reminder", `Line-up due — submit your line-up for ${label} vs ${oppName} before kickoff (${when}).`, { round: f.round, fixtureId: f.id });
+        f.lineupReminders[side] = true;
+        changed = true;
+      });
+    });
+    if (changed) store.saveLeague(league.id, league);
+  });
+}
+
 function backfillRoundRecaps() {
   store.getIndex().forEach((entry) => {
     if (entry.hidden) return;
@@ -2906,6 +2957,48 @@ router.get("/players/dues", requirePlayerUser, (req, res) => {
   res.json(dues);
 });
 
+// Every not-yet-finalized fixture across every league this account
+// captains where THIS team's own line-up hasn't been submitted yet — the
+// same "surface it on the homepage" treatment /players/dues gets for
+// outstanding registration fees, just for line-ups instead. Fully
+// recomputed on every request, nothing persisted here — the persisted,
+// once-only side of this same concern is the in-league/email notification
+// checkLineupReminders sends as kickoff approaches.
+router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const out = [];
+  (user.captaincies || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    if (!league || league.format === "pairs") return;
+    const team = league.teams.find((t) => t.id === c.teamId);
+    if (!team) return;
+    logic.allFixturesOf(league).forEach((f) => {
+      if (f.finalized || !f.teamA || !f.teamB) return;
+      const side = f.teamA === c.teamId ? "A" : f.teamB === c.teamId ? "B" : null;
+      if (!side) return;
+      const sel = side === "A" ? f.selectionA : f.selectionB;
+      if (sel.submitted) return;
+      const oppTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamB : f.teamA));
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      out.push({
+        leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
+        fixtureId: f.id, label: fixtureLabel(league, f),
+        opponentName: oppTeam ? oppTeam.name : "TBD",
+        date: sched.date || "", time: sched.time || "",
+      });
+    });
+  });
+  // Soonest kickoff first; nothing scheduled yet sinks to the bottom
+  // rather than sorting arbitrarily.
+  out.sort((a, b) => {
+    if (a.date && b.date) return (a.date + a.time).localeCompare(b.date + b.time);
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return 0;
+  });
+  res.json(out);
+});
+
 // PayFast calls this directly — never a browser, no session, and the body
 // is application/x-www-form-urlencoded (not JSON), hence the dedicated
 // raw-body middleware just on this one route.
@@ -3867,4 +3960,5 @@ router.delete("/leagues/:leagueId/sponsors/:sponsorId", requireAdmin, (req, res)
 });
 
 router.backfillRoundRecaps = backfillRoundRecaps;
+router.checkLineupReminders = checkLineupReminders;
 module.exports = router;

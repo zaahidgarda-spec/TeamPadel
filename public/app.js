@@ -1240,6 +1240,30 @@ async function renderAccountDues() {
     };
   });
 }
+// Every not-yet-submitted line-up across every league this account
+// captains — same cross-league "surface it on the homepage" treatment as
+// "What you owe" gets for outstanding fees. Kickoff time (when there is
+// one) shows right alongside it so a captain can tell "due tonight" from
+// "not for weeks" at a glance, same as the in-league reminder this pairs
+// with (see checkLineupReminders server-side) but visible any time, not
+// just once a kickoff is within 36 hours.
+async function renderAccountLineupsDue() {
+  const due = await api("/players/lineups-due").catch(() => []);
+  el("account-lineups-section").style.display = due.length ? "block" : "none";
+  if (!due.length) return;
+  const list = el("account-lineups-list");
+  list.innerHTML = due.map((d) => {
+    const when = d.date ? (relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "") : "Not yet scheduled";
+    return `
+    <div class="notif-row" data-league="${d.leagueId}">
+      <div><strong>${escapeHtml(d.label)} vs ${escapeHtml(d.opponentName)}</strong><div class="note">${escapeHtml(d.teamName)} · ${escapeHtml(d.leagueName)} · ${escapeHtml(when)}</div></div>
+      <button class="primary account-lineup-go-btn" type="button">Go to Selection Room</button>
+    </div>`;
+  }).join("");
+  list.querySelectorAll(".account-lineup-go-btn").forEach((btn) => {
+    btn.onclick = () => openLeague(btn.closest(".notif-row").dataset.league);
+  });
+}
 async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
   renderAccountAvatar(cards);
@@ -1252,6 +1276,7 @@ async function renderAccountProfile() {
   // every caller remember to refresh both.
   renderAccountTonightMatches();
   renderAccountDues();
+  renderAccountLineupsDue();
   const c = el("account-form-list");
   if (cards.length === 0) { c.innerHTML = '<p class="empty">Claim a player record below to see your matches, results, and awards here.</p>'; return; }
   // One combined view across every claimed record — Sandton and Killarney
@@ -3069,7 +3094,7 @@ function renderNotificationsList() {
     // one jumps straight to that round's Awards page instead of leaving the
     // captain to go find it themselves. A line-up unlock request/response is
     // the same idea, but jumps to Selection Room, where it's actionable.
-    const jumpTab = n.type === "potw" ? "awards" : n.type === "selection_unlock" ? "selection" : null;
+    const jumpTab = n.type === "potw" ? "awards" : (n.type === "selection_unlock" || n.type === "lineup_reminder") ? "selection" : null;
     const goToRound = jumpTab && Number.isInteger(n.round) ? getRoundsList().find((k) => k.stage === "regular" && k.round === n.round) : null;
     row.className = "notif-row" + (n.read ? "" : " unread") + (goToRound ? " notif-clickable" : "");
     row.innerHTML = `<span class="notif-msg">${escapeHtml(n.message)}</span><time class="notif-time">${new Date(n.createdAt).toLocaleString()}</time>`;
