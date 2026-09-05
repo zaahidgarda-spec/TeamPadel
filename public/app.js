@@ -44,6 +44,10 @@ let courtTapSelection = null;
 // right after a swap completes, then auto-reverts to the normal tip a
 // couple seconds later (see performCourtSwap / renderCourtScheduleGrid).
 let courtSwapNotice = null;
+// Holds the exact payload /court-schedule/optimum-preview returned while
+// the preview modal is open — Optimise resends this unchanged rather than
+// recomputing, so what the admin reviewed is exactly what gets saved.
+let optimumLayoutProposal = null;
 
 function el(id) { return document.getElementById(id); }
 function escapeHtml(str) { const d = document.createElement("div"); d.textContent = str == null ? "" : str; return d.innerHTML; }
@@ -5986,6 +5990,73 @@ el("generate-court-rotation-btn").onclick = async () => {
   if (!confirm("This fills in the court schedule for every round that hasn't been played yet, replacing anything already set for those rounds. Continue?")) return;
   try {
     await api(`/leagues/${currentLeagueId}/court-schedule/generate`, { method: "POST" });
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+};
+// Read-only preview for "Generate optimum layout" — same visual language
+// as the live court schedule grid (color-coded by fixture, same cell
+// markup) but with no drag/tap/dropdown wiring, plus a per-court predicted
+// -load bar so the balancing this produces is actually visible rather
+// than just asserted. Nothing is saved yet — Cancel discards it, Optimise
+// resends this exact payload to /court-schedule/optimum-apply.
+function renderOptimumLayoutPreview(rounds) {
+  const roundNums = Object.keys(rounds).map(Number).sort((a, b) => a - b);
+  el("optimum-layout-modal-note").textContent = roundNums.length
+    ? "Which slot each match's extra rubber lands in is unchanged from Auto-fill's own season-fair rotation — only which court each match plays on has moved, to keep a round's closest (most likely to run long) matches spread across different courts instead of stacked on one."
+    : "Nothing to preview — every round is already finalized.";
+  const body = el("optimum-layout-modal-body");
+  if (roundNums.length === 0) { body.innerHTML = ""; return; }
+  const courts = league.courtCount || 4;
+  const courtNames = league.courtNames || [];
+  body.innerHTML = roundNums.map((round) => {
+    const fixtures = league.fixtures.filter((f) => f.round === round);
+    const options = courtScheduleOptions(fixtures);
+    const { grid, courtLoad } = rounds[round];
+    const maxLoad = Math.max(1, ...(courtLoad || []));
+    const legend = fixtures.map((f) => {
+      const color = fixtureColor(f.id, fixtures);
+      const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+      return `<div class="cs-legend-item"><span class="cs-swatch" style="background:${color.border}"></span>${escapeHtml(teamA ? teamA.name : "TBD")} vs ${escapeHtml(teamB ? teamB.name : "TBD")}</div>`;
+    }).join("");
+    const rows = grid.map((row, s) => {
+      const cells = row.map((cell) => {
+        if (!cell) return `<td>—</td>`;
+        const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
+        const color = fixtureColor(cell.fixtureId, fixtures);
+        return `<td style="border-radius:8px;background:${color.bg};"><div class="cs-cell-content"><div class="cs-cell-label">${escapeHtml(opt ? opt.shortLabel : "Seed " + (cell.seed + 1))}</div></div></td>`;
+      }).join("");
+      return `<tr><th>Match ${s + 1}</th>${cells}</tr>`;
+    }).join("");
+    const loadBars = (courtLoad || []).map((v, c) => {
+      const pct = Math.max(4, Math.round((v / maxLoad) * 100));
+      return `<div class="opt-load-col"><div class="opt-load-track"><div class="opt-load-fill" style="height:${pct}%;"></div></div><span class="opt-load-label">${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</span></div>`;
+    }).join("");
+    return `<div class="card" style="margin-bottom:16px;">
+      <h4 style="margin:0 0 10px;">${escapeHtml(roundLabel(round))}</h4>
+      <div class="cs-legend">${legend}</div>
+      <div class="court-schedule-scroll hscroll"><table class="court-schedule-table"><thead><tr><th></th>${Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="opt-load-row">${loadBars}</div>
+      <p class="note" style="margin-top:8px;">Predicted load per court this round — how likely that court's matches are to run long, balanced across courts (taller = more likely to run long).</p>
+    </div>`;
+  }).join("");
+}
+el("generate-optimum-layout-btn").onclick = async () => {
+  try {
+    const data = await api(`/leagues/${currentLeagueId}/court-schedule/optimum-preview`, { method: "POST" });
+    optimumLayoutProposal = data.rounds;
+    renderOptimumLayoutPreview(data.rounds);
+    el("optimum-layout-modal-backdrop").classList.add("open");
+  } catch (e) { alert(e.message); }
+};
+el("optimum-layout-modal-close").onclick = () => el("optimum-layout-modal-backdrop").classList.remove("open");
+el("optimum-layout-cancel-btn").onclick = () => el("optimum-layout-modal-backdrop").classList.remove("open");
+el("optimum-layout-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "optimum-layout-modal-backdrop") el("optimum-layout-modal-backdrop").classList.remove("open"); });
+el("optimum-layout-apply-btn").onclick = async () => {
+  if (!optimumLayoutProposal) { el("optimum-layout-modal-backdrop").classList.remove("open"); return; }
+  try {
+    await api(`/leagues/${currentLeagueId}/court-schedule/optimum-apply`, { method: "POST", body: { rounds: optimumLayoutProposal } });
+    optimumLayoutProposal = null;
+    el("optimum-layout-modal-backdrop").classList.remove("open");
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };

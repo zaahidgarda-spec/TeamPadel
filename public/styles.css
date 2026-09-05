@@ -339,6 +339,14 @@ table.court-schedule-table td.cs-swap-target{outline:2px dashed var(--accent);ou
 .floodlit.urgent .cs-empty-picker{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2);color:#C7D2E8;}
 .cs-balance{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);}
 .cs-balance-title{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--text-dim);margin:0 0 10px;font-weight:400;}
+/* Per-court predicted-load bars in the "Generate optimum layout" preview —
+   a quick visual read on whether the round's closest (likely-to-run-long)
+   matches actually ended up spread evenly across courts. */
+.opt-load-row{display:flex;gap:14px;align-items:flex-end;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);}
+.opt-load-col{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;min-width:0;}
+.opt-load-track{width:100%;max-width:36px;height:60px;background:var(--panel-2);border-radius:6px;display:flex;align-items:flex-end;overflow:hidden;}
+.opt-load-fill{width:100%;background:var(--accent);border-radius:6px 6px 0 0;}
+.opt-load-label{font-size:11px;color:var(--text-dim);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 /* Explicit, always-correct fallback for the court-schedule table specifically
    — its cells paint solid fixture-color backgrounds that mask the fade cue
    above, so on narrow screens (where it's actually wider than the viewport)

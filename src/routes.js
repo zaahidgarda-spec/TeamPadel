@@ -2482,6 +2482,37 @@ function permutations(arr) {
   return res;
 }
 
+// Given this round's fixtures and the running per-team-per-slot double
+// tally, picks which slot each fixture's "double" (its 4th rubber, sharing
+// a slot with one of the other three) lands in — brute-force over every
+// slot permutation, scoring for season-long fairness. Extracted out of
+// generateSeasonCourtRotation so the court-BALANCING preview below can
+// reuse the exact same rotation decision rather than drifting out of sync
+// with it — only which COURT a seed lands in should differ between the
+// two, never which slot gets the double. Returns fixtureId -> slot (or
+// null for a fixture that didn't fit the round's slot permutation at all,
+// e.g. more matches this round than slots).
+function pickDoubleSlots(fixtures, slots, teamTally) {
+  const doublePerms = permutations(Array.from({ length: slots }, (_, i) => i));
+  let best = null;
+  doublePerms.forEach((perm) => {
+    let maxAfter = 0, sumSq = 0;
+    fixtures.forEach((f, i) => {
+      if (i >= perm.length) return;
+      const slot = perm[i];
+      [f.teamA, f.teamB].forEach((teamId) => {
+        const projected = teamTally(teamId)[slot] + 1;
+        sumSq += projected * projected;
+        maxAfter = Math.max(maxAfter, projected);
+      });
+    });
+    if (!best || maxAfter < best.maxAfter || (maxAfter === best.maxAfter && sumSq < best.sumSq)) best = { perm, maxAfter, sumSq };
+  });
+  const result = new Map();
+  fixtures.forEach((f, i) => result.set(f.id, i < best.perm.length ? best.perm[i] : null));
+  return result;
+}
+
 // Auto-fills the court/slot grid for every regular-season round that hasn't
 // finished yet. When there are at least 4 slots, every match gets its own
 // dedicated court across sequential turns — all 4 seeds fit as separate
@@ -2499,7 +2530,7 @@ function generateSeasonCourtRotation(league) {
   const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
   const tally = {};
   const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
-  const doublePerms = slots < 4 ? permutations(Array.from({ length: slots }, (_, i) => i)) : null;
+  const needsDoubles = slots < 4;
 
   if (!league.courtSchedule) league.courtSchedule = {};
 
@@ -2518,30 +2549,17 @@ function generateSeasonCourtRotation(league) {
     const courtPtr = Array(slots).fill(0);
     const place = (slot, fixtureId, seed) => { if (courtPtr[slot] < courts) grid[slot][courtPtr[slot]++] = { fixtureId, seed }; };
 
-    if (!doublePerms) {
+    if (!needsDoubles) {
       fixtures.forEach((f, i) => {
         const court = i % courts;
         for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][court] = { fixtureId: f.id, seed };
         teamTally(f.teamA); teamTally(f.teamB);
       });
     } else {
-      let best = null;
-      doublePerms.forEach((perm) => {
-        let maxAfter = 0, sumSq = 0;
-        fixtures.forEach((f, i) => {
-          if (i >= perm.length) return;
-          const slot = perm[i];
-          [f.teamA, f.teamB].forEach((teamId) => {
-            const projected = teamTally(teamId)[slot] + 1;
-            sumSq += projected * projected;
-            maxAfter = Math.max(maxAfter, projected);
-          });
-        });
-        if (!best || maxAfter < best.maxAfter || (maxAfter === best.maxAfter && sumSq < best.sumSq)) best = { perm, maxAfter, sumSq };
-      });
-      fixtures.forEach((f, i) => {
-        const doubleSlot = i < best.perm.length ? best.perm[i] : null;
-        if (doubleSlot === null) {
+      const doubleSlotOf = pickDoubleSlots(fixtures, slots, teamTally);
+      fixtures.forEach((f) => {
+        const doubleSlot = doubleSlotOf.get(f.id);
+        if (doubleSlot === null || doubleSlot === undefined) {
           // More matches this round than slots to double into — spread its
           // seeds across whatever courts are free, best effort only.
           for (let seed = 0; seed < 4; seed++) {
@@ -2560,6 +2578,112 @@ function generateSeasonCourtRotation(league) {
 
     league.courtSchedule[round] = grid;
   });
+}
+
+// "Generate optimum layout" — same season-fairness rotation as Auto-fill
+// above (which slot gets each fixture's double is decided by the exact
+// same pickDoubleSlots search, so that part of the schedule doesn't fork
+// into a second, competing notion of "fair"), but chooses which COURT
+// each seed lands in to balance predicted match length across courts
+// instead of Auto-fill's plain round-robin/first-free-court placement.
+// Without this, one court can end up carrying every close, likely-to-run-
+// long match a round while another finishes its blowouts early — the
+// classic "everyone's waiting on Court 2" complaint. Read-only: returns
+// the proposed grids (plus each court's resulting predicted load, for the
+// preview UI) without saving anything — the admin reviews it in a preview
+// modal, then either cancels or resubmits this exact payload to
+// court-schedule/optimum-apply below to commit it.
+function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  const byRound = {};
+  league.fixtures.forEach((f) => { (byRound[f.round] || (byRound[f.round] = [])).push(f); });
+  const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  const tally = {};
+  const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
+  const needsDoubles = slots < 4;
+
+  // How likely a rubber is to run long: 100 for a dead coin-flip prediction,
+  // down to 0 for a lopsided mismatch. A pair not yet revealed (or with no
+  // rated history at all) gets a neutral mid-value rather than skewing the
+  // balance toward or away from it for no real reason.
+  const closenessOf = (f, seed) => {
+    const pairA = f.selectionA.submitted && f.selectionA.pairs[seed];
+    const pairB = f.selectionB.submitted && f.selectionB.pairs[seed];
+    if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return 50;
+    const { winPctA, winPctB } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+    return 100 - Math.abs(winPctA - winPctB);
+  };
+
+  const rounds = {};
+  roundNums.forEach((round) => {
+    const fixtures = byRound[round];
+    if (fixtures.every((f) => f.finalized)) {
+      getCourtGrid(league, round).forEach((row, s) => row.forEach((cell) => {
+        if (!cell) return;
+        const f = fixtures.find((x) => x.id === cell.fixtureId);
+        if (f) { teamTally(f.teamA)[s]++; teamTally(f.teamB)[s]++; }
+      }));
+      return;
+    }
+
+    const grid = emptyCourtGrid(slots, courts);
+    const courtLoad = Array(courts).fill(0);
+
+    if (!needsDoubles) {
+      // Enough slots that every match gets its own dedicated court for the
+      // whole night, so it's the FIXTURE (not the seed) that needs
+      // balancing here — all of a lopsided match's rubbers sit on the same
+      // court all evening either way. Greedy longest-first: the match most
+      // likely to run long claims the lightest court so far, in order.
+      const order = fixtures.map((f) => {
+        let total = 0;
+        for (let seed = 0; seed < 4 && seed < slots; seed++) total += closenessOf(f, seed);
+        return { f, total };
+      }).sort((a, b) => b.total - a.total);
+      order.forEach(({ f, total }) => {
+        let bestCourt = 0;
+        for (let c = 1; c < courts; c++) if (courtLoad[c] < courtLoad[bestCourt]) bestCourt = c;
+        for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][bestCourt] = { fixtureId: f.id, seed };
+        courtLoad[bestCourt] += total;
+        teamTally(f.teamA); teamTally(f.teamB);
+      });
+    } else {
+      const doubleSlotOf = pickDoubleSlots(fixtures, slots, teamTally);
+      const placements = [];
+      fixtures.forEach((f) => {
+        const doubleSlot = doubleSlotOf.get(f.id);
+        if (doubleSlot === null || doubleSlot === undefined) {
+          for (let seed = 0; seed < 4; seed++) placements.push({ fixtureId: f.id, seed, slot: seed % slots, closeness: closenessOf(f, seed) });
+          return;
+        }
+        // Same shape Auto-fill uses: seeds 0/1 double up in the chosen
+        // slot, seeds 2/3 each get one of the remaining slots — unchanged,
+        // only the court within each slot is free to move below.
+        [0, 1].forEach((seed) => placements.push({ fixtureId: f.id, seed, slot: doubleSlot, closeness: closenessOf(f, seed) }));
+        const others = Array.from({ length: slots }, (_, s) => s).filter((s) => s !== doubleSlot);
+        [2, 3].forEach((seed, idx) => { if (others.length) placements.push({ fixtureId: f.id, seed, slot: others[idx % others.length], closeness: closenessOf(f, seed) }); });
+        teamTally(f.teamA)[doubleSlot]++; teamTally(f.teamB)[doubleSlot]++;
+      });
+      // Greedy longest-first load balancing (LPT) across the WHOLE round at
+      // once, not slot by slot — the closest matches claim courts first,
+      // each going to whichever court is both free in that seed's already-
+      // decided slot and has taken the least total load so far.
+      placements.sort((a, b) => b.closeness - a.closeness).forEach((p) => {
+        let bestCourt = -1, bestLoad = Infinity;
+        for (let c = 0; c < courts; c++) {
+          if (grid[p.slot][c]) continue;
+          if (courtLoad[c] < bestLoad) { bestLoad = courtLoad[c]; bestCourt = c; }
+        }
+        if (bestCourt === -1) return; // more seeds than courts this slot — leftover, same overflow case Auto-fill has
+        grid[p.slot][bestCourt] = { fixtureId: p.fixtureId, seed: p.seed };
+        courtLoad[bestCourt] += p.closeness;
+      });
+    }
+
+    rounds[round] = { grid, courtLoad };
+  });
+
+  return rounds;
 }
 
 router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
@@ -2891,6 +3015,54 @@ router.post("/leagues/:leagueId/court-schedule/generate", requireAdmin, (req, re
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   generateSeasonCourtRotation(league);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// "Generate optimum layout" — step 1: compute and hand back a proposed
+// court schedule for every unfinished round, without saving anything. The
+// admin reviews this in a preview modal before deciding whether to commit
+// it (below) or cancel and leave the current schedule untouched.
+router.post("/leagues/:leagueId/court-schedule/optimum-preview", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  res.json({ rounds: computeOptimumCourtSchedule(league, ratingsData, identityOf) });
+});
+
+// "Generate optimum layout" — step 2: commits exactly the payload the
+// preview above returned (nothing is recomputed here, so what the admin
+// saw is exactly what gets saved). Any round that's since been finalized,
+// or a cell that no longer matches a real fixture in that round, is
+// silently dropped rather than trusted — a preview can go stale if a
+// score got entered while the modal was open.
+router.post("/leagues/:leagueId/court-schedule/optimum-apply", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const rounds = req.body.rounds;
+  if (!rounds || typeof rounds !== "object") return res.status(400).json({ error: "Missing layout." });
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  if (!league.courtSchedule) league.courtSchedule = {};
+  Object.keys(rounds).forEach((roundKey) => {
+    const round = Number(roundKey);
+    if (!Number.isFinite(round)) return;
+    const roundFixtures = league.fixtures.filter((f) => f.round === round);
+    if (roundFixtures.length === 0 || roundFixtures.every((f) => f.finalized)) return;
+    const fixturesById = {};
+    roundFixtures.forEach((f) => { fixturesById[f.id] = f; });
+    const incoming = rounds[roundKey] && rounds[roundKey].grid;
+    if (!Array.isArray(incoming)) return;
+    const grid = emptyCourtGrid(slots, courts);
+    for (let s = 0; s < slots && s < incoming.length; s++) {
+      const row = incoming[s] || [];
+      for (let c = 0; c < courts && c < row.length; c++) {
+        const cell = row[c];
+        if (!cell || !fixturesById[cell.fixtureId]) continue;
+        grid[s][c] = { fixtureId: cell.fixtureId, seed: Number(cell.seed) };
+      }
+    }
+    league.courtSchedule[round] = grid;
+  });
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
