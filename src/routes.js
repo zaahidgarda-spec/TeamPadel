@@ -218,6 +218,11 @@ function checkLineupReminders() {
     let changed = false;
     logic.allFixturesOf(league).forEach((f) => {
       if (f.finalized || !f.teamA || !f.teamB) return;
+      // A future round's fixtures exist from the season's first day, but
+      // nobody can submit a line-up for one that hasn't opened yet (still
+      // waiting on the previous round, or its date-based lead time) — skip
+      // it here too, same reasoning as /players/lineups-due below.
+      if (!isRoundOpen(league, f)) return;
       const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
       if (!sched.date) return; // nothing scheduled yet — no kickoff to count down to
       const kickoffMs = new Date(sched.date + "T" + (sched.time || "00:00") + ":00").getTime();
@@ -2978,6 +2983,12 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
     if (!team) return;
     logic.allFixturesOf(league).forEach((f) => {
       if (f.finalized || !f.teamA || !f.teamB) return;
+      // Every round's fixtures exist from the season's first day, but a
+      // captain can't submit a line-up for a round that hasn't opened yet
+      // (still waiting on the previous round, or its date-based lead time)
+      // — without this, every future round's still-empty selection shows
+      // up as "due" from week one, not just the one actually open right now.
+      if (!isRoundOpen(league, f)) return;
       const side = f.teamA === c.teamId ? "A" : f.teamB === c.teamId ? "B" : null;
       if (!side) return;
       const sel = side === "A" ? f.selectionA : f.selectionB;
