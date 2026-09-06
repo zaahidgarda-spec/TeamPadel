@@ -2,7 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
-const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
+const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail } = require("./mailer");
 const payfast = require("./payfast");
 
@@ -122,7 +122,7 @@ function notify(league, teamId, type, message, extra) {
 // a boolean.
 function auditActor(req, league) {
   if (isOwnerSession(req)) return "Owner";
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   if (u && u.leagueId === league.id) {
     if (u.role === "admin") return "League admin";
     if (u.role === "captain") {
@@ -300,9 +300,9 @@ function genTeamCode(league) {
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
 function sanitize(league, req) {
-  const user = req.session.user;
+  const user = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
-  const teamId = user && user.leagueId === league.id ? user.teamId : null;
+  const teamId = user ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
     const { code, notifyEmail, ...rest } = t;
@@ -1551,8 +1551,8 @@ router.delete("/leagues/:leagueId", requireAdmin, (req, res) => {
 
 router.get("/leagues/:leagueId/me", (req, res) => {
   if (isOwnerSession(req)) return res.json({ role: "admin", teamId: null });
-  const u = req.session.user;
-  if (!u || u.leagueId !== req.params.leagueId) return res.json({ role: "guest" });
+  const u = resolveLeagueSession(req, req.params.leagueId);
+  if (!u) return res.json({ role: "guest" });
   res.json({ role: u.role, teamId: u.teamId || null });
 });
 
@@ -1594,9 +1594,13 @@ router.post("/leagues/:leagueId/login", loginLimiter, async (req, res) => {
 // about the person, not just whichever device most recently entered the
 // code. Without this, the same person's phone and laptop could disagree
 // about which team they captain, which looked exactly like a data bug.
-// Deliberately display-only: it does NOT grant write access by itself —
-// managing a team from a new device still requires that team's code there,
-// same as always, so this doesn't change who can actually edit lineups/scores.
+// This now DOES grant real access on its own, not just display — see
+// resolveLeagueSession (src/auth.js): a signed-in player account already
+// recognized here as a team's captain can act as that team on any device
+// without re-entering the code there too. That's read fresh from this
+// same array on every single request rather than cached anywhere, so
+// removing an entry here (see the captaincy-removal flow) revokes real
+// access immediately, not just the on-screen badge.
 function persistCaptaincy(req, leagueId, teamId) {
   if (!req.session.playerUser) return;
   const user = store.getUser(req.session.playerUser.id);
@@ -1768,7 +1772,7 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res
   if (!player) return res.status(404).json({ error: "Player not found." });
 
   const isAdmin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
   let isOwnProfile = false;
   if (req.session.playerUser) {
@@ -1937,7 +1941,7 @@ router.delete("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, re
 // captain only as their own team. Null means "not part of this fixture."
 function fixtureSide(league, f, req, bodySide) {
   const ownerHere = isOwnerSession(req);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   if (ownerHere || (u && u.leagueId === league.id && u.role === "admin")) {
     return bodySide === "A" || bodySide === "B" ? bodySide : null;
   }
@@ -3061,7 +3065,7 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   // only ones that are already theirs — enforced below, not just hidden
   // client-side, since this is the same endpoint either role calls.
   const isAdmin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const isCaptain = !isAdmin && !!u && u.leagueId === league.id && u.role === "captain";
   if (!isAdmin && !isCaptain) return res.status(403).json({ error: "Not allowed." });
 
@@ -3214,7 +3218,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
 
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const ownerHere = isOwnerSession(req);
   if (!ownerHere && (!u || u.leagueId !== league.id)) return res.status(401).json({ error: "Not logged in." });
   const side = ownerHere || u.role === "admin" ? req.body.side : u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
@@ -3283,7 +3287,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/propose", (
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only a team captain can request this." });
   const side = u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
   if (!side) return res.status(403).json({ error: "You're not in this match." });
@@ -3305,7 +3309,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/confirm", (
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   if (!f.selectionUnlockRequest) return res.status(400).json({ error: "There's no request to approve." });
   const admin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
   if (!admin && (!side || side === f.selectionUnlockRequest.by)) return res.status(403).json({ error: "Only the other captain can approve this." });
 
@@ -3326,7 +3330,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/unlock/decline", (
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   if (!f.selectionUnlockRequest) return res.status(400).json({ error: "There's no request to decline." });
   const admin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
   if (!admin && (!side || side === f.selectionUnlockRequest.by)) return res.status(403).json({ error: "Only the other captain can decline this." });
 
@@ -3350,7 +3354,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection/substitute", (req,
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   if (!f.teamA || !f.teamB) return res.status(400).json({ error: "Teams for this fixture aren't decided yet." });
 
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const ownerHere = isOwnerSession(req);
   if (!ownerHere && (!u || u.leagueId !== league.id)) return res.status(401).json({ error: "Not logged in." });
   const side = ownerHere || u.role === "admin" ? req.body.side : u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
@@ -3427,7 +3431,7 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
   const idx = Number(req.params.idx);
   if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
 
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
@@ -3449,7 +3453,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
@@ -3498,7 +3502,7 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   if (!league) return res.status(404).json({ error: "League not found." });
   const round = Number(req.params.round);
   if (!Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
   const isCaptain = !!(u && u.leagueId === league.id && u.role === "captain");
   if (!isAdmin && !isCaptain) return res.status(403).json({ error: "Only team captains or the admin can vote." });
@@ -3578,7 +3582,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/propose", (req, 
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(403).json({ error: "Only a team captain can propose this." });
   const side = u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null;
   if (!side) return res.status(403).json({ error: "You're not in this match." });
@@ -3601,7 +3605,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/confirm", (req, 
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   if (!f.courtOrderProposal) return res.status(400).json({ error: "There's no proposal to confirm." });
   const admin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
   if (!admin && (!side || side === f.courtOrderProposal.by)) return res.status(403).json({ error: "Only the other captain can confirm this." });
 
@@ -3627,7 +3631,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/unlock", (req, res) => {
   const f = findFixture(league, req.params.fixtureId);
   if (!f) return res.status(404).json({ error: "Fixture not found." });
   const isAdmin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   // A pairs match has no captain hierarchy to mediate a re-open through —
   // either pair that actually played it can unlock their own result. Team
   // leagues keep this admin-only, since a "night" involves several pairs.
@@ -3832,7 +3836,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     }
   }
   const isAdmin = isAdminSession(req, league.id);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
   let isOwnProfile = false;
   if (req.session.playerUser) {
@@ -3913,7 +3917,7 @@ router.get("/leagues/:leagueId/players/:playerId/head-to-head", (req, res) => {
 router.get("/leagues/:leagueId/notifications", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const admin = isAdminSession(req, league.id);
   if (!admin && (!u || u.leagueId !== league.id)) return res.json([]);
   const all = league.notifications || [];
@@ -3922,7 +3926,7 @@ router.get("/leagues/:leagueId/notifications", (req, res) => {
 });
 router.post("/leagues/:leagueId/notifications/:notifId/read", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   const admin = isAdminSession(req, league.id);
   if (!admin && (!u || u.leagueId !== league.id)) return res.status(401).json({ error: "Not logged in." });
   const n = (league.notifications || []).find((x) => x.id === req.params.notifId);
@@ -3934,7 +3938,7 @@ router.post("/leagues/:leagueId/notifications/:notifId/read", (req, res) => {
 });
 router.post("/leagues/:leagueId/notifications/read-all", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  const u = req.session.user;
+  const u = resolveLeagueSession(req, league.id);
   if (!u || u.leagueId !== league.id || u.role !== "captain") return res.status(401).json({ error: "Not logged in." });
   (league.notifications || []).forEach((n) => { if (n.teamId === u.teamId) n.read = true; });
   store.saveLeague(league.id, league);

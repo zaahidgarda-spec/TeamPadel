@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const store = require("./store");
 
 async function hashPassword(pw) {
   return bcrypt.hash(pw, 10);
@@ -19,10 +20,30 @@ function isAdminSession(req, leagueId) {
   return !!(u && u.leagueId === leagueId && u.role === "admin");
 }
 
+// Captain identity for a given league — the real captain-code session if
+// there is one, or (when there isn't) a live check of a signed-in player
+// account's own captaincies. Deliberately recomputed fresh on every call,
+// never cached or written back to the session: a captaincy removed on My
+// Profile takes effect on that person's very next request this way, with
+// no separate revoke step needed anywhere. Every place that used to read
+// req.session.user directly to check "is this the team's captain" should
+// read through this instead, so a player account already recognized as a
+// team's captain can act on it without first separately re-entering that
+// team's code on this device too.
+function resolveLeagueSession(req, leagueId) {
+  const u = req.session.user;
+  if (u && u.leagueId === leagueId) return u;
+  if (req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    const cap = account && (account.captaincies || []).find((c) => c.leagueId === leagueId);
+    if (cap) return { leagueId, role: "captain", teamId: cap.teamId };
+  }
+  return null;
+}
 // A logged-in session is scoped to exactly one league at a time.
 function requireLeagueSession(req, res, next) {
   if (isOwnerSession(req)) return next();
-  if (!req.session.user || req.session.user.leagueId !== req.params.leagueId) {
+  if (!resolveLeagueSession(req, req.params.leagueId)) {
     return res.status(401).json({ error: "Not logged in to this league." });
   }
   next();
@@ -39,12 +60,12 @@ function requireAdmin(req, res, next) {
 function requireAdminOrCaptain(resolveTeamId) {
   return (req, res, next) => {
     if (isAdminSession(req, req.params.leagueId)) return next();
-    const u = req.session.user;
-    if (!u || u.leagueId !== req.params.leagueId) return res.status(401).json({ error: "Not logged in." });
+    const u = resolveLeagueSession(req, req.params.leagueId);
+    if (!u) return res.status(401).json({ error: "Not logged in." });
     const teamId = resolveTeamId ? resolveTeamId(req) : req.params.teamId;
     if (u.role === "captain" && u.teamId === teamId) return next();
     return res.status(403).json({ error: "Not allowed for your account." });
   };
 }
 
-module.exports = { hashPassword, verifyPassword, requireLeagueSession, requireAdmin, requireAdminOrCaptain, isAdminSession, isOwnerSession };
+module.exports = { hashPassword, verifyPassword, requireLeagueSession, requireAdmin, requireAdminOrCaptain, resolveLeagueSession, isAdminSession, isOwnerSession };
