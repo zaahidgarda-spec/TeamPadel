@@ -6024,11 +6024,8 @@ el("generate-court-rotation-btn").onclick = async () => {
 // -load bar so the balancing this produces is actually visible rather
 // than just asserted. Nothing is saved yet — Cancel discards it, Optimise
 // resends this exact payload to /court-schedule/optimum-apply.
-function renderOptimumLayoutPreview(rounds) {
+function renderCourtBalanceGrids(rounds) {
   const roundNums = Object.keys(rounds).map(Number).sort((a, b) => a - b);
-  el("optimum-layout-modal-note").textContent = roundNums.length
-    ? "Which slot each match's extra rubber lands in is unchanged from Auto-fill's own season-fair rotation — only which court each match plays on has moved, to keep a round's closest (most likely to run long) matches spread across different courts instead of stacked on one."
-    : "Nothing to preview — every round is already finalized.";
   const body = el("optimum-layout-modal-body");
   if (roundNums.length === 0) { body.innerHTML = ""; return; }
   const courts = league.courtCount || 4;
@@ -6069,7 +6066,34 @@ el("generate-optimum-layout-btn").onclick = async () => {
   try {
     const data = await api(`/leagues/${currentLeagueId}/court-schedule/optimum-preview`, { method: "POST" });
     optimumLayoutProposal = data.rounds;
-    renderOptimumLayoutPreview(data.rounds);
+    const has = Object.keys(data.rounds).length > 0;
+    el("optimum-layout-modal-title").textContent = "Optimum court layout";
+    el("optimum-layout-modal-note").textContent = has
+      ? "Which slot each match's extra rubber lands in is unchanged from Auto-fill's own season-fair rotation — only which court each match plays on has moved, to keep a round's closest (most likely to run long) matches spread across different courts instead of stacked on one."
+      : "Nothing to preview — every round is already finalized.";
+    el("optimum-layout-apply-btn").style.display = has ? "" : "none";
+    el("optimum-layout-cancel-btn").textContent = "Cancel";
+    renderCourtBalanceGrids(data.rounds);
+    el("optimum-layout-modal-backdrop").classList.add("open");
+  } catch (e) { alert(e.message); }
+};
+// Read-only companion to the above — same grids and load bars, but for
+// whatever's ALREADY saved, so an admin can see how balanced the current
+// schedule is before deciding whether regenerating it is worth doing.
+// Nothing to apply here, so the Optimise button hides and Cancel just
+// reads "Close" instead.
+el("show-current-balance-btn").onclick = async () => {
+  try {
+    const data = await api(`/leagues/${currentLeagueId}/court-schedule/current-balance`);
+    optimumLayoutProposal = null;
+    const has = Object.keys(data.rounds).length > 0;
+    el("optimum-layout-modal-title").textContent = "Current court balance";
+    el("optimum-layout-modal-note").textContent = has
+      ? "How balanced today's actual court schedule already is — the same predicted-load numbers Generate optimum layout uses, read from what's currently saved rather than a new proposal."
+      : "Nothing to show — every round is already finalized, or nothing's been scheduled yet.";
+    el("optimum-layout-apply-btn").style.display = "none";
+    el("optimum-layout-cancel-btn").textContent = "Close";
+    renderCourtBalanceGrids(data.rounds);
     el("optimum-layout-modal-backdrop").classList.add("open");
   } catch (e) { alert(e.message); }
 };

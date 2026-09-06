@@ -2653,6 +2653,20 @@ function generateSeasonCourtRotation(league) {
 // preview UI) without saving anything — the admin reviews it in a preview
 // modal, then either cancels or resubmits this exact payload to
 // court-schedule/optimum-apply below to commit it.
+// How likely a rubber is to run long: 100 for a dead coin-flip prediction,
+// down to 0 for a lopsided mismatch. A pair not yet revealed (or with no
+// rated history at all) gets a neutral mid-value rather than skewing a
+// balance computation toward or away from it for no real reason. Shared
+// by computeOptimumCourtSchedule (a hypothetical new layout) and
+// computeCurrentCourtLoad (whatever's already saved) so the two always
+// agree on what "close" means.
+function matchCloseness(league, f, seed, ratingsData, identityOf) {
+  const pairA = f.selectionA.submitted && f.selectionA.pairs[seed];
+  const pairB = f.selectionB.submitted && f.selectionB.pairs[seed];
+  if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return 50;
+  const { winPctA, winPctB } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+  return 100 - Math.abs(winPctA - winPctB);
+}
 function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   const byRound = {};
@@ -2661,18 +2675,7 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const tally = {};
   const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
   const needsDoubles = slots < 4;
-
-  // How likely a rubber is to run long: 100 for a dead coin-flip prediction,
-  // down to 0 for a lopsided mismatch. A pair not yet revealed (or with no
-  // rated history at all) gets a neutral mid-value rather than skewing the
-  // balance toward or away from it for no real reason.
-  const closenessOf = (f, seed) => {
-    const pairA = f.selectionA.submitted && f.selectionA.pairs[seed];
-    const pairB = f.selectionB.submitted && f.selectionB.pairs[seed];
-    if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return 50;
-    const { winPctA, winPctB } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
-    return 100 - Math.abs(winPctA - winPctB);
-  };
+  const closenessOf = (f, seed) => matchCloseness(league, f, seed, ratingsData, identityOf);
 
   const rounds = {};
   roundNums.forEach((round) => {
@@ -2740,6 +2743,35 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
       });
     }
 
+    rounds[round] = { grid, courtLoad };
+  });
+
+  return rounds;
+}
+
+// "Show current balance" — same predicted-load math as the optimum
+// preview above, but read from whatever's ALREADY saved in
+// league.courtSchedule instead of proposing anything new. Lets an admin
+// see how balanced today's actual schedule already is before deciding
+// whether regenerating it is even worth doing.
+function computeCurrentCourtLoad(league, ratingsData, identityOf) {
+  const courts = league.courtCount || 4;
+  const byRound = {};
+  league.fixtures.forEach((f) => { (byRound[f.round] || (byRound[f.round] = [])).push(f); });
+  const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+
+  const rounds = {};
+  roundNums.forEach((round) => {
+    const fixtures = byRound[round];
+    if (fixtures.every((f) => f.finalized)) return;
+    const grid = getCourtGrid(league, round);
+    const courtLoad = Array(courts).fill(0);
+    grid.forEach((row) => row.forEach((cell, c) => {
+      if (!cell) return;
+      const f = fixtures.find((x) => x.id === cell.fixtureId);
+      if (!f) return;
+      courtLoad[c] += matchCloseness(league, f, cell.seed, ratingsData, identityOf);
+    }));
     rounds[round] = { grid, courtLoad };
   });
 
@@ -3136,6 +3168,17 @@ router.post("/leagues/:leagueId/court-schedule/optimum-preview", requireAdmin, (
   if (!league) return res.status(404).json({ error: "League not found." });
   const { ratingsData, identityOf } = loadGlobalRatings();
   res.json({ rounds: computeOptimumCourtSchedule(league, ratingsData, identityOf) });
+});
+
+// Read-only: how balanced the CURRENT court schedule already is, same
+// per-court predicted-load numbers as the optimum preview but computed
+// from what's actually saved rather than a hypothetical new layout —
+// see computeCurrentCourtLoad.
+router.get("/leagues/:leagueId/court-schedule/current-balance", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  res.json({ rounds: computeCurrentCourtLoad(league, ratingsData, identityOf) });
 });
 
 // "Generate optimum layout" — step 2: commits exactly the payload the
