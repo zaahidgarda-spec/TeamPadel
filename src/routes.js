@@ -751,13 +751,35 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
         const winner = rubber ? logic.rubberWinner(rubber) : null;
         const refA = (id) => { const p = teamA.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; };
         const refB = (id) => { const p = teamB.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; };
+        // A decided seed still gets a prediction — not the current one
+        // (which already has this very match baked into it), but what the
+        // model would genuinely have said beforehand: each player's rating
+        // going INTO this match is already on record (deltas.ratingBefore,
+        // same field the admin ratings-preview recap reads), so this costs
+        // nothing new to compute. Lets the tab show "predicted 63%" next to
+        // the actual result instead of the prediction just vanishing once
+        // a seed is played.
+        let prediction;
+        if (winner) {
+          const parts = [pairA[0], pairA[1], pairB[0], pairB[1]].map((id) => ratingsData.deltas.get(`${f.id}:${i}:${id}`));
+          if (parts.every(Boolean)) {
+            const ratingA = (parts[0].ratingBefore + parts[1].ratingBefore) / 2;
+            const ratingB = (parts[2].ratingBefore + parts[3].ratingBefore) / 2;
+            const winPctA = Math.round(logic.expectedScore(ratingA, ratingB) * 100);
+            prediction = { winPctA, winPctB: 100 - winPctA, provisional: false };
+          } else {
+            prediction = null;
+          }
+        } else {
+          prediction = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+        }
         seeds.push({
           seed: i + 1,
           pairA: pairA.map(refA).filter(Boolean),
           pairB: pairB.map(refB).filter(Boolean),
           winner,
           score: winner ? logic.rubberScoreText(rubber) : null,
-          prediction: winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf),
+          prediction,
         });
       });
     }

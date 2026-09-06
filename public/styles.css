@@ -551,6 +551,9 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    green success color so it never reads as an already-decided win. */
 .mc-pair.favorite{color:var(--accent);}
 .predictions-favorite-tag{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:2px 7px;border-radius:5px;}
+.predictions-result-note{font-size:12px;font-weight:600;margin:6px 0 0;text-align:center;}
+.predictions-result-note.hit{color:var(--success);}
+.predictions-result-note.upset{color:var(--clay);}
 .mc-pair-row{display:flex;align-items:center;justify-content:center;gap:8px;}
 .mc-team-logo{width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--panel-2);border:1px solid var(--line);}
 .floodlit.urgent .mc-team-logo{border-color:rgba(255,255,255,.3);}

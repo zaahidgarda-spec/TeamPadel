@@ -4906,12 +4906,30 @@ function predictionsFixtureCard(f) {
     html += f.seeds.map((s) => {
       const seedLabel = f.seeds.length > 1 ? `<div class="mc-league">Seed ${s.seed}</div>` : "";
       const centerHtml = s.winner ? `<span class="vs mc-score">${escapeHtml(s.score || "")}</span>` : `<span class="vs">vs</span>`;
-      const predHtml = s.winner ? "" : (s.prediction ? predictionBarHtml(s.prediction, true) : '<p class="note" style="margin-top:8px;">No prediction yet — not enough rated matches.</p>');
       // Only flag a favorite when it's a real edge, not a coin-flip — a
-      // 51/49 tag would be noise, not a highlight.
-      const favSide = (!s.winner && s.prediction && Math.max(s.prediction.winPctA, s.prediction.winPctB) >= 60)
+      // 51/49 tag would be noise, not a highlight. Once a seed's decided,
+      // the server still hands back what the model would genuinely have
+      // predicted beforehand (see the predictions route), so this applies
+      // just as well to an already-played seed as an upcoming one.
+      const favSide = (s.prediction && Math.max(s.prediction.winPctA, s.prediction.winPctB) >= 60)
         ? (s.prediction.winPctA >= s.prediction.winPctB ? "A" : "B") : null;
       const favTag = '<span class="predictions-favorite-tag">Favorite</span>';
+      // Once played, the prediction bar stays (so "predicted vs actual" is
+      // visible at a glance) instead of vanishing the moment a score comes
+      // in — with a hit/upset note underneath when there was a real
+      // favorite to begin with (a near-50/50 seed has nothing to call
+      // an upset on).
+      let predHtml;
+      if (s.winner) {
+        const resultNote = favSide
+          ? (favSide === s.winner
+              ? '<p class="predictions-result-note hit">✓ Favourite won</p>'
+              : '<p class="predictions-result-note upset">✗ Upset — the underdog won</p>')
+          : "";
+        predHtml = (s.prediction ? predictionBarHtml(s.prediction, true) : "") + resultNote;
+      } else {
+        predHtml = s.prediction ? predictionBarHtml(s.prediction, true) : '<p class="note" style="margin-top:8px;">No prediction yet — not enough rated matches.</p>';
+      }
       return `<div class="predictions-seed">
         ${seedLabel}
         <div class="mc-pairing">
