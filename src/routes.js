@@ -2706,7 +2706,7 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
       order.forEach(({ f, total }) => {
         let bestCourt = 0;
         for (let c = 1; c < courts; c++) if (courtLoad[c] < courtLoad[bestCourt]) bestCourt = c;
-        for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][bestCourt] = { fixtureId: f.id, seed };
+        for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][bestCourt] = { fixtureId: f.id, seed, closeness: closenessOf(f, seed) };
         courtLoad[bestCourt] += total;
         teamTally(f.teamA); teamTally(f.teamB);
       });
@@ -2738,7 +2738,7 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
           if (courtLoad[c] < bestLoad) { bestLoad = courtLoad[c]; bestCourt = c; }
         }
         if (bestCourt === -1) return; // more seeds than courts this slot — leftover, same overflow case Auto-fill has
-        grid[p.slot][bestCourt] = { fixtureId: p.fixtureId, seed: p.seed };
+        grid[p.slot][bestCourt] = { fixtureId: p.fixtureId, seed: p.seed, closeness: p.closeness };
         courtLoad[bestCourt] += p.closeness;
       });
     }
@@ -2764,13 +2764,19 @@ function computeCurrentCourtLoad(league, ratingsData, identityOf) {
   roundNums.forEach((round) => {
     const fixtures = byRound[round];
     if (fixtures.every((f) => f.finalized)) return;
-    const grid = getCourtGrid(league, round);
     const courtLoad = Array(courts).fill(0);
-    grid.forEach((row) => row.forEach((cell, c) => {
-      if (!cell) return;
+    // Builds fresh cell objects for the response rather than mutating the
+    // saved grid's own cells in place — getCourtGrid hands back the SAME
+    // cell references league.courtSchedule holds, and this response
+    // carries a closeness field the stored schedule has no business
+    // holding.
+    const grid = getCourtGrid(league, round).map((row, s) => row.map((cell, c) => {
+      if (!cell) return null;
       const f = fixtures.find((x) => x.id === cell.fixtureId);
-      if (!f) return;
-      courtLoad[c] += matchCloseness(league, f, cell.seed, ratingsData, identityOf);
+      if (!f) return null;
+      const closeness = matchCloseness(league, f, cell.seed, ratingsData, identityOf);
+      courtLoad[c] += closeness;
+      return { fixtureId: cell.fixtureId, seed: cell.seed, closeness };
     }));
     rounds[round] = { grid, courtLoad };
   });

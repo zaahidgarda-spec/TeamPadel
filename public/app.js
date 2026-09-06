@@ -6049,16 +6049,25 @@ function renderCourtBalanceGrids(rounds) {
       }).join("");
       return `<tr><th>Match ${s + 1}</th>${cells}</tr>`;
     }).join("");
+    // A court flagged red isn't just "the tallest bar this round" — every
+    // single match placed on it has to individually clear the closeness
+    // bar too (100 - abs(winPctA - winPctB) >= 80, the same "no clear
+    // favorite" cutoff the live Predictions tab already uses at the other
+    // end, max(winPctA,winPctB) < 60). One lopsided match on an otherwise-
+    // busy court is still a normal night, not a warning.
+    const CLOSE_THRESHOLD = 80;
     const loadBars = (courtLoad || []).map((v, c) => {
+      const cellsHere = grid.map((row) => row[c]).filter(Boolean);
+      const allClose = cellsHere.length > 0 && cellsHere.every((cell) => (cell.closeness || 0) >= CLOSE_THRESHOLD);
       const pct = Math.max(4, Math.round((v / maxLoad) * 100));
-      return `<div class="opt-load-col"><div class="opt-load-track"><div class="opt-load-fill" style="height:${pct}%;"></div></div><span class="opt-load-label">${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</span></div>`;
+      return `<div class="opt-load-col"><div class="opt-load-track"><div class="opt-load-fill${allClose ? " opt-load-fill-danger" : ""}" style="height:${pct}%;"></div></div><span class="opt-load-label">${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</span></div>`;
     }).join("");
     return `<div class="card" style="margin-bottom:16px;">
       <h4 style="margin:0 0 10px;">${escapeHtml(roundLabel(round))}</h4>
       <div class="cs-legend">${legend}</div>
       <div class="court-schedule-scroll hscroll"><table class="court-schedule-table"><thead><tr><th></th>${Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
       <div class="opt-load-row">${loadBars}</div>
-      <p class="note" style="margin-top:8px;">Predicted load per court this round — how likely that court's matches are to run long, balanced across courts (taller = more likely to run long).</p>
+      <p class="note" style="margin-top:8px;">Predicted load per court this round — how likely that court's matches are to run long, balanced across courts (taller = more likely to run long). Red means every match on that court is a close one — that court's likely to be the last one finishing.</p>
     </div>`;
   }).join("");
 }
