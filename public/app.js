@@ -6242,22 +6242,24 @@ function kitOpenPicker(target) {
   kitPendingUpload = target;
   el("kit-file-input").click();
 }
-function kitOpenBadgePicker(key) {
-  if (KIT_FIXED_BADGE_KEYS.includes(key)) return; // nothing to upload — position only
-  if (KIT_LEAGUE_BADGE_KEYS.includes(key)) {
-    if (myRole !== "admin") return; // read-only for a captain
-    kitOpenPicker({ field: key });
-    return;
-  }
-  kitOpenPicker(key === "logo" ? { field: "logo" } : { field: "sponsor", slot: key });
+// The upload target for a given badge key — null when there's nothing
+// this viewer is allowed to upload there (a fixed badge, or a league
+// badge a captain doesn't control). Shared by the click-to-pick flow and
+// drag-and-drop below so both land on exactly the same rules.
+function kitBadgeUploadTarget(key) {
+  if (KIT_FIXED_BADGE_KEYS.includes(key)) return null;
+  if (KIT_LEAGUE_BADGE_KEYS.includes(key)) return myRole === "admin" ? { field: key } : null;
+  return key === "logo" ? { field: "logo" } : { field: "sponsor", slot: key };
 }
-el("kit-file-input").onchange = () => {
-  const input = el("kit-file-input");
-  const file = input.files[0];
-  input.value = ""; // so picking the exact same file again still fires onchange
-  const target = kitPendingUpload;
-  kitPendingUpload = null;
-  if (!file || !target) return;
+function kitOpenBadgePicker(key) {
+  const target = kitBadgeUploadTarget(key);
+  if (target) kitOpenPicker(target);
+}
+// Shared by the file-input's onchange and a drag-and-drop onto the photo
+// or a badge — same resize-then-PUT flow regardless of how the file
+// arrived.
+function kitHandleUploadedFile(target, file) {
+  if (!file) return;
   const maxSize = target.field === "front" || target.field === "back" ? 900 : 240;
   resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
     if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
@@ -6280,11 +6282,37 @@ el("kit-file-input").onchange = () => {
       await refreshLeague(); renderKit();
     } catch (e) { alert(e.message); }
   });
+}
+el("kit-file-input").onchange = () => {
+  const input = el("kit-file-input");
+  const file = input.files[0];
+  input.value = ""; // so picking the exact same file again still fires onchange
+  const target = kitPendingUpload;
+  kitPendingUpload = null;
+  if (!file || !target) return;
+  kitHandleUploadedFile(target, file);
 };
 el("kit-empty-front").onclick = () => kitOpenPicker({ field: "front" });
 el("kit-replace-front").onclick = () => kitOpenPicker({ field: "front" });
 el("kit-empty-back").onclick = () => kitOpenPicker({ field: "back" });
 el("kit-replace-back").onclick = () => kitOpenPicker({ field: "back" });
+// Drag a file from the desktop straight onto a photo (replaces it) or
+// onto a specific badge (uploads/replaces just that one) — a laptop-only
+// convenience alongside the existing tap-to-pick flow, since there's no
+// "drag a file from Finder" gesture on a phone anyway.
+function attachKitPhotoDropZone(side) {
+  const frame = el("kit-frame-" + side);
+  frame.ondragover = (e) => { e.preventDefault(); frame.classList.add("drag-over"); };
+  frame.ondragleave = (e) => { if (e.target === frame) frame.classList.remove("drag-over"); };
+  frame.ondrop = (e) => {
+    e.preventDefault();
+    frame.classList.remove("drag-over");
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) kitHandleUploadedFile({ field: side }, file);
+  };
+}
+attachKitPhotoDropZone("front");
+attachKitPhotoDropZone("back");
 async function kitRemovePhoto(side) {
   const team = kitTeamInEdit();
   if (!team) return;
@@ -6330,8 +6358,26 @@ function attachKitBadgeDrag(key) {
   // wiring on it at all.
   if (isLeagueBadge && myRole !== "admin") {
     badge.onpointerdown = null; badge.onpointermove = null; badge.onpointerup = null; badge.onclick = null;
+    badge.ondragover = null; badge.ondragleave = null; badge.ondrop = null;
     return;
   }
+  const uploadTarget = kitBadgeUploadTarget(key);
+  // Blocked (a fixed badge like the Team Padel mark) rather than left
+  // unwired — otherwise the drop would bubble up to the photo underneath
+  // and silently replace the whole product photo instead of doing nothing.
+  badge.ondragover = (e) => {
+    if (!uploadTarget) { e.preventDefault(); e.stopPropagation(); return; }
+    e.preventDefault(); e.stopPropagation();
+    badge.classList.add("drag-over");
+  };
+  badge.ondragleave = () => badge.classList.remove("drag-over");
+  badge.ondrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    badge.classList.remove("drag-over");
+    if (!uploadTarget) return;
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) kitHandleUploadedFile(uploadTarget, file);
+  };
   badge.onpointerdown = (e) => {
     const kit = kitKitOf(kitTeamInEdit());
     if (!kitBadgeSrc(kit, key)) return;
