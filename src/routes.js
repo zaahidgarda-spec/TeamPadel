@@ -301,6 +301,27 @@ function genTeamCode(league) {
   return code;
 }
 
+// A freshly-defaulted kit — every field empty until a captain uploads
+// something. Positions are percent coordinates (0-100) relative to
+// whichever photo they sit on, pre-seeded to sensible starting spots
+// (upper-left chest, both sleeves, stacked lower on the back) so a badge
+// appears somewhere reasonable the moment its logo is uploaded, ready to
+// be dragged onto the exact spot for that specific photo.
+function defaultKit() {
+  return {
+    front: "", back: "", logo: "",
+    positions: {
+      logo: { x: 40, y: 22 },
+      sleeveLeft: { x: 10, y: 34 },
+      sleeveRight: { x: 90, y: 34 },
+      backSponsor1: { x: 50, y: 48 },
+      backSponsor2: { x: 50, y: 66 },
+    },
+    sponsors: { sleeveLeft: "", sleeveRight: "", backSponsor1: "", backSponsor2: "" },
+    orders: [], // [{ id, name, size }] — who wants a kit and what size
+  };
+}
+
 // Strip anything a given viewer shouldn't see: password hashes always,
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
@@ -310,13 +331,21 @@ function sanitize(league, req) {
   const teamId = user ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
-    const { code, notifyEmail, ...rest } = t;
+    const { code, notifyEmail, kit, ...rest } = t;
     const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
     // A pay-link token stands in for auth on its own public route — never
     // ships in the general league payload, only ever handed out via the
     // dedicated pay-link fetch route to someone already allowed to see it.
     const players = rest.players.map(({ payLinkToken, ...p }) => p);
-    return { ...rest, players, code: viewerIsThisTeam ? code : undefined, notifyEmail: viewerIsThisTeam ? notifyEmail : undefined };
+    return {
+      ...rest, players,
+      code: viewerIsThisTeam ? code : undefined,
+      notifyEmail: viewerIsThisTeam ? notifyEmail : undefined,
+      // Kit design (photos, sponsor placement, who's ordering) is as
+      // private as the team's own login code — nobody outside that team's
+      // captain/admin has any reason to see it.
+      kit: viewerIsThisTeam ? (kit || defaultKit()) : undefined,
+    };
   });
 
   const fixtures = league.fixtures.map((f) => {
@@ -1759,6 +1788,80 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
       return res.status(400).json({ error: "A team with that name already exists." });
     team.name = name;
   }
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+/* ---------- Team kit (captain-managed — upload the kit design, place
+   sponsor logos on it, list who wants one and what size) ---------- */
+
+router.put("/leagues/:leagueId/teams/:teamId/kit/photo", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const { side, image } = req.body || {};
+  if (side !== "front" && side !== "back") return res.status(400).json({ error: "Invalid side." });
+  if (!team.kit) team.kit = defaultKit();
+  team.kit[side] = image || "";
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+router.put("/leagues/:leagueId/teams/:teamId/kit/logo", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!team.kit) team.kit = defaultKit();
+  team.kit.logo = (req.body && req.body.image) || "";
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+const KIT_SPONSOR_SLOTS = ["sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const { slot, image } = req.body || {};
+  if (!KIT_SPONSOR_SLOTS.includes(slot)) return res.status(400).json({ error: "Invalid sponsor slot." });
+  if (!team.kit) team.kit = defaultKit();
+  team.kit.sponsors[slot] = image || "";
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// Percent coordinates (0-100), relative to whichever photo that badge sits
+// on — set by dragging the badge on the actual uploaded photo client-side,
+// so it lands in the right spot regardless of how that photo happens to be
+// framed or cropped.
+const KIT_POSITION_KEYS = ["logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+router.put("/leagues/:leagueId/teams/:teamId/kit/position", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const { key, x, y } = req.body || {};
+  if (!KIT_POSITION_KEYS.includes(key)) return res.status(400).json({ error: "Invalid position key." });
+  const nx = Number(x), ny = Number(y);
+  if (!Number.isFinite(nx) || !Number.isFinite(ny)) return res.status(400).json({ error: "Invalid position." });
+  if (!team.kit) team.kit = defaultKit();
+  team.kit.positions[key] = { x: Math.max(0, Math.min(100, nx)), y: Math.max(0, Math.min(100, ny)) };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+// Replaces the whole order list in one call — simpler than per-row add/
+// remove/edit endpoints for what's normally filled in once per season by
+// one captain, not a frequently-edited live list.
+router.put("/leagues/:leagueId/teams/:teamId/kit/orders", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const incoming = Array.isArray(req.body.orders) ? req.body.orders : [];
+  const orders = incoming
+    .map((o) => ({ id: (o && o.id) || logic.uid(), name: String((o && o.name) || "").trim().slice(0, 60), size: String((o && o.size) || "").trim().slice(0, 10) }))
+    .filter((o) => o.name);
+  if (!team.kit) team.kit = defaultKit();
+  team.kit.orders = orders;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

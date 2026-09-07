@@ -1614,6 +1614,10 @@ function tabDefs() {
     const unread = myNotifications.filter((n) => !n.read).length;
     defs.push({ key: "notifications", label: unread ? `Notifications (${unread})` : "Notifications" });
   }
+  // Kit design and who's ordering one — as private to this team as its own
+  // login code (see sanitize()), so only that team's own captain or the
+  // league admin ever sees this tab.
+  if (myRole === "admin" || myRole === "captain") defs.push({ key: "kit", label: "Kit" });
   // Both pushed last, on purpose — these are internal tools the owner is
   // still evaluating, not features for this league yet. Kept admin-only
   // and out of the way at the end of the tab bar so captains never see
@@ -1881,6 +1885,7 @@ function renderAll() {
   renderSponsorStrip();
   renderNotificationsList();
   refreshNotifications().then(() => { updateNotifTabLabel(); renderNotificationsList(); });
+  if (myRole === "admin" || myRole === "captain") renderKit();
   const unit = league.format === "pairs" ? "pair" : "team";
   el("team-count-label").textContent = `${league.teams.length} ${unit}${league.teams.length === 1 ? "" : "s"} · ${league.fixtures.length} fixture${league.fixtures.length === 1 ? "" : "s"}`;
 }
@@ -6001,6 +6006,324 @@ async function generateTablePosterCanvas(theme) {
 
   return canvas;
 }
+/* ---------- Team kit (captain-managed) ---------- */
+
+// Which team's kit is on screen — implicit (their own) for a captain,
+// explicitly chosen from a dropdown for an admin, who has no "own" team.
+let kitAdminTeamId = null;
+function kitTeamInEdit() {
+  if (myRole === "captain") return teamById(myTeamId);
+  if (myRole === "admin") {
+    if (!kitAdminTeamId || !league.teams.some((t) => t.id === kitAdminTeamId)) {
+      kitAdminTeamId = league.teams.length ? league.teams[0].id : null;
+    }
+    return teamById(kitAdminTeamId);
+  }
+  return null;
+}
+function kitKitOf(team) {
+  return (team && team.kit) || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
+}
+function kitBadgeSrc(kit, key) {
+  return key === "logo" ? (kit.logo || "") : ((kit.sponsors && kit.sponsors[key]) || "");
+}
+function kitPositionOf(kit, key) {
+  return (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
+}
+const KIT_BADGE_KEYS = ["logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+// Which photo each badge sits on — a sleeve/logo badge floating over a
+// front photo that doesn't exist yet has nowhere real to be, so it stays
+// hidden until that specific photo is uploaded, not just the kit in general.
+const KIT_BADGE_SIDE = { logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back" };
+
+// Set right before opening the one shared file input, so its onchange
+// knows which upload this file is actually for — cheaper than a separate
+// hidden input (and separate onchange handler) per slot.
+let kitPendingUpload = null;
+function kitOpenPicker(target) {
+  kitPendingUpload = target;
+  el("kit-file-input").click();
+}
+function kitOpenBadgePicker(key) {
+  kitOpenPicker(key === "logo" ? { field: "logo" } : { field: "sponsor", slot: key });
+}
+el("kit-file-input").onchange = () => {
+  const input = el("kit-file-input");
+  const file = input.files[0];
+  input.value = ""; // so picking the exact same file again still fires onchange
+  const target = kitPendingUpload;
+  kitPendingUpload = null;
+  if (!file || !target) return;
+  const maxSize = target.field === "front" || target.field === "back" ? 900 : 240;
+  resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
+    if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
+    const team = kitTeamInEdit();
+    if (!team) return;
+    try {
+      if (target.field === "front" || target.field === "back") {
+        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/photo`, { method: "PUT", body: { side: target.field, image: dataUrl } });
+      } else if (target.field === "logo") {
+        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/logo`, { method: "PUT", body: { image: dataUrl } });
+      } else if (target.field === "sponsor") {
+        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/sponsor`, { method: "PUT", body: { slot: target.slot, image: dataUrl } });
+      }
+      await refreshLeague(); renderKit();
+    } catch (e) { alert(e.message); }
+  });
+};
+el("kit-empty-front").onclick = () => kitOpenPicker({ field: "front" });
+el("kit-replace-front").onclick = () => kitOpenPicker({ field: "front" });
+el("kit-empty-back").onclick = () => kitOpenPicker({ field: "back" });
+el("kit-replace-back").onclick = () => kitOpenPicker({ field: "back" });
+
+// Drag-to-place for one badge — pointer events cover mouse and touch alike.
+// A tap that never really moves is treated as "replace this image" instead
+// of a (pointless, sub-pixel) drag; an empty badge has nothing to drag yet,
+// so it's handled by a plain click instead (see renderKitBadge below).
+let kitDragState = null;
+function attachKitBadgeDrag(key) {
+  const badge = el("kit-badge-" + key);
+  if (!badge) return;
+  badge.onpointerdown = (e) => {
+    const kit = kitKitOf(kitTeamInEdit());
+    if (!kitBadgeSrc(kit, key)) return;
+    e.preventDefault();
+    try { badge.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    kitDragState = { key, frame: badge.closest(".kit-photo-frame"), startX: e.clientX, startY: e.clientY, moved: false, lastX: null, lastY: null };
+  };
+  badge.onpointermove = (e) => {
+    if (!kitDragState || kitDragState.key !== key) return;
+    const dx = e.clientX - kitDragState.startX, dy = e.clientY - kitDragState.startY;
+    if (Math.hypot(dx, dy) > 4) kitDragState.moved = true;
+    if (!kitDragState.moved) return;
+    const rect = kitDragState.frame.getBoundingClientRect();
+    const x = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(2, Math.min(98, ((e.clientY - rect.top) / rect.height) * 100));
+    badge.style.left = x + "%"; badge.style.top = y + "%";
+    kitDragState.lastX = x; kitDragState.lastY = y;
+  };
+  badge.onpointerup = async (e) => {
+    if (!kitDragState || kitDragState.key !== key) return;
+    const state = kitDragState;
+    kitDragState = null;
+    try { badge.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (!state.moved) { kitOpenBadgePicker(key); return; }
+    const team = kitTeamInEdit();
+    try {
+      await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY } });
+      await refreshLeague(); renderKit();
+    } catch (err) { alert(err.message); }
+  };
+  badge.onclick = () => {
+    const kit = kitKitOf(kitTeamInEdit());
+    if (!kitBadgeSrc(kit, key)) kitOpenBadgePicker(key);
+  };
+}
+function renderKitBadge(key, kit) {
+  const badge = el("kit-badge-" + key);
+  if (!badge) return;
+  if (!kit[KIT_BADGE_SIDE[key]]) { badge.style.display = "none"; return; }
+  const src = kitBadgeSrc(kit, key);
+  const pos = kitPositionOf(kit, key);
+  badge.style.left = pos.x + "%"; badge.style.top = pos.y + "%";
+  badge.style.display = "flex";
+  if (src) {
+    badge.classList.add("filled");
+    badge.innerHTML = `<img src="${src}" alt=""><span class="kit-badge-remove" data-remove-key="${key}">&times;</span>`;
+    badge.querySelector(".kit-badge-remove").onclick = async (e) => {
+      e.stopPropagation();
+      const team = kitTeamInEdit();
+      try {
+        if (key === "logo") await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/logo`, { method: "PUT", body: { image: "" } });
+        else await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/sponsor`, { method: "PUT", body: { slot: key, image: "" } });
+        await refreshLeague(); renderKit();
+      } catch (err) { alert(err.message); }
+    };
+  } else {
+    badge.classList.remove("filled");
+    badge.textContent = "+";
+  }
+  attachKitBadgeDrag(key);
+}
+function renderKitPhotoFrame(side, kit) {
+  const img = el("kit-img-" + side);
+  const empty = el("kit-empty-" + side);
+  if (kit[side]) { img.src = kit[side]; img.style.display = "block"; empty.style.display = "none"; }
+  else { img.style.display = "none"; empty.style.display = "flex"; }
+}
+// Draft rows for the order list — kept in memory while the captain edits
+// (typing shouldn't round-trip to the server per keystroke), only sent to
+// the server when "Save order list" is clicked.
+let kitOrdersDraft = [];
+const KIT_SIZES = ["", "XS", "S", "M", "L", "XL", "XXL"];
+function renderKitOrdersList() {
+  const c = el("kit-orders-list");
+  c.innerHTML = kitOrdersDraft.map((o, i) => `
+    <div class="kit-order-row" data-idx="${i}">
+      <input type="text" value="${escapeHtml(o.name)}" placeholder="Player name" data-field="name">
+      <select data-field="size">${KIT_SIZES.map((s) => `<option value="${s}" ${o.size === s ? "selected" : ""}>${s || "Size"}</option>`).join("")}</select>
+      <button type="button" class="kit-order-remove" data-idx="${i}" aria-label="Remove">&times;</button>
+    </div>
+  `).join("") || '<p class="note">No players yet — add one below.</p>';
+  c.querySelectorAll(".kit-order-row").forEach((row) => {
+    const idx = Number(row.dataset.idx);
+    row.querySelector('[data-field="name"]').oninput = (e) => { kitOrdersDraft[idx].name = e.target.value; };
+    row.querySelector('[data-field="size"]').onchange = (e) => { kitOrdersDraft[idx].size = e.target.value; };
+  });
+  c.querySelectorAll(".kit-order-remove").forEach((btn) => {
+    btn.onclick = () => { kitOrdersDraft.splice(Number(btn.dataset.idx), 1); renderKitOrdersList(); };
+  });
+}
+el("kit-add-order-btn").onclick = () => { kitOrdersDraft.push({ id: null, name: "", size: "" }); renderKitOrdersList(); };
+el("kit-save-orders-btn").onclick = async () => {
+  const team = kitTeamInEdit();
+  if (!team) return;
+  const cleaned = kitOrdersDraft.map((o) => ({ id: o.id, name: (o.name || "").trim(), size: o.size || "" })).filter((o) => o.name);
+  try {
+    await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/orders`, { method: "PUT", body: { orders: cleaned } });
+    el("kit-orders-status").textContent = "Saved.";
+    setTimeout(() => { el("kit-orders-status").textContent = ""; }, 2500);
+    await refreshLeague(); renderKit();
+  } catch (e) { alert(e.message); }
+};
+function renderKitDownloadList(team, orders) {
+  const c = el("kit-download-list");
+  if (!orders.length) { c.innerHTML = '<p class="note">Save your order list above to unlock downloads.</p>'; return; }
+  c.innerHTML = orders.map((o, i) =>
+    `<div class="kit-download-row"><span>${escapeHtml(o.name)}${o.size ? " — " + escapeHtml(o.size) : ""}</span><button class="secondary" type="button" data-idx="${i}">Download</button></div>`
+  ).join("");
+  c.querySelectorAll("button[data-idx]").forEach((btn) => {
+    btn.onclick = () => openKitSheetModal(team, orders[Number(btn.dataset.idx)]);
+  });
+}
+function renderKit() {
+  if (myRole !== "admin" && myRole !== "captain") return;
+  el("kit-team-select-row").style.display = myRole === "admin" ? "flex" : "none";
+  if (myRole === "admin") {
+    kitTeamInEdit(); // makes sure kitAdminTeamId defaults to a real team first
+    const sel = el("kit-team-select");
+    sel.innerHTML = league.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+    sel.value = kitAdminTeamId;
+    sel.onchange = () => { kitAdminTeamId = sel.value; renderKit(); };
+  }
+  const team = kitTeamInEdit();
+  if (!team) { el("kit-orders-list").innerHTML = ""; el("kit-download-list").innerHTML = ""; return; }
+  const kit = kitKitOf(team);
+
+  renderKitPhotoFrame("front", kit);
+  renderKitPhotoFrame("back", kit);
+  KIT_BADGE_KEYS.forEach((key) => renderKitBadge(key, kit));
+  el("kit-name-preview").style.display = kit.back ? "block" : "none";
+
+  // A first visit with nothing saved yet drafts one row per roster player,
+  // so the list isn't empty for no reason — once anything's been saved,
+  // show exactly that (a captain who deliberately removed someone
+  // shouldn't see them reappear on every reload).
+  kitOrdersDraft = (kit.orders && kit.orders.length ? kit.orders : team.players.map((p) => ({ id: p.id, name: p.name, size: "" }))).map((o) => ({ ...o }));
+  renderKitOrdersList();
+  renderKitDownloadList(team, kit.orders || []);
+}
+
+async function generateKitSheetCanvas(team, order) {
+  const kit = kitKitOf(team);
+  const W = 1600, H = 1040;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#12203A";
+  ctx.font = "700 34px Oswald, sans-serif";
+  ctx.fillText(team.name || "Team kit", 40, 54);
+  ctx.fillStyle = "#64748B";
+  ctx.font = "500 22px Inter, sans-serif";
+  ctx.fillText(order.name + (order.size ? " · Size " + order.size : ""), 40, 86);
+
+  const panelY = 110, panelH = H - panelY - 30, panelW = 720, gap = 80;
+  const frontX = 40, backX = frontX + panelW + gap;
+
+  async function drawPanel(x, photoSrc) {
+    ctx.save();
+    roundRectPath(ctx, x, panelY, panelW, panelH, 16);
+    ctx.clip();
+    ctx.fillStyle = "#EEF2F9";
+    ctx.fillRect(x, panelY, panelW, panelH);
+    const img = photoSrc ? await loadImageAsync(photoSrc) : null;
+    if (img) {
+      const scale = Math.max(panelW / img.width, panelH / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, x + panelW / 2 - w / 2, panelY + panelH / 2 - h / 2, w, h);
+    }
+    ctx.restore();
+    ctx.strokeStyle = "#DCE3F0"; ctx.lineWidth = 2;
+    roundRectPath(ctx, x, panelY, panelW, panelH, 16);
+    ctx.stroke();
+  }
+  await drawPanel(frontX, kit.front);
+  await drawPanel(backX, kit.back);
+
+  async function drawBadge(panelX, key) {
+    const src = kitBadgeSrc(kit, key);
+    if (!src) return;
+    const img = await loadImageAsync(src);
+    if (!img) return;
+    const pos = kitPositionOf(kit, key);
+    const size = 110;
+    const cx = panelX + (pos.x / 100) * panelW, cy = panelY + (pos.y / 100) * panelH;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+    ctx.fillStyle = "#fff"; ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+    const scale = Math.max(size / img.width, size / img.height);
+    const w = img.width * scale, h = img.height * scale;
+    ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+    ctx.restore();
+    ctx.lineWidth = 3; ctx.strokeStyle = "#2563EB";
+    ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.stroke();
+  }
+  await drawBadge(frontX, "logo");
+  await drawBadge(frontX, "sleeveLeft");
+  await drawBadge(frontX, "sleeveRight");
+  await drawBadge(backX, "backSponsor1");
+  await drawBadge(backX, "backSponsor2");
+
+  if (kit.back) {
+    const nx = backX + panelW / 2, ny = panelY + panelH * 0.12;
+    ctx.textAlign = "center";
+    const nameText = order.name.toUpperCase();
+    const nameSize = fitUniformSize(ctx, [nameText], panelW - 60, 42, "700", "Oswald, sans-serif", 22);
+    ctx.font = "700 " + nameSize + "px Oswald, sans-serif";
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 6;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(nameText, nx, ny);
+    ctx.restore();
+  }
+
+  return canvas;
+}
+async function openKitSheetModal(team, order) {
+  el("poster-modal-title").textContent = order.name + "'s kit sheet";
+  el("poster-preview-img").style.display = "none";
+  el("poster-modal-loading").style.display = "block";
+  el("poster-modal-backdrop").classList.add("open");
+  const canvas = await generateKitSheetCanvas(team, order);
+  const dataUrl = canvas.toDataURL("image/png");
+  el("poster-preview-img").src = dataUrl;
+  el("poster-preview-img").style.display = "inline-block";
+  el("poster-modal-loading").style.display = "none";
+  el("poster-download-btn").onclick = () => {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    const safeName = (order.name || "kit").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    a.download = safeName + "-kit-sheet.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+}
+
 async function openPosterModal(mode) {
   const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster", predictions: "Predictions poster", playoffs: "Playoffs poster" };
   el("poster-modal-title").textContent = titles[mode] || "Fixtures poster";

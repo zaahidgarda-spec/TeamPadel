@@ -1251,3 +1251,26 @@ nav.tabs::-webkit-scrollbar{display:none;}
    own content for a guest who never sees them anyway. */
 .interesting-remove{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#F2F6FF;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .interesting-remove:hover{background:rgba(255,255,255,.24);}
+
+/* ---------- Team kit ---------- */
+.kit-photos-row{display:flex;gap:16px;flex-wrap:wrap;}
+.kit-photo-col{flex:1;min-width:220px;max-width:320px;}
+.kit-photo-frame{position:relative;width:100%;aspect-ratio:3/4;border-radius:var(--radius);border:1px dashed var(--line);background:var(--panel-2);overflow:hidden;touch-action:none;}
+.kit-photo-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text-dim);font-size:13px;cursor:pointer;}
+.kit-empty-icon{width:36px;height:36px;border-radius:50%;border:1.5px dashed var(--text-faint);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text-dim);}
+.kit-photo-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.kit-badge{position:absolute;width:44px;height:44px;border-radius:50%;transform:translate(-50%,-50%);cursor:grab;touch-action:none;display:flex;align-items:center;justify-content:center;background:#fff;border:2px dashed var(--accent);box-shadow:var(--shadow-sm);font-size:18px;color:var(--accent);}
+.kit-badge.filled{border-style:solid;padding:2px;box-sizing:border-box;}
+.kit-badge img{width:100%;height:100%;object-fit:contain;border-radius:50%;pointer-events:none;}
+.kit-badge:active{cursor:grabbing;}
+.kit-badge-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--text-dim);white-space:nowrap;pointer-events:none;}
+.kit-badge-remove{position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:var(--clay);color:#fff;font-size:10px;line-height:16px;text-align:center;display:none;cursor:pointer;}
+.kit-badge.filled:hover .kit-badge-remove{display:block;}
+.kit-name-preview{position:absolute;top:12%;left:50%;transform:translateX(-50%);font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;}
+.kit-order-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);}
+.kit-order-row input[type="text"]{flex:1;}
+.kit-order-row select{width:90px;}
+.kit-order-remove{cursor:pointer;color:var(--text-dim);font-size:16px;line-height:1;background:none;border:none;padding:4px;}
+.kit-order-remove:hover{color:var(--clay);}
+.kit-download-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);}
+.kit-download-row:last-child{border-bottom:none;}

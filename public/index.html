@@ -846,6 +846,62 @@
         </div>
       </section>
 
+      <section class="view" id="view-kit">
+        <div class="card" style="margin-bottom:16px;">
+          <h2 class="section-title">Team kit</h2>
+          <p class="note" style="margin:0 0 10px;">Upload your kit photos, then tap a badge to add your logo or a sponsor and drag it into place right on the photo. Only you and the league admin can see this tab.</p>
+          <div class="row" id="kit-team-select-row" style="display:none;align-items:center;gap:8px;">
+            <label class="note" for="kit-team-select" style="margin:0;">Team</label>
+            <select id="kit-team-select"></select>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <h3 style="margin:0 0 4px;">1. Kit design</h3>
+          <p class="note" style="margin:0 0 14px;">Front: your logo on the left chest, a sponsor on each sleeve. Back: the player's name up top, two sponsors below it.</p>
+          <div class="kit-photos-row">
+            <div class="kit-photo-col">
+              <div class="kit-photo-frame" id="kit-frame-front">
+                <div class="kit-photo-empty" id="kit-empty-front"><span class="kit-empty-icon">+</span>Front of kit</div>
+                <img class="kit-photo-img" id="kit-img-front" style="display:none;" alt="">
+                <div class="kit-badge" id="kit-badge-logo" data-key="logo" style="display:none;"></div>
+                <div class="kit-badge" id="kit-badge-sleeveLeft" data-key="sleeveLeft" style="display:none;"></div>
+                <div class="kit-badge" id="kit-badge-sleeveRight" data-key="sleeveRight" style="display:none;"></div>
+              </div>
+              <button class="link" id="kit-replace-front" style="margin-top:6px;">Change front photo</button>
+            </div>
+            <div class="kit-photo-col">
+              <div class="kit-photo-frame" id="kit-frame-back">
+                <div class="kit-photo-empty" id="kit-empty-back"><span class="kit-empty-icon">+</span>Back of kit</div>
+                <img class="kit-photo-img" id="kit-img-back" style="display:none;" alt="">
+                <div class="kit-name-preview" id="kit-name-preview">PLAYER NAME</div>
+                <div class="kit-badge" id="kit-badge-backSponsor1" data-key="backSponsor1" style="display:none;"></div>
+                <div class="kit-badge" id="kit-badge-backSponsor2" data-key="backSponsor2" style="display:none;"></div>
+              </div>
+              <button class="link" id="kit-replace-back" style="margin-top:6px;">Change back photo</button>
+            </div>
+          </div>
+          <input type="file" accept="image/*" id="kit-file-input" style="display:none;">
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <h3 style="margin:0 0 4px;">2. Who's ordering, and what size</h3>
+          <p class="note" style="margin:0 0 14px;">Pulled in from your roster — set a size for each player, or add someone extra.</p>
+          <div id="kit-orders-list"></div>
+          <button class="secondary" id="kit-add-order-btn" style="margin-top:10px;">+ Add player</button>
+          <div class="row" style="margin-top:14px;justify-content:flex-end;align-items:center;gap:10px;">
+            <span class="note" id="kit-orders-status"></span>
+            <button class="primary" id="kit-save-orders-btn">Save order list</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 4px;">3. Download</h3>
+          <p class="note" style="margin:0 0 14px;">One print-ready image per player — front, back, your logo, your sponsors, and their name — ready to send to your kit supplier.</p>
+          <div id="kit-download-list"></div>
+        </div>
+      </section>
+
       <section class="view" id="view-roster">
         <div class="roster-signup-strip" id="roster-signup-banner" style="display:none;">
           <span class="icon">🎾</span>
