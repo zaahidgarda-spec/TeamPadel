@@ -1825,6 +1825,11 @@ function switchTab(key) {
   const v = el("view-" + key);
   if (v) v.classList.add("active");
   el("group-selector-row").style.display = league && league.groups && league.groups.length > 0 && GROUP_SCOPED_TABS.includes(key) ? "flex" : "none";
+  // The Kit tab's overlap map reads badges' real getBoundingClientRect(),
+  // which is meaningless while the view is display:none — renderKit() may
+  // well have last run before this tab was ever visible, so re-run it now
+  // that it actually is.
+  if (key === "kit") renderKit();
 }
 // Two tab rows instead of a dropdown — a division tab row (only shown when
 // there's more than one division) and a group tab row scoped to whichever
@@ -6581,21 +6586,81 @@ async function kitResetBadgePosition(key) {
     await refreshLeague(); renderKit();
   } catch (e) { alert(e.message); }
 }
-// A row per badge actually on this kit, outside the photo entirely — so
-// two badges dragged on top of each other (whichever's on top eating
-// every click meant for the one underneath) still each have a way back,
-// with no need to land a click on the covered one at all.
-function renderKitBadgeList(kit) {
-  const c = el("kit-badge-list");
-  const rows = KIT_BADGE_KEYS.filter((key) => {
+// Which badges (actually on this kit, visible to this viewer) are visible
+// at all right now — shared by the minimap, the list, and the overlap
+// check below so all three agree on exactly the same set.
+function kitVisibleBadgeKeys(kit) {
+  return KIT_BADGE_KEYS.filter((key) => {
     const isLeagueBadge = KIT_LEAGUE_BADGE_KEYS.includes(key);
     if (isLeagueBadge && myRole !== "admin") return false;
     if (!kit[KIT_BADGE_SIDE[key]]) return false;
     return !!kitBadgeSrc(kit, key);
   });
+}
+// Real getBoundingClientRect() intersection rather than reimplementing the
+// percent-to-pixel math — accurate regardless of each badge's own size,
+// and it only ever compares badges on the same photo (front vs back can't
+// overlap each other). Only meaningful once the Kit tab is actually
+// visible — see switchTab's renderKit() call for badges rendered while
+// display:none.
+function kitOverlapMap(kit) {
+  const bySide = { front: [], back: [] };
+  kitVisibleBadgeKeys(kit).forEach((key) => {
+    const badge = el("kit-badge-" + key);
+    if (!badge || badge.style.display === "none") return;
+    bySide[KIT_BADGE_SIDE[key]].push({ key, rect: badge.getBoundingClientRect() });
+  });
+  const overlaps = {};
+  Object.values(bySide).forEach((list) => {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i].rect, b = list[j].rect;
+        if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
+          (overlaps[list[i].key] || (overlaps[list[i].key] = new Set())).add(list[j].key);
+          (overlaps[list[j].key] || (overlaps[list[j].key] = new Set())).add(list[i].key);
+        }
+      }
+    }
+  });
+  return overlaps;
+}
+// A small map of the real uploaded photo (not a generic shirt icon) with
+// every badge shown as a dot in its real spot — tapping one resets it,
+// same as the list below, just reachable without needing to land a click
+// on the actual (possibly covered) badge on the full-size photo.
+function renderKitMinimaps(kit, overlaps) {
+  const c = el("kit-minimaps");
+  const sides = [["front", kit.front], ["back", kit.back]].filter(([, photo]) => photo);
+  if (!sides.length) { c.innerHTML = ""; return; }
+  const visible = kitVisibleBadgeKeys(kit);
+  c.innerHTML = `<div class="kit-minimap-row">` + sides.map(([side, photo]) => {
+    const dots = visible.filter((key) => KIT_BADGE_SIDE[key] === side).map((key) => {
+      const pos = kitPositionOf(kit, key);
+      const isRect = !KIT_BADGE_CIRCLE_KEYS.includes(key);
+      const isWarn = overlaps[key] && overlaps[key].size;
+      return `<div class="kit-minimap-dot${isRect ? " rect" : ""}${isWarn ? " warn" : ""}" data-reset-key="${key}" title="${escapeHtml(KIT_BADGE_NAMES[key])}${isWarn ? " — overlapping, tap to reset" : ""}" style="left:${pos.x}%;top:${pos.y}%;"></div>`;
+    }).join("");
+    return `<div class="kit-minimap"><img src="${photo}" alt=""><span class="kit-minimap-label">${side === "front" ? "Front" : "Back"}</span>${dots}</div>`;
+  }).join("") + `</div>`;
+  c.querySelectorAll("[data-reset-key]").forEach((dot) => { dot.onclick = () => kitResetBadgePosition(dot.dataset.resetKey); });
+}
+// A row per badge actually on this kit, outside the photo entirely — so
+// two badges dragged on top of each other (whichever's on top eating
+// every click meant for the one underneath) still each have a way back,
+// with no need to land a click on the covered one at all.
+function renderKitBadgeList(kit, overlaps) {
+  const c = el("kit-badge-list");
+  const rows = kitVisibleBadgeKeys(kit);
   if (!rows.length) { c.innerHTML = ""; return; }
-  c.innerHTML = `<p class="note" style="margin:14px 0 6px;">Two badges stuck on top of each other? Reset one back to its default spot.</p>` +
-    rows.map((key) => `<div class="kit-download-row"><span>${escapeHtml(KIT_BADGE_NAMES[key])}</span><button class="link" data-reset-key="${key}" type="button">Reset position</button></div>`).join("");
+  c.innerHTML = rows.map((key) => {
+    const warnSet = overlaps[key];
+    const warnText = warnSet && warnSet.size
+      ? `<span class="kit-badge-warn-text">Overlapping ${[...warnSet].map((k) => escapeHtml(KIT_BADGE_NAMES[k])).join(", ")}</span>` : "";
+    return `<div class="kit-download-row${warnText ? " kit-badge-row-warn" : ""}">
+      <span class="kit-badge-row-info"><span>${escapeHtml(KIT_BADGE_NAMES[key])}</span>${warnText}</span>
+      <button class="link" data-reset-key="${key}" type="button">Reset position</button>
+    </div>`;
+  }).join("");
   c.querySelectorAll("[data-reset-key]").forEach((btn) => { btn.onclick = () => kitResetBadgePosition(btn.dataset.resetKey); });
 }
 function renderKit() {
@@ -6617,7 +6682,9 @@ function renderKit() {
   renderKitPhotoFrame("front", kit);
   renderKitPhotoFrame("back", kit);
   KIT_BADGE_KEYS.forEach((key) => renderKitBadge(key, kit));
-  renderKitBadgeList(kit);
+  const overlaps = kitOverlapMap(kit);
+  renderKitMinimaps(kit, overlaps);
+  renderKitBadgeList(kit, overlaps);
   el("kit-name-preview").style.display = kit.back ? "block" : "none";
 
   // A first visit with nothing saved yet drafts one row per roster player,

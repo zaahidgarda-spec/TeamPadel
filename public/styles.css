@@ -1278,6 +1278,22 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .kit-guide.on{opacity:.85;}
 .kit-drag-tooltip{position:absolute;background:var(--text);color:#fff;font-family:var(--font-display);font-size:10.5px;font-weight:600;padding:3px 7px;border-radius:5px;pointer-events:none;opacity:0;transition:opacity .1s ease;white-space:nowrap;font-variant-numeric:tabular-nums;z-index:5;}
 .kit-drag-tooltip.on{opacity:1;}
+/* A small read-only map of where every badge actually sits — front and
+   back each get one, built from the real uploaded photo so it's not just
+   a generic shirt icon. A dot pulses when it's overlapping another badge
+   (real getBoundingClientRect() intersection, not guessed from x/y alone,
+   since different badges can be different sizes). */
+.kit-minimap-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+.kit-minimap{position:relative;width:100px;aspect-ratio:3/4;border-radius:8px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line);flex:none;}
+.kit-minimap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.kit-minimap-dot{position:absolute;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%);border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45);cursor:pointer;}
+.kit-minimap-dot.rect{border-radius:3px;width:16px;height:11px;}
+.kit-minimap-dot.warn{box-shadow:0 0 0 3px var(--clay-soft),0 0 0 1.5px var(--clay);animation:kitDotPulse 1.6s ease-in-out infinite;}
+@keyframes kitDotPulse{0%,100%{box-shadow:0 0 0 3px var(--clay-soft),0 0 0 1.5px var(--clay);}50%{box-shadow:0 0 0 6px rgba(226,67,47,.18),0 0 0 1.5px var(--clay);}}
+.kit-minimap-label{position:absolute;bottom:4px;left:4px;font-family:var(--font-display);font-size:9px;font-weight:600;color:#fff;background:rgba(18,32,58,.6);padding:1px 5px;border-radius:4px;}
+.kit-badge-row-info{display:flex;flex-direction:column;gap:2px;}
+.kit-badge-row-warn{background:var(--clay-soft);margin:0 -8px;padding:8px;border-radius:6px;border-bottom-color:transparent!important;}
+.kit-badge-warn-text{font-size:11px;color:var(--clay);font-weight:600;}
 /* A sponsor's own artwork is normally a wide rectangle, not a round badge
    — only a logo (team crest, the Team Padel mark) keeps the circle. */
 .kit-badge-rect{width:92px;height:58px;border-radius:8px;}
