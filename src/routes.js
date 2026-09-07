@@ -392,8 +392,12 @@ function sanitize(league, req) {
   // Past seasons have their own dedicated routes (/season-history) so the
   // main league payload doesn't balloon with every archived fixture/rubber
   // every time anyone just loads the league.
-  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, ...leagueRest } = league;
-  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote, seasonHistoryCount: (seasonHistory || []).length };
+  // kitShareToken is the only thing standing in for auth on the public kit-
+  // share page (below) — same reasoning as payLinkToken, never ships in the
+  // general league payload, only ever handed out via the dedicated
+  // get-link route to an admin who's already allowed to see it.
+  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, ...leagueRest } = league;
+  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote, seasonHistoryCount: (seasonHistory || []).length, kitShareLinkActive: !!kitShareToken };
 }
 function sanitizeOne(f, isAdmin, teamId) {
   const copy = JSON.parse(JSON.stringify(f));
@@ -1864,6 +1868,43 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/orders", requireAdminOrCaptain(
   team.kit.orders = orders;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// One link, every team's kit — for handing the whole league's kit designs
+// to an outside kit supplier who has no login at all. Same "random token
+// is the only auth" shape as a pay-link, just league-wide and admin-issued
+// rather than per-player. Creates the token on first request, then keeps
+// returning the same one (a supplier who bookmarks or re-visits the link
+// shouldn't have it silently stop working) until explicitly revoked below.
+router.get("/leagues/:leagueId/kit-share-link", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  if (!league.kitShareToken) {
+    league.kitShareToken = crypto.randomBytes(16).toString("hex");
+    store.saveLeague(league.id, league);
+  }
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.json({ url: `${base}/#kit-share/${league.id}/${league.kitShareToken}` });
+});
+router.post("/leagues/:leagueId/kit-share-link/revoke", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  league.kitShareToken = null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+// Public read (no session) — the token itself is the only thing gating
+// this, same as a pay-link. Hands back every team's kit design (photos,
+// logo, sponsors and their placement, who's ordering) so a supplier can
+// see and download everything from one link without ever needing an
+// account or captain code.
+router.get("/leagues/:leagueId/kit-share/:token", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league || !league.kitShareToken || league.kitShareToken !== req.params.token) {
+    return res.status(404).json({ error: "This link is invalid or has been revoked." });
+  }
+  const teams = league.teams.map((t) => ({ id: t.id, name: t.name, kit: t.kit || defaultKit() }));
+  res.json({ leagueId: league.id, leagueName: league.name, teams });
 });
 
 // Fixes a typo in a player's name after the fact — add/delete already cover

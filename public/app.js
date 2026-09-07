@@ -233,6 +233,14 @@ async function boot() {
     await openPayLink(...payLinkMatch.slice(1));
     return;
   }
+  // Same standalone shape as a pay-link — a kit supplier following this
+  // link has no login at all, so it has to work before ever touching the
+  // hub or a session.
+  const kitShareMatch = window.location.hash.match(/^#kit-share\/([^/]+)\/([^/]+)$/);
+  if (kitShareMatch) {
+    await openKitSharePage(...kitShareMatch.slice(1));
+    return;
+  }
   const m = window.location.hash.match(/^#league\/(.+)$/);
   if (m && leaguesIndex.find((l) => l.id === m[1])) {
     await openLeague(m[1]);
@@ -285,6 +293,105 @@ async function openPayLink(leagueId, teamId, playerId, token) {
       submitPayfastCheckout(checkout);
     } catch (e) { el("pay-link-error").textContent = e.message; }
   };
+}
+// Shared by both the poster modal's own download and the kit-share page —
+// a synthetic click on a detached anchor, same technique either way,
+// whether the href is a canvas-generated PNG or a stored photo's own data
+// URL straight from the server.
+function kitDownloadDataUrl(dataUrl, filename) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+// One team's kit, read-only — same photo+badge layout the captain's own
+// editor uses, just with no upload/drag wiring, plus a download button per
+// asset. Built as real DOM nodes (not one big innerHTML string) so each
+// download button's handler can close directly over that asset's own data
+// URL instead of round-tripping it through an HTML attribute.
+function kitShareTeamCard(team) {
+  const kit = team.kit || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
+  const card = document.createElement("div");
+  card.className = "card"; card.style.marginBottom = "20px";
+
+  const badgeHtml = (key, src) => {
+    if (!src) return "";
+    const pos = (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
+    return `<div class="kit-badge filled" style="left:${pos.x}%;top:${pos.y}%;"><img src="${src}" alt=""></div>`;
+  };
+  const photoHtml = (side, badgesHtml) => {
+    if (!kit[side]) return `<div class="kit-photo-frame"><div class="kit-photo-empty"><span class="kit-empty-icon">${side === "front" ? "F" : "B"}</span>No ${side} photo yet</div></div>`;
+    const nameHtml = side === "back" ? '<div class="kit-name-preview">PLAYER NAME</div>' : "";
+    return `<div class="kit-photo-frame"><img class="kit-photo-img" src="${kit[side]}" alt="">${badgesHtml}${nameHtml}</div>`;
+  };
+  const frontBadges = badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
+  const backBadges = badgeHtml("backSponsor1", kit.sponsors.backSponsor1) + badgeHtml("backSponsor2", kit.sponsors.backSponsor2);
+  const orders = kit.orders || [];
+  const ordersHtml = orders.length
+    ? orders.map((o) => `<div class="kit-order-row"><span style="flex:1;">${escapeHtml(o.name)}</span><span class="note">${escapeHtml(o.size || "—")}</span><span class="kit-sheet-slot" data-order-id="${escapeHtml(o.id)}"></span></div>`).join("")
+    : '<p class="note">No orders listed yet.</p>';
+
+  card.innerHTML = `
+    <h2 class="section-title">${escapeHtml(team.name)}</h2>
+    <div class="kit-photos-row" style="margin-bottom:14px;">
+      <div class="kit-photo-col">${photoHtml("front", frontBadges)}</div>
+      <div class="kit-photo-col">${photoHtml("back", backBadges)}</div>
+    </div>
+    <div class="kit-download-slots" style="margin-bottom:14px;"></div>
+    <h3 style="margin:0 0 8px;font-size:14px;">Who's ordering</h3>
+    <div>${ordersHtml}</div>
+  `;
+
+  const downloadables = [
+    ["Front of kit", kit.front, team.name + "-front.jpg"],
+    ["Back of kit", kit.back, team.name + "-back.jpg"],
+    ["Team logo", kit.logo, team.name + "-logo.jpg"],
+    ["Sleeve sponsor (left)", kit.sponsors.sleeveLeft, team.name + "-sponsor-sleeve-left.jpg"],
+    ["Sleeve sponsor (right)", kit.sponsors.sleeveRight, team.name + "-sponsor-sleeve-right.jpg"],
+    ["Back sponsor 1", kit.sponsors.backSponsor1, team.name + "-sponsor-back-1.jpg"],
+    ["Back sponsor 2", kit.sponsors.backSponsor2, team.name + "-sponsor-back-2.jpg"],
+  ];
+  const slots = card.querySelector(".kit-download-slots");
+  downloadables.forEach(([label, src, filename]) => {
+    if (!src) return;
+    const row = document.createElement("div");
+    row.className = "kit-download-row";
+    row.innerHTML = `<span>${escapeHtml(label)}</span>`;
+    const btn = document.createElement("button");
+    btn.className = "secondary"; btn.type = "button"; btn.textContent = "Download";
+    btn.onclick = () => kitDownloadDataUrl(src, filename);
+    row.appendChild(btn);
+    slots.appendChild(row);
+  });
+  orders.forEach((o) => {
+    const slot = card.querySelector(`.kit-sheet-slot[data-order-id="${CSS.escape(o.id)}"]`);
+    if (!slot) return;
+    const btn = document.createElement("button");
+    btn.className = "secondary"; btn.type = "button"; btn.textContent = "Kit sheet";
+    btn.onclick = async () => {
+      const canvas = await generateKitSheetCanvas(team, o);
+      kitDownloadDataUrl(canvas.toDataURL("image/png"), (o.name || "kit").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-kit-sheet.png");
+    };
+    slot.appendChild(btn);
+  });
+  return card;
+}
+async function openKitSharePage(leagueId, token) {
+  el("view-hub").style.display = "none";
+  el("view-league").style.display = "none";
+  el("view-kit-share").style.display = "block";
+  const content = el("kit-share-content");
+  content.innerHTML = '<p class="note">Loading…</p>';
+  const data = await api(`/leagues/${leagueId}/kit-share/${token}`).catch(() => null);
+  if (!data) {
+    content.innerHTML = '<p class="note">This link isn\'t valid — it may have been revoked. Ask the league admin for a fresh one.</p>';
+    return;
+  }
+  trackPageView(`/kit-share/${leagueId}`, `${data.leagueName} — kit designs`);
+  content.innerHTML = `<h2 class="section-title">${escapeHtml(data.leagueName)} — kit designs</h2><p class="note" style="margin-bottom:20px;">Download the kit photos, logo, and sponsor artwork for each team below.</p>`;
+  data.teams.forEach((t) => content.appendChild(kitShareTeamCard(t)));
 }
 function showHub() {
   currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
@@ -6186,6 +6293,27 @@ el("kit-save-orders-btn").onclick = async () => {
     await refreshLeague(); renderKit();
   } catch (e) { alert(e.message); }
 };
+el("kit-share-copy-btn").onclick = async () => {
+  el("kit-share-status").textContent = "";
+  try {
+    const data = await api(`/leagues/${currentLeagueId}/kit-share-link`);
+    try { await navigator.clipboard.writeText(data.url); el("kit-share-status").textContent = "Copied!"; }
+    catch (e) { el("kit-share-status").textContent = data.url; }
+    el("kit-share-revoke-btn").style.display = "inline";
+    setTimeout(() => { el("kit-share-status").textContent = ""; }, 4000);
+    await refreshLeague();
+  } catch (e) { el("kit-share-status").textContent = e.message || "Couldn't create link — try again."; }
+};
+el("kit-share-revoke-btn").onclick = async () => {
+  if (!confirm("Revoke this link? Anyone who already has it will no longer be able to view or download the kit designs — you'd need to copy and send a fresh one.")) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/kit-share-link/revoke`, { method: "POST" });
+    el("kit-share-status").textContent = "Link revoked.";
+    el("kit-share-revoke-btn").style.display = "none";
+    setTimeout(() => { el("kit-share-status").textContent = ""; }, 2500);
+    await refreshLeague();
+  } catch (e) { alert(e.message); }
+};
 function renderKitDownloadList(team, orders) {
   const c = el("kit-download-list");
   if (!orders.length) { c.innerHTML = '<p class="note">Save your order list above to unlock downloads.</p>'; return; }
@@ -6199,7 +6327,9 @@ function renderKitDownloadList(team, orders) {
 function renderKit() {
   if (myRole !== "admin" && myRole !== "captain") return;
   el("kit-team-select-row").style.display = myRole === "admin" ? "flex" : "none";
+  el("kit-share-card").style.display = myRole === "admin" ? "block" : "none";
   if (myRole === "admin") {
+    el("kit-share-revoke-btn").style.display = league.kitShareLinkActive ? "inline" : "none";
     kitTeamInEdit(); // makes sure kitAdminTeamId defaults to a real team first
     const sel = el("kit-team-select");
     sel.innerHTML = league.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");

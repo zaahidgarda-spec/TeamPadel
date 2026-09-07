@@ -70,6 +70,15 @@
       </div>
     </section>
 
+    <section id="view-kit-share" style="display:none;">
+      <header class="site-header hub-hero">
+        <a href="/" class="brand-link"><img src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
+      </header>
+      <div style="max-width:900px;margin:24px auto;padding:0 16px;">
+        <div id="kit-share-content"></div>
+      </div>
+    </section>
+
     <section id="view-hub">
       <header class="site-header hub-hero">
         <a href="/" class="brand-link"><img src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
@@ -853,6 +862,16 @@
           <div class="row" id="kit-team-select-row" style="display:none;align-items:center;gap:8px;">
             <label class="note" for="kit-team-select" style="margin:0;">Team</label>
             <select id="kit-team-select"></select>
+          </div>
+        </div>
+
+        <div class="card" id="kit-share-card" style="display:none;margin-bottom:16px;">
+          <h3 style="margin:0 0 4px;">Share with a kit supplier</h3>
+          <p class="note" style="margin:0 0 12px;">A view-only link, no login needed — shows every team's kit design and lets whoever you send it to download the photos, logo, sponsors, and per-player kit sheets.</p>
+          <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="secondary" id="kit-share-copy-btn">Copy share link</button>
+            <button class="link" id="kit-share-revoke-btn" style="display:none;">Revoke link</button>
+            <span class="note" id="kit-share-status"></span>
           </div>
         </div>
 
