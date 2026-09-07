@@ -907,7 +907,17 @@
         </div>
 
         <div class="card" style="margin-bottom:16px;">
-          <h3 style="margin:0 0 4px;">2. Who's ordering, and what size</h3>
+          <h3 style="margin:0 0 4px;">2. Notes for your kit supplier</h3>
+          <p class="note" style="margin:0 0 14px;">Fabric, fit, a deadline — anything that doesn't fit a badge or a size. Shown on the kit-share link too.</p>
+          <textarea id="kit-notes-textarea" rows="3" maxlength="500" placeholder="e.g. Dry-fit polyester, true to size, need these by the 20th." style="width:100%;resize:vertical;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:var(--radius-sm);"></textarea>
+          <div class="row" style="margin-top:10px;justify-content:flex-end;align-items:center;gap:10px;">
+            <span class="note" id="kit-notes-status"></span>
+            <button class="primary" id="kit-notes-save-btn">Save notes</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+          <h3 style="margin:0 0 4px;">3. Who's ordering, and what size</h3>
           <p class="note" style="margin:0 0 14px;">Pulled in from your roster — set a size for each player, or add someone extra.</p>
           <div id="kit-orders-list"></div>
           <button class="secondary" id="kit-add-order-btn" style="margin-top:10px;">+ Add player</button>
@@ -918,7 +928,7 @@
         </div>
 
         <div class="card">
-          <h3 style="margin:0 0 4px;">3. Download</h3>
+          <h3 style="margin:0 0 4px;">4. Download</h3>
           <p class="note" style="margin:0 0 14px;">One print-ready image per player — front, back, your logo, your sponsors, and their name — ready to send to your kit supplier.</p>
           <div id="kit-download-list"></div>
         </div>

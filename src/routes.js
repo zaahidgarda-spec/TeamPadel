@@ -303,20 +303,24 @@ function genTeamCode(league) {
 
 // A freshly-defaulted kit — every field empty until a captain uploads
 // something. Positions are percent coordinates (0-100) relative to
-// whichever photo they sit on, pre-seeded to sensible starting spots
-// (left chest for the team logo, both sleeves, stacked lower on the
-// back) so a badge appears somewhere reasonable the moment its logo is
-// uploaded, ready to be dragged onto the exact spot for that specific
-// photo. The league's own badges — the main sponsor (front-centre),
-// secondary sponsor (right chest), and the Team Padel logo (top-centre,
-// under the neck) — aren't part of a team's kit at all; see
-// kitMainSponsor*/kitSecondarySponsor*/kitTeamPadelLogoPos on the league
-// itself, admin-controlled and shared by every team.
+// whichever photo they sit on, pre-seeded to sensible starting spots so a
+// badge appears somewhere reasonable the moment its logo is uploaded,
+// ready to be dragged onto the exact spot for that specific photo. A
+// front-of-kit photo faces the camera, so it's mirrored left-right versus
+// the person wearing it — "left chest" (the wearer's true left) sits on
+// the *right* side of the photo, which is why the team logo's default x
+// (70) looks screen-right even though it's the garment's left chest; the
+// league's secondary sponsor (screen-left, x:30) is the wearer's right
+// chest for the same reason. The league's own badges — the main sponsor
+// (front-centre) and the Team Padel logo (top-centre, under the neck) —
+// aren't part of a team's kit at all; see kitMainSponsor*/
+// kitSecondarySponsor*/kitTeamPadelLogoPos on the league itself,
+// admin-controlled and shared by every team.
 function defaultKit() {
   return {
     front: "", back: "", logo: "",
     positions: {
-      logo: { x: 30, y: 22 },
+      logo: { x: 70, y: 22 },
       sleeveLeft: { x: 10, y: 34 },
       sleeveRight: { x: 90, y: 34 },
       backSponsor1: { x: 50, y: 48 },
@@ -324,6 +328,7 @@ function defaultKit() {
     },
     sponsors: { sleeveLeft: "", sleeveRight: "", backSponsor1: "", backSponsor2: "" },
     orders: [], // [{ id, name, size }] — who wants a kit and what size
+    notes: "", // free text for the kit supplier — fabric, fit, deadline, whatever doesn't fit a badge or a size
   };
 }
 
@@ -1513,7 +1518,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (league.kitMainSponsor === undefined) league.kitMainSponsor = "";
   if (!league.kitMainSponsorPos) league.kitMainSponsorPos = { x: 50, y: 45 };
   if (league.kitSecondarySponsor === undefined) league.kitSecondarySponsor = "";
-  if (!league.kitSecondarySponsorPos) league.kitSecondarySponsorPos = { x: 70, y: 22 };
+  if (!league.kitSecondarySponsorPos) league.kitSecondarySponsorPos = { x: 30, y: 22 };
   if (!league.kitTeamPadelLogoPos) league.kitTeamPadelLogoPos = { x: 50, y: 12 };
   // Lives on the leagues-index entry, not this document — surfaced here
   // (harmless either way) so the owner-only "hide from lists" toggle in
@@ -1883,6 +1888,19 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/orders", requireAdminOrCaptain(
   res.json({ ok: true });
 });
 
+// Free text for the kit supplier — fabric, fit, a deadline, anything that
+// doesn't fit a badge or a size. Shown on the kit-share page along with
+// everything else, so a supplier reading that link sees it too.
+router.put("/leagues/:leagueId/teams/:teamId/kit/notes", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!team.kit) team.kit = defaultKit();
+  team.kit.notes = String((req.body && req.body.notes) || "").trim().slice(0, 500);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 // The league's own sponsor badges — unlike a team's logo or sleeve
 // sponsors, these are set once by the admin and shown on every team's
 // kit (front-centre and left chest), so they're stored on the league,
@@ -1956,7 +1974,7 @@ router.get("/leagues/:leagueId/kit-share/:token", (req, res) => {
   res.json({
     leagueId: league.id, leagueName: league.name, teams,
     mainSponsor: league.kitMainSponsor || "", mainSponsorPos: league.kitMainSponsorPos || { x: 50, y: 45 },
-    secondarySponsor: league.kitSecondarySponsor || "", secondarySponsorPos: league.kitSecondarySponsorPos || { x: 70, y: 22 },
+    secondarySponsor: league.kitSecondarySponsor || "", secondarySponsorPos: league.kitSecondarySponsorPos || { x: 30, y: 22 },
     teamPadelLogoPos: league.kitTeamPadelLogoPos || { x: 50, y: 12 },
   });
 });

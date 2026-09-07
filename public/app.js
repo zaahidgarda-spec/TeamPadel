@@ -322,7 +322,7 @@ function kitShareTeamCard(team, leagueData) {
     positions: {
       ...rawKit.positions,
       mainSponsor: leagueData.mainSponsorPos || { x: 50, y: 45 },
-      secondarySponsor: leagueData.secondarySponsorPos || { x: 70, y: 22 },
+      secondarySponsor: leagueData.secondarySponsorPos || { x: 30, y: 22 },
       teamPadelLogo: leagueData.teamPadelLogoPos || { x: 50, y: 12 },
     },
     sponsors: { ...rawKit.sponsors, mainSponsor: leagueData.mainSponsor || "", secondarySponsor: leagueData.secondarySponsor || "" },
@@ -347,6 +347,7 @@ function kitShareTeamCard(team, leagueData) {
   const ordersHtml = orders.length
     ? orders.map((o) => `<div class="kit-order-row"><span style="flex:1;">${escapeHtml(o.name)}</span><span class="note">${escapeHtml(o.size || "—")}</span><span class="kit-sheet-slot" data-order-id="${escapeHtml(o.id)}"></span></div>`).join("")
     : '<p class="note">No orders listed yet.</p>';
+  const notesHtml = kit.notes ? `<p class="note" style="margin:10px 0 0;white-space:pre-wrap;"><b>Notes:</b> ${escapeHtml(kit.notes)}</p>` : "";
 
   card.innerHTML = `
     <h2 class="section-title">${escapeHtml(team.name)}</h2>
@@ -354,7 +355,8 @@ function kitShareTeamCard(team, leagueData) {
       <div class="kit-photo-col">${photoHtml("front", frontBadges)}</div>
       <div class="kit-photo-col">${photoHtml("back", backBadges)}</div>
     </div>
-    <div class="kit-download-slots" style="margin-bottom:14px;"></div>
+    ${notesHtml}
+    <div class="kit-download-slots" style="margin-bottom:14px;margin-top:14px;"></div>
     <h3 style="margin:0 0 8px;font-size:14px;">Who's ordering</h3>
     <div>${ordersHtml}</div>
   `;
@@ -6184,7 +6186,7 @@ function kitKitOf(team) {
     positions: {
       ...kit.positions,
       mainSponsor: (league && league.kitMainSponsorPos) || { x: 50, y: 45 },
-      secondarySponsor: (league && league.kitSecondarySponsorPos) || { x: 70, y: 22 },
+      secondarySponsor: (league && league.kitSecondarySponsorPos) || { x: 30, y: 22 },
       teamPadelLogo: (league && league.kitTeamPadelLogoPos) || { x: 50, y: 12 },
     },
     sponsors: { ...kit.sponsors, mainSponsor: (league && league.kitMainSponsor) || "", secondarySponsor: (league && league.kitSecondarySponsor) || "" },
@@ -6399,6 +6401,16 @@ el("kit-save-orders-btn").onclick = async () => {
     await refreshLeague(); renderKit();
   } catch (e) { alert(e.message); }
 };
+el("kit-notes-save-btn").onclick = async () => {
+  const team = kitTeamInEdit();
+  if (!team) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/notes`, { method: "PUT", body: { notes: el("kit-notes-textarea").value } });
+    el("kit-notes-status").textContent = "Saved.";
+    setTimeout(() => { el("kit-notes-status").textContent = ""; }, 2500);
+    await refreshLeague(); renderKit();
+  } catch (e) { alert(e.message); }
+};
 el("kit-share-copy-btn").onclick = async () => {
   el("kit-share-status").textContent = "";
   try {
@@ -6458,6 +6470,7 @@ function renderKit() {
   kitOrdersDraft = (kit.orders && kit.orders.length ? kit.orders : team.players.map((p) => ({ id: p.id, name: p.name, size: "" }))).map((o) => ({ ...o }));
   renderKitOrdersList();
   renderKitDownloadList(team, kit.orders || []);
+  el("kit-notes-textarea").value = kit.notes || "";
 }
 
 // kitOverride lets the kit-share (public, no-login) page pass in a kit
