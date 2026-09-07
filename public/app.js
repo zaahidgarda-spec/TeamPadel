@@ -334,7 +334,8 @@ function kitShareTeamCard(team, leagueData) {
     if (!src) return "";
     const pos = (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
     const shapeClass = KIT_BADGE_CIRCLE_KEYS.includes(key) ? "" : " kit-badge-rect";
-    return `<div class="kit-badge filled${shapeClass}" style="left:${pos.x}%;top:${pos.y}%;"><img src="${src}" alt=""></div>`;
+    const px = kitBadgeSizePx(key, pos.size);
+    return `<div class="kit-badge filled${shapeClass}" style="left:${pos.x}%;top:${pos.y}%;width:${px.w}px;height:${px.h}px;"><img src="${src}" alt=""></div>`;
   };
   const photoHtml = (side, badgesHtml) => {
     if (!kit[side]) return `<div class="kit-photo-frame"><div class="kit-photo-empty"><span class="kit-empty-icon">${side === "front" ? "F" : "B"}</span>No ${side} photo yet</div></div>`;
@@ -342,7 +343,7 @@ function kitShareTeamCard(team, leagueData) {
     return `<div class="kit-photo-frame"><img class="kit-photo-img" src="${kit[side]}" alt="">${badgesHtml}${nameHtml}</div>`;
   };
   const frontBadges = badgeHtml("teamPadelLogo", "/images/logo-dark.png") + badgeHtml("mainSponsor", kit.sponsors.mainSponsor) + badgeHtml("secondarySponsor", kit.sponsors.secondarySponsor) + badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
-  const backBadges = badgeHtml("backSponsor1", kit.sponsors.backSponsor1) + badgeHtml("backSponsor2", kit.sponsors.backSponsor2);
+  const backBadges = badgeHtml("backSponsor1", kit.sponsors.backSponsor1) + badgeHtml("backSponsor2", kit.sponsors.backSponsor2) + badgeHtml("backSponsor3", kit.sponsors.backSponsor3);
   const orders = kit.orders || [];
   const ordersHtml = orders.length
     ? orders.map((o) => `<div class="kit-order-row"><span style="flex:1;">${escapeHtml(o.name)}</span><span class="note">${escapeHtml(o.size || "—")}</span><span class="kit-sheet-slot" data-order-id="${escapeHtml(o.id)}"></span></div>`).join("")
@@ -369,6 +370,7 @@ function kitShareTeamCard(team, leagueData) {
     ["Sleeve sponsor (right)", kit.sponsors.sleeveRight, team.name + "-sponsor-sleeve-right.jpg"],
     ["Back sponsor 1", kit.sponsors.backSponsor1, team.name + "-sponsor-back-1.jpg"],
     ["Back sponsor 2", kit.sponsors.backSponsor2, team.name + "-sponsor-back-2.jpg"],
+    ["Back sponsor 3", kit.sponsors.backSponsor3, team.name + "-sponsor-back-3.jpg"],
   ];
   const slots = card.querySelector(".kit-download-slots");
   downloadables.forEach(([label, src, filename]) => {
@@ -6199,15 +6201,25 @@ function kitBadgeSrc(kit, key) {
 function kitPositionOf(kit, key) {
   return (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
 }
-const KIT_BADGE_KEYS = ["teamPadelLogo", "mainSponsor", "secondarySponsor", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+const KIT_BADGE_KEYS = ["teamPadelLogo", "mainSponsor", "secondarySponsor", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2", "backSponsor3"];
 // A logo (the team's own crest, the Team Padel mark) is round; a sponsor's
 // own artwork is normally a wide rectangle, not a badge — everything else
 // gets the rectangular treatment.
 const KIT_BADGE_CIRCLE_KEYS = ["logo", "teamPadelLogo"];
+// Base pixel size for each badge shape at size:1 — must match .kit-badge /
+// .kit-badge-rect in styles.css. A badge's stored `size` (default 1) is a
+// scale multiplier off this base, set by dragging its resize handle.
+const KIT_BADGE_BASE_PX = { circle: 52, rectW: 92, rectH: 58 };
+function kitBadgeSizePx(key, size) {
+  const s = size || 1;
+  return KIT_BADGE_CIRCLE_KEYS.includes(key)
+    ? { w: KIT_BADGE_BASE_PX.circle * s, h: KIT_BADGE_BASE_PX.circle * s }
+    : { w: KIT_BADGE_BASE_PX.rectW * s, h: KIT_BADGE_BASE_PX.rectH * s };
+}
 // Which photo each badge sits on — a sleeve/logo badge floating over a
 // front photo that doesn't exist yet has nowhere real to be, so it stays
 // hidden until that specific photo is uploaded, not just the kit in general.
-const KIT_BADGE_SIDE = { teamPadelLogo: "front", mainSponsor: "front", secondarySponsor: "front", logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back" };
+const KIT_BADGE_SIDE = { teamPadelLogo: "front", mainSponsor: "front", secondarySponsor: "front", logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back", backSponsor3: "back" };
 // The league's own badges — same badge on every team's kit, so only the
 // admin can move (and, for the two sponsors, upload/remove) them; a
 // captain still sees them (once set) but can't touch them.
@@ -6309,12 +6321,13 @@ function attachKitBadgeDrag(key) {
     kitDragState = null;
     try { badge.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (!state.moved) { kitOpenBadgePicker(key); return; }
+    const size = kitPositionOf(kitKitOf(kitTeamInEdit()), key).size || 1;
     try {
       if (isLeagueBadge) {
-        await api(`/leagues/${currentLeagueId}/kit-sponsor-position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY } });
+        await api(`/leagues/${currentLeagueId}/kit-sponsor-position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY, size } });
       } else {
         const team = kitTeamInEdit();
-        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY } });
+        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY, size } });
       }
       await refreshLeague(); renderKit();
     } catch (err) { alert(err.message); }
@@ -6322,6 +6335,51 @@ function attachKitBadgeDrag(key) {
   badge.onclick = () => {
     const kit = kitKitOf(kitTeamInEdit());
     if (!kitBadgeSrc(kit, key)) kitOpenBadgePicker(key);
+  };
+}
+// Drag-to-resize via a handle in the badge's bottom-right corner — distance
+// from the badge's own center to the pointer, relative to where the drag
+// started, scales the badge's stored size multiplier up or down.
+let kitResizeState = null;
+function attachKitBadgeResize(key) {
+  const badge = el("kit-badge-" + key);
+  const handle = badge && badge.querySelector(".kit-badge-resize");
+  if (!handle) return;
+  handle.onpointerdown = (e) => {
+    e.stopPropagation(); e.preventDefault();
+    try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    const rect = badge.getBoundingClientRect();
+    const startSize = kitPositionOf(kitKitOf(kitTeamInEdit()), key).size || 1;
+    kitResizeState = {
+      key, centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2,
+      startDist: Math.hypot(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2)) || 1,
+      startSize, lastSize: startSize,
+    };
+  };
+  handle.onpointermove = (e) => {
+    if (!kitResizeState || kitResizeState.key !== key) return;
+    const dist = Math.hypot(e.clientX - kitResizeState.centerX, e.clientY - kitResizeState.centerY);
+    const size = Math.max(0.5, Math.min(2.5, kitResizeState.startSize * (dist / kitResizeState.startDist)));
+    kitResizeState.lastSize = size;
+    const px = kitBadgeSizePx(key, size);
+    badge.style.width = px.w + "px"; badge.style.height = px.h + "px";
+  };
+  handle.onpointerup = async (e) => {
+    if (!kitResizeState || kitResizeState.key !== key) return;
+    const state = kitResizeState;
+    kitResizeState = null;
+    try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    const pos = kitPositionOf(kitKitOf(kitTeamInEdit()), key);
+    const isLeagueBadge = KIT_LEAGUE_BADGE_KEYS.includes(key);
+    try {
+      if (isLeagueBadge) {
+        await api(`/leagues/${currentLeagueId}/kit-sponsor-position`, { method: "PUT", body: { key, x: pos.x, y: pos.y, size: state.lastSize } });
+      } else {
+        const team = kitTeamInEdit();
+        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: pos.x, y: pos.y, size: state.lastSize } });
+      }
+      await refreshLeague(); renderKit();
+    } catch (err) { alert(err.message); }
   };
 }
 function renderKitBadge(key, kit) {
@@ -6338,11 +6396,14 @@ function renderKitBadge(key, kit) {
   badge.style.left = pos.x + "%"; badge.style.top = pos.y + "%";
   badge.style.display = "flex";
   badge.classList.toggle("kit-badge-rect", !KIT_BADGE_CIRCLE_KEYS.includes(key));
+  const px = kitBadgeSizePx(key, pos.size);
+  badge.style.width = px.w + "px"; badge.style.height = px.h + "px";
   const canEdit = !isLeagueBadge || myRole === "admin";
   const canRemove = canEdit && !KIT_FIXED_BADGE_KEYS.includes(key);
+  const resizeHandle = canEdit ? `<span class="kit-badge-resize" data-resize-key="${key}">&#8600;</span>` : "";
   if (src) {
     badge.classList.add("filled");
-    badge.innerHTML = `<img src="${src}" alt="">` + (canRemove ? `<span class="kit-badge-remove" data-remove-key="${key}">&times;</span>` : "");
+    badge.innerHTML = `<img src="${src}" alt="">` + (canRemove ? `<span class="kit-badge-remove" data-remove-key="${key}">&times;</span>` : "") + resizeHandle;
     if (canRemove) {
       badge.querySelector(".kit-badge-remove").onclick = async (e) => {
         e.stopPropagation();
@@ -6359,6 +6420,7 @@ function renderKitBadge(key, kit) {
     badge.textContent = canEdit ? "+" : "";
   }
   attachKitBadgeDrag(key);
+  if (src && canEdit) attachKitBadgeResize(key);
 }
 function renderKitPhotoFrame(side, kit) {
   const img = el("kit-img-" + side);
@@ -6523,14 +6585,16 @@ async function generateKitSheetCanvas(team, order, kitOverride) {
     if (!img) return;
     const pos = kitPositionOf(kit, key);
     const isCircle = KIT_BADGE_CIRCLE_KEYS.includes(key);
+    const scaleMult = pos.size || 1;
     const cx = panelX + (pos.x / 100) * panelW, cy = panelY + (pos.y / 100) * panelH;
     // A logo (team crest, Team Padel mark) draws as a circle; a sponsor's
     // own artwork is normally a wide rectangle, matching the badge shapes
-    // on screen (see .kit-badge-rect).
+    // on screen (see .kit-badge-rect) — scaled by the same size multiplier
+    // a dragged resize handle stores.
+    const boxW = (isCircle ? 110 : 160) * scaleMult, boxH = (isCircle ? 110 : 102) * scaleMult;
     const boxPath = isCircle
-      ? () => { ctx.beginPath(); ctx.arc(cx, cy, 55, 0, Math.PI * 2); ctx.closePath(); }
-      : () => { roundRectPath(ctx, cx - 80, cy - 51, 160, 102, 12); };
-    const boxW = isCircle ? 110 : 160, boxH = isCircle ? 110 : 102;
+      ? () => { ctx.beginPath(); ctx.arc(cx, cy, boxW / 2, 0, Math.PI * 2); ctx.closePath(); }
+      : () => { roundRectPath(ctx, cx - boxW / 2, cy - boxH / 2, boxW, boxH, 12 * scaleMult); };
     ctx.save();
     boxPath(); ctx.clip();
     ctx.fillStyle = "#fff"; ctx.fillRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
@@ -6549,6 +6613,7 @@ async function generateKitSheetCanvas(team, order, kitOverride) {
   await drawBadge(frontX, "sleeveRight");
   await drawBadge(backX, "backSponsor1");
   await drawBadge(backX, "backSponsor2");
+  await drawBadge(backX, "backSponsor3");
 
   if (kit.back) {
     const nx = backX + panelW / 2, ny = panelY + panelH * 0.12;

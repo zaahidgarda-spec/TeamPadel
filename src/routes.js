@@ -325,8 +325,9 @@ function defaultKit() {
       sleeveRight: { x: 90, y: 34 },
       backSponsor1: { x: 50, y: 48 },
       backSponsor2: { x: 50, y: 66 },
+      backSponsor3: { x: 50, y: 84 },
     },
-    sponsors: { sleeveLeft: "", sleeveRight: "", backSponsor1: "", backSponsor2: "" },
+    sponsors: { sleeveLeft: "", sleeveRight: "", backSponsor1: "", backSponsor2: "", backSponsor3: "" },
     orders: [], // [{ id, name, size }] — who wants a kit and what size
     notes: "", // free text for the kit supplier — fabric, fit, deadline, whatever doesn't fit a badge or a size
   };
@@ -1839,7 +1840,7 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/logo", requireAdminOrCaptain((r
   res.json({ ok: true });
 });
 
-const KIT_SPONSOR_SLOTS = ["sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+const KIT_SPONSOR_SLOTS = ["sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2", "backSponsor3"];
 router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
@@ -1855,18 +1856,24 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain
 // Percent coordinates (0-100), relative to whichever photo that badge sits
 // on — set by dragging the badge on the actual uploaded photo client-side,
 // so it lands in the right spot regardless of how that photo happens to be
-// framed or cropped.
-const KIT_POSITION_KEYS = ["logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+// framed or cropped. size is a scale multiplier off the badge's own base
+// size (1 = default), set by dragging its resize handle; clamped so a
+// badge can't be dragged down to invisible or up past the photo.
+const KIT_POSITION_KEYS = ["logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2", "backSponsor3"];
+function clampBadgeSize(size) {
+  const n = Number(size);
+  return Number.isFinite(n) ? Math.max(0.5, Math.min(2.5, n)) : 1;
+}
 router.put("/leagues/:leagueId/teams/:teamId/kit/position", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
-  const { key, x, y } = req.body || {};
+  const { key, x, y, size } = req.body || {};
   if (!KIT_POSITION_KEYS.includes(key)) return res.status(400).json({ error: "Invalid position key." });
   const nx = Number(x), ny = Number(y);
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return res.status(400).json({ error: "Invalid position." });
   if (!team.kit) team.kit = defaultKit();
-  team.kit.positions[key] = { x: Math.max(0, Math.min(100, nx)), y: Math.max(0, Math.min(100, ny)) };
+  team.kit.positions[key] = { x: Math.max(0, Math.min(100, nx)), y: Math.max(0, Math.min(100, ny)), size: clampBadgeSize(size) };
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -1927,12 +1934,12 @@ const KIT_LEAGUE_SPONSOR_POSITION_FIELD = {
 router.put("/leagues/:leagueId/kit-sponsor-position", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
-  const { key, x, y } = req.body || {};
+  const { key, x, y, size } = req.body || {};
   const field = KIT_LEAGUE_SPONSOR_POSITION_FIELD[key];
   if (!field) return res.status(400).json({ error: "Invalid position key." });
   const nx = Number(x), ny = Number(y);
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return res.status(400).json({ error: "Invalid position." });
-  league[field] = { x: Math.max(0, Math.min(100, nx)), y: Math.max(0, Math.min(100, ny)) };
+  league[field] = { x: Math.max(0, Math.min(100, nx)), y: Math.max(0, Math.min(100, ny)), size: clampBadgeSize(size) };
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
