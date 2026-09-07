@@ -6280,6 +6280,17 @@ el("kit-empty-front").onclick = () => kitOpenPicker({ field: "front" });
 el("kit-replace-front").onclick = () => kitOpenPicker({ field: "front" });
 el("kit-empty-back").onclick = () => kitOpenPicker({ field: "back" });
 el("kit-replace-back").onclick = () => kitOpenPicker({ field: "back" });
+async function kitRemovePhoto(side) {
+  const team = kitTeamInEdit();
+  if (!team) return;
+  if (!confirm(`Remove the ${side} photo? Any badges on it stay saved, ready to reappear once you upload a new one.`)) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/photo`, { method: "PUT", body: { side, image: "" } });
+    await refreshLeague(); renderKit();
+  } catch (e) { alert(e.message); }
+}
+el("kit-photo-remove-front").onclick = (e) => { e.stopPropagation(); kitRemovePhoto("front"); };
+el("kit-photo-remove-back").onclick = (e) => { e.stopPropagation(); kitRemovePhoto("back"); };
 
 // Drag-to-place for one badge — pointer events cover mouse and touch alike.
 // A tap that never really moves is treated as "replace this image" instead
@@ -6405,7 +6416,13 @@ function renderKitBadge(key, kit) {
     badge.classList.add("filled");
     badge.innerHTML = `<img src="${src}" alt="">` + (canRemove ? `<span class="kit-badge-remove" data-remove-key="${key}">&times;</span>` : "") + resizeHandle;
     if (canRemove) {
-      badge.querySelector(".kit-badge-remove").onclick = async (e) => {
+      const removeEl = badge.querySelector(".kit-badge-remove");
+      // Without this, the pointerdown/up here bubbles up to the badge's own
+      // drag handlers — which see a tap that "didn't move" and open the
+      // file picker right after the image was just removed.
+      removeEl.onpointerdown = (e) => e.stopPropagation();
+      removeEl.onpointerup = (e) => e.stopPropagation();
+      removeEl.onclick = async (e) => {
         e.stopPropagation();
         try {
           if (isLeagueBadge) await api(`/leagues/${currentLeagueId}/${KIT_LEAGUE_SPONSOR_ROUTE[key]}`, { method: "PUT", body: { image: "" } });
@@ -6425,8 +6442,9 @@ function renderKitBadge(key, kit) {
 function renderKitPhotoFrame(side, kit) {
   const img = el("kit-img-" + side);
   const empty = el("kit-empty-" + side);
-  if (kit[side]) { img.src = kit[side]; img.style.display = "block"; empty.style.display = "none"; }
-  else { img.style.display = "none"; empty.style.display = "flex"; }
+  const remove = el("kit-photo-remove-" + side);
+  if (kit[side]) { img.src = kit[side]; img.style.display = "block"; empty.style.display = "none"; remove.style.display = "flex"; }
+  else { img.style.display = "none"; empty.style.display = "flex"; remove.style.display = "none"; }
 }
 // Draft rows for the order list — kept in memory while the captain edits
 // (typing shouldn't round-trip to the server per keystroke), only sent to
