@@ -6296,6 +6296,25 @@ el("kit-photo-remove-back").onclick = (e) => { e.stopPropagation(); kitRemovePho
 // A tap that never really moves is treated as "replace this image" instead
 // of a (pointless, sub-pixel) drag; an empty badge has nothing to drag yet,
 // so it's handled by a plain click instead (see renderKitBadge below).
+// Shared by both drag-to-move and drag-to-resize: a small tooltip that
+// follows the pointer with a live readout, and a vertical guide line that
+// lights up (and magnetically snaps the badge to it) when a move crosses
+// dead-centre — one pair of elements per photo frame.
+function kitDragTooltip(frame) { return frame.querySelector(".kit-drag-tooltip"); }
+function kitDragGuide(frame) { return frame.querySelector(".kit-guide"); }
+function kitShowTooltip(frame, frameRect, clientX, clientY, text) {
+  const tip = kitDragTooltip(frame);
+  if (!tip) return;
+  tip.textContent = text;
+  tip.classList.add("on");
+  tip.style.left = (clientX - frameRect.left + 14) + "px";
+  tip.style.top = (clientY - frameRect.top - 10) + "px";
+}
+function kitHideTooltip(frame) {
+  const tip = kitDragTooltip(frame);
+  if (tip) tip.classList.remove("on");
+}
+
 let kitDragState = null;
 function attachKitBadgeDrag(key) {
   const badge = el("kit-badge-" + key);
@@ -6320,16 +6339,24 @@ function attachKitBadgeDrag(key) {
     const dx = e.clientX - kitDragState.startX, dy = e.clientY - kitDragState.startY;
     if (Math.hypot(dx, dy) > 4) kitDragState.moved = true;
     if (!kitDragState.moved) return;
+    badge.classList.add("dragging");
     const rect = kitDragState.frame.getBoundingClientRect();
-    const x = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
+    let x = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
     const y = Math.max(2, Math.min(98, ((e.clientY - rect.top) / rect.height) * 100));
+    const nearCenter = Math.abs(x - 50) < 1.5;
+    if (nearCenter) x = 50;
+    kitDragGuide(kitDragState.frame).classList.toggle("on", nearCenter);
     badge.style.left = x + "%"; badge.style.top = y + "%";
     kitDragState.lastX = x; kitDragState.lastY = y;
+    kitShowTooltip(kitDragState.frame, rect, e.clientX, e.clientY, "x " + Math.round(x) + "%  y " + Math.round(y) + "%");
   };
   badge.onpointerup = async (e) => {
     if (!kitDragState || kitDragState.key !== key) return;
     const state = kitDragState;
     kitDragState = null;
+    badge.classList.remove("dragging");
+    kitDragGuide(state.frame).classList.remove("on");
+    kitHideTooltip(state.frame);
     try { badge.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (!state.moved) { kitOpenBadgePicker(key); return; }
     const size = kitPositionOf(kitKitOf(kitTeamInEdit()), key).size || 1;
@@ -6359,10 +6386,11 @@ function attachKitBadgeResize(key) {
   handle.onpointerdown = (e) => {
     e.stopPropagation(); e.preventDefault();
     try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    badge.classList.add("dragging");
     const rect = badge.getBoundingClientRect();
     const startSize = kitPositionOf(kitKitOf(kitTeamInEdit()), key).size || 1;
     kitResizeState = {
-      key, centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2,
+      key, frame: badge.closest(".kit-photo-frame"), centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2,
       startDist: Math.hypot(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2)) || 1,
       startSize, lastSize: startSize,
     };
@@ -6374,11 +6402,15 @@ function attachKitBadgeResize(key) {
     kitResizeState.lastSize = size;
     const px = kitBadgeSizePx(key, size);
     badge.style.width = px.w + "px"; badge.style.height = px.h + "px";
+    const frameRect = kitResizeState.frame.getBoundingClientRect();
+    kitShowTooltip(kitResizeState.frame, frameRect, e.clientX, e.clientY, Math.round(size * 100) + "%");
   };
   handle.onpointerup = async (e) => {
     if (!kitResizeState || kitResizeState.key !== key) return;
     const state = kitResizeState;
     kitResizeState = null;
+    badge.classList.remove("dragging");
+    kitHideTooltip(state.frame);
     try { handle.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     const pos = kitPositionOf(kitKitOf(kitTeamInEdit()), key);
     const isLeagueBadge = KIT_LEAGUE_BADGE_KEYS.includes(key);
