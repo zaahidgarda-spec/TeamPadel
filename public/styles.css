@@ -102,6 +102,14 @@ button.secondary{background:var(--panel);border:1px solid var(--line);color:var(
 button.secondary:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
 button.danger{background:transparent;border:1px solid var(--line);color:var(--clay);font-size:13px;padding:9px 16px;border-radius:var(--radius-sm);cursor:pointer;}
 button.danger:hover:not(:disabled){border-color:var(--clay);background:var(--clay-soft);}
+/* "Go to Selection Room" on My Profile's Line-ups due list — still the
+   same solid accent fill as button.primary (it's still the clearest
+   "this is the one to tap" signal), but rounded into a pill, sentence
+   case instead of shouty uppercase, and a soft coloured shadow instead of
+   a hard flat edge — reads as a confident everyday action rather than an
+   alert, since this button can legitimately show up 2-3 times in a row. */
+button.account-lineup-go-btn{border-radius:999px;text-transform:none;font-family:var(--font-body);font-weight:600;font-size:13px;padding:9px 16px;box-shadow:0 8px 20px rgba(37,99,235,.22);}
+button.account-lineup-go-btn:hover:not(:disabled){filter:brightness(1.06);}
 button.ghost{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;line-height:1;padding:4px 8px;border-radius:var(--radius-sm);}
 button.ghost:hover:not(:disabled){color:var(--clay);background:var(--clay-soft);}
 button.link{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;text-decoration:underline;text-underline-offset:2px;}
