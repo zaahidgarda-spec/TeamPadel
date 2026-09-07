@@ -6554,6 +6554,50 @@ function renderKitDownloadList(team, orders) {
     btn.onclick = () => openKitSheetModal(team, orders[Number(btn.dataset.idx)]);
   });
 }
+// Same defaults defaultKit()/the league lazy-defaults use server-side —
+// kept here so "Reset position" can snap a badge back without a round
+// trip just to look its own default up.
+const KIT_BADGE_DEFAULT_POS = {
+  teamPadelLogo: { x: 50, y: 12 }, mainSponsor: { x: 50, y: 45 }, secondarySponsor: { x: 30, y: 22 },
+  logo: { x: 70, y: 22 }, sleeveLeft: { x: 10, y: 34 }, sleeveRight: { x: 90, y: 34 },
+  backSponsor1: { x: 50, y: 48 }, backSponsor2: { x: 50, y: 66 }, backSponsor3: { x: 50, y: 84 },
+};
+const KIT_BADGE_NAMES = {
+  teamPadelLogo: "Team Padel logo", mainSponsor: "Main sponsor", secondarySponsor: "Secondary sponsor",
+  logo: "Team logo", sleeveLeft: "Sleeve sponsor (left)", sleeveRight: "Sleeve sponsor (right)",
+  backSponsor1: "Back sponsor 1", backSponsor2: "Back sponsor 2", backSponsor3: "Back sponsor 3",
+};
+async function kitResetBadgePosition(key) {
+  const def = KIT_BADGE_DEFAULT_POS[key];
+  if (!def) return;
+  try {
+    if (KIT_LEAGUE_BADGE_KEYS.includes(key)) {
+      await api(`/leagues/${currentLeagueId}/kit-sponsor-position`, { method: "PUT", body: { key, x: def.x, y: def.y, size: 1 } });
+    } else {
+      const team = kitTeamInEdit();
+      if (!team) return;
+      await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: def.x, y: def.y, size: 1 } });
+    }
+    await refreshLeague(); renderKit();
+  } catch (e) { alert(e.message); }
+}
+// A row per badge actually on this kit, outside the photo entirely — so
+// two badges dragged on top of each other (whichever's on top eating
+// every click meant for the one underneath) still each have a way back,
+// with no need to land a click on the covered one at all.
+function renderKitBadgeList(kit) {
+  const c = el("kit-badge-list");
+  const rows = KIT_BADGE_KEYS.filter((key) => {
+    const isLeagueBadge = KIT_LEAGUE_BADGE_KEYS.includes(key);
+    if (isLeagueBadge && myRole !== "admin") return false;
+    if (!kit[KIT_BADGE_SIDE[key]]) return false;
+    return !!kitBadgeSrc(kit, key);
+  });
+  if (!rows.length) { c.innerHTML = ""; return; }
+  c.innerHTML = `<p class="note" style="margin:14px 0 6px;">Two badges stuck on top of each other? Reset one back to its default spot.</p>` +
+    rows.map((key) => `<div class="kit-download-row"><span>${escapeHtml(KIT_BADGE_NAMES[key])}</span><button class="link" data-reset-key="${key}" type="button">Reset position</button></div>`).join("");
+  c.querySelectorAll("[data-reset-key]").forEach((btn) => { btn.onclick = () => kitResetBadgePosition(btn.dataset.resetKey); });
+}
 function renderKit() {
   if (myRole !== "admin" && myRole !== "captain") return;
   el("kit-team-select-row").style.display = myRole === "admin" ? "flex" : "none";
@@ -6573,6 +6617,7 @@ function renderKit() {
   renderKitPhotoFrame("front", kit);
   renderKitPhotoFrame("back", kit);
   KIT_BADGE_KEYS.forEach((key) => renderKitBadge(key, kit));
+  renderKitBadgeList(kit);
   el("kit-name-preview").style.display = kit.back ? "block" : "none";
 
   // A first visit with nothing saved yet drafts one row per roster player,
