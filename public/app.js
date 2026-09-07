@@ -1394,19 +1394,50 @@ async function renderAccountDues() {
     };
   });
 }
+// The real deadline is 24h before kickoff, not kickoff itself — "due
+// tonight" for a Friday match actually means Thursday evening. The
+// progress-bar pill only kicks in once inside a 48h window of that real
+// deadline; further out than that, a bar would just look empty, so the
+// plain row (and its explicit button) is plenty.
+const LINEUP_DEADLINE_LEAD_MS = 24 * 60 * 60 * 1000;
+const LINEUP_DUE_BAR_WINDOW_MS = 48 * 60 * 60 * 1000;
+function formatDurationShort(ms) {
+  const totalMinutes = Math.max(1, Math.round(Math.abs(ms) / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const mins = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h`;
+  return `${mins}m`;
+}
 // Every not-yet-submitted line-up across every league this account
 // captains — same cross-league "surface it on the homepage" treatment as
-// "What you owe" gets for outstanding fees. Kickoff time (when there is
-// one) shows right alongside it so a captain can tell "due tonight" from
-// "not for weeks" at a glance, same as the in-league reminder this pairs
-// with (see checkLineupReminders server-side) but visible any time, not
-// just once a kickoff is within 36 hours.
+// "What you owe" gets for outstanding fees. Once within 48h of the real
+// deadline (24h before kickoff), a fixture gets the more prominent
+// progress-bar pill instead of the plain row; same in-league reminder
+// this pairs with (see checkLineupReminders server-side) but visible any
+// time, not just once a kickoff is within 36 hours.
 async function renderAccountLineupsDue() {
   const due = await api("/players/lineups-due").catch(() => []);
   el("account-lineups-section").style.display = due.length ? "block" : "none";
   if (!due.length) return;
   const list = el("account-lineups-list");
+  const now = Date.now();
   list.innerHTML = due.map((d) => {
+    const deadlineMs = d.kickoffMs ? d.kickoffMs - LINEUP_DEADLINE_LEAD_MS : null;
+    const msUntilDeadline = deadlineMs !== null ? deadlineMs - now : null;
+    if (deadlineMs !== null && msUntilDeadline <= LINEUP_DUE_BAR_WINDOW_MS) {
+      const overdue = msUntilDeadline < 0;
+      const pct = overdue ? 100 : Math.max(2, Math.min(100, ((LINEUP_DUE_BAR_WINDOW_MS - msUntilDeadline) / LINEUP_DUE_BAR_WINDOW_MS) * 100));
+      const timeLabel = overdue ? `Overdue ${formatDurationShort(msUntilDeadline)}` : `${formatDurationShort(msUntilDeadline)} left`;
+      const subLabel = (overdue ? "Was due " : "Due ") + fmtDateTime(deadlineMs) + " · kicks off " + fmtDateTime(d.kickoffMs);
+      return `
+      <div class="lineup-due-pill" data-league="${d.leagueId}">
+        <div class="lineup-due-top"><strong>${escapeHtml(d.opponentName)}</strong><span class="lineup-due-timeleft${overdue ? " overdue" : ""}">${escapeHtml(timeLabel)}</span></div>
+        <div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>
+        <div class="lineup-due-sub">${escapeHtml(subLabel)}</div>
+      </div>`;
+    }
     const when = d.date ? (relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "") : "Not yet scheduled";
     return `
     <div class="notif-row" data-league="${d.leagueId}">
@@ -1414,6 +1445,9 @@ async function renderAccountLineupsDue() {
       <button class="primary account-lineup-go-btn" type="button">Go to Selection Room</button>
     </div>`;
   }).join("");
+  list.querySelectorAll(".lineup-due-pill").forEach((row) => {
+    row.onclick = () => openLeague(row.dataset.league);
+  });
   list.querySelectorAll(".account-lineup-go-btn").forEach((btn) => {
     btn.onclick = () => openLeague(btn.closest(".notif-row").dataset.league);
   });

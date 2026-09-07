@@ -3278,11 +3278,18 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
       if (sel.submitted) return;
       const oppTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamB : f.teamA));
       const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      // Only meaningful once there's a real kickoff time, not just a date —
+      // the client uses this to count down to the *real* deadline (24h
+      // before kickoff), not kickoff itself; a date-only fixture has no
+      // exact instant to count down to, so it stays null and falls back to
+      // the plain day label like before.
+      const kickoffMs = sched.date && sched.time ? new Date(sched.date + "T" + sched.time + ":00").getTime() : null;
       out.push({
         leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
         fixtureId: f.id, label: fixtureLabel(league, f),
         opponentName: oppTeam ? oppTeam.name : "TBD",
         date: sched.date || "", time: sched.time || "",
+        kickoffMs: Number.isNaN(kickoffMs) ? null : kickoffMs,
       });
     });
   });
