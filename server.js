@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const path = require("path");
+const fs = require("fs");
 const routes = require("./src/routes");
 const store = require("./src/store");
 const { createSessionStore } = require("./src/sessionStore");
@@ -119,19 +120,41 @@ app.use("/api", (err, req, res, next) => {
   }
   next(err);
 });
+// index.html's own no-cache header was meant to guarantee every visit sees
+// the latest app.js/styles.css — but that only holds if whatever's in front
+// of this server (GoDaddy's CDN, in production) actually honors "no-cache"
+// for those files too. It doesn't: JS/CSS come back with a month-long
+// max-age regardless of what this server sends, so a browser or edge node
+// that cached an old app.js before a deploy can keep serving it for weeks,
+// no matter how fresh index.html itself is. A version query string fixes
+// this at the one layer that's reliably honored (this server) — the exact
+// URL changes on every deploy, so there's no stale copy to have cached
+// under that URL in the first place. Computed once at boot (this process
+// restarts on every deploy) and baked into index.html here, since the
+// static middleware below would otherwise hand back the unversioned file
+// verbatim for "/" and "/index.html" before this ever runs.
+const ASSET_VERSION = Date.now();
+const indexHtmlPath = path.join(__dirname, "public", "index.html");
+const versionedIndexHtml = fs
+  .readFileSync(indexHtmlPath, "utf8")
+  .replace('src="/app.js"', `src="/app.js?v=${ASSET_VERSION}"`)
+  .replace('href="/styles.css"', `href="/styles.css?v=${ASSET_VERSION}"`);
+function sendVersionedIndex(req, res) {
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Content-Type", "text/html; charset=UTF-8");
+  res.send(versionedIndexHtml);
+}
+app.get(["/", "/index.html"], sendVersionedIndex);
 // no-cache (not no-store) still lets the browser cache these, but forces a
-// revalidation request on every load — so a stale service worker or CDN
-// layer can't be the only thing standing between a deploy and what users
-// actually see. Revalidation is a cheap 304 when nothing changed.
+// revalidation request on every load — belt-and-suspenders alongside the
+// version query string above, for anything (an image, a direct /app.js
+// hit with no query) that isn't going through index.html.
 app.use(
   express.static(path.join(__dirname, "public"), {
     setHeaders: (res) => res.setHeader("Cache-Control", "no-cache"),
   })
 );
-app.get("*", (req, res) => {
-  res.setHeader("Cache-Control", "no-cache");
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+app.get("*", sendVersionedIndex);
 
 store
   .init()
