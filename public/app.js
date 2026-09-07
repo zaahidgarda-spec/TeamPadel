@@ -311,8 +311,17 @@ function kitDownloadDataUrl(dataUrl, filename) {
 // asset. Built as real DOM nodes (not one big innerHTML string) so each
 // download button's handler can close directly over that asset's own data
 // URL instead of round-tripping it through an HTML attribute.
-function kitShareTeamCard(team) {
-  const kit = team.kit || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
+function kitShareTeamCard(team, leagueData) {
+  const rawKit = team.kit || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
+  // The main/secondary sponsor aren't part of the team's own kit (they're
+  // the admin's, shared across every team) — merged in here the same way
+  // kitKitOf does for the in-app editor, just sourced from the fetched
+  // payload instead of the (unloaded, on this no-login page) global league.
+  const kit = {
+    ...rawKit,
+    positions: { ...rawKit.positions, mainSponsor: leagueData.mainSponsorPos || { x: 50, y: 45 }, secondarySponsor: leagueData.secondarySponsorPos || { x: 30, y: 22 } },
+    sponsors: { ...rawKit.sponsors, mainSponsor: leagueData.mainSponsor || "", secondarySponsor: leagueData.secondarySponsor || "" },
+  };
   const card = document.createElement("div");
   card.className = "card"; card.style.marginBottom = "20px";
 
@@ -326,7 +335,7 @@ function kitShareTeamCard(team) {
     const nameHtml = side === "back" ? '<div class="kit-name-preview">PLAYER NAME</div>' : "";
     return `<div class="kit-photo-frame"><img class="kit-photo-img" src="${kit[side]}" alt="">${badgesHtml}${nameHtml}</div>`;
   };
-  const frontBadges = badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
+  const frontBadges = badgeHtml("mainSponsor", kit.sponsors.mainSponsor) + badgeHtml("secondarySponsor", kit.sponsors.secondarySponsor) + badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
   const backBadges = badgeHtml("backSponsor1", kit.sponsors.backSponsor1) + badgeHtml("backSponsor2", kit.sponsors.backSponsor2);
   const orders = kit.orders || [];
   const ordersHtml = orders.length
@@ -371,10 +380,35 @@ function kitShareTeamCard(team) {
     const btn = document.createElement("button");
     btn.className = "secondary"; btn.type = "button"; btn.textContent = "Kit sheet";
     btn.onclick = async () => {
-      const canvas = await generateKitSheetCanvas(team, o);
+      const canvas = await generateKitSheetCanvas(team, o, kit);
       kitDownloadDataUrl(canvas.toDataURL("image/png"), (o.name || "kit").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-kit-sheet.png");
     };
     slot.appendChild(btn);
+  });
+  return card;
+}
+// The main/secondary sponsor are the same asset on every team's kit, so
+// they're offered as one download each here instead of duplicated inside
+// every team card below.
+function kitShareLeagueSponsorsCard(data) {
+  const rows = [
+    ["Main sponsor", data.mainSponsor, "league-main-sponsor.jpg"],
+    ["Secondary sponsor", data.secondarySponsor, "league-secondary-sponsor.jpg"],
+  ].filter(([, src]) => src);
+  if (!rows.length) return null;
+  const card = document.createElement("div");
+  card.className = "card"; card.style.marginBottom = "20px";
+  card.innerHTML = `<h2 class="section-title">League sponsors</h2><p class="note" style="margin-bottom:12px;">Placed on every team's kit — front centre and left chest.</p><div class="kit-download-slots"></div>`;
+  const slots = card.querySelector(".kit-download-slots");
+  rows.forEach(([label, src, filename]) => {
+    const row = document.createElement("div");
+    row.className = "kit-download-row";
+    row.innerHTML = `<span>${escapeHtml(label)}</span>`;
+    const btn = document.createElement("button");
+    btn.className = "secondary"; btn.type = "button"; btn.textContent = "Download";
+    btn.onclick = () => kitDownloadDataUrl(src, filename);
+    row.appendChild(btn);
+    slots.appendChild(row);
   });
   return card;
 }
@@ -391,7 +425,9 @@ async function openKitSharePage(leagueId, token) {
   }
   trackPageView(`/kit-share/${leagueId}`, `${data.leagueName} — kit designs`);
   content.innerHTML = `<h2 class="section-title">${escapeHtml(data.leagueName)} — kit designs</h2><p class="note" style="margin-bottom:20px;">Download the kit photos, logo, and sponsor artwork for each team below.</p>`;
-  data.teams.forEach((t) => content.appendChild(kitShareTeamCard(t)));
+  const sponsorsCard = kitShareLeagueSponsorsCard(data);
+  if (sponsorsCard) content.appendChild(sponsorsCard);
+  data.teams.forEach((t) => content.appendChild(kitShareTeamCard(t, data)));
 }
 function showHub() {
   currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
@@ -6128,8 +6164,18 @@ function kitTeamInEdit() {
   }
   return null;
 }
+// A team's own kit, with the league's main/secondary sponsor merged in as
+// if they were just two more sponsor slots — they aren't stored on the
+// team (they're the same badge on every team's kit, admin-controlled),
+// but folding them in here means every badge-rendering/canvas-drawing
+// helper below can treat all six badges identically.
 function kitKitOf(team) {
-  return (team && team.kit) || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
+  const kit = (team && team.kit) || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
+  return {
+    ...kit,
+    positions: { ...kit.positions, mainSponsor: (league && league.kitMainSponsorPos) || { x: 50, y: 45 }, secondarySponsor: (league && league.kitSecondarySponsorPos) || { x: 30, y: 22 } },
+    sponsors: { ...kit.sponsors, mainSponsor: (league && league.kitMainSponsor) || "", secondarySponsor: (league && league.kitSecondarySponsor) || "" },
+  };
 }
 function kitBadgeSrc(kit, key) {
   return key === "logo" ? (kit.logo || "") : ((kit.sponsors && kit.sponsors[key]) || "");
@@ -6137,11 +6183,16 @@ function kitBadgeSrc(kit, key) {
 function kitPositionOf(kit, key) {
   return (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
 }
-const KIT_BADGE_KEYS = ["logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+const KIT_BADGE_KEYS = ["mainSponsor", "secondarySponsor", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
 // Which photo each badge sits on — a sleeve/logo badge floating over a
 // front photo that doesn't exist yet has nowhere real to be, so it stays
 // hidden until that specific photo is uploaded, not just the kit in general.
-const KIT_BADGE_SIDE = { logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back" };
+const KIT_BADGE_SIDE = { mainSponsor: "front", secondarySponsor: "front", logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back" };
+// The league's own sponsor badges — same badge on every team's kit, so
+// only the admin can upload, move, or remove them; a captain still sees
+// them (once set) but can't touch them.
+const KIT_LEAGUE_BADGE_KEYS = ["mainSponsor", "secondarySponsor"];
+const KIT_LEAGUE_SPONSOR_ROUTE = { mainSponsor: "kit-main-sponsor", secondarySponsor: "kit-secondary-sponsor" };
 
 // Set right before opening the one shared file input, so its onchange
 // knows which upload this file is actually for — cheaper than a separate
@@ -6152,6 +6203,11 @@ function kitOpenPicker(target) {
   el("kit-file-input").click();
 }
 function kitOpenBadgePicker(key) {
+  if (KIT_LEAGUE_BADGE_KEYS.includes(key)) {
+    if (myRole !== "admin") return; // read-only for a captain
+    kitOpenPicker({ field: key });
+    return;
+  }
   kitOpenPicker(key === "logo" ? { field: "logo" } : { field: "sponsor", slot: key });
 }
 el("kit-file-input").onchange = () => {
@@ -6164,15 +6220,21 @@ el("kit-file-input").onchange = () => {
   const maxSize = target.field === "front" || target.field === "back" ? 900 : 240;
   resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
     if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
-    const team = kitTeamInEdit();
-    if (!team) return;
     try {
       if (target.field === "front" || target.field === "back") {
+        const team = kitTeamInEdit();
+        if (!team) return;
         await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/photo`, { method: "PUT", body: { side: target.field, image: dataUrl } });
       } else if (target.field === "logo") {
+        const team = kitTeamInEdit();
+        if (!team) return;
         await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/logo`, { method: "PUT", body: { image: dataUrl } });
       } else if (target.field === "sponsor") {
+        const team = kitTeamInEdit();
+        if (!team) return;
         await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/sponsor`, { method: "PUT", body: { slot: target.slot, image: dataUrl } });
+      } else if (KIT_LEAGUE_SPONSOR_ROUTE[target.field]) {
+        await api(`/leagues/${currentLeagueId}/${KIT_LEAGUE_SPONSOR_ROUTE[target.field]}`, { method: "PUT", body: { image: dataUrl } });
       }
       await refreshLeague(); renderKit();
     } catch (e) { alert(e.message); }
@@ -6191,6 +6253,14 @@ let kitDragState = null;
 function attachKitBadgeDrag(key) {
   const badge = el("kit-badge-" + key);
   if (!badge) return;
+  const isLeagueBadge = KIT_LEAGUE_BADGE_KEYS.includes(key);
+  // The league's own sponsor badge is the same image on every team's kit —
+  // only the admin can move or replace it, so a captain gets no drag/click
+  // wiring on it at all.
+  if (isLeagueBadge && myRole !== "admin") {
+    badge.onpointerdown = null; badge.onpointermove = null; badge.onpointerup = null; badge.onclick = null;
+    return;
+  }
   badge.onpointerdown = (e) => {
     const kit = kitKitOf(kitTeamInEdit());
     if (!kitBadgeSrc(kit, key)) return;
@@ -6215,9 +6285,13 @@ function attachKitBadgeDrag(key) {
     kitDragState = null;
     try { badge.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (!state.moved) { kitOpenBadgePicker(key); return; }
-    const team = kitTeamInEdit();
     try {
-      await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY } });
+      if (isLeagueBadge) {
+        await api(`/leagues/${currentLeagueId}/kit-sponsor-position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY } });
+      } else {
+        const team = kitTeamInEdit();
+        await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/position`, { method: "PUT", body: { key, x: state.lastX, y: state.lastY } });
+      }
       await refreshLeague(); renderKit();
     } catch (err) { alert(err.message); }
   };
@@ -6230,25 +6304,33 @@ function renderKitBadge(key, kit) {
   const badge = el("kit-badge-" + key);
   if (!badge) return;
   if (!kit[KIT_BADGE_SIDE[key]]) { badge.style.display = "none"; return; }
+  const isLeagueBadge = KIT_LEAGUE_BADGE_KEYS.includes(key);
   const src = kitBadgeSrc(kit, key);
+  // A captain can't add or move the league's sponsor badge anyway, so an
+  // empty placeholder circle they can't do anything with is just clutter —
+  // only show it to them once the admin has actually set one.
+  if (isLeagueBadge && myRole !== "admin" && !src) { badge.style.display = "none"; return; }
   const pos = kitPositionOf(kit, key);
   badge.style.left = pos.x + "%"; badge.style.top = pos.y + "%";
   badge.style.display = "flex";
+  const canEdit = !isLeagueBadge || myRole === "admin";
   if (src) {
     badge.classList.add("filled");
-    badge.innerHTML = `<img src="${src}" alt=""><span class="kit-badge-remove" data-remove-key="${key}">&times;</span>`;
-    badge.querySelector(".kit-badge-remove").onclick = async (e) => {
-      e.stopPropagation();
-      const team = kitTeamInEdit();
-      try {
-        if (key === "logo") await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/logo`, { method: "PUT", body: { image: "" } });
-        else await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/sponsor`, { method: "PUT", body: { slot: key, image: "" } });
-        await refreshLeague(); renderKit();
-      } catch (err) { alert(err.message); }
-    };
+    badge.innerHTML = `<img src="${src}" alt="">` + (canEdit ? `<span class="kit-badge-remove" data-remove-key="${key}">&times;</span>` : "");
+    if (canEdit) {
+      badge.querySelector(".kit-badge-remove").onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          if (isLeagueBadge) await api(`/leagues/${currentLeagueId}/${KIT_LEAGUE_SPONSOR_ROUTE[key]}`, { method: "PUT", body: { image: "" } });
+          else if (key === "logo") await api(`/leagues/${currentLeagueId}/teams/${kitTeamInEdit().id}/kit/logo`, { method: "PUT", body: { image: "" } });
+          else await api(`/leagues/${currentLeagueId}/teams/${kitTeamInEdit().id}/kit/sponsor`, { method: "PUT", body: { slot: key, image: "" } });
+          await refreshLeague(); renderKit();
+        } catch (err) { alert(err.message); }
+      };
+    }
   } else {
     badge.classList.remove("filled");
-    badge.textContent = "+";
+    badge.textContent = canEdit ? "+" : "";
   }
   attachKitBadgeDrag(key);
 }
@@ -6262,7 +6344,7 @@ function renderKitPhotoFrame(side, kit) {
 // (typing shouldn't round-trip to the server per keystroke), only sent to
 // the server when "Save order list" is clicked.
 let kitOrdersDraft = [];
-const KIT_SIZES = ["", "XS", "S", "M", "L", "XL", "XXL"];
+const KIT_SIZES = ["", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 function renderKitOrdersList() {
   const c = el("kit-orders-list");
   c.innerHTML = kitOrdersDraft.map((o, i) => `
@@ -6354,8 +6436,11 @@ function renderKit() {
   renderKitDownloadList(team, kit.orders || []);
 }
 
-async function generateKitSheetCanvas(team, order) {
-  const kit = kitKitOf(team);
+// kitOverride lets the kit-share (public, no-login) page pass in a kit
+// object it already merged from the fetched data instead of kitKitOf's
+// own global `league` lookup, which isn't loaded on that page at all.
+async function generateKitSheetCanvas(team, order, kitOverride) {
+  const kit = kitOverride || kitKitOf(team);
   const W = 1600, H = 1040;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -6412,6 +6497,8 @@ async function generateKitSheetCanvas(team, order) {
     ctx.lineWidth = 3; ctx.strokeStyle = "#2563EB";
     ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.stroke();
   }
+  await drawBadge(frontX, "mainSponsor");
+  await drawBadge(frontX, "secondarySponsor");
   await drawBadge(frontX, "logo");
   await drawBadge(frontX, "sleeveLeft");
   await drawBadge(frontX, "sleeveRight");
