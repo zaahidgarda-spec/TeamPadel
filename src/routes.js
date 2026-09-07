@@ -304,18 +304,19 @@ function genTeamCode(league) {
 // A freshly-defaulted kit — every field empty until a captain uploads
 // something. Positions are percent coordinates (0-100) relative to
 // whichever photo they sit on, pre-seeded to sensible starting spots
-// (right chest for the team logo, both sleeves, stacked lower on the
+// (left chest for the team logo, both sleeves, stacked lower on the
 // back) so a badge appears somewhere reasonable the moment its logo is
 // uploaded, ready to be dragged onto the exact spot for that specific
-// photo. The league's own main/secondary sponsor badges (front-centre,
-// left chest) aren't part of a team's kit at all — see kitMainSponsor*/
-// kitSecondarySponsor* on the league itself, admin-controlled and shared
-// by every team.
+// photo. The league's own badges — the main sponsor (front-centre),
+// secondary sponsor (right chest), and the Team Padel logo (top-centre,
+// under the neck) — aren't part of a team's kit at all; see
+// kitMainSponsor*/kitSecondarySponsor*/kitTeamPadelLogoPos on the league
+// itself, admin-controlled and shared by every team.
 function defaultKit() {
   return {
     front: "", back: "", logo: "",
     positions: {
-      logo: { x: 70, y: 22 },
+      logo: { x: 30, y: 22 },
       sleeveLeft: { x: 10, y: 34 },
       sleeveRight: { x: 90, y: 34 },
       backSponsor1: { x: 50, y: 48 },
@@ -1506,13 +1507,14 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.groups) league.groups = [];
   if (!league.hallOfFame) league.hallOfFame = [];
   if (!league.registrationFeeCents) league.registrationFeeCents = 0;
-  // League-wide kit sponsors — the admin's own main/secondary sponsor
-  // badges, shared across every team's kit (unlike a team's own logo or
-  // sleeve sponsors, which live on team.kit instead).
+  // League-wide kit badges — the admin's own main/secondary sponsor and
+  // the Team Padel brand mark, shared across every team's kit (unlike a
+  // team's own logo or sleeve sponsors, which live on team.kit instead).
   if (league.kitMainSponsor === undefined) league.kitMainSponsor = "";
   if (!league.kitMainSponsorPos) league.kitMainSponsorPos = { x: 50, y: 45 };
   if (league.kitSecondarySponsor === undefined) league.kitSecondarySponsor = "";
-  if (!league.kitSecondarySponsorPos) league.kitSecondarySponsorPos = { x: 30, y: 22 };
+  if (!league.kitSecondarySponsorPos) league.kitSecondarySponsorPos = { x: 70, y: 22 };
+  if (!league.kitTeamPadelLogoPos) league.kitTeamPadelLogoPos = { x: 50, y: 12 };
   // Lives on the leagues-index entry, not this document — surfaced here
   // (harmless either way) so the owner-only "hide from lists" toggle in
   // Admin knows its current state without a separate lookup.
@@ -1899,15 +1901,19 @@ router.put("/leagues/:leagueId/kit-secondary-sponsor", requireAdmin, (req, res) 
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
-const KIT_LEAGUE_SPONSOR_POSITION_KEYS = ["mainSponsor", "secondarySponsor"];
+const KIT_LEAGUE_SPONSOR_POSITION_FIELD = {
+  mainSponsor: "kitMainSponsorPos",
+  secondarySponsor: "kitSecondarySponsorPos",
+  teamPadelLogo: "kitTeamPadelLogoPos",
+};
 router.put("/leagues/:leagueId/kit-sponsor-position", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   const { key, x, y } = req.body || {};
-  if (!KIT_LEAGUE_SPONSOR_POSITION_KEYS.includes(key)) return res.status(400).json({ error: "Invalid position key." });
+  const field = KIT_LEAGUE_SPONSOR_POSITION_FIELD[key];
+  if (!field) return res.status(400).json({ error: "Invalid position key." });
   const nx = Number(x), ny = Number(y);
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return res.status(400).json({ error: "Invalid position." });
-  const field = key === "mainSponsor" ? "kitMainSponsorPos" : "kitSecondarySponsorPos";
   league[field] = { x: Math.max(0, Math.min(100, nx)), y: Math.max(0, Math.min(100, ny)) };
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -1950,7 +1956,8 @@ router.get("/leagues/:leagueId/kit-share/:token", (req, res) => {
   res.json({
     leagueId: league.id, leagueName: league.name, teams,
     mainSponsor: league.kitMainSponsor || "", mainSponsorPos: league.kitMainSponsorPos || { x: 50, y: 45 },
-    secondarySponsor: league.kitSecondarySponsor || "", secondarySponsorPos: league.kitSecondarySponsorPos || { x: 30, y: 22 },
+    secondarySponsor: league.kitSecondarySponsor || "", secondarySponsorPos: league.kitSecondarySponsorPos || { x: 70, y: 22 },
+    teamPadelLogoPos: league.kitTeamPadelLogoPos || { x: 50, y: 12 },
   });
 });
 

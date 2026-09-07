@@ -319,7 +319,12 @@ function kitShareTeamCard(team, leagueData) {
   // payload instead of the (unloaded, on this no-login page) global league.
   const kit = {
     ...rawKit,
-    positions: { ...rawKit.positions, mainSponsor: leagueData.mainSponsorPos || { x: 50, y: 45 }, secondarySponsor: leagueData.secondarySponsorPos || { x: 30, y: 22 } },
+    positions: {
+      ...rawKit.positions,
+      mainSponsor: leagueData.mainSponsorPos || { x: 50, y: 45 },
+      secondarySponsor: leagueData.secondarySponsorPos || { x: 70, y: 22 },
+      teamPadelLogo: leagueData.teamPadelLogoPos || { x: 50, y: 12 },
+    },
     sponsors: { ...rawKit.sponsors, mainSponsor: leagueData.mainSponsor || "", secondarySponsor: leagueData.secondarySponsor || "" },
   };
   const card = document.createElement("div");
@@ -335,7 +340,7 @@ function kitShareTeamCard(team, leagueData) {
     const nameHtml = side === "back" ? '<div class="kit-name-preview">PLAYER NAME</div>' : "";
     return `<div class="kit-photo-frame"><img class="kit-photo-img" src="${kit[side]}" alt="">${badgesHtml}${nameHtml}</div>`;
   };
-  const frontBadges = badgeHtml("mainSponsor", kit.sponsors.mainSponsor) + badgeHtml("secondarySponsor", kit.sponsors.secondarySponsor) + badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
+  const frontBadges = badgeHtml("teamPadelLogo", "/images/logo-dark.png") + badgeHtml("mainSponsor", kit.sponsors.mainSponsor) + badgeHtml("secondarySponsor", kit.sponsors.secondarySponsor) + badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
   const backBadges = badgeHtml("backSponsor1", kit.sponsors.backSponsor1) + badgeHtml("backSponsor2", kit.sponsors.backSponsor2);
   const orders = kit.orders || [];
   const ordersHtml = orders.length
@@ -392,13 +397,14 @@ function kitShareTeamCard(team, leagueData) {
 // every team card below.
 function kitShareLeagueSponsorsCard(data) {
   const rows = [
+    ["Team Padel logo", "/images/logo-dark.png", "team-padel-logo.png"],
     ["Main sponsor", data.mainSponsor, "league-main-sponsor.jpg"],
     ["Secondary sponsor", data.secondarySponsor, "league-secondary-sponsor.jpg"],
   ].filter(([, src]) => src);
   if (!rows.length) return null;
   const card = document.createElement("div");
   card.className = "card"; card.style.marginBottom = "20px";
-  card.innerHTML = `<h2 class="section-title">League sponsors</h2><p class="note" style="margin-bottom:12px;">Placed on every team's kit — front centre and left chest.</p><div class="kit-download-slots"></div>`;
+  card.innerHTML = `<h2 class="section-title">League badges</h2><p class="note" style="margin-bottom:12px;">Placed on every team's kit — the Team Padel logo top-centre, main sponsor front-centre, secondary sponsor on the right chest.</p><div class="kit-download-slots"></div>`;
   const slots = card.querySelector(".kit-download-slots");
   rows.forEach(([label, src, filename]) => {
     const row = document.createElement("div");
@@ -6164,35 +6170,45 @@ function kitTeamInEdit() {
   }
   return null;
 }
-// A team's own kit, with the league's main/secondary sponsor merged in as
-// if they were just two more sponsor slots — they aren't stored on the
-// team (they're the same badge on every team's kit, admin-controlled),
-// but folding them in here means every badge-rendering/canvas-drawing
-// helper below can treat all six badges identically.
+// A team's own kit, with the league's main/secondary sponsor and the
+// fixed Team Padel brand mark merged in as if they were just three more
+// sponsor slots — they aren't stored on the team (they're the same badge
+// on every team's kit, admin-controlled), but folding them in here means
+// every badge-rendering/canvas-drawing helper below can treat all seven
+// badges identically.
 function kitKitOf(team) {
   const kit = (team && team.kit) || { front: "", back: "", logo: "", positions: {}, sponsors: {}, orders: [] };
   return {
     ...kit,
-    positions: { ...kit.positions, mainSponsor: (league && league.kitMainSponsorPos) || { x: 50, y: 45 }, secondarySponsor: (league && league.kitSecondarySponsorPos) || { x: 30, y: 22 } },
+    positions: {
+      ...kit.positions,
+      mainSponsor: (league && league.kitMainSponsorPos) || { x: 50, y: 45 },
+      secondarySponsor: (league && league.kitSecondarySponsorPos) || { x: 70, y: 22 },
+      teamPadelLogo: (league && league.kitTeamPadelLogoPos) || { x: 50, y: 12 },
+    },
     sponsors: { ...kit.sponsors, mainSponsor: (league && league.kitMainSponsor) || "", secondarySponsor: (league && league.kitSecondarySponsor) || "" },
   };
 }
 function kitBadgeSrc(kit, key) {
+  if (key === "teamPadelLogo") return "/images/logo-dark.png"; // fixed brand mark, not uploaded
   return key === "logo" ? (kit.logo || "") : ((kit.sponsors && kit.sponsors[key]) || "");
 }
 function kitPositionOf(kit, key) {
   return (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
 }
-const KIT_BADGE_KEYS = ["mainSponsor", "secondarySponsor", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+const KIT_BADGE_KEYS = ["teamPadelLogo", "mainSponsor", "secondarySponsor", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
 // Which photo each badge sits on — a sleeve/logo badge floating over a
 // front photo that doesn't exist yet has nowhere real to be, so it stays
 // hidden until that specific photo is uploaded, not just the kit in general.
-const KIT_BADGE_SIDE = { mainSponsor: "front", secondarySponsor: "front", logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back" };
-// The league's own sponsor badges — same badge on every team's kit, so
-// only the admin can upload, move, or remove them; a captain still sees
-// them (once set) but can't touch them.
-const KIT_LEAGUE_BADGE_KEYS = ["mainSponsor", "secondarySponsor"];
+const KIT_BADGE_SIDE = { teamPadelLogo: "front", mainSponsor: "front", secondarySponsor: "front", logo: "front", sleeveLeft: "front", sleeveRight: "front", backSponsor1: "back", backSponsor2: "back" };
+// The league's own badges — same badge on every team's kit, so only the
+// admin can move (and, for the two sponsors, upload/remove) them; a
+// captain still sees them (once set) but can't touch them.
+const KIT_LEAGUE_BADGE_KEYS = ["mainSponsor", "secondarySponsor", "teamPadelLogo"];
 const KIT_LEAGUE_SPONSOR_ROUTE = { mainSponsor: "kit-main-sponsor", secondarySponsor: "kit-secondary-sponsor" };
+// The Team Padel logo is always present and never uploaded — admin can
+// still drag it into place, just never opens a file picker for it.
+const KIT_FIXED_BADGE_KEYS = ["teamPadelLogo"];
 
 // Set right before opening the one shared file input, so its onchange
 // knows which upload this file is actually for — cheaper than a separate
@@ -6203,6 +6219,7 @@ function kitOpenPicker(target) {
   el("kit-file-input").click();
 }
 function kitOpenBadgePicker(key) {
+  if (KIT_FIXED_BADGE_KEYS.includes(key)) return; // nothing to upload — position only
   if (KIT_LEAGUE_BADGE_KEYS.includes(key)) {
     if (myRole !== "admin") return; // read-only for a captain
     kitOpenPicker({ field: key });
@@ -6314,10 +6331,11 @@ function renderKitBadge(key, kit) {
   badge.style.left = pos.x + "%"; badge.style.top = pos.y + "%";
   badge.style.display = "flex";
   const canEdit = !isLeagueBadge || myRole === "admin";
+  const canRemove = canEdit && !KIT_FIXED_BADGE_KEYS.includes(key);
   if (src) {
     badge.classList.add("filled");
-    badge.innerHTML = `<img src="${src}" alt="">` + (canEdit ? `<span class="kit-badge-remove" data-remove-key="${key}">&times;</span>` : "");
-    if (canEdit) {
+    badge.innerHTML = `<img src="${src}" alt="">` + (canRemove ? `<span class="kit-badge-remove" data-remove-key="${key}">&times;</span>` : "");
+    if (canRemove) {
       badge.querySelector(".kit-badge-remove").onclick = async (e) => {
         e.stopPropagation();
         try {
@@ -6497,6 +6515,7 @@ async function generateKitSheetCanvas(team, order, kitOverride) {
     ctx.lineWidth = 3; ctx.strokeStyle = "#2563EB";
     ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.stroke();
   }
+  await drawBadge(frontX, "teamPadelLogo");
   await drawBadge(frontX, "mainSponsor");
   await drawBadge(frontX, "secondarySponsor");
   await drawBadge(frontX, "logo");
