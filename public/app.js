@@ -333,7 +333,8 @@ function kitShareTeamCard(team, leagueData) {
   const badgeHtml = (key, src) => {
     if (!src) return "";
     const pos = (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
-    return `<div class="kit-badge filled" style="left:${pos.x}%;top:${pos.y}%;"><img src="${src}" alt=""></div>`;
+    const shapeClass = KIT_BADGE_CIRCLE_KEYS.includes(key) ? "" : " kit-badge-rect";
+    return `<div class="kit-badge filled${shapeClass}" style="left:${pos.x}%;top:${pos.y}%;"><img src="${src}" alt=""></div>`;
   };
   const photoHtml = (side, badgesHtml) => {
     if (!kit[side]) return `<div class="kit-photo-frame"><div class="kit-photo-empty"><span class="kit-empty-icon">${side === "front" ? "F" : "B"}</span>No ${side} photo yet</div></div>`;
@@ -6197,6 +6198,10 @@ function kitPositionOf(kit, key) {
   return (kit.positions && kit.positions[key]) || { x: 50, y: 50 };
 }
 const KIT_BADGE_KEYS = ["teamPadelLogo", "mainSponsor", "secondarySponsor", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2"];
+// A logo (the team's own crest, the Team Padel mark) is round; a sponsor's
+// own artwork is normally a wide rectangle, not a badge — everything else
+// gets the rectangular treatment.
+const KIT_BADGE_CIRCLE_KEYS = ["logo", "teamPadelLogo"];
 // Which photo each badge sits on — a sleeve/logo badge floating over a
 // front photo that doesn't exist yet has nowhere real to be, so it stays
 // hidden until that specific photo is uploaded, not just the kit in general.
@@ -6330,6 +6335,7 @@ function renderKitBadge(key, kit) {
   const pos = kitPositionOf(kit, key);
   badge.style.left = pos.x + "%"; badge.style.top = pos.y + "%";
   badge.style.display = "flex";
+  badge.classList.toggle("kit-badge-rect", !KIT_BADGE_CIRCLE_KEYS.includes(key));
   const canEdit = !isLeagueBadge || myRole === "admin";
   const canRemove = canEdit && !KIT_FIXED_BADGE_KEYS.includes(key);
   if (src) {
@@ -6503,17 +6509,24 @@ async function generateKitSheetCanvas(team, order, kitOverride) {
     const img = await loadImageAsync(src);
     if (!img) return;
     const pos = kitPositionOf(kit, key);
-    const size = 110;
+    const isCircle = KIT_BADGE_CIRCLE_KEYS.includes(key);
     const cx = panelX + (pos.x / 100) * panelW, cy = panelY + (pos.y / 100) * panelH;
+    // A logo (team crest, Team Padel mark) draws as a circle; a sponsor's
+    // own artwork is normally a wide rectangle, matching the badge shapes
+    // on screen (see .kit-badge-rect).
+    const boxPath = isCircle
+      ? () => { ctx.beginPath(); ctx.arc(cx, cy, 55, 0, Math.PI * 2); ctx.closePath(); }
+      : () => { roundRectPath(ctx, cx - 80, cy - 51, 160, 102, 12); };
+    const boxW = isCircle ? 110 : 160, boxH = isCircle ? 110 : 102;
     ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
-    ctx.fillStyle = "#fff"; ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
-    const scale = Math.max(size / img.width, size / img.height);
+    boxPath(); ctx.clip();
+    ctx.fillStyle = "#fff"; ctx.fillRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
+    const scale = Math.max(boxW / img.width, boxH / img.height);
     const w = img.width * scale, h = img.height * scale;
     ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
     ctx.restore();
     ctx.lineWidth = 3; ctx.strokeStyle = "#2563EB";
-    ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.stroke();
+    boxPath(); ctx.stroke();
   }
   await drawBadge(frontX, "teamPadelLogo");
   await drawBadge(frontX, "mainSponsor");
