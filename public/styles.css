@@ -102,14 +102,6 @@ button.secondary{background:var(--panel);border:1px solid var(--line);color:var(
 button.secondary:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
 button.danger{background:transparent;border:1px solid var(--line);color:var(--clay);font-size:13px;padding:9px 16px;border-radius:var(--radius-sm);cursor:pointer;}
 button.danger:hover:not(:disabled){border-color:var(--clay);background:var(--clay-soft);}
-/* "Go to Selection Room" on My Profile's Line-ups due list — still the
-   same solid accent fill as button.primary (it's still the clearest
-   "this is the one to tap" signal), but rounded into a pill, sentence
-   case instead of shouty uppercase, and a soft coloured shadow instead of
-   a hard flat edge — reads as a confident everyday action rather than an
-   alert, since this button can legitimately show up 2-3 times in a row. */
-button.account-lineup-go-btn{border-radius:999px;text-transform:none;font-family:var(--font-body);font-weight:600;font-size:13px;padding:9px 16px;box-shadow:0 8px 20px rgba(37,99,235,.22);}
-button.account-lineup-go-btn:hover:not(:disabled){filter:brightness(1.06);}
 button.ghost{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;line-height:1;padding:4px 8px;border-radius:var(--radius-sm);}
 button.ghost:hover:not(:disabled){color:var(--clay);background:var(--clay-soft);}
 button.link{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;text-decoration:underline;text-underline-offset:2px;}
@@ -872,14 +864,19 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .notif-row.unread .notif-msg{color:var(--text);font-weight:600;}
 .notif-row.unread::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-right:4px;}
 .notif-msg{font-size:14px;color:var(--text-dim);flex:1;}
-/* A line-up within 48h of its real deadline (24h before kickoff) — a
-   darker, more prominent capsule than the plain row above it, tappable
-   anywhere, with a bar that fills toward the deadline and turns solid
-   red (clay) once it's passed. */
+/* Every line-up due — always this dark capsule, tappable anywhere,
+   regardless of how far out it is. Once within 72h of the real deadline
+   (24h before kickoff) it also gets a progress bar that fills toward the
+   deadline and turns solid red (clay) once it's passed; further out,
+   just a plain "kicks off" line instead of an empty-looking bar. */
 .lineup-due-pill{background:var(--text);border-radius:20px;padding:14px 16px;box-shadow:0 10px 22px rgba(18,32,58,.22);cursor:pointer;margin-bottom:10px;}
 .lineup-due-pill:last-child{margin-bottom:0;}
 .lineup-due-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.lineup-due-name{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .lineup-due-top strong{font-size:14px;color:#fff;}
+.lineup-due-meta{font-size:11.5px;color:rgba(255,255,255,.5);}
+.lineup-due-right{display:flex;align-items:center;gap:8px;flex:none;}
+.lineup-due-chev{color:rgba(255,255,255,.45);font-size:19px;}
 .lineup-due-timeleft{font-size:11.5px;font-weight:700;color:#8CB4FF;white-space:nowrap;}
 .lineup-due-timeleft.overdue{color:#FF9B87;}
 .lineup-due-track{height:5px;border-radius:999px;background:rgba(255,255,255,.14);margin-top:10px;overflow:hidden;}

@@ -1396,11 +1396,13 @@ async function renderAccountDues() {
 }
 // The real deadline is 24h before kickoff, not kickoff itself — "due
 // tonight" for a Friday match actually means Thursday evening. The
-// progress-bar pill only kicks in once inside a 48h window of that real
-// deadline; further out than that, a bar would just look empty, so the
-// plain row (and its explicit button) is plenty.
+// progress bar only kicks in once inside a 72h window of that real
+// deadline — further out than that, a bar would just look empty, so the
+// pill shows a plain "kicks off" line instead. Every entry uses the same
+// dark pill regardless of how far out it is, just with the bar/duration
+// layered on top once it's actually close.
 const LINEUP_DEADLINE_LEAD_MS = 24 * 60 * 60 * 1000;
-const LINEUP_DUE_BAR_WINDOW_MS = 48 * 60 * 60 * 1000;
+const LINEUP_DUE_BAR_WINDOW_MS = 72 * 60 * 60 * 1000;
 function formatDurationShort(ms) {
   const totalMinutes = Math.max(1, Math.round(Math.abs(ms) / 60000));
   const days = Math.floor(totalMinutes / 1440);
@@ -1412,10 +1414,8 @@ function formatDurationShort(ms) {
 }
 // Every not-yet-submitted line-up across every league this account
 // captains — same cross-league "surface it on the homepage" treatment as
-// "What you owe" gets for outstanding fees. Once within 48h of the real
-// deadline (24h before kickoff), a fixture gets the more prominent
-// progress-bar pill instead of the plain row; same in-league reminder
-// this pairs with (see checkLineupReminders server-side) but visible any
+// "What you owe" gets for outstanding fees. Same in-league reminder this
+// pairs with (see checkLineupReminders server-side) but visible any
 // time, not just once a kickoff is within 36 hours.
 async function renderAccountLineupsDue() {
   const due = await api("/players/lineups-due").catch(() => []);
@@ -1424,32 +1424,34 @@ async function renderAccountLineupsDue() {
   const list = el("account-lineups-list");
   const now = Date.now();
   list.innerHTML = due.map((d) => {
+    const meta = `${escapeHtml(d.teamName)} · ${escapeHtml(d.leagueName)}`;
     const deadlineMs = d.kickoffMs ? d.kickoffMs - LINEUP_DEADLINE_LEAD_MS : null;
     const msUntilDeadline = deadlineMs !== null ? deadlineMs - now : null;
+    let badge = "", bar = "", sub;
     if (deadlineMs !== null && msUntilDeadline <= LINEUP_DUE_BAR_WINDOW_MS) {
       const overdue = msUntilDeadline < 0;
       const pct = overdue ? 100 : Math.max(2, Math.min(100, ((LINEUP_DUE_BAR_WINDOW_MS - msUntilDeadline) / LINEUP_DUE_BAR_WINDOW_MS) * 100));
       const timeLabel = overdue ? `Overdue ${formatDurationShort(msUntilDeadline)}` : `${formatDurationShort(msUntilDeadline)} left`;
-      const subLabel = (overdue ? "Was due " : "Due ") + fmtDateTime(deadlineMs) + " · kicks off " + fmtDateTime(d.kickoffMs);
-      return `
-      <div class="lineup-due-pill" data-league="${d.leagueId}">
-        <div class="lineup-due-top"><strong>${escapeHtml(d.opponentName)}</strong><span class="lineup-due-timeleft${overdue ? " overdue" : ""}">${escapeHtml(timeLabel)}</span></div>
-        <div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>
-        <div class="lineup-due-sub">${escapeHtml(subLabel)}</div>
-      </div>`;
+      badge = `<span class="lineup-due-timeleft${overdue ? " overdue" : ""}">${escapeHtml(timeLabel)}</span>`;
+      bar = `<div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>`;
+      sub = (overdue ? "Was due " : "Due ") + fmtDateTime(deadlineMs) + " · kicks off " + fmtDateTime(d.kickoffMs);
+    } else if (d.kickoffMs) {
+      sub = "Kicks off " + fmtDateTime(d.kickoffMs);
+    } else {
+      sub = d.date ? "Kicks off " + ((relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "")) : "Not yet scheduled";
     }
-    const when = d.date ? (relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "") : "Not yet scheduled";
     return `
-    <div class="notif-row" data-league="${d.leagueId}">
-      <div><strong>${escapeHtml(d.label)} vs ${escapeHtml(d.opponentName)}</strong><div class="note">${escapeHtml(d.teamName)} · ${escapeHtml(d.leagueName)} · ${escapeHtml(when)}</div></div>
-      <button class="primary account-lineup-go-btn" type="button">Go to Selection Room</button>
+    <div class="lineup-due-pill" data-league="${d.leagueId}">
+      <div class="lineup-due-top">
+        <div class="lineup-due-name"><strong>${escapeHtml(d.label)} vs ${escapeHtml(d.opponentName)}</strong><span class="lineup-due-meta">${meta}</span></div>
+        <div class="lineup-due-right">${badge}<span class="lineup-due-chev">&#8250;</span></div>
+      </div>
+      ${bar}
+      <div class="lineup-due-sub">${escapeHtml(sub)}</div>
     </div>`;
   }).join("");
   list.querySelectorAll(".lineup-due-pill").forEach((row) => {
     row.onclick = () => openLeague(row.dataset.league);
-  });
-  list.querySelectorAll(".account-lineup-go-btn").forEach((btn) => {
-    btn.onclick = () => openLeague(btn.closest(".notif-row").dataset.league);
   });
 }
 async function renderAccountProfile() {
