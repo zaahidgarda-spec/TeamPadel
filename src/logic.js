@@ -248,7 +248,63 @@ function computeStandings(league) {
   // Points first, then the tiebreaker (set difference for pairs, rubber
   // difference for team leagues), then name as a last-resort stable order.
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
+  // A resolved Super Tie only ever promotes its winner to the very top of
+  // its own tied group — everyone else in that group keeps the order the
+  // sort above already gave them (points-difference), per the "1 way super
+  // tie: wins 1st, then points difference" rule.
+  const stWinner = superTieWinner(league);
+  if (stWinner) {
+    const idx = rows.findIndex((r) => r.id === stWinner);
+    if (idx > 0) rows.unshift(rows.splice(idx, 1)[0]);
+  }
   return rows;
+}
+
+// If teams finish level on points, the season isn't over until a real
+// decider is played: 2 teams tied plays a "3-way" super tie (3 pairs vs 3
+// pairs, one fixture, best rubber-count wins); 3+ teams tied plays a
+// "1-way" super tie (a mini round-robin of just their top pairs — the
+// winner of that group takes 1st outright, any further tie among the rest
+// still falls back to points difference). Only meaningful once every
+// regular fixture is finalized, for team-format leagues (a Vibora pair IS
+// the team, so "top pair" doesn't apply), and only while no decider has
+// been set up yet for this season.
+function detectSuperTie(league) {
+  if (league.format === "pairs") return null;
+  if (!league.fixtures.length || league.superTie) return null;
+  if (!league.fixtures.every((f) => f.finalized)) return null;
+  const rows = computeStandings(league);
+  if (rows.length < 2) return null;
+  const topPoints = rows[0].points;
+  const tied = rows.filter((r) => r.points === topPoints);
+  if (tied.length < 2) return null;
+  return { type: tied.length === 2 ? "3way" : "1way", teamIds: tied.map((r) => r.id) };
+}
+
+// Once every fixture in the generated Super Tie round(s) is finalized, the
+// winner is whoever won the most of those fixtures (for a 3-way tie that's
+// just the one match; for a 1-way tie it's the mini round-robin's own
+// table), with rubber difference within just those fixtures as a fallback
+// if the group itself somehow ties again.
+function superTieWinner(league) {
+  const st = league.superTie;
+  if (!st) return null;
+  const fixtures = league.fixtures.filter((f) => st.rounds.includes(f.round));
+  if (!fixtures.length || !fixtures.every((f) => f.finalized)) return null;
+  const wins = {}, diff = {};
+  st.teamIds.forEach((id) => { wins[id] = 0; diff[id] = 0; });
+  fixtures.forEach((f) => {
+    const { winsA, winsB } = fixtureScore(f);
+    if (winsA > winsB) wins[f.teamA]++;
+    else if (winsB > winsA) wins[f.teamB]++;
+    diff[f.teamA] += winsA - winsB;
+    diff[f.teamB] += winsB - winsA;
+  });
+  let best = null;
+  st.teamIds.forEach((id) => {
+    if (!best || wins[id] > wins[best] || (wins[id] === wins[best] && diff[id] > diff[best])) best = id;
+  });
+  return best;
 }
 
 // A player can never be paired with themselves. A double-up (playing more
@@ -1170,6 +1226,8 @@ module.exports = {
   requiredRubbersOk,
   matchWinner,
   computeStandings,
+  detectSuperTie,
+  superTieWinner,
   validateSelection,
   validateRoundPair,
   playerMatchHistory,

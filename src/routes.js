@@ -4000,6 +4000,40 @@ router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => 
   res.json({ ok: true });
 });
 
+// A points tie at the top needs a real decider before the season can be
+// called — see logic.detectSuperTie for the 2-teams-vs-3+-teams rule. This
+// just turns that detection into a normal admin-added "knockout" round (see
+// POST /rounds above) with the right teams and seed count already filled
+// in, so every existing fixture/selection/score/finalize route handles it
+// for free — the round is just excluded from the table, exactly like any
+// other knockout-type round.
+router.post("/leagues/:leagueId/super-tie/generate", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (league.superTie) return res.status(400).json({ error: "A Super Tie decider has already been set up for this season." });
+  const detected = logic.detectSuperTie(league);
+  if (!detected) return res.status(400).json({ error: "There's no points tie to resolve right now." });
+  const tiedTeams = detected.teamIds.map((id) => league.teams.find((t) => t.id === id)).filter(Boolean);
+  const seedCount = detected.type === "3way" ? 3 : 1;
+  const gen = logic.generateRoundRobin(tiedTeams, false, seedCount);
+  // A 1-way decider is "top pair vs top pair" — one seed, but still a team
+  // fixture, so it plays a normal team rubber (2 sets + a match tie-break
+  // if split), not the Vibora 3-real-sets shape a 1-seed fixture would
+  // otherwise default to.
+  if (seedCount === 1) gen.fixtures.forEach((f) => { f.rubbers[0] = logic.emptyRubber(2); });
+  const nextRound = (league.fixtures.reduce((max, f) => Math.max(max, f.round), 0) || 0) + 1;
+  const offset = nextRound - 1;
+  gen.fixtures.forEach((f) => { f.round += offset; });
+  league.fixtures.push(...gen.fixtures);
+  const rounds = [...new Set(gen.fixtures.map((f) => f.round))];
+  if (!league.roundMeta) league.roundMeta = {};
+  rounds.forEach((r, i) => {
+    league.roundMeta[r] = { label: "Super Tie decider" + (rounds.length > 1 ? " " + (i + 1) : ""), type: "knockout" };
+  });
+  league.superTie = { type: detected.type, teamIds: detected.teamIds, rounds };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, round: rounds[0] });
+});
+
 /* ---------- News ---------- */
 
 router.get("/leagues/:leagueId/news", (req, res) => {

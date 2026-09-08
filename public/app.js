@@ -4265,9 +4265,12 @@ function selectionForm(f, team, side) {
     if (!findDuplicate()) doubleUpCheckbox.checked = false;
   }
 
-  for (let i = 0; i < 4; i++) {
+  // Normally always 4 (a team fixture's regular seed count), but a Super
+  // Tie decider round can be 3 (3 pairs vs 3 pairs) or 1 (top pair only) —
+  // driven by however many pairs the fixture actually has, not a fixed 4.
+  for (let i = 0; i < localPairs.length; i++) {
     const row = document.createElement("div"); row.className = "seed-row";
-    row.innerHTML = `<span class="num">Seed ${i + 1}</span>`;
+    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : "Seed " + (i + 1)}</span>`;
     const seedIdx = i;
     const selects = [];
     // A player picked in one slot is disabled in the other slot of the same
@@ -7070,7 +7073,50 @@ function computeStandingsClient() {
     return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, setsWon, setsLost, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
+  const stWinner = superTieWinnerClient();
+  if (stWinner) {
+    const idx = rows.findIndex((r) => r.id === stWinner);
+    if (idx > 0) rows.unshift(rows.splice(idx, 1)[0]);
+  }
   return rows;
+}
+// Mirrors logic.js's detectSuperTie/superTieWinner — see there for the
+// 2-teams-vs-3+-teams rule. Kept in sync by hand since this file has no
+// access to the server's logic module.
+function detectSuperTieClient() {
+  if (league.format === "pairs") return null;
+  if (!league.fixtures.length || league.superTie) return null;
+  if (!league.fixtures.every((f) => f.finalized)) return null;
+  const rows = league.teams.map((t) => {
+    let rubbersWon = 0, rubbersLost = 0;
+    league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
+      const isA = f.teamA === t.id;
+      const { winsA, winsB } = fixtureScoreClient(f);
+      rubbersWon += isA ? winsA : winsB; rubbersLost += isA ? winsB : winsA;
+    });
+    return { id: t.id, points: rubbersWon };
+  });
+  if (rows.length < 2) return null;
+  const topPoints = Math.max(...rows.map((r) => r.points));
+  const tied = rows.filter((r) => r.points === topPoints);
+  if (tied.length < 2) return null;
+  return { type: tied.length === 2 ? "3way" : "1way", teamIds: tied.map((r) => r.id) };
+}
+function superTieWinnerClient() {
+  const st = league.superTie;
+  if (!st) return null;
+  const fixtures = league.fixtures.filter((f) => st.rounds.includes(f.round));
+  if (!fixtures.length || !fixtures.every((f) => f.finalized)) return null;
+  const wins = {}, diff = {};
+  st.teamIds.forEach((id) => { wins[id] = 0; diff[id] = 0; });
+  fixtures.forEach((f) => {
+    const { winsA, winsB } = fixtureScoreClient(f);
+    if (winsA > winsB) wins[f.teamA]++; else if (winsB > winsA) wins[f.teamB]++;
+    diff[f.teamA] += winsA - winsB; diff[f.teamB] += winsB - winsA;
+  });
+  let best = null;
+  st.teamIds.forEach((id) => { if (!best || wins[id] > wins[best] || (wins[id] === wins[best] && diff[id] > diff[best])) best = id; });
+  return best;
 }
 function matchWinnerClient(f) {
   const { winsA, winsB } = fixtureScoreClient(f);
@@ -7083,12 +7129,35 @@ function renderTable() {
   const c = el("log-container");
   const canPoster = league.format === "pairs" ? league.teams.length > 0 : myRole === "admin" && league.teams.length > 0;
   el("table-poster-row").style.display = canPoster ? "flex" : "none";
+  const stWinnerId = superTieWinnerClient();
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
-    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs");
+    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs", stWinnerId);
     bindPlayerLinks(c);
   }
   const koCard = el("knockout-card");
+  const detectedSt = detectSuperTieClient();
+  const stPending = league.superTie && !stWinnerId;
+  if (detectedSt) {
+    koCard.style.display = "block";
+    const teamNames = detectedSt.teamIds.map((id) => (teamById(id) || {}).name || "?");
+    const desc = detectedSt.type === "3way"
+      ? `${teamNames.join(" and ")} are tied on points for 1st. A Super Tie decides it — 3 pairs vs 3 pairs, most rubbers won takes the title.`
+      : `${teamNames.join(", ")} are tied on points for 1st. A Super Tie decides it — each team's top pair plays a round-robin; the winner takes 1st outright, and any remaining tie among the rest still falls back to points difference.`;
+    koCard.innerHTML = `<h2 class="section-title">Super Tie needed</h2><p class="note">${escapeHtml(desc)}</p>` +
+      (myRole === "admin" ? `<div class="row" style="margin-top:12px;"><button class="primary" id="gen-st-btn">Set up Super Tie</button></div>` : "");
+    if (myRole === "admin") el("gen-st-btn").onclick = async () => {
+      try { await api(`/leagues/${currentLeagueId}/super-tie/generate`, { method: "POST" }); await refreshLeague(); initViewingKey(); renderAll(); }
+      catch (e) { alert(e.message); }
+    };
+    return;
+  }
+  if (stPending) {
+    koCard.style.display = "block";
+    const many = league.superTie.rounds.length > 1;
+    koCard.innerHTML = `<h2 class="section-title">Super Tie in progress</h2><p class="note">The season-deciding tie-break is under way — see Fixtures/Results for the decider match${many ? "es" : ""}. Final standings above will update once ${many ? "they're" : "it's"} finalized.</p>`;
+    return;
+  }
   const allDone = league.fixtures.length > 0 && league.fixtures.every((f) => f.finalized);
   const formatOk = league.playoffFormat === "semis_final" || league.playoffFormat === "position";
   const minTeamsOk = league.playoffFormat === "semis_final" ? league.teams.length >= 4 : league.teams.length >= 2;
@@ -7125,7 +7194,7 @@ function renderTable() {
 // history archive view (a read-only look at a past, no-longer-live season)
 // can show an identical-looking table from its own precomputed rows,
 // without duplicating the row-building logic.
-function standingsRowsHtml(rows, isPairs) {
+function standingsRowsHtml(rows, isPairs, superTieWinnerId) {
   let html = '<div class="leaderboard">';
   rows.forEach((r, i) => {
     const isLeader = i === 0 && r.played > 0;
@@ -7141,9 +7210,10 @@ function standingsRowsHtml(rows, isPairs) {
     const nameHtml = isPairs && r.players && r.players.length
       ? r.players.map(playerLinkHtml).join(" / ")
       : escapeHtml(r.name);
+    const stTag = r.id === superTieWinnerId ? '<span class="note" style="margin-left:6px;">Won a Super Tie</span>' : "";
     html += `<div class="rank-row${isLeader ? " leader" : ""}">
       <div class="rank-badge">${i + 1}</div>
-      <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span></div>
+      <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span>${stTag}</div>
       <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
       <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
       <div class="rank-summary">${escapeHtml(summary)}</div>
