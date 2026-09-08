@@ -1434,10 +1434,14 @@ async function renderAccountLineupsDue() {
       const pct = overdue ? 100 : Math.max(2, Math.min(100, ((LINEUP_DUE_BAR_WINDOW_MS - msUntilDeadline) / LINEUP_DUE_BAR_WINDOW_MS) * 100));
       const timeLabel = overdue ? `Overdue ${formatDurationShort(msUntilDeadline)}` : `${formatDurationShort(msUntilDeadline)} left`;
       badge = `<span class="lineup-due-timeleft${overdue ? " overdue" : ""}">${escapeHtml(timeLabel)}</span>`;
-      bar = `<div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>`;
-      sub = (overdue ? "Was due " : "Due ") + fmtDateTime(deadlineMs);
+      // "10h left" on its own could read as time until the match itself —
+      // this pill is about the line-up selection deadline, 24h earlier, so
+      // every duration/date here says so explicitly rather than leaving it
+      // to be inferred.
+      bar = `<div class="lineup-due-bar-label">For selection</div><div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>`;
+      sub = (overdue ? "Selection was due " : "Selection due ") + fmtDateTime(deadlineMs);
     } else if (deadlineMs !== null) {
-      sub = "Due " + fmtDateTime(deadlineMs);
+      sub = "Selection due " + fmtDateTime(deadlineMs);
     } else {
       sub = d.date ? (relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "") : "Not yet scheduled";
     }
