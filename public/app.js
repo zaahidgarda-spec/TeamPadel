@@ -1445,10 +1445,11 @@ async function renderAccountLineupsDue() {
     <div class="lineup-due-pill" data-league="${d.leagueId}">
       <div class="lineup-due-top">
         <div class="lineup-due-name"><strong>${escapeHtml(d.label)} vs ${escapeHtml(d.opponentName)}</strong><span class="lineup-due-meta">${meta}</span></div>
-        <div class="lineup-due-right">${badge}<span class="lineup-due-chev">&#8250;</span></div>
+        <div class="lineup-due-right">${badge}</div>
       </div>
       ${bar}
       <div class="lineup-due-sub">${escapeHtml(sub)}</div>
+      <div class="lineup-due-cta">Go to Selection Room<span class="lineup-due-chev">&#8250;</span></div>
     </div>`;
   }).join("");
   list.querySelectorAll(".lineup-due-pill").forEach((row) => {
