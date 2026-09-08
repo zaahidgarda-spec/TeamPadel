@@ -1398,9 +1398,10 @@ async function renderAccountDues() {
 // tonight" for a Friday match actually means Thursday evening. The
 // progress bar only kicks in once inside a 72h window of that real
 // deadline — further out than that, a bar would just look empty, so the
-// pill shows a plain "kicks off" line instead. Every entry uses the same
+// pill shows a plain "Due [date]" line instead. Every entry uses the same
 // dark pill regardless of how far out it is, just with the bar/duration
-// layered on top once it's actually close.
+// layered on top once it's actually close. Deliberately never displays
+// the raw kickoff time itself, only the deadline — one timestamp, not two.
 const LINEUP_DEADLINE_LEAD_MS = 24 * 60 * 60 * 1000;
 const LINEUP_DUE_BAR_WINDOW_MS = 72 * 60 * 60 * 1000;
 function formatDurationShort(ms) {
@@ -1434,11 +1435,11 @@ async function renderAccountLineupsDue() {
       const timeLabel = overdue ? `Overdue ${formatDurationShort(msUntilDeadline)}` : `${formatDurationShort(msUntilDeadline)} left`;
       badge = `<span class="lineup-due-timeleft${overdue ? " overdue" : ""}">${escapeHtml(timeLabel)}</span>`;
       bar = `<div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>`;
-      sub = (overdue ? "Was due " : "Due ") + fmtDateTime(deadlineMs) + " · kicks off " + fmtDateTime(d.kickoffMs);
-    } else if (d.kickoffMs) {
-      sub = "Kicks off " + fmtDateTime(d.kickoffMs);
+      sub = (overdue ? "Was due " : "Due ") + fmtDateTime(deadlineMs);
+    } else if (deadlineMs !== null) {
+      sub = "Due " + fmtDateTime(deadlineMs);
     } else {
-      sub = d.date ? "Kicks off " + ((relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "")) : "Not yet scheduled";
+      sub = d.date ? (relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "") : "Not yet scheduled";
     }
     return `
     <div class="lineup-due-pill" data-league="${d.leagueId}">

@@ -52,6 +52,22 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+// A court schedule's date+time is always real-world South African time —
+// every league this app runs plays there. Parsing "2026-09-11T18:30:00"
+// with no offset makes Node read it in *this process's own* timezone,
+// which on most hosts (confirmed on the one this app actually runs on) is
+// UTC, not SAST — silently shifting every kickoff two hours later than
+// what was actually typed in. South Africa doesn't observe DST, so a
+// fixed +02:00 is correct year-round; the client-side equivalent
+// (isWithinLiveWindow in app.js) needs no such fix since it parses in the
+// viewer's own browser, which for a real South African user already is
+// SAST.
+function kickoffMsOf(date, time) {
+  if (!date || !time) return null;
+  const ms = new Date(date + "T" + time + ":00+02:00").getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 function newLeagueObj(name, adminEmail, format) {
   return {
     id: logic.uid(),
@@ -201,11 +217,6 @@ function postOrUpdateRoundRecap(league, round) {
 // complete notification — the first check that lands inside the window
 // sends it; if the server was down for the whole window, it still fires
 // (late) next time it comes back up rather than never firing.
-//
-// Timezone note: like every other date+time compare in this codebase
-// (see the "Tonight" comment in public/app.js), this assumes the server
-// and the league's real-world matches share a timezone — nothing here
-// stores a per-league offset to do otherwise.
 const LINEUP_REMINDER_WINDOW_MS = 36 * 60 * 60 * 1000;
 function checkLineupReminders() {
   const now = Date.now();
@@ -225,8 +236,8 @@ function checkLineupReminders() {
       if (!isRoundOpen(league, f)) return;
       const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
       if (!sched.date) return; // nothing scheduled yet — no kickoff to count down to
-      const kickoffMs = new Date(sched.date + "T" + (sched.time || "00:00") + ":00").getTime();
-      if (Number.isNaN(kickoffMs) || kickoffMs - now > LINEUP_REMINDER_WINDOW_MS) return;
+      const kickoffMs = kickoffMsOf(sched.date, sched.time || "00:00");
+      if (kickoffMs === null || kickoffMs - now > LINEUP_REMINDER_WINDOW_MS) return;
       if (!f.lineupReminders) f.lineupReminders = {};
       const teamA = league.teams.find((t) => t.id === f.teamA);
       const teamB = league.teams.find((t) => t.id === f.teamB);
@@ -541,7 +552,7 @@ router.get("/me/pending-score", (req, res) => {
       if (sched.date < todayStr) return true; // a past matchday is well past kickoff either way
       if (sched.date > todayStr) return false;
       if (!sched.time) return true;
-      return now >= new Date(sched.date + "T" + sched.time + ":00").getTime();
+      return now >= kickoffMsOf(sched.date, sched.time);
     })
     .sort((a, b) => a.round - b.round);
   const f = candidates[0];
@@ -3283,13 +3294,12 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
       // before kickoff), not kickoff itself; a date-only fixture has no
       // exact instant to count down to, so it stays null and falls back to
       // the plain day label like before.
-      const kickoffMs = sched.date && sched.time ? new Date(sched.date + "T" + sched.time + ":00").getTime() : null;
       out.push({
         leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
         fixtureId: f.id, label: fixtureLabel(league, f),
         opponentName: oppTeam ? oppTeam.name : "TBD",
         date: sched.date || "", time: sched.time || "",
-        kickoffMs: Number.isNaN(kickoffMs) ? null : kickoffMs,
+        kickoffMs: kickoffMsOf(sched.date, sched.time),
       });
     });
   });
