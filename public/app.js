@@ -475,7 +475,6 @@ async function renderHomepageSponsors() {
   if (sponsorList.length === 0) { banner.style.display = "none"; return; }
   banner.style.display = "block";
   sponsorIdx = 0;
-  el("homepage-sponsor-dots").innerHTML = sponsorList.length > 1 ? sponsorList.map(() => "<span></span>").join("") : "";
   renderSponsorSlide();
   if (sponsorList.length > 1) {
     sponsorTimer = setInterval(() => {
@@ -496,7 +495,6 @@ function renderSponsorSlide() {
   slide.classList.remove("hs-slide");
   void slide.offsetWidth;
   slide.classList.add("hs-slide");
-  el("homepage-sponsor-dots").querySelectorAll("span").forEach((d, i) => d.classList.toggle("on", i === sponsorIdx));
 }
 // Homepage counterpart to the in-league "Score not entered yet" banner —
 // reaches a logged-in captain the moment they land on the site, not just
