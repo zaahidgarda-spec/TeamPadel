@@ -2505,6 +2505,13 @@ router.post(
   }
 );
 
+// Deleting a player who's already played breaks real match history —
+// their id stays referenced in every finalized selection, so their name
+// silently disappears from results, stats, and Recent form everywhere
+// that history is looked up by id, instead of erroring loudly. The PUT
+// route above exists precisely so a mistaken name gets corrected in
+// place without losing that history; delete stays safe for someone
+// added and never actually selected into a match.
 router.delete(
   "/leagues/:leagueId/teams/:teamId/players/:playerId",
   requireAdminOrCaptain((req) => req.params.teamId),
@@ -2512,6 +2519,16 @@ router.delete(
     const league = store.getLeague(req.params.leagueId);
     const team = league.teams.find((t) => t.id === req.params.teamId);
     if (!team) return res.status(404).json({ error: "Team not found." });
+    const player = team.players.find((p) => p.id === req.params.playerId);
+    if (!player) return res.status(404).json({ error: "Player not found." });
+    const hasPlayed = logic.allFixturesOf(league).some((f) =>
+      (f.selectionA.pairs || []).flat().includes(player.id) || (f.selectionB.pairs || []).flat().includes(player.id)
+    );
+    if (hasPlayed) {
+      return res.status(400).json({
+        error: `${player.name} has already played a match — deleting them would break that history. Fix a typo by renaming instead, or just leave them off future line-ups if they've left the team.`,
+      });
+    }
     team.players = team.players.filter((p) => p.id !== req.params.playerId);
     store.saveLeague(league.id, league);
     res.json({ ok: true });

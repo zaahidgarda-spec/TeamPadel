@@ -3228,7 +3228,12 @@ function adminRosterBlock(t) {
     }
     const del = document.createElement("button");
     del.className = "ghost"; del.innerHTML = "&times;";
-    del.onclick = async () => { await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}`, { method: "DELETE" }); await refreshLeague(); renderAdminRoster(); };
+    del.onclick = async () => {
+      try {
+        await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}`, { method: "DELETE" });
+        await refreshLeague(); renderAdminRoster();
+      } catch (e) { alert(e.message); }
+    };
     li.appendChild(del); ul.appendChild(li);
   });
   wrap.appendChild(ul);
@@ -7999,8 +8004,10 @@ function renderRoster() {
     span.onclick = async (e) => {
       e.stopPropagation();
       const pid = span.dataset.removePid;
-      await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/players/${pid}`, { method: "DELETE" });
-      await refreshLeague(); renderRoster();
+      try {
+        await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/players/${pid}`, { method: "DELETE" });
+        await refreshLeague(); renderRoster();
+      } catch (err) { alert(err.message); }
     };
   });
 }
