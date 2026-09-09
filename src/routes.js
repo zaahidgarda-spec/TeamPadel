@@ -2916,12 +2916,16 @@ function generateSeasonCourtRotation(league) {
 // by computeOptimumCourtSchedule (a hypothetical new layout) and
 // computeCurrentCourtLoad (whatever's already saved) so the two always
 // agree on what "close" means.
-function matchCloseness(league, f, seed, ratingsData, identityOf) {
+// The actual win% split behind a cell's closeness score — null while
+// either side's line-up for this seed isn't in yet (nothing to predict).
+// Surfaced to admins on the court-balance/optimum-layout grids below so
+// "why is this court red" has a real number attached, not just a color.
+function matchPrediction(league, f, seed, ratingsData, identityOf) {
   const pairA = f.selectionA.submitted && f.selectionA.pairs[seed];
   const pairB = f.selectionB.submitted && f.selectionB.pairs[seed];
-  if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return 50;
-  const { winPctA, winPctB } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
-  return 100 - Math.abs(winPctA - winPctB);
+  if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return null;
+  const { winPctA, winPctB, provisional } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+  return { winPctA, winPctB, provisional, closeness: 100 - Math.abs(winPctA - winPctB) };
 }
 function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
@@ -2931,7 +2935,10 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const tally = {};
   const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
   const needsDoubles = slots < 4;
-  const closenessOf = (f, seed) => matchCloseness(league, f, seed, ratingsData, identityOf);
+  // Neutral default (closeness 50, no winPct fields) while either side's
+  // line-up isn't in yet — same "not revealed" case matchPrediction itself
+  // returns null for.
+  const predictionOf = (f, seed) => matchPrediction(league, f, seed, ratingsData, identityOf) || { closeness: 50 };
 
   const rounds = {};
   roundNums.forEach((round) => {
@@ -2956,13 +2963,13 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
       // likely to run long claims the lightest court so far, in order.
       const order = fixtures.map((f) => {
         let total = 0;
-        for (let seed = 0; seed < 4 && seed < slots; seed++) total += closenessOf(f, seed);
+        for (let seed = 0; seed < 4 && seed < slots; seed++) total += predictionOf(f, seed).closeness;
         return { f, total };
       }).sort((a, b) => b.total - a.total);
       order.forEach(({ f, total }) => {
         let bestCourt = 0;
         for (let c = 1; c < courts; c++) if (courtLoad[c] < courtLoad[bestCourt]) bestCourt = c;
-        for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][bestCourt] = { fixtureId: f.id, seed, closeness: closenessOf(f, seed) };
+        for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][bestCourt] = { fixtureId: f.id, seed, ...predictionOf(f, seed) };
         courtLoad[bestCourt] += total;
         teamTally(f.teamA); teamTally(f.teamB);
       });
@@ -2972,15 +2979,15 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
       fixtures.forEach((f) => {
         const doubleSlot = doubleSlotOf.get(f.id);
         if (doubleSlot === null || doubleSlot === undefined) {
-          for (let seed = 0; seed < 4; seed++) placements.push({ fixtureId: f.id, seed, slot: seed % slots, closeness: closenessOf(f, seed) });
+          for (let seed = 0; seed < 4; seed++) placements.push({ fixtureId: f.id, seed, slot: seed % slots, ...predictionOf(f, seed) });
           return;
         }
         // Same shape Auto-fill uses: seeds 0/1 double up in the chosen
         // slot, seeds 2/3 each get one of the remaining slots — unchanged,
         // only the court within each slot is free to move below.
-        [0, 1].forEach((seed) => placements.push({ fixtureId: f.id, seed, slot: doubleSlot, closeness: closenessOf(f, seed) }));
+        [0, 1].forEach((seed) => placements.push({ fixtureId: f.id, seed, slot: doubleSlot, ...predictionOf(f, seed) }));
         const others = Array.from({ length: slots }, (_, s) => s).filter((s) => s !== doubleSlot);
-        [2, 3].forEach((seed, idx) => { if (others.length) placements.push({ fixtureId: f.id, seed, slot: others[idx % others.length], closeness: closenessOf(f, seed) }); });
+        [2, 3].forEach((seed, idx) => { if (others.length) placements.push({ fixtureId: f.id, seed, slot: others[idx % others.length], ...predictionOf(f, seed) }); });
         teamTally(f.teamA)[doubleSlot]++; teamTally(f.teamB)[doubleSlot]++;
       });
       // Greedy longest-first load balancing (LPT) across the WHOLE round at
@@ -2994,7 +3001,7 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
           if (courtLoad[c] < bestLoad) { bestLoad = courtLoad[c]; bestCourt = c; }
         }
         if (bestCourt === -1) return; // more seeds than courts this slot — leftover, same overflow case Auto-fill has
-        grid[p.slot][bestCourt] = { fixtureId: p.fixtureId, seed: p.seed, closeness: p.closeness };
+        grid[p.slot][bestCourt] = { fixtureId: p.fixtureId, seed: p.seed, closeness: p.closeness, winPctA: p.winPctA, winPctB: p.winPctB, provisional: p.provisional };
         courtLoad[bestCourt] += p.closeness;
       });
     }
@@ -3030,9 +3037,9 @@ function computeCurrentCourtLoad(league, ratingsData, identityOf) {
       if (!cell) return null;
       const f = fixtures.find((x) => x.id === cell.fixtureId);
       if (!f) return null;
-      const closeness = matchCloseness(league, f, cell.seed, ratingsData, identityOf);
-      courtLoad[c] += closeness;
-      return { fixtureId: cell.fixtureId, seed: cell.seed, closeness };
+      const pred = matchPrediction(league, f, cell.seed, ratingsData, identityOf) || { closeness: 50 };
+      courtLoad[c] += pred.closeness;
+      return { fixtureId: cell.fixtureId, seed: cell.seed, ...pred };
     }));
     rounds[round] = { grid, courtLoad };
   });

@@ -6966,7 +6966,14 @@ function renderCourtBalanceGrids(rounds) {
         if (!cell) return `<td>—</td>`;
         const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
         const color = fixtureColor(cell.fixtureId, fixtures);
-        return `<td style="border-radius:8px;background:${color.bg};"><div class="cs-cell-content"><div class="cs-cell-label">${escapeHtml(opt ? opt.shortLabel : "Seed " + (cell.seed + 1))}</div></div></td>`;
+        // Admin-only view, so this shows regardless of RATINGS_ENABLED —
+        // same forceShow-style exception the site-wide predictions already
+        // make for admin-facing surfaces. Blank once either side's line-up
+        // for this seed isn't in yet (matchPrediction has nothing to show).
+        const predictHtml = cell.winPctA != null
+          ? `<div class="cs-cell-predict"${cell.provisional ? ' title="Early prediction — not everyone has a settled rating yet"' : ""}><span class="${cell.winPctA >= cell.winPctB ? "fav" : ""}">${cell.winPctA}%</span> – <span class="${cell.winPctB >= cell.winPctA ? "fav" : ""}">${cell.winPctB}%</span></div>`
+          : "";
+        return `<td style="border-radius:8px;background:${color.bg};"><div class="cs-cell-content"><div class="cs-cell-label">${escapeHtml(opt ? opt.shortLabel : "Seed " + (cell.seed + 1))}</div>${predictHtml}</div></td>`;
       }).join("");
       return `<tr><th>Match ${s + 1}</th>${cells}</tr>`;
     }).join("");

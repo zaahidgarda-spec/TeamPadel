@@ -330,6 +330,8 @@ table.court-schedule-table td.cs-selected{outline:2px solid var(--accent);outlin
 table.court-schedule-table td.cs-swap-target{outline:2px dashed var(--accent);outline-offset:-3px;}
 .cs-vs{font-size:9px;color:var(--text-dim);text-transform:uppercase;}
 .cs-cell-label{font-size:11px;color:var(--text-dim);line-height:1.25;}
+.cs-cell-predict{font-size:10px;color:var(--text-faint);margin-top:2px;font-variant-numeric:tabular-nums;}
+.cs-cell-predict .fav{color:var(--accent);font-weight:600;}
 .cs-double-badge{font-family:var(--font-display);font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--clay);margin-bottom:3px;}
 .cs-double-row{display:flex;align-items:center;gap:10px;}
 .cs-double-half{flex:1;min-width:0;}
