@@ -3324,6 +3324,7 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
         leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
         fixtureId: f.id, label: fixtureLabel(league, f),
         opponentName: oppTeam ? oppTeam.name : "TBD",
+        opponentLogo: oppTeam ? oppTeam.logo || "" : "",
         date: sched.date || "", time: sched.time || "",
         kickoffMs: kickoffMsOf(sched.date, sched.time),
       });

@@ -1520,7 +1520,7 @@ async function renderAccountLineupsDue() {
     return `
     <div class="lineup-due-pill" data-league="${d.leagueId}">
       <div class="lineup-due-top">
-        <div class="lineup-due-name"><strong>${escapeHtml(d.label)} vs ${escapeHtml(d.opponentName)}</strong><span class="lineup-due-meta">${meta}</span></div>
+        <div class="lineup-due-name"><strong>${escapeHtml(d.label)} vs ${avatarHtml({ logo: d.opponentLogo, name: d.opponentName })}${escapeHtml(d.opponentName)}</strong><span class="lineup-due-meta">${meta}</span></div>
         <div class="lineup-due-right">${badge}</div>
       </div>
       ${bar}
