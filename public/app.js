@@ -528,45 +528,32 @@ function showHub() {
   renderHomepageSponsors();
 }
 // Every visible league's sponsors, aggregated site-wide (see GET
-// /homepage/sponsors) and shown one at a time at the foot of the Leagues
-// page — same rotate-and-fade behavior as the Next Matches carousel above,
-// just simpler (no click-through, an optional link on the logo itself).
-let sponsorList = [];
-let sponsorIdx = 0;
-let sponsorTimer = null;
-const SPONSOR_ROTATE_MS = 4500;
+// /homepage/sponsors) and shown all at once, in a continuously scrolling
+// ticker, at the foot of the Leagues page. Built once (not on a rotation
+// timer, unlike the Next Matches carousel above) — the CSS animation does
+// the moving, so there's nothing to jank the main thread mid-scroll.
 async function renderHomepageSponsors() {
   const data = await api("/homepage/sponsors").catch(() => null);
-  sponsorList = (data && data.sponsors) || [];
+  const sponsorList = (data && data.sponsors) || [];
   const banner = el("homepage-sponsor-banner");
-  if (sponsorTimer) { clearInterval(sponsorTimer); sponsorTimer = null; }
   if (sponsorList.length === 0) { banner.style.display = "none"; return; }
   banner.style.display = "block";
-  sponsorIdx = 0;
-  renderSponsorSlide();
+  const track = el("homepage-sponsor-track");
+  const itemHtml = (s) => {
+    const logo = `<img src="${s.image}" alt="${escapeHtml(s.name || "Sponsor")}">`;
+    const name = s.name ? `<span>${escapeHtml(s.name)}</span>` : "";
+    const inner = logo + name;
+    return `<div class="hs-item">${s.link ? `<a href="${escapeHtml(s.link)}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:8px;">${inner}</a>` : inner}</div>`;
+  };
+  // Duplicate the row once so translateX(-50%) loops seamlessly; a single
+  // sponsor has nothing to loop past, so just center it instead.
   if (sponsorList.length > 1) {
-    sponsorTimer = setInterval(() => {
-      sponsorIdx = (sponsorIdx + 1) % sponsorList.length;
-      renderSponsorSlide();
-    }, SPONSOR_ROTATE_MS);
+    track.classList.remove("hs-track-static");
+    track.innerHTML = [...sponsorList, ...sponsorList].map(itemHtml).join("");
+  } else {
+    track.classList.add("hs-track-static");
+    track.innerHTML = sponsorList.map(itemHtml).join("");
   }
-}
-function renderSponsorSlide() {
-  const s = sponsorList[sponsorIdx];
-  const slide = el("homepage-sponsor-slide");
-  const logoHtml = `<div class="hs-logo-chip"><img src="${s.image}" alt="${escapeHtml(s.name || "Sponsor")}"></div>`;
-  slide.innerHTML = (s.link ? `<a href="${escapeHtml(s.link)}" target="_blank" rel="noopener">${logoHtml}</a>` : logoHtml)
-    + (s.name ? `<div class="hs-name">${escapeHtml(s.name)}</div>` : "");
-  // Replays the fade-in on every rotation, not just the first render — same
-  // idea as the Next Matches carousel's restart trick, but deferred to the
-  // next frame with requestAnimationFrame instead of a synchronous
-  // `void el.offsetWidth` layout read. That read forces the browser to
-  // finish layout right then, on the main thread — fine in isolation, but
-  // this rotates on its own timer every 4.5s regardless of what else is
-  // happening, so it could land mid-scroll and stall a frame. rAF gets the
-  // same restart without forcing layout early.
-  slide.classList.remove("hs-slide");
-  requestAnimationFrame(() => slide.classList.add("hs-slide"));
 }
 // Homepage counterpart to the in-league "Score not entered yet" banner —
 // reaches a logged-in captain the moment they land on the site, not just
@@ -1816,7 +1803,6 @@ function renderAccountNextMatch(cards) {
 
 async function openLeague(id) {
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
-  if (sponsorTimer) { clearInterval(sponsorTimer); sponsorTimer = null; }
   currentLeagueId = id;
   window.location.hash = "league/" + id;
   el("view-hub").style.display = "none";
