@@ -557,12 +557,16 @@ function renderSponsorSlide() {
   const logoHtml = `<div class="hs-logo-chip"><img src="${s.image}" alt="${escapeHtml(s.name || "Sponsor")}"></div>`;
   slide.innerHTML = (s.link ? `<a href="${escapeHtml(s.link)}" target="_blank" rel="noopener">${logoHtml}</a>` : logoHtml)
     + (s.name ? `<div class="hs-name">${escapeHtml(s.name)}</div>` : "");
-  // Same restart trick the Next Matches carousel uses — toggling the class
-  // off/on (with a forced reflow between) replays the fade-in on every
-  // rotation, not just the first render.
+  // Replays the fade-in on every rotation, not just the first render — same
+  // idea as the Next Matches carousel's restart trick, but deferred to the
+  // next frame with requestAnimationFrame instead of a synchronous
+  // `void el.offsetWidth` layout read. That read forces the browser to
+  // finish layout right then, on the main thread — fine in isolation, but
+  // this rotates on its own timer every 4.5s regardless of what else is
+  // happening, so it could land mid-scroll and stall a frame. rAF gets the
+  // same restart without forcing layout early.
   slide.classList.remove("hs-slide");
-  void slide.offsetWidth;
-  slide.classList.add("hs-slide");
+  requestAnimationFrame(() => slide.classList.add("hs-slide"));
 }
 // Homepage counterpart to the in-league "Score not entered yet" banner —
 // reaches a logged-in captain the moment they land on the site, not just

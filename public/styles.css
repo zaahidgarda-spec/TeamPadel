@@ -59,7 +59,11 @@ header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(-
    banner needs to eat instead of sitting above, so it's canceled with a
    matching negative margin and made up inside the banner's own padding. */
 .homepage-sponsor-banner{position:relative;margin:22px -20px -80px;padding:26px 20px 28px;overflow:hidden;background:var(--text);}
-.homepage-sponsor-banner::before{content:"";position:absolute;width:220px;height:220px;border-radius:50%;filter:blur(60px);opacity:.35;background:var(--accent);top:-90px;left:50%;transform:translateX(-50%);pointer-events:none;}
+/* A radial-gradient glow, not a blurred solid circle — filter:blur() forces
+   an expensive compositor pass that (combined with this banner's own
+   rotation timer) was janking mobile scroll on the Leagues page. Same soft
+   look, none of the repaint cost. */
+.homepage-sponsor-banner::before{content:"";position:absolute;width:340px;height:340px;border-radius:50%;opacity:.35;background:radial-gradient(circle,var(--accent) 0%,var(--accent) 25%,transparent 70%);top:-150px;left:50%;transform:translateX(-50%);pointer-events:none;}
 .hs-label{position:relative;font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.45);text-align:center;margin-bottom:14px;}
 .hs-slide{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;animation:mc-fade-in .4s ease;min-height:80px;justify-content:center;}
 .hs-logo-chip{background:#fff;border-radius:10px;padding:10px 18px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(0,0,0,.25);}
