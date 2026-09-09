@@ -91,6 +91,31 @@ function avatarHtml(t) {
   const initial = t ? t.name.charAt(0).toUpperCase() : "?";
   return `<span class="avatar-fb">${escapeHtml(initial)}</span>`;
 }
+// Every "Copy link"-style button that has to fetch/build the text first
+// (a pay link, a league's team codes) used to `await` that fetch and only
+// call navigator.clipboard.writeText() afterwards. Safari requires the
+// clipboard call to happen synchronously inside the click handler that
+// triggered it — any await first loses that "user activation" window and
+// fails with a permission-style error, even though the user never denied
+// anything (this is exactly what was showing up as "Couldn't copy the
+// link: The request is not allowed..." on iOS). Passing a promise-valued
+// ClipboardItem keeps the write() call itself synchronous while the real
+// text still resolves once the fetch finishes.
+function copyTextWhenReady(textPromise, btn) {
+  const original = btn ? btn.textContent : null;
+  const done = (ok, text) => {
+    if (!btn) return;
+    if (ok) { btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = original; }, 1500); }
+    else if (text) { alert("Couldn't copy automatically — here's the link:\n\n" + text); }
+    else { alert("Couldn't copy — your browser may be blocking clipboard access."); }
+  };
+  if (window.ClipboardItem) {
+    const item = new ClipboardItem({ "text/plain": textPromise.then((text) => new Blob([text], { type: "text/plain" })) });
+    navigator.clipboard.write([item]).then(() => done(true)).catch(() => textPromise.then((text) => done(false, text)).catch(() => done(false)));
+  } else {
+    textPromise.then((text) => navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false, text))).catch(() => done(false));
+  }
+}
 // The rating swing a single result caused — null for a match played before
 // either partner had any rating history to move (shouldn't happen once the
 // engine's warmed up, but the field can still be absent defensively).
@@ -901,16 +926,13 @@ function renderHub() {
     if (!card.dataset.locked) card.onclick = () => openLeague(card.dataset.id);
     const copyBtn = card.querySelector(".league-copy-codes-btn");
     if (copyBtn) {
-      copyBtn.onclick = async (e) => {
+      copyBtn.onclick = (e) => {
         e.stopPropagation();
-        const full = await api(`/leagues/${card.dataset.id}`).catch(() => null);
-        if (!full || full.teams.length === 0) return;
-        const text = full.teams.map((t) => t.name + ": " + (t.code || "—")).join("\n");
-        navigator.clipboard.writeText(text).then(() => {
-          const original = copyBtn.textContent;
-          copyBtn.textContent = "Copied!";
-          setTimeout(() => { copyBtn.textContent = original; }, 1500);
-        }).catch(() => alert("Couldn't copy — your browser may be blocking clipboard access."));
+        const textPromise = api(`/leagues/${card.dataset.id}`).then((full) => {
+          if (!full || full.teams.length === 0) return "";
+          return full.teams.map((t) => t.name + ": " + (t.code || "—")).join("\n");
+        });
+        copyTextWhenReady(textPromise, copyBtn);
       };
     }
   });
@@ -2296,7 +2318,7 @@ function teamPayDetailHtml(t, isAdminView) {
         : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>` : ""}`}
     </div>
   `).join("");
-  return `<div class="combine-claim-list">${rows}</div><p class="note" style="margin-top:8px;">A player with their own account can also pay this from My Profile.</p>`;
+  return `<div class="combine-claim-list">${rows}</div>`;
 }
 // Wires up every interactive element teamPayDetailHtml can render, for
 // whichever container it was just injected into (the admin's per-team
@@ -2331,14 +2353,9 @@ function bindPayDetailHandlers(container, t) {
   }
   const teamLinkBtn = container.querySelector(".pay-team-link-copy-btn");
   if (teamLinkBtn) {
-    teamLinkBtn.onclick = async () => {
-      try {
-        const { url } = await api(`/leagues/${currentLeagueId}/teams/${t.id}/pay-link`);
-        await navigator.clipboard.writeText(url);
-        const original = teamLinkBtn.textContent;
-        teamLinkBtn.textContent = "Copied!";
-        setTimeout(() => { teamLinkBtn.textContent = original; }, 1500);
-      } catch (e) { alert("Couldn't copy the link: " + e.message); }
+    teamLinkBtn.onclick = () => {
+      const textPromise = api(`/leagues/${currentLeagueId}/teams/${t.id}/pay-link`).then((d) => d.url);
+      copyTextWhenReady(textPromise, teamLinkBtn);
     };
   }
   container.querySelectorAll(".notif-row[data-player]").forEach((row) => {
@@ -2353,14 +2370,9 @@ function bindPayDetailHandlers(container, t) {
     }
     const copyBtn = row.querySelector(".pay-link-copy-btn");
     if (copyBtn) {
-      copyBtn.onclick = async () => {
-        try {
-          const { url } = await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/pay-link`);
-          await navigator.clipboard.writeText(url);
-          const original = copyBtn.textContent;
-          copyBtn.textContent = "Copied!";
-          setTimeout(() => { copyBtn.textContent = original; }, 1500);
-        } catch (e) { alert("Couldn't copy the link: " + e.message); }
+      copyBtn.onclick = () => {
+        const textPromise = api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/pay-link`).then((d) => d.url);
+        copyTextWhenReady(textPromise, copyBtn);
       };
     }
   });
@@ -6950,14 +6962,24 @@ el("kit-notes-save-btn").onclick = async () => {
 };
 el("kit-share-copy-btn").onclick = async () => {
   el("kit-share-status").textContent = "";
+  // The clipboard write has to start synchronously, right here, not after
+  // the `api()` call below resolves — see copyTextWhenReady's comment for
+  // why an awaited fetch first breaks this on Safari. urlPromise is fed to
+  // ClipboardItem so the write can start now and resolve once the link is
+  // actually created.
+  let resolveUrl;
+  const urlPromise = new Promise((resolve) => { resolveUrl = resolve; });
+  const copyDone = window.ClipboardItem
+    ? navigator.clipboard.write([new ClipboardItem({ "text/plain": urlPromise.then((url) => new Blob([url], { type: "text/plain" })) })]).then(() => true).catch(() => false)
+    : urlPromise.then((url) => navigator.clipboard.writeText(url).then(() => true).catch(() => false));
   try {
     const data = await api(`/leagues/${currentLeagueId}/kit-share-link`);
-    try { await navigator.clipboard.writeText(data.url); el("kit-share-status").textContent = "Copied!"; }
-    catch (e) { el("kit-share-status").textContent = data.url; }
+    resolveUrl(data.url);
+    el("kit-share-status").textContent = (await copyDone) ? "Copied!" : data.url;
     el("kit-share-revoke-btn").style.display = "inline";
     setTimeout(() => { el("kit-share-status").textContent = ""; }, 4000);
     await refreshLeague();
-  } catch (e) { el("kit-share-status").textContent = e.message || "Couldn't create link — try again."; }
+  } catch (e) { resolveUrl(""); el("kit-share-status").textContent = e.message || "Couldn't create link — try again."; }
 };
 el("kit-share-revoke-btn").onclick = async () => {
   if (!confirm("Revoke this link? Anyone who already has it will no longer be able to view or download the kit designs — you'd need to copy and send a fresh one.")) return;
