@@ -3437,25 +3437,6 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/payment-status", 
   res.json({ ok: true });
 });
 
-// Every league a signed-in player has a claimed record in, where that
-// team is paying per-player and this specific player hasn't paid yet —
-// the "what you owe" list shown on My Profile.
-router.get("/players/dues", requirePlayerUser, (req, res) => {
-  const user = store.getUser(req.session.playerUser.id);
-  const dues = [];
-  (user.claims || []).forEach((c) => {
-    const league = store.getLeague(c.leagueId);
-    if (!league || !league.registrationFeeCents) return;
-    const { team, player } = findTeamAndPlayer(league, c.teamId, c.playerId);
-    if (!team || !player || team.paymentMode !== "split" || player.paymentStatus === "paid") return;
-    dues.push({
-      leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
-      playerId: player.id, playerName: player.name, amountCents: playerShareCents(league, team),
-    });
-  });
-  res.json(dues);
-});
-
 // Every not-yet-finalized fixture across every league this account
 // captains where THIS team's own line-up hasn't been submitted yet — the
 // same "surface it on the homepage" treatment /players/dues gets for
