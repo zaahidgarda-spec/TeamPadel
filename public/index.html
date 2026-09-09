@@ -92,6 +92,7 @@
           <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
           <button class="hub-tab-btn" data-hubview="search">Search players</button>
           <button class="hub-tab-btn" data-hubview="news">News room</button>
+          <button class="hub-tab-btn" data-hubview="payments" id="hub-payments-tab-btn" style="display:none;">Payments</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
@@ -326,6 +327,17 @@
           <h2 class="section-title">News room</h2>
           <p class="note" style="margin-bottom:10px;">Every update from every league you play in, most recent first.</p>
           <div id="account-news-list"></div>
+        </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-payments">
+        <div class="card">
+          <h2 class="section-title">Payments</h2>
+          <p class="note" style="margin-bottom:14px;">Pick a league to see who's paid, find a player or team, and copy their pay link.</p>
+          <label class="sr-only" for="payments-league-select">Choose a league</label>
+          <select id="payments-league-select" style="max-width:320px;">
+            <option value="">Choose a league…</option>
+          </select>
         </div>
       </section>
 

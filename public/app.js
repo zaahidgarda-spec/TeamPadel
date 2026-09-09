@@ -1005,9 +1005,32 @@ async function refreshOwnerStatus() {
   const adminTabBtn = document.querySelector('.hub-tab-btn[data-hubview="admin"]');
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); }
+  // Same gate as the Admin tab — only the owner sees payment status across
+  // every league; a captain still only ever sees their own team's inside
+  // that league's own Pay tab.
+  const paymentsTabBtn = el("hub-payments-tab-btn");
+  paymentsTabBtn.style.display = isOwner ? "" : "none";
+  if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); }
   renderHub();
 }
+// "Select a league from a menu, then find a player or team and send them
+// the link" — this tab is just that shortcut: skip hunting through a
+// league's own tab bar and jump straight to its Pay tab (which already has
+// the payment status, search-by-team, and per-player "Copy pay link").
+function renderPaymentsLeaguePicker() {
+  const select = el("payments-league-select");
+  const current = select.value;
+  const sorted = leaguesIndex.slice().sort((a, b) => a.name.localeCompare(b.name));
+  select.innerHTML = '<option value="">Choose a league…</option>' + sorted.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("");
+  select.value = current;
+}
+el("payments-league-select").onchange = async () => {
+  const id = el("payments-league-select").value;
+  if (!id) return;
+  await openLeague(id);
+  switchTab("pay");
+};
 // Owner-only — refetched each time the Admin tab is (re)entered rather than
 // polled continuously, since it's a glance-at stat, not a live dashboard.
 async function renderLiveCount() {
