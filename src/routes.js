@@ -3413,6 +3413,15 @@ router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link/:token",
   res.json({
     leagueName: league.name, teamName: team.name, teamLogo: team.logo || "", playerName: player.name,
     amountCents: playerShareCents(league, team), paid: player.paymentStatus === "paid", paidAt: player.paidAt || null,
+    // League-wide context — the venue photo (fetched lazily by the client
+    // from GET /leagues/:leagueId/court-photo, same as a hub card, rather
+    // than embedded here), every team's logo for the roster strip, and
+    // the league's total headcount so the page reads as "you're one of
+    // many", not just a bare amount.
+    venueName: league.defaultVenue || "", hasCourtPhoto: !!league.courtPhoto,
+    teamLogos: league.teams.map((t) => ({ name: t.name, logo: t.logo || "" })),
+    totalPlayers: league.teams.reduce((sum, t) => sum + t.players.length, 0),
+    teamCount: league.teams.length,
   });
 });
 

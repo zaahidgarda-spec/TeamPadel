@@ -296,42 +296,68 @@ function trackPageView(path, title) {
 // amount layout: one number, one button, nothing to read before deciding
 // (see the "Payment Portal" mockup, option 3 — approved as the player
 // interface).
+// Builds the photo/venue/team/roster header shown at the top of a
+// pay-link card when the league has a court photo set — same has-photo
+// merged-card treatment as a league's hub card. The photo itself loads in
+// lazily (fetched after the rest of the page already rendered), same
+// reasoning as observeLeagueCardPhotos: don't make a player wait on a
+// ~150KB image before they can even see the amount they owe.
+function payLinkPhotoHeaderHtml(data) {
+  if (!data.hasCourtPhoto) return "";
+  const teamCrest = data.teamLogo ? `<img src="${data.teamLogo}" alt="">` : "";
+  const rosterLogos = (data.teamLogos || []).map(avatarHtml).join("");
+  return `
+    <div class="pay-link-photo" id="pay-link-photo">
+      ${data.venueName ? `<div class="pay-link-venue">${escapeHtml(data.venueName)}</div>` : ""}
+      <div class="pay-link-team-row">${teamCrest}${escapeHtml(data.teamName)} &middot; ${escapeHtml(data.leagueName)}</div>
+      <div class="pay-link-roster">${rosterLogos}<span>${data.totalPlayers} players &middot; ${data.teamCount} teams</span></div>
+    </div>
+  `;
+}
 async function openPayLink(leagueId, teamId, playerId, token) {
   el("view-hub").style.display = "none";
   el("view-league").style.display = "none";
   el("view-pay-link").style.display = "block";
   const content = el("pay-link-content");
   const data = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}`).catch(() => null);
+  const card = el("pay-link-card");
   if (!data) {
+    card.classList.remove("pay-link-has-photo");
     content.innerHTML = '<p class="note" style="text-align:center;">This payment link isn\'t valid — ask your captain for a fresh one.</p>';
     return;
   }
   trackPageView(`/pay-link/${leagueId}`, `Pay — ${data.playerName}`);
+  card.classList.toggle("pay-link-has-photo", !!data.hasCourtPhoto);
+  const photoHeader = payLinkPhotoHeaderHtml(data);
   const teamLine = `<div class="pay-hero-team">${data.teamLogo ? `<img class="pay-hero-crest" src="${data.teamLogo}" alt="">` : ""}${escapeHtml(data.teamName)} &middot; ${escapeHtml(data.leagueName)}</div>`;
   if (data.paid) {
     content.innerHTML = `
-      <div class="pay-hero pay-hero-done">
+      ${photoHeader}
+      <div class="pay-hero pay-hero-done${photoHeader ? " pay-link-lower" : ""}">
         <div class="pay-hero-check">&#10003;</div>
         <div class="pay-hero-label">${escapeHtml(data.playerName)}, you're all paid up</div>
         <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
-        ${teamLine}
+        ${photoHeader ? "" : teamLine}
         ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
       </div>
     `;
+    if (photoHeader) fetchPayLinkPhoto(leagueId);
     return;
   }
   const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
   content.innerHTML = `
-    <div class="pay-hero">
+    ${photoHeader}
+    <div class="pay-hero${photoHeader ? " pay-link-lower" : ""}">
       <div class="pay-hero-label">${escapeHtml(possessive(data.playerName))} season fee</div>
       <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
-      ${teamLine}
+      ${photoHeader ? "" : teamLine}
       <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
       <div class="error" id="pay-link-error"></div>
       <div class="pay-hero-secure">&#128274; Secured by PayFast</div>
     </div>
     ${sandboxNote}
   `;
+  if (photoHeader) fetchPayLinkPhoto(leagueId);
   el("pay-link-btn").onclick = async () => {
     el("pay-link-error").textContent = "";
     try {
@@ -339,6 +365,12 @@ async function openPayLink(leagueId, teamId, playerId, token) {
       submitPayfastCheckout(checkout);
     } catch (e) { el("pay-link-error").textContent = e.message; }
   };
+}
+function fetchPayLinkPhoto(leagueId) {
+  api(`/leagues/${leagueId}/court-photo`).then((res) => {
+    const el2 = el("pay-link-photo");
+    if (el2 && res && res.photo) el2.style.backgroundImage = `url('${res.photo}')`;
+  }).catch(() => {});
 }
 // Same standalone hero page as openPayLink above, just for a team's whole
 // lump-sum fee instead of one player's split share — whoever holds this

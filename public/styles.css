@@ -80,6 +80,25 @@ header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(-
 .pay-hero-done .pay-hero-check{width:48px;height:48px;border-radius:50%;background:var(--success-soft);color:var(--success);font-size:22px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;}
 .pay-hero-done .pay-hero-label{color:var(--text);font-size:14px;letter-spacing:0;text-transform:none;font-family:var(--font-body);font-weight:600;}
 .pay-hero-done .pay-hero-amount{color:var(--success);}
+/* A league's court photo, venue name, team, and roster size — merged into
+   the top of the pay-link card itself (same has-photo treatment as a
+   league's hub card), so a player opening a link they got via WhatsApp
+   sees more than a bare amount: where they play, and that they're one of
+   many. The photo loads in lazily (see openPayLink in app.js) — the same
+   dark placeholder-fill reasoning as the hub card applies here too. Only
+   used when the league actually has a court photo set; otherwise the
+   card renders exactly as it always has. */
+.card.pay-link-has-photo{padding:0;overflow:hidden;}
+.pay-link-photo{position:relative;padding:20px 20px 16px;background-color:var(--text);background-size:cover;background-position:center;color:#fff;}
+.pay-link-photo::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,10,20,.15) 0%,rgba(6,10,20,.55) 60%,rgba(6,10,20,.85) 100%);}
+.pay-link-photo>*{position:relative;z-index:1;}
+.pay-link-venue{font-family:var(--font-display);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:8px;}
+.pay-link-team-row{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;margin-bottom:10px;}
+.pay-link-team-row img{width:26px;height:26px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(255,255,255,.5);}
+.pay-link-roster{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.75);}
+.pay-link-roster .avatar,.pay-link-roster .avatar-fb{width:18px;height:18px;margin-left:-7px;border:1.5px solid rgba(6,10,20,.5);}
+.pay-link-roster .avatar:first-child,.pay-link-roster .avatar-fb:first-child{margin-left:0;}
+.pay-link-lower{padding:20px 4px 4px;}
 
 /* Admin payment summary — see renderPaySummaryHtml in app.js. */
 .pay-summary-box{background:var(--panel-2);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
