@@ -1970,6 +1970,10 @@ function tabDefs() {
   // built and working either way; this is purely a visibility/rollout
   // gate, same pattern as Toss/Ratings preview above.
   if (myRole === "admin") defs.push({ key: "pay", label: "Pay", wip: true });
+  // Its own tab rather than a card buried at the bottom of Admin — a
+  // captain never sees this (view-only, admin-only concern), so it's
+  // fine to sit alongside the other admin-only utility tabs above.
+  if (myRole === "admin") defs.push({ key: "audit-log", label: "Change history" });
   return defs;
 }
 function buildTabs() {
@@ -2205,6 +2209,7 @@ function renderAll() {
   renderPendingScoreBanner();
   if (myRole === "admin") renderAdmin();
   if (myRole === "admin") renderPay();
+  if (myRole === "admin") renderAdminAuditLog();
   renderSelection();
   if (myRole === "admin" && league.tieringEnabled) renderToss();
   renderFixtures();
@@ -2679,7 +2684,6 @@ function renderAdmin() {
   renderAdminRoster();
   renderAdminFixtures();
   renderAdminSponsors();
-  renderAdminAuditLog();
   renderClaimRequests();
   renderOrphanedPlayers();
 }
