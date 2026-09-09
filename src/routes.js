@@ -915,6 +915,25 @@ router.get("/homepage/highlights", (req, res) => {
   res.json({ potw, highlights: manualHighlights.concat(autoHighlights.slice(0, 9)) });
 });
 
+// Every visible league's sponsors, flattened into one site-wide list for
+// the Leagues page footer carousel — sponsors are set per league (Admin >
+// Sponsors), but the same real-world sponsor often backs several leagues
+// at once, so this dedupes on the logo image itself (name gets typed
+// slightly differently league to league; the uploaded image doesn't).
+router.get("/homepage/sponsors", (req, res) => {
+  const leagues = visibleIndexEntries().map((entry) => store.getLeague(entry.id)).filter(Boolean);
+  const seenImages = new Set();
+  const sponsors = [];
+  leagues.forEach((league) => {
+    (league.sponsors || []).forEach((s) => {
+      if (!s.image || seenImages.has(s.image)) return;
+      seenImages.add(s.image);
+      sponsors.push({ name: s.name, link: s.link, image: s.image });
+    });
+  });
+  res.json({ sponsors });
+});
+
 // Owner-only curation of the auto-generated strip — hide a card that's
 // technically true but not worth surfacing (dismiss), or undo that.
 router.post("/admin/interesting/dismiss", (req, res) => {

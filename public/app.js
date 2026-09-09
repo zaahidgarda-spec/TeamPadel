@@ -457,6 +457,46 @@ function showHub() {
   renderNextMatches();
   renderHomepageHighlights();
   renderHomepagePendingScore();
+  renderHomepageSponsors();
+}
+// Every visible league's sponsors, aggregated site-wide (see GET
+// /homepage/sponsors) and shown one at a time at the foot of the Leagues
+// page — same rotate-and-fade behavior as the Next Matches carousel above,
+// just simpler (no click-through, an optional link on the logo itself).
+let sponsorList = [];
+let sponsorIdx = 0;
+let sponsorTimer = null;
+const SPONSOR_ROTATE_MS = 4500;
+async function renderHomepageSponsors() {
+  const data = await api("/homepage/sponsors").catch(() => null);
+  sponsorList = (data && data.sponsors) || [];
+  const banner = el("homepage-sponsor-banner");
+  if (sponsorTimer) { clearInterval(sponsorTimer); sponsorTimer = null; }
+  if (sponsorList.length === 0) { banner.style.display = "none"; return; }
+  banner.style.display = "block";
+  sponsorIdx = 0;
+  el("homepage-sponsor-dots").innerHTML = sponsorList.length > 1 ? sponsorList.map(() => "<span></span>").join("") : "";
+  renderSponsorSlide();
+  if (sponsorList.length > 1) {
+    sponsorTimer = setInterval(() => {
+      sponsorIdx = (sponsorIdx + 1) % sponsorList.length;
+      renderSponsorSlide();
+    }, SPONSOR_ROTATE_MS);
+  }
+}
+function renderSponsorSlide() {
+  const s = sponsorList[sponsorIdx];
+  const slide = el("homepage-sponsor-slide");
+  const logoHtml = `<div class="hs-logo-chip"><img src="${s.image}" alt="${escapeHtml(s.name || "Sponsor")}"></div>`;
+  slide.innerHTML = (s.link ? `<a href="${escapeHtml(s.link)}" target="_blank" rel="noopener">${logoHtml}</a>` : logoHtml)
+    + (s.name ? `<div class="hs-name">${escapeHtml(s.name)}</div>` : "");
+  // Same restart trick the Next Matches carousel uses — toggling the class
+  // off/on (with a forced reflow between) replays the fade-in on every
+  // rotation, not just the first render.
+  slide.classList.remove("hs-slide");
+  void slide.offsetWidth;
+  slide.classList.add("hs-slide");
+  el("homepage-sponsor-dots").querySelectorAll("span").forEach((d, i) => d.classList.toggle("on", i === sponsorIdx));
 }
 // Homepage counterpart to the in-league "Score not entered yet" banner —
 // reaches a logged-in captain the moment they land on the site, not just
@@ -1681,6 +1721,7 @@ function renderAccountNextMatch(cards) {
 
 async function openLeague(id) {
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
+  if (sponsorTimer) { clearInterval(sponsorTimer); sponsorTimer = null; }
   currentLeagueId = id;
   window.location.hash = "league/" + id;
   el("view-hub").style.display = "none";
