@@ -464,7 +464,7 @@ function isRoundOpen(league, fixture) {
     }
     return false;
   }
-  if (fixture.stage === "semi") return true;
+  if (fixture.stage === "semi" || fixture.stage === "position") return true;
   if (fixture.stage === "final") return !!(fixture.teamA && fixture.teamB);
   return false;
 }
