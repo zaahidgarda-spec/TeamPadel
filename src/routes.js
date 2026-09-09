@@ -358,7 +358,9 @@ function sanitize(league, req) {
     // A pay-link token stands in for auth on its own public route — never
     // ships in the general league payload, only ever handed out via the
     // dedicated pay-link fetch route to someone already allowed to see it.
-    const players = rest.players.map(({ payLinkToken, ...p }) => p);
+    // claimRequest names who's contesting a record — only this league's
+    // own admin has any business seeing that.
+    const players = rest.players.map(({ payLinkToken, claimRequest, ...p }) => (isAdmin ? { ...p, claimRequest } : p));
     return {
       ...rest, players,
       code: viewerIsThisTeam ? code : undefined,
@@ -1188,12 +1190,17 @@ function allPlayersFlat() {
   return results;
 }
 // Shared by the player-facing search (below) and the owner-only admin
-// search used to combine profiles on someone's behalf.
+// search used to combine profiles on someone's behalf. Deliberately leaves
+// teamLogo out — a search response embedding a full base64 image per row
+// (up to 30 of them, one per keystroke once debounced) was the actual
+// reason this search felt slow, not the name-matching itself, which is a
+// trivial in-memory scan. The client already falls back to a plain
+// initials avatar with no logo, so this is a pure payload-size win.
 function searchPlayersAcrossLeagues(q) {
   return allPlayersFlat()
     .filter((p) => p.playerName.toLowerCase().includes(q))
     .map((p) => ({
-      leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName, teamLogo: p.teamLogo,
+      leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
       playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
     }))
     .slice(0, 30);
@@ -1325,6 +1332,25 @@ router.post("/players/claims", requirePlayerUser, async (req, res) => {
   }
   res.json({ ok: true });
 });
+// A record already claimed by a real (passworded) account isn't a dead
+// end for whoever the name actually belongs to — it goes to that league's
+// admin as a request instead of failing outright, same spirit as a
+// selection unlock request. Only one pending request per player at a
+// time; a second request just replaces the first rather than queuing
+// (the admin resolves them one at a time anyway).
+router.post("/players/claim-requests", requirePlayerUser, (req, res) => {
+  const { leagueId, teamId, playerId } = req.body || {};
+  const league = store.getLeague(leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { team, player } = findTeamAndPlayer(league, teamId, playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  if (!player.claimedByUserId) return res.status(400).json({ error: "This record isn't claimed by anyone yet — just claim it directly." });
+  if (player.claimedByUserId === req.session.playerUser.id) return res.status(400).json({ error: "This is already your record." });
+  const requester = store.getUser(req.session.playerUser.id);
+  player.claimRequest = { userId: requester.id, userName: requester.name, createdAt: Date.now() };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
 router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, (req, res) => {
   const { leagueId, teamId, playerId } = req.params;
   const user = store.getUser(req.session.playerUser.id);
@@ -1440,6 +1466,51 @@ router.delete("/admin/players/:userId/claims/:leagueId/:teamId/:playerId", (req,
     player.claimedByUserId = null;
     store.saveLeague(league.id, league);
   }
+  res.json({ ok: true });
+});
+// The league's own admin decides a contested claim — approve reassigns the
+// record (the previous claimant keeps every other claim they hold, just
+// loses this one); reject just clears the request and leaves things as
+// they were.
+router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/claim-request", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  const request = player.claimRequest;
+  if (!request) return res.status(400).json({ error: "No pending request for this player." });
+  const decision = req.body.decision;
+  if (decision !== "approve" && decision !== "reject") return res.status(400).json({ error: "Invalid decision." });
+  player.claimRequest = null;
+  if (decision === "reject") {
+    store.saveLeague(league.id, league);
+    return res.json({ ok: true });
+  }
+  // Approve — the previous claimant keeps every other claim they hold,
+  // they just lose this one record.
+  if (player.claimedByUserId) {
+    const oldUser = store.getUser(player.claimedByUserId);
+    if (oldUser) {
+      oldUser.claims = (oldUser.claims || []).filter((c) => !(c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
+      store.saveUser(oldUser.id, oldUser);
+    }
+    player.claimedByUserId = null;
+  }
+  const newUser = store.getUser(request.userId);
+  if (!newUser) {
+    store.saveLeague(league.id, league);
+    return res.status(404).json({ error: "The requesting account no longer exists." });
+  }
+  // Persist the cleared claim/request first — claimPlayerRecord re-reads
+  // the league from the store itself, so without this it'd still see the
+  // old claimant and the now-stale request sitting in memory only.
+  store.saveLeague(league.id, league);
+  try {
+    claimPlayerRecord(newUser, league.id, team.id, player.id);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  store.saveUser(newUser.id, newUser);
   res.json({ ok: true });
 });
 
@@ -3219,32 +3290,6 @@ router.put("/leagues/:leagueId/teams/:teamId/payment-status", requireAdmin, (req
   team.paidAt = paid ? Date.now() : null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
-});
-
-// A claimed player pays their own share from their own player account —
-// req.session.playerUser, a completely separate auth axis from the
-// team/admin session above (see the player-accounts section further up).
-router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay/checkout", requirePlayerUser, (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  if (!league) return res.status(404).json({ error: "League not found." });
-  const { team, player } = findTeamAndPlayer(league, req.params.teamId, req.params.playerId);
-  if (!team || !player) return res.status(404).json({ error: "Player not found." });
-  if (player.claimedByUserId !== req.session.playerUser.id) return res.status(403).json({ error: "This isn't your record." });
-  if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
-  if (team.paymentMode !== "split") return res.status(400).json({ error: "This team isn't set to pay per-player." });
-  if (player.paymentStatus === "paid") return res.status(400).json({ error: "You're already marked as paid." });
-  const base = `${req.protocol}://${req.get("host")}`;
-  const checkout = payfast.buildCheckout({
-    amountRands: playerShareCents(league, team) / 100,
-    itemName: `${league.name} registration — ${player.name}`.slice(0, 100),
-    returnUrl: `${base}/#league/${league.id}`,
-    cancelUrl: `${base}/#league/${league.id}`,
-    notifyUrl: `${base}/api/payfast/notify`,
-    customStr1: league.id,
-    customStr2: team.id,
-    customStr3: player.id,
-  });
-  res.json(checkout);
 });
 
 // A no-login link for a player who hasn't (or won't) sign up for an
