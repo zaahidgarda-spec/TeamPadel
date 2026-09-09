@@ -625,9 +625,18 @@
           <div id="pay-captain-content"></div>
         </div>
         <div class="card" id="pay-admin-teams-card" style="display:none;">
-          <h2 class="section-title">Team payment status</h2>
-          <div id="pay-summary"></div>
-          <div id="pay-teams-list"></div>
+          <h2 class="section-title">Payments</h2>
+          <nav class="tabs tabs-sub" style="margin-bottom:14px;">
+            <button class="pay-subtab-btn active" data-paysubview="status" type="button">Team payment status</button>
+            <button class="pay-subtab-btn" data-paysubview="received" type="button">Payments received</button>
+          </nav>
+          <div id="pay-subview-status">
+            <div id="pay-summary"></div>
+            <div id="pay-teams-list"></div>
+          </div>
+          <div id="pay-subview-received" style="display:none;">
+            <div id="pay-received-list"></div>
+          </div>
         </div>
       </section>
 

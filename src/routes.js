@@ -3155,6 +3155,56 @@ router.get("/leagues/:leagueId/teams/:teamId/pay/checkout", requireAdminOrCaptai
   res.json(checkout);
 });
 
+// No-login link for a team's lump-sum fee — same idea as a player's
+// pay-link below, just for "team" mode instead of "split": whoever holds
+// the link can pay the whole team's fee without ever signing in.
+router.get("/leagues/:leagueId/teams/:teamId/pay-link", requireAdminOrCaptain(), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!team.payLinkToken) {
+    team.payLinkToken = crypto.randomBytes(16).toString("hex");
+    store.saveLeague(league.id, league);
+  }
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.json({ url: `${base}/#pay-link-team/${league.id}/${team.id}/${team.payLinkToken}` });
+});
+router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Link not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team || !team.payLinkToken || team.payLinkToken !== req.params.token) {
+    return res.status(404).json({ error: "This payment link is invalid." });
+  }
+  res.json({
+    leagueName: league.name, teamName: team.name, teamLogo: team.logo || "",
+    amountCents: league.registrationFeeCents || 0, paid: team.paymentStatus === "paid", paidAt: team.paidAt || null,
+  });
+});
+router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token/checkout", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team || !team.payLinkToken || team.payLinkToken !== req.params.token) {
+    return res.status(404).json({ error: "This payment link is invalid." });
+  }
+  if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
+  if (team.paymentMode !== "team") return res.status(400).json({ error: "This team is set to pay per-player, not as one lump sum." });
+  if (team.paymentStatus === "paid") return res.status(400).json({ error: "This team is already marked as paid." });
+  const base = `${req.protocol}://${req.get("host")}`;
+  const checkout = payfast.buildCheckout({
+    amountRands: league.registrationFeeCents / 100,
+    itemName: `${league.name} registration — ${team.name}`.slice(0, 100),
+    returnUrl: `${base}/#pay-link-team/${league.id}/${team.id}/${team.payLinkToken}`,
+    cancelUrl: `${base}/#pay-link-team/${league.id}/${team.id}/${team.payLinkToken}`,
+    notifyUrl: `${base}/api/payfast/notify`,
+    customStr1: league.id,
+    customStr2: team.id,
+  });
+  res.json(checkout);
+});
+
 // Cash/EFT collected outside PayFast still needs to be reflected here —
 // very much the norm for a local sports league treasurer, not an edge case.
 router.put("/leagues/:leagueId/teams/:teamId/payment-status", requireAdmin, (req, res) => {

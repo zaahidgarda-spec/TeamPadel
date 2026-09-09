@@ -51,6 +51,9 @@ let optimumLayoutProposal = null;
 
 function el(id) { return document.getElementById(id); }
 function escapeHtml(str) { const d = document.createElement("div"); d.textContent = str == null ? "" : str; return d.innerHTML; }
+// "Falcons'" not "Falcons's" — a name already ending in s just gets the
+// apostrophe, same rule every other name follows with a trailing "s".
+function possessive(name) { return (name || "") + (/s$/i.test(name || "") ? "'" : "'s"); }
 function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso + "T00:00:00");
@@ -233,6 +236,13 @@ async function boot() {
     await openPayLink(...payLinkMatch.slice(1));
     return;
   }
+  // A team's own lump-sum link — same standalone shape, one fewer segment
+  // (no player id) since it's the whole team's fee, not one player's share.
+  const payLinkTeamMatch = window.location.hash.match(/^#pay-link-team\/([^/]+)\/([^/]+)\/([^/]+)$/);
+  if (payLinkTeamMatch) {
+    await openPayLinkTeam(...payLinkTeamMatch.slice(1));
+    return;
+  }
   // Same standalone shape as a pay-link — a kit supplier following this
   // link has no login at all, so it has to work before ever touching the
   // hub or a session.
@@ -288,7 +298,7 @@ async function openPayLink(leagueId, teamId, playerId, token) {
   const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
   content.innerHTML = `
     <div class="pay-hero">
-      <div class="pay-hero-label">${escapeHtml(data.playerName)}'s season fee</div>
+      <div class="pay-hero-label">${escapeHtml(possessive(data.playerName))} season fee</div>
       <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
       ${teamLine}
       <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
@@ -301,6 +311,53 @@ async function openPayLink(leagueId, teamId, playerId, token) {
     el("pay-link-error").textContent = "";
     try {
       const checkout = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}/checkout`);
+      submitPayfastCheckout(checkout);
+    } catch (e) { el("pay-link-error").textContent = e.message; }
+  };
+}
+// Same standalone hero page as openPayLink above, just for a team's whole
+// lump-sum fee instead of one player's split share — whoever holds this
+// link (usually the captain) pays the full amount in one go.
+async function openPayLinkTeam(leagueId, teamId, token) {
+  el("view-hub").style.display = "none";
+  el("view-league").style.display = "none";
+  el("view-pay-link").style.display = "block";
+  const content = el("pay-link-content");
+  const data = await api(`/leagues/${leagueId}/teams/${teamId}/pay-link/${token}`).catch(() => null);
+  if (!data) {
+    content.innerHTML = '<p class="note" style="text-align:center;">This payment link isn\'t valid — ask your league admin for a fresh one.</p>';
+    return;
+  }
+  trackPageView(`/pay-link-team/${leagueId}`, `Pay — ${data.teamName}`);
+  const teamLine = `<div class="pay-hero-team">${data.teamLogo ? `<img class="pay-hero-crest" src="${data.teamLogo}" alt="">` : ""}${escapeHtml(data.leagueName)}</div>`;
+  if (data.paid) {
+    content.innerHTML = `
+      <div class="pay-hero pay-hero-done">
+        <div class="pay-hero-check">&#10003;</div>
+        <div class="pay-hero-label">${escapeHtml(data.teamName)} is all paid up</div>
+        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
+        ${teamLine}
+        ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
+      </div>
+    `;
+    return;
+  }
+  const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
+  content.innerHTML = `
+    <div class="pay-hero">
+      <div class="pay-hero-label">${escapeHtml(possessive(data.teamName))} season fee</div>
+      <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
+      ${teamLine}
+      <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
+      <div class="error" id="pay-link-error"></div>
+      <div class="pay-hero-secure">&#128274; Secured by PayFast</div>
+    </div>
+    ${sandboxNote}
+  `;
+  el("pay-link-btn").onclick = async () => {
+    el("pay-link-error").textContent = "";
+    try {
+      const checkout = await api(`/leagues/${leagueId}/teams/${teamId}/pay-link/${token}/checkout`);
       submitPayfastCheckout(checkout);
     } catch (e) { el("pay-link-error").textContent = e.message; }
   };
@@ -2209,6 +2266,7 @@ function teamPayDetailHtml(t, isAdminView) {
     return `
       <p>Registration fee: <strong>${fmtRands(league.registrationFeeCents)}</strong></p>
       <button class="primary pay-now-btn" type="button">Pay with PayFast</button>
+      <button class="link pay-team-link-copy-btn" type="button">Copy pay link</button>
       ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark paid manually</button>` : ""}
       <div class="error pay-now-error"></div>
     `;
@@ -2257,6 +2315,18 @@ function bindPayDetailHandlers(container, t) {
         const checkout = await api(`/leagues/${currentLeagueId}/teams/${t.id}/pay/checkout`);
         submitPayfastCheckout(checkout);
       } catch (e) { if (errEl) errEl.textContent = e.message; }
+    };
+  }
+  const teamLinkBtn = container.querySelector(".pay-team-link-copy-btn");
+  if (teamLinkBtn) {
+    teamLinkBtn.onclick = async () => {
+      try {
+        const { url } = await api(`/leagues/${currentLeagueId}/teams/${t.id}/pay-link`);
+        await navigator.clipboard.writeText(url);
+        const original = teamLinkBtn.textContent;
+        teamLinkBtn.textContent = "Copied!";
+        setTimeout(() => { teamLinkBtn.textContent = original; }, 1500);
+      } catch (e) { alert("Couldn't copy the link: " + e.message); }
     };
   }
   container.querySelectorAll(".notif-row[data-player]").forEach((row) => {
@@ -2325,6 +2395,37 @@ function renderPaySummaryHtml() {
     </div>
   `;
 }
+// A flat, most-recent-first ledger of every payment actually recorded —
+// team lump sums and individual split shares alike — built entirely from
+// what's already loaded in `league` (paymentStatus/paymentMethod/paidAt
+// live on every team and player already), so no separate endpoint is
+// needed just to look at what's come in.
+function renderPayReceivedHtml() {
+  const rows = [];
+  league.teams.forEach((t) => {
+    if (t.paymentMode === "team" && t.paymentStatus === "paid") {
+      rows.push({ name: t.name, meta: "Team payment", amount: league.registrationFeeCents || 0, method: t.paymentMethod, paidAt: t.paidAt, ref: t.paymentRef });
+    } else if (t.paymentMode === "split") {
+      const share = league.registrationFeeCents ? Math.round(league.registrationFeeCents / (t.players.length || 1)) : 0;
+      t.players.forEach((p) => {
+        if (p.paymentStatus === "paid") {
+          rows.push({ name: p.name, meta: t.name, amount: share, method: p.paymentMethod, paidAt: p.paidAt, ref: p.paymentRef });
+        }
+      });
+    }
+  });
+  if (!rows.length) return '<p class="empty">No payments recorded yet.</p>';
+  rows.sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0));
+  return `<div class="combine-claim-list">${rows.map((r) => `
+    <div class="notif-row">
+      <div>
+        <strong>${escapeHtml(r.name)}</strong>
+        <div class="note">${escapeHtml(r.meta)} · ${fmtRands(r.amount)} · ${paymentMethodLabel(r.method)}${r.ref ? " · Ref " + escapeHtml(r.ref) : ""}</div>
+      </div>
+      <span class="note">${r.paidAt ? new Date(r.paidAt).toLocaleDateString() : ""}</span>
+    </div>
+  `).join("")}</div>`;
+}
 function renderPay() {
   el("pay-sandbox-banner").style.display = PAYFAST_SANDBOX ? "block" : "none";
   const isAdmin = myRole === "admin";
@@ -2339,6 +2440,7 @@ function renderPay() {
   if (isAdmin) {
     el("pay-fee-input").value = (league.registrationFeeCents || 0) / 100;
     el("pay-summary").innerHTML = renderPaySummaryHtml();
+    el("pay-received-list").innerHTML = renderPayReceivedHtml();
     const list = el("pay-teams-list");
     list.innerHTML = league.teams.map((t) => {
       const summary = !t.paymentMode ? "Payment method not chosen"
@@ -2378,6 +2480,13 @@ el("pay-fee-save-btn").onclick = async () => {
     await refreshLeague(); renderPay();
   } catch (e) { el("pay-fee-error").textContent = e.message; }
 };
+document.querySelectorAll(".pay-subtab-btn").forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll(".pay-subtab-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    el("pay-subview-status").style.display = btn.dataset.paysubview === "status" ? "block" : "none";
+    el("pay-subview-received").style.display = btn.dataset.paysubview === "received" ? "block" : "none";
+  };
+});
 // A captain's own overdue-but-unscored match, surfaced above whichever tab
 // they land on — not just inside Results, since a team captain's default
 // landing tab is Selection Room, not Results. "Overdue" means lineups are
