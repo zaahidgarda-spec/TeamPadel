@@ -54,7 +54,11 @@ header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(-
    band (same -20px convention as the hero above) so it reads as real
    sponsorship real estate rather than another card in the stack. One
    sponsor at a time; renderHomepageSponsors() in app.js drives the fade. */
-.homepage-sponsor-banner{position:relative;margin:22px -20px 0;padding:26px 20px 24px;overflow:hidden;background:var(--text);}
+/* .wrap (the page shell) carries an 80px bottom padding for comfortable
+   scroll-past room everywhere else — exactly the "white below" gap this
+   banner needs to eat instead of sitting above, so it's canceled with a
+   matching negative margin and made up inside the banner's own padding. */
+.homepage-sponsor-banner{position:relative;margin:22px -20px -80px;padding:26px 20px 28px;overflow:hidden;background:var(--text);}
 .homepage-sponsor-banner::before{content:"";position:absolute;width:220px;height:220px;border-radius:50%;filter:blur(60px);opacity:.35;background:var(--accent);top:-90px;left:50%;transform:translateX(-50%);pointer-events:none;}
 .hs-label{position:relative;font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.45);text-align:center;margin-bottom:14px;}
 .hs-slide{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;animation:mc-fade-in .4s ease;min-height:80px;justify-content:center;}
