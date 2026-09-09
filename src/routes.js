@@ -2530,10 +2530,68 @@ router.delete(
       });
     }
     team.players = team.players.filter((p) => p.id !== req.params.playerId);
+    // Roster changes weren't logged at all before this — the only reason
+    // "who deleted this player" is answerable going forward.
+    logAudit(league, req, null, "player_delete", { playerName: player.name, teamName: team.name });
     store.saveLeague(league.id, league);
     res.json({ ok: true });
   }
 );
+
+// Every match-history reference to a player id that no longer has a roster
+// entry — the state left behind by a delete that happened before the
+// guard above existed. Includes who they played alongside and which
+// rounds, since that's usually enough for an admin to recognize who's
+// missing even though the name itself is gone.
+router.get("/leagues/:leagueId/admin/orphaned-players", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const currentIds = new Set(league.teams.flatMap((t) => t.players.map((p) => p.id)));
+  const found = new Map();
+  logic.allFixturesOf(league).forEach((f) => {
+    [["A", f.teamA, f.selectionA], ["B", f.teamB, f.selectionB]].forEach(([, teamId, sel]) => {
+      const team = league.teams.find((t) => t.id === teamId);
+      (sel.pairs || []).forEach((pair) => {
+        (pair || []).forEach((pid, idx) => {
+          if (!pid || currentIds.has(pid)) return;
+          if (!found.has(pid)) found.set(pid, { playerId: pid, teamId, teamName: team ? team.name : "Unknown team", rounds: new Set(), partners: new Set() });
+          const entry = found.get(pid);
+          entry.rounds.add(f.round || 0);
+          const partnerId = pair[1 - idx];
+          const partner = team && partnerId ? team.players.find((p) => p.id === partnerId) : null;
+          if (partner) entry.partners.add(partner.name);
+        });
+      });
+    });
+  });
+  res.json([...found.values()].map((e) => ({
+    playerId: e.playerId, teamId: e.teamId, teamName: e.teamName,
+    rounds: [...e.rounds].sort((a, b) => a - b), partners: [...e.partners],
+  })));
+});
+// Gives a deleted player their name back at the exact same id, so every
+// finalized match that already references them reconnects instead of
+// staying broken — only ever usable on an id genuinely found dangling in
+// this league's own match history, not a way to add a player with a
+// chosen id out of nowhere.
+router.post("/leagues/:leagueId/teams/:teamId/players/:playerId/restore", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const playerId = req.params.playerId;
+  if (team.players.some((p) => p.id === playerId)) return res.status(400).json({ error: "This player is already on the roster." });
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "A name is required." });
+  const isOrphaned = logic.allFixturesOf(league).some((f) =>
+    (f.selectionA.pairs || []).flat().includes(playerId) || (f.selectionB.pairs || []).flat().includes(playerId)
+  );
+  if (!isOrphaned) return res.status(400).json({ error: "This id isn't referenced in any match history here — use Add player instead." });
+  team.players.push({ id: playerId, name });
+  logAudit(league, req, null, "player_restore", { playerName: name, teamName: team.name });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
 
 router.put("/leagues/:leagueId/tiering", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);

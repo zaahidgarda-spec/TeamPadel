@@ -2681,6 +2681,40 @@ function renderAdmin() {
   renderAdminSponsors();
   renderAdminAuditLog();
   renderClaimRequests();
+  renderOrphanedPlayers();
+}
+// Every player id still referenced in a finalized match but missing from
+// the roster — the state a delete-before-the-guard left behind. Team,
+// rounds, and who they played alongside are usually enough for an admin
+// to recognize who's missing even with the name itself gone.
+async function renderOrphanedPlayers() {
+  const card = el("orphaned-players-card");
+  const orphaned = await api(`/leagues/${currentLeagueId}/admin/orphaned-players`).catch(() => []);
+  card.style.display = orphaned.length ? "block" : "none";
+  if (!orphaned.length) return;
+  const list = el("orphaned-players-list");
+  list.innerHTML = orphaned.map((o) => `
+    <div class="notif-row" data-team="${o.teamId}" data-player="${o.playerId}" style="flex-wrap:wrap;">
+      <div>
+        <strong>Unknown player</strong> — ${escapeHtml(o.teamName)}
+        <div class="note">Round${o.rounds.length === 1 ? "" : "s"} ${o.rounds.join(", ")}${o.partners.length ? " · played with " + o.partners.map(escapeHtml).join(", ") : ""}</div>
+      </div>
+      <div class="row" style="gap:8px;align-items:center;">
+        <input type="text" class="orphaned-name-input" placeholder="Their name" style="max-width:160px;">
+        <button class="primary orphaned-restore-btn" type="button">Restore</button>
+      </div>
+    </div>
+  `).join("");
+  list.querySelectorAll(".notif-row").forEach((row) => {
+    row.querySelector(".orphaned-restore-btn").onclick = async () => {
+      const name = row.querySelector(".orphaned-name-input").value.trim();
+      if (!name) { alert("Enter their name first."); return; }
+      try {
+        await api(`/leagues/${currentLeagueId}/teams/${row.dataset.team}/players/${row.dataset.player}/restore`, { method: "POST", body: { name } });
+        await refreshLeague(); renderOrphanedPlayers(); renderAdminRoster();
+      } catch (e) { alert(e.message); }
+    };
+  });
 }
 // A record already claimed by one account, contested by another — scanned
 // straight off the already-loaded league (claimRequest only ships to an
@@ -2729,6 +2763,8 @@ const AUDIT_ACTION_LABEL = {
   unlock: "Fixture unlocked",
   selection_unlock: "Line-up reopened",
   substitute: "Player substituted",
+  player_delete: "Player removed",
+  player_restore: "Player restored",
 };
 function auditScoreText(snap) {
   if (!snap || !snap.sets) return "—";
@@ -2744,6 +2780,9 @@ function auditEntryDetailHtml(e) {
   }
   if (e.action === "selection_unlock") {
     return `Side ${escapeHtml(e.side || "")}${e.approvedByOpponent ? " — approved by opponent captain" : ""}`;
+  }
+  if (e.action === "player_delete" || e.action === "player_restore") {
+    return `<strong>${escapeHtml(e.playerName || "")}</strong> — ${escapeHtml(e.teamName || "")}`;
   }
   return "";
 }
