@@ -628,8 +628,12 @@ function leagueCardHtml(l) {
     ? `<div class="strength-row" title="League strength: ${l.strength}/5"><span class="strength-label">Strength</span><span class="strength-bars">${Array.from({ length: 5 }, (_, i) => `<span class="bar${i < l.strength ? " filled" : ""}"></span>`).join("")}</span></div>`
     : "";
   const viboraTag = l.format === "pairs" ? '<span class="tag vibora-tag">Vibora</span>' : "";
-  const photoStyle = l.courtPhoto ? ` style="background-image:url('${l.courtPhoto}')"` : "";
-  return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}${l.courtPhoto ? " has-photo" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}${photoStyle}>
+  // The photo itself isn't in l — see hasCourtPhoto's comment server-side.
+  // The has-photo class (and its scrim/white-text styling) applies right
+  // away so there's no flash of the plain dark-on-white card while the
+  // real photo is still loading in; observeLeagueCardPhotos below fills in
+  // the actual background-image once this card scrolls into view.
+  return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}${l.hasCourtPhoto ? " has-photo" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}${l.hasCourtPhoto ? ' data-needs-photo="1"' : ""}>
     <div class="league-card-top">
       ${nameHtml}
       <div class="row" style="gap:6px;">${viboraTag}<span class="tag league-status-${l.status}${live ? " league-status-live" : ""}">${statusLabel}</span></div>
@@ -842,6 +846,34 @@ async function renderHomepageHighlights() {
     });
   }
 }
+// Fetches a league card's background photo only once that card actually
+// scrolls into view, instead of every card's full photo shipping upfront
+// in GET /leagues — see hasCourtPhoto's comment server-side for why. One
+// shared observer for the whole hub list, not one per card.
+const courtPhotoObserver = ("IntersectionObserver" in window) ? new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    const card = entry.target;
+    courtPhotoObserver.unobserve(card);
+    api(`/leagues/${card.dataset.id}/court-photo`).then((data) => {
+      if (data && data.photo) card.style.backgroundImage = `url('${data.photo}')`;
+    }).catch(() => {});
+  });
+}, { rootMargin: "200px" }) : null;
+function observeLeagueCardPhotos(root) {
+  const cards = root.querySelectorAll(".league-card[data-needs-photo]");
+  if (courtPhotoObserver) {
+    cards.forEach((card) => courtPhotoObserver.observe(card));
+  } else {
+    // No IntersectionObserver support: just fetch everything up front
+    // rather than never showing a photo at all.
+    cards.forEach((card) => {
+      api(`/leagues/${card.dataset.id}/court-photo`).then((data) => {
+        if (data && data.photo) card.style.backgroundImage = `url('${data.photo}')`;
+      }).catch(() => {});
+    });
+  }
+}
 function renderHub() {
   renderInterestLeagueOptions();
   const list = el("league-list");
@@ -864,6 +896,7 @@ function renderHub() {
     section.innerHTML = `<h3 class="league-group-title">${g.label}</h3><div class="league-grid">${items.map(leagueCardHtml).join("")}</div>`;
     list.appendChild(section);
   });
+  observeLeagueCardPhotos(list);
   list.querySelectorAll(".league-card").forEach((card) => {
     if (!card.dataset.locked) card.onclick = () => openLeague(card.dataset.id);
     const copyBtn = card.querySelector(".league-copy-codes-btn");

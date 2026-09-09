@@ -522,7 +522,13 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    scrim (transparent at the top, near-black at the bottom) keeps every
    existing element legible without having to restyle each one from
    scratch, so this only overrides color, never layout. */
-.league-card.has-photo{position:relative;overflow:hidden;color:#fff;background-size:cover;background-position:center;border-color:rgba(255,255,255,.25);}
+/* background-color (not just background-image) — the photo itself now
+   loads in lazily, once this card scrolls into view (see
+   observeLeagueCardPhotos in app.js), so there's a real gap before
+   background-image is set. Without a dark fill here, this card's white
+   scrim text would sit on the plain white card background from
+   .league-card above and be unreadable until the photo arrives. */
+.league-card.has-photo{position:relative;overflow:hidden;color:#fff;background-color:var(--text);background-size:cover;background-position:center;border-color:rgba(255,255,255,.25);}
 .league-card.has-photo:hover{border-color:rgba(255,255,255,.5);}
 .league-card.has-photo::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(6,10,20,0) 0%,rgba(6,10,20,.35) 45%,rgba(6,10,20,.88) 100%);}
 .league-card.has-photo>*{position:relative;z-index:1;}

@@ -580,7 +580,15 @@ router.get("/leagues", (req, res) => {
       teamCount: league ? league.teams.length : 0,
       strength: league ? (league.strength || 0) : 0,
       format: league ? (league.format || "teams") : "teams",
-      courtPhoto: league ? (league.courtPhoto || "") : "",
+      // The photo itself is NOT embedded here — with a real court photo on
+      // most leagues now, that was ~1.35MB of this single response's ~1.9MB
+      // total (confirmed by measuring the real production payload), all
+      // downloaded up front on every app boot before a player can so much
+      // as open the search tab. Just a flag; the card fetches its own
+      // photo lazily, once it actually scrolls into view (see
+      // GET /leagues/:leagueId/court-photo and observeLeagueCardPhotos
+      // client-side).
+      hasCourtPhoto: !!(league && league.courtPhoto),
       // Every round/stage's {date,time,venue} — small enough to ship whole,
       // and the hub card needs it to work out "is a match live right now"
       // against the viewer's own clock (see leagueIsLiveNow client-side).
@@ -590,6 +598,15 @@ router.get("/leagues", (req, res) => {
     };
   });
   res.json(enriched);
+});
+// Lazy counterpart to the courtPhoto flag above — same image the PUT below
+// sets, just fetched one league at a time instead of embedded for all of
+// them up front. Public/no session, same as the rest of a hub card's own
+// content (a league's name, logos, and status are all visible without
+// logging in already).
+router.get("/leagues/:leagueId/court-photo", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  res.json({ photo: league ? (league.courtPhoto || "") : "" });
 });
 
 // Home-page teaser: the actual pairs playing, across every active team
