@@ -65,6 +65,33 @@ header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(-
 .hs-logo-chip{background:#fff;border-radius:10px;padding:10px 18px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(0,0,0,.25);}
 .hs-slide img{height:30px;max-width:170px;object-fit:contain;display:block;}
 .hs-name{font-size:12px;color:rgba(255,255,255,.55);}
+
+/* Player pay page (pay-link and My Profile checkout) — one number, one
+   button, nothing to read before deciding. See openPayLink in app.js. */
+.pay-hero{text-align:center;padding:14px 4px 8px;}
+.pay-hero-label{font-family:var(--font-display);font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--text-faint);text-transform:uppercase;}
+.pay-hero-amount{font-family:var(--font-display);font-size:52px;font-weight:700;color:var(--text);margin:6px 0 14px;line-height:1;font-variant-numeric:tabular-nums;}
+.pay-hero-team{display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--text-dim);margin-bottom:26px;}
+.pay-hero-crest{width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid var(--line);}
+.pay-hero-btn{width:100%;padding:14px;font-size:13.5px;}
+.pay-hero-secure{font-size:11px;color:var(--text-faint);margin-top:14px;}
+.pay-hero-done .pay-hero-check{width:48px;height:48px;border-radius:50%;background:var(--success-soft);color:var(--success);font-size:22px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;}
+.pay-hero-done .pay-hero-label{color:var(--text);font-size:14px;letter-spacing:0;text-transform:none;font-family:var(--font-body);font-weight:600;}
+.pay-hero-done .pay-hero-amount{color:var(--success);}
+
+/* Admin payment summary — see renderPaySummaryHtml in app.js. */
+.pay-summary-box{background:var(--panel-2);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+.pay-summary-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
+.pay-summary-label{font-family:var(--font-display);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--text-dim);text-transform:uppercase;}
+.pay-summary-amount{font-family:var(--font-display);font-size:28px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
+.pay-summary-of{font-size:12.5px;color:var(--text-dim);}
+.pay-summary-track{height:8px;border-radius:999px;background:var(--panel);overflow:hidden;}
+.pay-summary-fill{height:100%;background:var(--success);border-radius:999px;}
+.pay-summary-tags{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+.pay-summary-tag{font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;}
+.pay-summary-tag.payfast{background:var(--accent-soft);color:var(--accent);}
+.pay-summary-tag.manual{background:var(--panel);color:var(--text-dim);border:1px solid var(--line);}
+.pay-summary-tag.unpaid{background:var(--clay-soft);color:var(--clay);}
 .brand-link{display:flex;align-items:center;flex-shrink:0;}
 .logo-img{height:26px;width:auto;display:block;}
 .brand-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;row-gap:6px;}

@@ -257,7 +257,10 @@ function trackPageView(path, title) {
 }
 // A standalone page for someone who isn't signed into anything — a
 // teammate without a player account, paying their own share off a link
-// the captain sent them. Bypasses the hub/league chrome entirely.
+// the captain sent them. Bypasses the hub/league chrome entirely. Hero-
+// amount layout: one number, one button, nothing to read before deciding
+// (see the "Payment Portal" mockup, option 3 — approved as the player
+// interface).
 async function openPayLink(leagueId, teamId, playerId, token) {
   el("view-hub").style.display = "none";
   el("view-league").style.display = "none";
@@ -265,25 +268,33 @@ async function openPayLink(leagueId, teamId, playerId, token) {
   const content = el("pay-link-content");
   const data = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}`).catch(() => null);
   if (!data) {
-    content.innerHTML = '<p class="note">This payment link isn\'t valid — ask your captain for a fresh one.</p>';
+    content.innerHTML = '<p class="note" style="text-align:center;">This payment link isn\'t valid — ask your captain for a fresh one.</p>';
     return;
   }
   trackPageView(`/pay-link/${leagueId}`, `Pay — ${data.playerName}`);
-  const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:10px;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
+  const teamLine = `<div class="pay-hero-team">${data.teamLogo ? `<img class="pay-hero-crest" src="${data.teamLogo}" alt="">` : ""}${escapeHtml(data.teamName)} &middot; ${escapeHtml(data.leagueName)}</div>`;
   if (data.paid) {
     content.innerHTML = `
-      <h2 class="section-title">${escapeHtml(data.playerName)}</h2>
-      <p class="note">${escapeHtml(data.teamName)} · ${escapeHtml(data.leagueName)}</p>
-      <p style="margin-top:12px;">✓ Already paid.</p>
+      <div class="pay-hero pay-hero-done">
+        <div class="pay-hero-check">&#10003;</div>
+        <div class="pay-hero-label">${escapeHtml(data.playerName)}, you're all paid up</div>
+        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
+        ${teamLine}
+        ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
+      </div>
     `;
     return;
   }
+  const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
   content.innerHTML = `
-    <h2 class="section-title">${escapeHtml(data.playerName)}</h2>
-    <p class="note">${escapeHtml(data.teamName)} · ${escapeHtml(data.leagueName)}</p>
-    <p style="margin-top:12px;">Your share: <strong>${fmtRands(data.amountCents)}</strong></p>
-    <button class="primary" id="pay-link-btn" style="margin-top:10px;">Pay with PayFast</button>
-    <div class="error" id="pay-link-error"></div>
+    <div class="pay-hero">
+      <div class="pay-hero-label">${escapeHtml(data.playerName)}'s season fee</div>
+      <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
+      ${teamLine}
+      <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
+      <div class="error" id="pay-link-error"></div>
+      <div class="pay-hero-secure">&#128274; Secured by PayFast</div>
+    </div>
     ${sandboxNote}
   `;
   el("pay-link-btn").onclick = async () => {
@@ -2155,6 +2166,13 @@ function paymentModeChooserHtml(teamId) {
     </div>
   `;
 }
+// "via PayFast" for a real gateway payment, "marked manually" for an
+// admin's own paid/unpaid toggle — paymentMethod is tracked specifically so
+// this distinction stays visible everywhere a paid status shows, not just
+// paid/unpaid.
+function paymentMethodLabel(method) {
+  return method === "payfast" ? "via PayFast" : "marked manually";
+}
 // The full payment picture for one team — a mode-choice prompt (unset), a
 // single lump-sum flow ("team" mode), or a per-player list ("split" mode).
 // isAdminView adds the manual paid/unpaid escape hatch a captain doesn't get.
@@ -2162,7 +2180,7 @@ function teamPayDetailHtml(t, isAdminView) {
   if (!t.paymentMode) return paymentModeChooserHtml(t.id);
   if (t.paymentMode === "team") {
     if (t.paymentStatus === "paid") {
-      return `<p class="note">✓ Paid${t.paymentMethod === "manual" ? " (recorded by admin)" : ""}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
+      return `<p class="note">✓ Paid · ${paymentMethodLabel(t.paymentMethod)}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
         + (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "");
     }
     return `
@@ -2178,7 +2196,7 @@ function teamPayDetailHtml(t, isAdminView) {
   const share = league.registrationFeeCents ? Math.round(league.registrationFeeCents / (t.players.length || 1)) : 0;
   const rows = t.players.map((p) => `
     <div class="notif-row" data-player="${p.id}">
-      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${fmtRands(share)}${p.paymentStatus === "paid" ? ` · Paid${p.paymentMethod === "manual" ? " manually" : ""}` : ""}</div></div>
+      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${fmtRands(share)}${p.paymentStatus === "paid" ? ` · Paid · ${paymentMethodLabel(p.paymentMethod)}` : ""}</div></div>
       <span class="badge ${p.paymentStatus === "paid" ? "done" : "outstanding"}">${p.paymentStatus === "paid" ? "Paid" : "Unpaid"}</span>
       ${p.paymentStatus === "paid"
         ? (isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
@@ -2242,15 +2260,62 @@ function bindPayDetailHandlers(container, t) {
     }
   });
 }
+// Every team owes the full registration fee regardless of how it's split
+// (playerShareCents just divides that same total across its roster), so
+// "collected of total" adds up cleanly across a mix of team-mode and
+// split-mode teams. The via-PayFast/marked-manually/unpaid counts mix
+// team-level and player-level units (one team-mode payment vs several
+// split-mode ones) — not a uniform count, just a quick read on how much of
+// what's been collected actually went through the gateway.
+function renderPaySummaryHtml() {
+  const fee = league.registrationFeeCents || 0;
+  if (!fee) return "";
+  let totalCollected = 0, payfastN = 0, manualN = 0, unpaidN = 0;
+  league.teams.forEach((t) => {
+    if (t.paymentMode === "team") {
+      if (t.paymentStatus === "paid") { totalCollected += fee; (t.paymentMethod === "payfast" ? payfastN++ : manualN++); }
+      else unpaidN++;
+    } else if (t.paymentMode === "split") {
+      const share = Math.round(fee / (t.players.length || 1));
+      t.players.forEach((p) => {
+        if (p.paymentStatus === "paid") { totalCollected += share; (p.paymentMethod === "payfast" ? payfastN++ : manualN++); }
+        else unpaidN++;
+      });
+    } else {
+      unpaidN++; // mode not chosen yet — the team's whole fee is still outstanding
+    }
+  });
+  const totalExpected = fee * league.teams.length;
+  const pct = totalExpected ? Math.min(100, Math.round((totalCollected / totalExpected) * 100)) : 0;
+  return `
+    <div class="pay-summary-box">
+      <div class="pay-summary-top">
+        <div><div class="pay-summary-label">Collected</div><div class="pay-summary-amount">${fmtRands(totalCollected)}</div></div>
+        <div class="pay-summary-of">of ${fmtRands(totalExpected)}</div>
+      </div>
+      <div class="pay-summary-track"><div class="pay-summary-fill" style="width:${pct}%;"></div></div>
+      <div class="pay-summary-tags">
+        <span class="pay-summary-tag payfast">${payfastN} via PayFast</span>
+        <span class="pay-summary-tag manual">${manualN} marked manually</span>
+        <span class="pay-summary-tag unpaid">${unpaidN} unpaid</span>
+      </div>
+    </div>
+  `;
+}
 function renderPay() {
   el("pay-sandbox-banner").style.display = PAYFAST_SANDBOX ? "block" : "none";
   const isAdmin = myRole === "admin";
+  // A captain has real, legitimate use of this tab (paying their team's
+  // fee) — the "admin only" banner other owner-only tabs share doesn't
+  // belong here for them.
+  el("pay-admin-only-banner").style.display = isAdmin ? "block" : "none";
   el("pay-admin-setup-card").style.display = isAdmin ? "block" : "none";
   el("pay-admin-teams-card").style.display = isAdmin ? "block" : "none";
   el("pay-captain-card").style.display = !isAdmin && myRole === "captain" ? "block" : "none";
 
   if (isAdmin) {
     el("pay-fee-input").value = (league.registrationFeeCents || 0) / 100;
+    el("pay-summary").innerHTML = renderPaySummaryHtml();
     const list = el("pay-teams-list");
     list.innerHTML = league.teams.map((t) => {
       const summary = !t.paymentMode ? "Payment method not chosen"

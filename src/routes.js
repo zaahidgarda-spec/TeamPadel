@@ -3224,8 +3224,8 @@ router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link/:token",
     return res.status(404).json({ error: "This payment link is invalid." });
   }
   res.json({
-    leagueName: league.name, teamName: team.name, playerName: player.name,
-    amountCents: playerShareCents(league, team), paid: player.paymentStatus === "paid",
+    leagueName: league.name, teamName: team.name, teamLogo: team.logo || "", playerName: player.name,
+    amountCents: playerShareCents(league, team), paid: player.paymentStatus === "paid", paidAt: player.paidAt || null,
   });
 });
 
