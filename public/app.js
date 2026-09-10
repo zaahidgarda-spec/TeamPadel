@@ -6722,10 +6722,17 @@ function kitOpenBadgePicker(key) {
 }
 // Shared by the file-input's onchange and a drag-and-drop onto the photo
 // or a badge — same resize-then-PUT flow regardless of how the file
-// arrived.
+// arrived. These are the exact files a kit supplier downloads off the Kit
+// Share page to actually produce the kit — 240px for a badge was fine for
+// showing where it sits on the on-screen mockup, but far too small to
+// hand to a printer/embroiderer for real production. Bumped both tiers
+// up (badges still smaller than the garment photo, which needs the most
+// detail) — this data only ever goes to the captain who owns this team or
+// a kit-share/admin fetch (see sanitize()'s viewerIsThisTeam check), never
+// into a page every visitor loads, so there's no broad payload cost here.
 function kitHandleUploadedFile(target, file) {
   if (!file) return;
-  const maxSize = target.field === "front" || target.field === "back" ? 900 : 240;
+  const maxSize = target.field === "front" || target.field === "back" ? 1600 : 900;
   resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
     if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
     try {
