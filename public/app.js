@@ -1184,15 +1184,15 @@ async function renderLiveCount() {
   const data = await api("/admin/live-count").catch(() => null);
   el("live-count-num").textContent = data ? data.count : "—";
 }
-// The owner's full list of every league — including hidden/unlisted ones,
-// which drop out of every other list on the site the moment they're set
-// that way. Several leagues sharing a name (e.g. multiple "Community"
+// The owner's full list of every league — including hidden/incognito
+// ones, which drop out of every other list on the site the moment they're
+// set that way. Several leagues sharing a name (e.g. multiple "Community"
 // imports) are otherwise impossible to tell apart or find again once
 // hidden.
-// Hide and Unlist both take a league off public browsing, but only Hide
-// erases it from search/a player's own profile too — Hide is for
-// historical/imported data that was never a real league; Unlist is for a
-// real, currently-running league (e.g. a second city's) that just isn't
+// Hide and Incognito both take a league off public browsing, but only
+// Hide erases it from search/a player's own profile too — Hide is for
+// historical/imported data that was never a real league; Incognito is for
+// a real, currently-running league (e.g. a second city's) that just isn't
 // ready to advertise site-wide yet. See visibleIndexEntries server-side
 // for the full distinction.
 async function renderManageLeagues() {
@@ -1207,11 +1207,11 @@ async function renderManageLeagues() {
           <input type="text" class="manage-league-name-input" value="${escapeHtml(l.name)}" style="font-family:var(--font-display);font-size:14px;font-weight:600;min-width:160px;flex:1;">
           <button class="link manage-league-rename-btn" type="button">Save</button>
           ${l.hidden ? '<span class="tag" style="color:var(--text-dim);border-color:var(--line);">Hidden</span>' : ""}
-          ${l.unlisted ? '<span class="tag" style="color:var(--text-dim);border-color:var(--line);">Unlisted</span>' : ""}
+          ${l.incognito ? '<span class="tag" style="color:var(--text-dim);border-color:var(--line);">Incognito</span>' : ""}
         </div>
         <div class="note" style="margin-top:4px;">${l.teamCount} team${l.teamCount === 1 ? "" : "s"} · Created ${new Date(l.createdAt).toLocaleDateString()}</div>
       </div>
-      <button class="link manage-league-unlist-btn" type="button" data-unlisted="${l.unlisted}">${l.unlisted ? "Relist" : "Unlist"}</button>
+      <button class="link manage-league-incognito-btn" type="button" data-incognito="${l.incognito}">${l.incognito ? "Make public" : "Make incognito"}</button>
       <button class="link manage-league-hide-btn" type="button" data-hidden="${l.hidden}">${l.hidden ? "Unhide" : "Hide"}</button>
     </div>
   `).join("");
@@ -1225,12 +1225,12 @@ async function renderManageLeagues() {
       } catch (e) { alert(e.message); }
     };
   });
-  c.querySelectorAll(".manage-league-unlist-btn").forEach((btn) => {
+  c.querySelectorAll(".manage-league-incognito-btn").forEach((btn) => {
     btn.onclick = async () => {
       const leagueId = btn.closest(".notif-row").dataset.league;
-      const nextUnlisted = btn.dataset.unlisted !== "true";
+      const nextIncognito = btn.dataset.incognito !== "true";
       try {
-        await api(`/leagues/${leagueId}/unlisted`, { method: "PUT", body: { unlisted: nextUnlisted } });
+        await api(`/leagues/${leagueId}/incognito`, { method: "PUT", body: { incognito: nextIncognito } });
         await renderManageLeagues();
       } catch (e) { alert(e.message); }
     };
