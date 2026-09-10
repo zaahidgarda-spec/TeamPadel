@@ -6004,7 +6004,8 @@ async function generatePosterCanvas(mode, theme) {
   let predMap = null;
   if (mode === "predictions") {
     predMap = {};
-    const data = await api(`/leagues/${currentLeagueId}/predictions?round=${viewingKey.round}`).catch(() => ({ fixtures: [] }));
+    const predQs = viewingKey.stage === "regular" ? `round=${viewingKey.round}` : `stage=${viewingKey.key}`;
+    const data = await api(`/leagues/${currentLeagueId}/predictions?${predQs}`).catch(() => ({ fixtures: [] }));
     (data.fixtures || []).forEach((pf) => {
       pf.seeds.forEach((s) => { predMap[pf.fixtureId + ":" + (s.seed - 1)] = s; });
     });
