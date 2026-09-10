@@ -711,7 +711,7 @@ function leagueCardHtml(l) {
     ${logos}
     <div class="league-card-meta">
       <span class="meta-item">${ICON_PEOPLE}${l.teamCount} ${l.format === "pairs" ? "pair" : "team"}${l.teamCount === 1 ? "" : "s"}</span>
-      <span class="meta-item">${ICON_CALENDAR}Created ${new Date(l.createdAt).toLocaleDateString()}</span>
+      ${isOwner ? `<span class="meta-item">${ICON_CALENDAR}Created ${new Date(l.createdAt).toLocaleDateString()}</span>` : ""}
     </div>
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
