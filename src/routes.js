@@ -2961,6 +2961,18 @@ router.put("/leagues/:leagueId/schedule/:key", requireAdmin, (req, res) => {
 
 /* ---------- Court schedule (which match plays on which court, when) ---------- */
 
+// Every fixture that belongs to a given court-schedule "round" key — a
+// plain integer for a regular-season round (league.fixtures, unchanged
+// from before playoffs got this too), or one of "semis"/"final"/
+// "positions" for a playoff stage. Mirrors the client's fixturesForKey.
+function fixturesForCourtScheduleKey(league, key) {
+  if (typeof key === "number") return league.fixtures.filter((f) => f.round === key);
+  if (!league.playoffs) return [];
+  if (key === "semis") return league.playoffs.semis || [];
+  if (key === "final") return league.playoffs.final ? [league.playoffs.final] : [];
+  if (key === "positions") return league.playoffs.matches || [];
+  return [];
+}
 function emptyCourtGrid(slots, courts) {
   return Array.from({ length: slots }, () => Array.from({ length: courts }, () => null));
 }
@@ -3590,8 +3602,10 @@ router.put("/leagues/:leagueId/court-names", requireAdmin, (req, res) => {
 
 router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  const round = Number(req.params.round);
-  if (!Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
+  const roundParam = req.params.round;
+  const isPlayoffKey = ["semis", "final", "positions"].includes(roundParam);
+  const round = isPlayoffKey ? roundParam : Number(roundParam);
+  if (!isPlayoffKey && !Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
 
   // Admins can rearrange any block; a captain can tap-swap blocks too, but
   // only ones that are already theirs — enforced below, not just hidden
@@ -3607,11 +3621,12 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   if (!Number.isInteger(court) || court < 0 || court >= courts) return res.status(400).json({ error: "Invalid court." });
 
   const grid = getCourtGrid(league, round);
+  const roundFixtures = fixturesForCourtScheduleKey(league, round);
 
   if (isCaptain) {
     const ownsFixture = (fxId) => {
       if (!fxId) return true;
-      const f = league.fixtures.find((x) => x.id === fxId && x.round === round);
+      const f = roundFixtures.find((x) => x.id === fxId);
       return !!f && (f.teamA === u.teamId || f.teamB === u.teamId);
     };
     const existing = grid[slot] && grid[slot][court];
@@ -3621,7 +3636,7 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   }
 
   if (fixtureId) {
-    const f = league.fixtures.find((x) => x.id === fixtureId && x.round === round);
+    const f = roundFixtures.find((x) => x.id === fixtureId);
     if (!f) return res.status(400).json({ error: "That match isn't in this round." });
     if (!Number.isInteger(seed) || seed < 0 || seed > 3) return res.status(400).json({ error: "Invalid seed." });
     // A given fixture+seed can only be scheduled once — clear it from

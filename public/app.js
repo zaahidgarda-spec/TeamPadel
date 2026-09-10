@@ -4943,14 +4943,27 @@ function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
   // A Vibora fixture is already just one match — there's nothing to
   // schedule across multiple courts/slots the way a 4-seed team fixture
-  // needs to be.
-  if (league.format === "pairs" || !viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0) { card.style.display = "none"; return; }
+  // needs to be. A knockout fixture (semis/final/final-spot playoffs) is
+  // structurally still a full 4-seed team fixture though, same as a
+  // regular round — so this now covers every stage, not just "regular".
+  if (league.format === "pairs" || !viewingKey || fixtures.length === 0) { card.style.display = "none"; return; }
   card.style.display = "block";
   courtTapSelection = null;
   el("court-schedule-poster-row").style.display = myRole === "admin" ? "flex" : "none";
-  el("court-schedule-generate-row").style.display = myRole === "admin" ? "flex" : "none";
+  // Auto-fill/optimum-layout/balance are whole-season tools (they spread
+  // "who gets a double court" fairly across every regular round) — that
+  // doesn't mean anything for a single knockout round, so they stay
+  // regular-season only. Manual placement (tap/drag, below) still works
+  // for every stage.
+  el("court-schedule-generate-row").style.display = myRole === "admin" && viewingKey.stage === "regular" ? "flex" : "none";
 
-  const round = viewingKey.round;
+  // A regular round keeps its existing plain-number key (unchanged, so
+  // every league's already-saved court schedule keeps working exactly as
+  // before) — a playoff stage gets its own string key ("semis"/"final"/
+  // "positions") instead, since those fixtures don't have a real round
+  // number of their own (they're always round:0 internally) and would
+  // otherwise all collide into the same courtSchedule slot.
+  const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
   const courts = league.courtCount || 4;
   const slots = league.slotCount || 3;
   // Resize to the current court/slot counts on read, same as the server
@@ -6232,7 +6245,7 @@ async function generateCourtSchedulePosterCanvas(theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const fixtures = fixturesForKey(viewingKey);
   const sponsors = (league.sponsors || []).slice(0, 5);
-  const round = viewingKey.round;
+  const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
   const courts = league.courtCount || 4;
   const slots = league.slotCount || 3;
   const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
