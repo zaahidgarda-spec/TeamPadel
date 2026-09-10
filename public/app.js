@@ -7539,7 +7539,28 @@ function matchWinnerClient(f) {
   if (f.rubbers.length > 4) return rubberWinnerClient(f.rubbers[4]);
   return null;
 }
+// "If the season ended today" — the final-spot pairings (1st v 2nd, 3rd v
+// 4th, 5th v 6th…) the real "Generate playoffs" button would produce,
+// computed live off the current table instead of waiting for the season
+// to actually finish. Purely a projection: no fixture exists yet, so
+// matchCardHtml gets a null score and just shows the two team names.
+// Disappears the moment real playoffs exist — the official bracket below
+// takes over from there.
+function renderPlayoffPreview() {
+  const card = el("playoff-preview-card");
+  if (league.playoffFormat !== "position" || league.playoffs || league.teams.length < 2) { card.style.display = "none"; return; }
+  const rows = computeStandingsClient();
+  if (rows.length < 2) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  let html = `<h2 class="section-title">Projected final-spot playoffs</h2><p class="note" style="margin-bottom:12px;">If the season ended today, based on the current table — updates as results come in.</p><div class="bracket-grid">`;
+  for (let i = 0; i + 1 < rows.length; i += 2) {
+    html += matchCardHtml(ordinal(i + 1) + " v " + ordinal(i + 2), rows[i].id, rows[i + 1].id, null);
+  }
+  html += `</div>`;
+  card.innerHTML = html;
+}
 function renderTable() {
+  renderPlayoffPreview();
   const rows = computeStandingsClient();
   const c = el("log-container");
   const canPoster = league.format === "pairs" ? league.teams.length > 0 : myRole === "admin" && league.teams.length > 0;
