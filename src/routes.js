@@ -1449,6 +1449,33 @@ router.get("/admin/players/suggestions", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   res.json(findPlayerNameSuggestions());
 });
+// Every pending claim request, across every league (hidden/incognito
+// included — same "the owner sees everything regardless of public
+// visibility" rule Manage Leagues already follows) — this used to only be
+// visible one league at a time, from inside that league's own Admin tab,
+// which meant actually finding a pending request meant remembering to
+// check every league in turn. One flat list here instead.
+router.get("/admin/claim-requests", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const pending = [];
+  store.getIndex().forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    league.teams.forEach((team) => {
+      team.players.forEach((player) => {
+        if (!player.claimRequest) return;
+        pending.push({
+          leagueId: league.id, leagueName: league.name,
+          teamId: team.id, teamName: team.name,
+          playerId: player.id, playerName: player.name,
+          requestedBy: player.claimRequest.userName, createdAt: player.claimRequest.createdAt,
+        });
+      });
+    });
+  });
+  pending.sort((a, b) => b.createdAt - a.createdAt);
+  res.json(pending);
+});
 router.post("/admin/players/combine", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const { name, email, records } = req.body || {};

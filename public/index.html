@@ -395,6 +395,11 @@
           <p class="modal-subhead" style="margin-top:18px;">Existing player accounts</p>
           <div id="combine-accounts-list"></div>
         </div>
+        <div class="card" id="hub-claim-requests-card" style="display:none;">
+          <h2 class="section-title">Claim requests</h2>
+          <p class="note">Someone is asking for a player record that's already claimed by another account — approve to hand it to them (the current owner keeps every other record they hold), or reject to leave it as is. Across every league, not just one.</p>
+          <div id="hub-claim-requests-list" style="margin-top:10px;"></div>
+        </div>
       </section>
 
       <div id="interesting-add-modal-backdrop" class="modal-backdrop">
@@ -595,11 +600,6 @@
             <input type="text" id="new-hof-winner" placeholder="Winner, e.g. Ahmed Khota &amp; Hussein Mohamedy" style="flex:1;min-width:220px;">
             <button class="primary" id="add-hof-btn">Add</button>
           </div>
-        </div>
-        <div class="card" id="claim-requests-card" style="display:none;">
-          <h2 class="section-title">Claim requests</h2>
-          <p class="note">Someone is asking for a player record that's already claimed by another account — approve to hand it to them (the current owner keeps every other record they hold), or reject to leave it as is.</p>
-          <div id="claim-requests-list" style="margin-top:10px;"></div>
         </div>
         <div class="card" id="orphaned-players-card" style="display:none;">
           <h2 class="section-title">Recover deleted players</h2>

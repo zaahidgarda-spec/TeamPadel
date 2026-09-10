@@ -1158,7 +1158,7 @@ async function refreshOwnerStatus() {
   const paymentsTabBtn = el("hub-payments-tab-btn");
   paymentsTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); }
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); }
   renderHub();
 }
 // "Select a league from a menu, then find a player or team and send them
@@ -2782,7 +2782,6 @@ function renderAdmin() {
   renderAdminRoster();
   renderAdminFixtures();
   renderAdminSponsors();
-  renderClaimRequests();
   renderOrphanedPlayers();
 }
 // Every player id still referenced in a finalized match but missing from
@@ -2818,25 +2817,22 @@ async function renderOrphanedPlayers() {
     };
   });
 }
-// A record already claimed by one account, contested by another — scanned
-// straight off the already-loaded league (claimRequest only ships to an
-// admin viewer, see sanitize() server-side), not a separate fetch.
-function renderClaimRequests() {
-  const card = el("claim-requests-card");
-  const pending = [];
-  league.teams.forEach((t) => {
-    t.players.forEach((p) => {
-      if (p.claimRequest) pending.push({ team: t, player: p });
-    });
-  });
+// A record already claimed by one account, contested by another — hub-
+// level (every league at once, not just whichever one you happen to have
+// open), same reasoning as Manage Leagues/Combine profiles: this used to
+// live inside each league's own Admin tab, which meant actually finding a
+// pending request meant remembering to check every league in turn.
+async function renderHubClaimRequests() {
+  const card = el("hub-claim-requests-card");
+  const pending = await api("/admin/claim-requests").catch(() => []);
   card.style.display = pending.length ? "block" : "none";
   if (!pending.length) return;
-  const list = el("claim-requests-list");
-  list.innerHTML = pending.map(({ team, player }) => `
-    <div class="notif-row" data-team="${team.id}" data-player="${player.id}" style="flex-wrap:wrap;">
+  const list = el("hub-claim-requests-list");
+  list.innerHTML = pending.map((r) => `
+    <div class="notif-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}" style="flex-wrap:wrap;">
       <div>
-        <strong>${escapeHtml(player.claimRequest.userName)}</strong> wants <strong>${escapeHtml(player.name)}</strong> (${escapeHtml(team.name)})
-        <div class="note">Requested ${fmtDateTime(player.claimRequest.createdAt)}</div>
+        <strong>${escapeHtml(r.requestedBy)}</strong> wants <strong>${escapeHtml(r.playerName)}</strong> (${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)})
+        <div class="note">Requested ${fmtDateTime(r.createdAt)}</div>
       </div>
       <div class="row" style="gap:8px;">
         <button class="secondary claim-request-reject-btn" type="button">Reject</button>
@@ -2847,8 +2843,8 @@ function renderClaimRequests() {
   list.querySelectorAll(".notif-row").forEach((row) => {
     const decide = async (decision) => {
       try {
-        await api(`/leagues/${currentLeagueId}/teams/${row.dataset.team}/players/${row.dataset.player}/claim-request`, { method: "PUT", body: { decision } });
-        await refreshLeague(); renderClaimRequests();
+        await api(`/leagues/${row.dataset.league}/teams/${row.dataset.team}/players/${row.dataset.player}/claim-request`, { method: "PUT", body: { decision } });
+        await renderHubClaimRequests();
       } catch (e) { alert(e.message); }
     };
     row.querySelector(".claim-request-approve-btn").onclick = () => decide("approve");
