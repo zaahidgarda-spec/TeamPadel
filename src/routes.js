@@ -301,8 +301,24 @@ function codeInUse(code) {
 // with captains to manage here. It still counts for ratings/predictions
 // (those read the full, unfiltered index), it just never appears in any
 // list, search, or login lookup on this site.
+// Two different reasons a league is kept off public browsing (the Leagues
+// list, cross-league homepage teasers, the "Join a league" dropdown) —
+// both filtered out here identically, but NOT everywhere else in this
+// file, on purpose:
+// - hidden: import-only. Historical/external data brought in purely to
+//   feed the ratings engine, never a real league to browse, claim into,
+//   or show on anyone's account. Every hidden-league check outside this
+//   function only tests `entry.hidden` for exactly that reason.
+// - unlisted: a real, actively-run league (real captains, real players,
+//   real fixtures) that the admin has just chosen to keep off public
+//   discovery — e.g. a second city's leagues not ready to advertise
+//   site-wide yet. Unlike hidden, an unlisted league still needs to work
+//   completely normally for anyone who actually reaches it: search
+//   (allPlayersFlat), a claimed player's own profile/tonight-matches/news,
+//   and a captain's own session-scoped view. Those call sites deliberately
+//   do NOT go through this function.
 function visibleIndexEntries() {
-  return store.getIndex().filter((entry) => !entry.hidden);
+  return store.getIndex().filter((entry) => !entry.hidden && !entry.unlisted);
 }
 function genTeamCode(league) {
   let code;
@@ -774,8 +790,13 @@ router.get("/next-matches", (req, res) => {
   const { ratingsData, identityOf } = loadGlobalRatings();
 
   if (myLeagueId) {
-    const mine = allLeagues.find((l) => l.id === myLeagueId);
-    if (mine) {
+    // Looked up directly, not from allLeagues — a captain/admin session
+    // is already scoped to this one specific league, which is real,
+    // already-granted access independent of whether it's off public
+    // browsing (hidden or unlisted — see visibleIndexEntries). Its own
+    // captain should still see their own next match here either way.
+    const mine = store.getLeague(myLeagueId);
+    if (mine && leagueStatus(mine) === "active" && mine.format !== "pairs") {
       const mineMatches = buildNextMatchesPairings([mine], ratingsData, identityOf);
       // Only scope to a captain's own league while it actually has
       // something eligible to show (both sides' line-ups already in) —
@@ -799,6 +820,10 @@ router.get("/players/tonight-matches", (req, res) => {
   if (!req.session.playerUser) return res.json({ matches: [] });
   const user = store.getUser(req.session.playerUser.id);
   if (!user) return res.json({ matches: [] });
+  // `hidden` means "import-only, feeds ratings but was never a real
+  // league to show anywhere" (see /players/profile) — that still applies
+  // here unchanged. An unlisted-but-real league is NOT hidden, so it
+  // isn't caught by this filter and shows normally.
   const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
   const leagueIds = new Set((user.claims || []).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)));
   const leagues = Array.from(leagueIds)
@@ -1205,9 +1230,15 @@ router.get("/players/me", (req, res) => {
 // status, since a player record's existence is what matters here, not the
 // league's phase. The shared base both the cross-league name search and
 // the combine-suggestions scan build on.
+// Includes an unlisted league (off public browsing, but a real, actively
+// -run league — see visibleIndexEntries) since its own players still need
+// to find themselves here to claim a record in the first place. Excludes
+// a truly hidden league (import-only, feeds ratings but was never a real
+// league to browse or claim into) — same distinction every other
+// hidden-league check in this file makes.
 function allPlayersFlat() {
   const results = [];
-  visibleIndexEntries().forEach((entry) => {
+  store.getIndex().filter((entry) => !entry.hidden).forEach((entry) => {
     const league = store.getLeague(entry.id);
     if (!league) return;
     league.teams.forEach((team) => {
@@ -1732,6 +1763,7 @@ router.get("/admin/leagues", (req, res) => {
       id: entry.id,
       name: entry.name,
       hidden: !!entry.hidden,
+      unlisted: !!entry.unlisted,
       createdAt: entry.createdAt,
       teamCount: league ? league.teams.length : 0,
     };
@@ -1751,6 +1783,23 @@ router.put("/leagues/:leagueId/hidden", (req, res) => {
   entry.hidden = !!req.body.hidden;
   store.saveIndex(index);
   res.json({ ok: true, hidden: entry.hidden });
+});
+
+// The lighter-weight sibling of the route above — keeps a real, actively
+// -run league off public discovery (same lists as hidden: the Leagues
+// page, homepage teasers, "Join a league") without erasing it from
+// search, a claimed player's own profile, or a captain's own session —
+// see visibleIndexEntries' comment for the full hidden vs. unlisted
+// distinction. For a second city's leagues that aren't ready to advertise
+// site-wide but are otherwise fully live.
+router.put("/leagues/:leagueId/unlisted", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const index = store.getIndex();
+  const entry = index.find((l) => l.id === req.params.leagueId);
+  if (!entry) return res.status(404).json({ error: "Not found." });
+  entry.unlisted = !!req.body.unlisted;
+  store.saveIndex(index);
+  res.json({ ok: true, unlisted: entry.unlisted });
 });
 
 router.delete("/leagues/:leagueId", requireAdmin, (req, res) => {
