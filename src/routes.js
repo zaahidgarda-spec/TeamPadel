@@ -2981,6 +2981,41 @@ function fixturesForRoundKey(league, key) {
   if (key === "positions") return league.playoffs.matches || [];
   return [];
 }
+// Every player named in one seed of a fixture — both sides' pairs, since a
+// "double" puts two of a fixture's OWN seeds on two different courts at
+// once, and either side's player could be the one who can't be in both
+// places. Selections not yet submitted for a side just contribute nothing
+// (an unrevealed seed can't conflict with anything).
+function playersOfSeed(f, seed) {
+  const a = (f.selectionA.pairs[seed] || []).filter(Boolean);
+  const b = (f.selectionB.pairs[seed] || []).filter(Boolean);
+  return a.concat(b);
+}
+// True if the two seeds share a real person — a captain is allowed to name
+// the same player twice across a fixture's seeds (the "double-up" a
+// selection submit already asks them to confirm), but that player
+// physically can't play both seeds if the court schedule then puts them
+// in the same time slot on two different courts. Only meaningful once
+// both seeds are actually revealed; an unrevealed one has no players to
+// clash with yet, so this returns false rather than blocking on nothing.
+function seedsSharePlayer(f, seedA, seedB) {
+  const a = playersOfSeed(f, seedA), b = playersOfSeed(f, seedB);
+  return a.some((p) => b.includes(p));
+}
+// Which two of a fixture's four seeds should share a time slot (the
+// "double") — every pairing that's actually revealed and conflict-free,
+// preferring 0+1 (the longstanding default) when it's safe so behavior
+// doesn't change for the common case. Falls back to 0+1 regardless if
+// every pairing clashes or nothing's revealed yet to check — the double-
+// up confirmation at selection time is the real guard for that edge case,
+// this is just about not handing out an avoidable conflict by default.
+function safeDoubleSeeds(f) {
+  const candidates = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+  for (const [i, j] of candidates) {
+    if (!seedsSharePlayer(f, i, j)) return [i, j];
+  }
+  return [0, 1];
+}
 // Every court-schedule round key worth generating/balancing, in the order
 // they're actually played: every regular round ascending, then whichever
 // playoff stage(s) exist with real fixtures in them. Playoffs are appended
@@ -3113,10 +3148,15 @@ function generateSeasonCourtRotation(league) {
           }
           return;
         }
-        place(doubleSlot, f.id, 0);
-        place(doubleSlot, f.id, 1);
+        // Which two seeds actually share the double slot — not always 0+1;
+        // see safeDoubleSeeds for why (a player named in both of those
+        // seeds can't be on two courts at once).
+        const [dblA, dblB] = safeDoubleSeeds(f);
+        const remaining = [0, 1, 2, 3].filter((s) => s !== dblA && s !== dblB);
+        place(doubleSlot, f.id, dblA);
+        place(doubleSlot, f.id, dblB);
         const others = Array.from({ length: slots }, (_, s) => s).filter((s) => s !== doubleSlot);
-        [2, 3].forEach((seed, idx) => { if (others.length) place(others[idx % others.length], f.id, seed); });
+        remaining.forEach((seed, idx) => { if (others.length) place(others[idx % others.length], f.id, seed); });
         teamTally(f.teamA)[doubleSlot]++; teamTally(f.teamB)[doubleSlot]++;
       });
     }
@@ -3209,12 +3249,16 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
           for (let seed = 0; seed < 4; seed++) placements.push({ fixtureId: f.id, seed, slot: seed % slots, ...predictionOf(f, seed) });
           return;
         }
-        // Same shape Auto-fill uses: seeds 0/1 double up in the chosen
-        // slot, seeds 2/3 each get one of the remaining slots — unchanged,
-        // only the court within each slot is free to move below.
-        [0, 1].forEach((seed) => placements.push({ fixtureId: f.id, seed, slot: doubleSlot, ...predictionOf(f, seed) }));
+        // Same shape Auto-fill uses: two of the fixture's seeds double up
+        // in the chosen slot, the other two each get one of the remaining
+        // slots — only the court within each slot is free to move below.
+        // Which two double is decided the same conflict-free way Auto-fill
+        // does (see safeDoubleSeeds), not always 0+1.
+        const [dblA, dblB] = safeDoubleSeeds(f);
+        [dblA, dblB].forEach((seed) => placements.push({ fixtureId: f.id, seed, slot: doubleSlot, ...predictionOf(f, seed) }));
         const others = Array.from({ length: slots }, (_, s) => s).filter((s) => s !== doubleSlot);
-        [2, 3].forEach((seed, idx) => { if (others.length) placements.push({ fixtureId: f.id, seed, slot: others[idx % others.length], ...predictionOf(f, seed) }); });
+        const remaining = [0, 1, 2, 3].filter((s) => s !== dblA && s !== dblB);
+        remaining.forEach((seed, idx) => { if (others.length) placements.push({ fixtureId: f.id, seed, slot: others[idx % others.length], ...predictionOf(f, seed) }); });
         teamTally(f.teamA)[doubleSlot]++; teamTally(f.teamB)[doubleSlot]++;
       });
       // Greedy longest-first load balancing (LPT) across the WHOLE round at
@@ -3660,6 +3704,13 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
     const f = roundFixtures.find((x) => x.id === fixtureId);
     if (!f) return res.status(400).json({ error: "That match isn't in this round." });
     if (!Number.isInteger(seed) || seed < 0 || seed > 3) return res.status(400).json({ error: "Invalid seed." });
+    // A player named in two of this fixture's seeds (a captain-confirmed
+    // "double-up" at selection time) physically can't play both if this
+    // placement would put them in the same time slot on two different
+    // courts — reject before creating that conflict, whether it comes
+    // from a drag, a tap-swap, or the empty-cell picker.
+    const conflict = (grid[slot] || []).some((cell, c) => c !== court && cell && cell.fixtureId === fixtureId && cell.seed !== seed && seedsSharePlayer(f, cell.seed, seed));
+    if (conflict) return res.status(400).json({ error: "That would put the same player on two courts at once in this time slot." });
     // A given fixture+seed can only be scheduled once — clear it from
     // wherever it was before, so moving it never leaves a duplicate behind.
     grid.forEach((row) => row.forEach((cell, c) => {
