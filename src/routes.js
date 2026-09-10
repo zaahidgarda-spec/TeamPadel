@@ -817,8 +817,15 @@ router.get("/players/tonight-matches", (req, res) => {
 router.get("/leagues/:leagueId/predictions", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
+  // A playoff stage comes in as ?stage=semis|final|positions (no round
+  // number of its own — see fixturesForRoundKey); a regular round as
+  // ?round=N; neither means "every not-yet-finalized fixture across the
+  // whole league" (the pairs-league / no-round-nav case).
+  const isPlayoffStage = ["semis", "final", "positions"].includes(req.query.stage);
   const round = req.query.round !== undefined ? Number(req.query.round) : null;
-  const fixtures = (round !== null ? league.fixtures.filter((f) => f.round === round) : league.fixtures.filter((f) => !f.finalized));
+  const fixtures = isPlayoffStage ? fixturesForRoundKey(league, req.query.stage)
+    : round !== null ? fixturesForRoundKey(league, round)
+    : league.fixtures.filter((f) => !f.finalized);
   const { ratingsData, identityOf } = loadGlobalRatings();
 
   const out = fixtures.map((f) => {
@@ -2961,11 +2968,12 @@ router.put("/leagues/:leagueId/schedule/:key", requireAdmin, (req, res) => {
 
 /* ---------- Court schedule (which match plays on which court, when) ---------- */
 
-// Every fixture that belongs to a given court-schedule "round" key — a
-// plain integer for a regular-season round (league.fixtures, unchanged
-// from before playoffs got this too), or one of "semis"/"final"/
-// "positions" for a playoff stage. Mirrors the client's fixturesForKey.
-function fixturesForCourtScheduleKey(league, key) {
+// Every fixture that belongs to a given round key — a plain integer for a
+// regular-season round (league.fixtures, unchanged from before playoffs
+// got this too), or one of "semis"/"final"/"positions" for a playoff
+// stage. Mirrors the client's fixturesForKey. Used by court-scheduling
+// below and by the Predictions route.
+function fixturesForRoundKey(league, key) {
   if (typeof key === "number") return league.fixtures.filter((f) => f.round === key);
   if (!league.playoffs) return [];
   if (key === "semis") return league.playoffs.semis || [];
@@ -3072,7 +3080,7 @@ function generateSeasonCourtRotation(league) {
   if (!league.courtSchedule) league.courtSchedule = {};
 
   roundKeys.forEach((round) => {
-    const fixtures = fixturesForCourtScheduleKey(league, round);
+    const fixtures = fixturesForRoundKey(league, round);
     if (fixtures.every((f) => f.finalized)) {
       getCourtGrid(league, round).forEach((row, s) => row.forEach((cell) => {
         if (!cell) return;
@@ -3161,7 +3169,7 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
 
   const rounds = {};
   roundKeys.forEach((round) => {
-    const fixtures = fixturesForCourtScheduleKey(league, round);
+    const fixtures = fixturesForRoundKey(league, round);
     if (fixtures.every((f) => f.finalized)) {
       getCourtGrid(league, round).forEach((row, s) => row.forEach((cell) => {
         if (!cell) return;
@@ -3242,7 +3250,7 @@ function computeCurrentCourtLoad(league, ratingsData, identityOf) {
 
   const rounds = {};
   roundKeys.forEach((round) => {
-    const fixtures = fixturesForCourtScheduleKey(league, round);
+    const fixtures = fixturesForRoundKey(league, round);
     if (fixtures.every((f) => f.finalized)) return;
     const courtLoad = Array(courts).fill(0);
     // Builds fresh cell objects for the response rather than mutating the
@@ -3634,7 +3642,7 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   if (!Number.isInteger(court) || court < 0 || court >= courts) return res.status(400).json({ error: "Invalid court." });
 
   const grid = getCourtGrid(league, round);
-  const roundFixtures = fixturesForCourtScheduleKey(league, round);
+  const roundFixtures = fixturesForRoundKey(league, round);
 
   if (isCaptain) {
     const ownsFixture = (fxId) => {
@@ -3718,7 +3726,7 @@ router.post("/leagues/:leagueId/court-schedule/optimum-apply", requireAdmin, (re
     const isPlayoffKey = ["semis", "final", "positions"].includes(roundKey);
     const round = isPlayoffKey ? roundKey : Number(roundKey);
     if (!isPlayoffKey && !Number.isFinite(round)) return;
-    const roundFixtures = fixturesForCourtScheduleKey(league, round);
+    const roundFixtures = fixturesForRoundKey(league, round);
     if (roundFixtures.length === 0 || roundFixtures.every((f) => f.finalized)) return;
     const fixturesById = {};
     roundFixtures.forEach((f) => { fixturesById[f.id] = f; });

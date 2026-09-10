@@ -5510,10 +5510,10 @@ async function renderPredictions() {
   el("round-nav-predictions").style.display = isPairs ? "none" : "block";
   el("predictions-poster-row").style.display = !isPairs && myRole === "admin" ? "flex" : "none";
   if (!isPairs) {
-    if (!viewingKey || viewingKey.stage !== "regular") { c.innerHTML = '<div class="card"><p class="empty">No predictions for this stage.</p></div>'; return; }
+    if (!viewingKey) { c.innerHTML = '<div class="card"><p class="empty">No predictions for this stage.</p></div>'; return; }
     renderRoundNav("round-nav-predictions");
   }
-  const qs = isPairs ? "" : `?round=${viewingKey.round}`;
+  const qs = isPairs ? "" : viewingKey.stage === "regular" ? `?round=${viewingKey.round}` : `?stage=${viewingKey.key}`;
   const data = await api(`/leagues/${currentLeagueId}/predictions${qs}`).catch(() => ({ fixtures: [] }));
   let fixtures = data.fixtures || [];
   if (viewingGroupId) fixtures = fixtures.filter((f) => f.groupId === viewingGroupId);
