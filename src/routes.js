@@ -4233,6 +4233,13 @@ router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => 
   if (!["semis_final", "position"].includes(league.playoffFormat)) return res.status(400).json({ error: "This league wasn't set up with playoffs." });
   const allDone = league.fixtures.length > 0 && league.fixtures.every((f) => f.finalized);
   if (!allDone) return res.status(400).json({ error: "Every regular-season fixture must be finalized first." });
+  // The standings order below is what seeds every pairing — a genuine
+  // points-and-diff tie for 1st has to be resolved by a real Super Tie
+  // first, or "1st" only exists because logic.computeStandings' own
+  // alphabetical fallback broke the tie, not because anyone actually won it.
+  if (!league.superTie && logic.detectSuperTie(league)) {
+    return res.status(400).json({ error: "There's a points tie for 1st place — set up a Super Tie to decide it before generating playoffs." });
+  }
   const standings = logic.computeStandings(league);
   if (league.playoffFormat === "semis_final") {
     if (league.teams.length < 4) return res.status(400).json({ error: "Need at least 4 teams for a knockout stage." });

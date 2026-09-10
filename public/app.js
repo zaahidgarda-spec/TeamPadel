@@ -7605,8 +7605,14 @@ function renderTable() {
     bindPlayerLinks(c);
   }
   const koCard = el("knockout-card");
-  const detectedSt = detectSuperTieClient();
-  const stPending = league.superTie && !stWinnerId;
+  // A 1st-place tie only still matters before playoffs exist — it's what
+  // decides the standings order Generate Playoffs seeds from. Once real
+  // playoffs are generated (captains may already have submitted real
+  // line-ups against that pairing), re-detecting the same tie every time
+  // the table refreshes must never hide the bracket they're actually
+  // playing — that decision is already made for this season.
+  const detectedSt = league.playoffs ? null : detectSuperTieClient();
+  const stPending = !league.playoffs && league.superTie && !stWinnerId;
   if (detectedSt) {
     koCard.style.display = "block";
     const teamNames = detectedSt.teamIds.map((id) => (teamById(id) || {}).name || "?");
