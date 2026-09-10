@@ -768,18 +768,28 @@ router.get("/admin/live-count", async (req, res) => {
 router.get("/next-matches", (req, res) => {
   const myLeagueId = req.session.user && req.session.user.leagueId;
   const index = visibleIndexEntries();
-  let leagues = index
+  const allLeagues = index
     .map((entry) => store.getLeague(entry.id))
     .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
+  const { ratingsData, identityOf } = loadGlobalRatings();
 
-  let scopedTo = null;
   if (myLeagueId) {
-    const mine = leagues.find((l) => l.id === myLeagueId);
-    if (mine) { leagues = [mine]; scopedTo = { id: mine.id, name: mine.name }; }
+    const mine = allLeagues.find((l) => l.id === myLeagueId);
+    if (mine) {
+      const mineMatches = buildNextMatchesPairings([mine], ratingsData, identityOf);
+      // Only scope to a captain's own league while it actually has
+      // something eligible to show (both sides' line-ups already in) —
+      // otherwise this card was disappearing entirely for a captain
+      // logged in on their own team's quiet week, even while other
+      // leagues had real upcoming matches. Falling through to the
+      // site-wide list beats showing nothing.
+      if (mineMatches.length > 0) {
+        return res.json({ scopedTo: { id: mine.id, name: mine.name }, matches: mineMatches });
+      }
+    }
   }
 
-  const { ratingsData, identityOf } = loadGlobalRatings();
-  res.json({ scopedTo, matches: buildNextMatchesPairings(leagues, ratingsData, identityOf) });
+  res.json({ scopedTo: null, matches: buildNextMatchesPairings(allLeagues, ratingsData, identityOf) });
 });
 
 // A signed-in player's own "Tonight's matches" — same grouping as the
