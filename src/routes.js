@@ -3467,7 +3467,15 @@ router.get("/leagues/:leagueId/teams/:teamId/pay-link", requireAdminOrCaptain(),
     store.saveLeague(league.id, league);
   }
   const base = `${req.protocol}://${req.get("host")}`;
-  res.json({ url: `${base}/#pay-link-team/${league.id}/${team.id}/${team.payLinkToken}` });
+  // A real path, not the app's own #pay-link-team/... hash route — a
+  // hash fragment never reaches the server at all, so WhatsApp/iMessage's
+  // link-preview crawler had nothing to read except whatever index.html's
+  // own static <head> says (generic "Team Padel" branding, not "Payment
+  // link"). This real path is handled in server.js: it serves its own
+  // <head> (title, description, a distinct payment-themed image) for the
+  // crawler, then immediately sends a real visitor on into the exact same
+  // #pay-link-team/... page.
+  res.json({ url: `${base}/pay-team/${league.id}/${team.id}/${team.payLinkToken}` });
 });
 router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
@@ -3541,7 +3549,9 @@ router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link", requir
     store.saveLeague(league.id, league);
   }
   const base = `${req.protocol}://${req.get("host")}`;
-  res.json({ url: `${base}/#pay-link/${league.id}/${team.id}/${player.id}/${player.payLinkToken}` });
+  // Real path, not a #pay-link/... hash — see the team pay-link route's
+  // comment above for why (WhatsApp/iMessage can't read a hash fragment).
+  res.json({ url: `${base}/pay/${league.id}/${team.id}/${player.id}/${player.payLinkToken}` });
 });
 
 // Public read (no session) — the page behind a pay-link needs to show the
@@ -4689,4 +4699,8 @@ router.delete("/leagues/:leagueId/sponsors/:sponsorId", requireAdmin, (req, res)
 
 router.backfillRoundRecaps = backfillRoundRecaps;
 router.checkLineupReminders = checkLineupReminders;
+// Reused by server.js to build the OG-tagged landing page a pay link
+// redirects through — see the /pay and /pay-team routes there.
+router.findTeamAndPlayer = findTeamAndPlayer;
+router.playerShareCents = playerShareCents;
 module.exports = router;

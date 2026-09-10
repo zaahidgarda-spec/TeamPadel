@@ -154,6 +154,86 @@ app.use(
     setHeaders: (res) => res.setHeader("Cache-Control", "no-cache"),
   })
 );
+
+// A pay link shared over WhatsApp/iMessage/etc. used to be a bare
+// #pay-link/... hash — but a hash fragment never reaches the server at
+// all, so the link-preview crawler those apps run had nothing to read
+// except index.html's own static <head>, showing generic "Team Padel"
+// branding on every shared link regardless of what it actually was.
+// These two routes are real paths instead: each hands the crawler its own
+// <head> (a "Payment link" title, the amount/who it's for, and a
+// dedicated payment-themed image instead of the site logo), then sends a
+// real visitor straight on into the exact same #pay-link/... page the
+// app has always used — nothing about the actual payment flow changes.
+// Mirrors possessive() in public/app.js — "Dons'" not "Dons's".
+function possessive(name) {
+  return (name || "") + (/s$/i.test(name || "") ? "'" : "'s");
+}
+function escapeHtmlAttr(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function payLinkLandingHtml({ title, description, base, redirectHash }) {
+  const image = `${base}/images/payment-link-og.png`;
+  const url = `${base}${redirectHash}`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtmlAttr(title)}</title>
+<meta name="description" content="${escapeHtmlAttr(description)}">
+<meta property="og:title" content="${escapeHtmlAttr(title)}">
+<meta property="og:description" content="${escapeHtmlAttr(description)}">
+<meta property="og:image" content="${image}">
+<meta property="og:url" content="${url}">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="robots" content="noindex">
+<script>window.location.replace(${JSON.stringify(redirectHash)});</script>
+</head>
+<body>
+<p>Opening your payment page… if nothing happens, <a href="${escapeHtmlAttr(redirectHash)}">tap here</a>.</p>
+</body>
+</html>`;
+}
+app.get("/pay/:leagueId/:teamId/:playerId/:token", (req, res) => {
+  const { leagueId, teamId, playerId, token } = req.params;
+  const base = `${req.protocol}://${req.get("host")}`;
+  const redirectHash = `/#pay-link/${leagueId}/${teamId}/${playerId}/${token}`;
+  let title = "Payment link — Team Padel", description = "Tap to pay securely via PayFast.";
+  try {
+    const league = store.getLeague(leagueId);
+    const { team, player } = league ? routes.findTeamAndPlayer(league, teamId, playerId) : {};
+    if (league && team && player && player.payLinkToken === token) {
+      const amountRands = (routes.playerShareCents(league, team) / 100).toFixed(2);
+      title = `Payment link — R${amountRands}`;
+      description = `${possessive(player.name)} share for ${team.name} · ${league.name} — tap to pay securely via PayFast.`;
+    }
+  } catch (e) {
+    console.error("Building pay-link preview failed (redirect still proceeds):", e.message);
+  }
+  res.setHeader("Cache-Control", "no-cache");
+  res.send(payLinkLandingHtml({ title, description, base, redirectHash }));
+});
+app.get("/pay-team/:leagueId/:teamId/:token", (req, res) => {
+  const { leagueId, teamId, token } = req.params;
+  const base = `${req.protocol}://${req.get("host")}`;
+  const redirectHash = `/#pay-link-team/${leagueId}/${teamId}/${token}`;
+  let title = "Payment link — Team Padel", description = "Tap to pay securely via PayFast.";
+  try {
+    const league = store.getLeague(leagueId);
+    const team = league && league.teams.find((t) => t.id === teamId);
+    if (league && team && team.payLinkToken === token) {
+      const amountRands = ((league.registrationFeeCents || 0) / 100).toFixed(2);
+      title = `Payment link — R${amountRands}`;
+      description = `${possessive(team.name)} season fee · ${league.name} — tap to pay securely via PayFast.`;
+    }
+  } catch (e) {
+    console.error("Building team pay-link preview failed (redirect still proceeds):", e.message);
+  }
+  res.setHeader("Cache-Control", "no-cache");
+  res.send(payLinkLandingHtml({ title, description, base, redirectHash }));
+});
+
 app.get("*", sendVersionedIndex);
 
 store
