@@ -8122,8 +8122,15 @@ function matchCardHtml(label, teamAId, teamBId, f) {
   const teamB = teamBId ? teamById(teamBId) : null;
   const { winsA, winsB } = f ? fixtureScoreClient(f) : { winsA: 0, winsB: 0 };
   const hasScore = f && (winsA > 0 || winsB > 0 || f.finalized);
-  const aWon = f && f.finalized && winsA > winsB;
-  const bWon = f && f.finalized && winsB > winsA;
+  // Winner by matchWinnerClient, not a raw winsA/winsB compare — a
+  // knockout fixture that goes 2-2 is decided by its 5th "decider" rubber
+  // (see fixtureScore/matchWinner), which a plain winsA > winsB check
+  // can't see at all. Without this, a final-spot playoff or semi decided
+  // on a decider showed "2-2 · Final" with neither team highlighted as
+  // the winner, even though one genuinely won.
+  const winner = f && f.finalized ? matchWinnerClient(f) : null;
+  const aWon = winner === "A";
+  const bWon = winner === "B";
   return `<div class="bracket-match">
     <div class="bracket-match-label">${escapeHtml(label)}</div>
     <div class="bracket-team ${aWon ? "winner" : ""}">${avatarHtml(teamA)}<span>${escapeHtml(teamA ? teamA.name : "TBD")}</span></div>
