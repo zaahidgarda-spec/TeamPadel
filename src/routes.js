@@ -3343,6 +3343,13 @@ router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token", (req, res) => {
   res.json({
     leagueName: league.name, teamName: team.name, teamLogo: team.logo || "",
     amountCents: league.registrationFeeCents || 0, paid: team.paymentStatus === "paid", paidAt: team.paidAt || null,
+    // Same league-wide context as the per-player pay-link, so a team's
+    // lump-sum link looks identical to an individual player's — see that
+    // route's comment for why the photo itself isn't embedded here.
+    venueName: league.defaultVenue || "", hasCourtPhoto: !!league.courtPhoto,
+    teamLogos: league.teams.map((t) => ({ name: t.name, logo: t.logo || "" })),
+    totalPlayers: league.teams.reduce((sum, t) => sum + t.players.length, 0),
+    teamCount: league.teams.length,
   });
 });
 router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token/checkout", (req, res) => {

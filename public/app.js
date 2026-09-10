@@ -381,36 +381,48 @@ async function openPayLinkTeam(leagueId, teamId, token) {
   el("view-pay-link").style.display = "block";
   const content = el("pay-link-content");
   const data = await api(`/leagues/${leagueId}/teams/${teamId}/pay-link/${token}`).catch(() => null);
+  const card = el("pay-link-card");
   if (!data) {
+    card.classList.remove("pay-link-has-photo");
     content.innerHTML = '<p class="note" style="text-align:center;">This payment link isn\'t valid — ask your league admin for a fresh one.</p>';
     return;
   }
   trackPageView(`/pay-link-team/${leagueId}`, `Pay — ${data.teamName}`);
+  card.classList.toggle("pay-link-has-photo", !!data.hasCourtPhoto);
+  // Same merged photo/venue/roster header as a player's own pay-link —
+  // payLinkPhotoHeaderHtml expects a teamName it can put on the header;
+  // here that's the team paying, same as the player version puts the
+  // player's own team there.
+  const photoHeader = payLinkPhotoHeaderHtml(data);
   const teamLine = `<div class="pay-hero-team">${data.teamLogo ? `<img class="pay-hero-crest" src="${data.teamLogo}" alt="">` : ""}${escapeHtml(data.leagueName)}</div>`;
   if (data.paid) {
     content.innerHTML = `
-      <div class="pay-hero pay-hero-done">
+      ${photoHeader}
+      <div class="pay-hero pay-hero-done${photoHeader ? " pay-link-lower" : ""}">
         <div class="pay-hero-check">&#10003;</div>
         <div class="pay-hero-label">${escapeHtml(data.teamName)} is all paid up</div>
         <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
-        ${teamLine}
+        ${photoHeader ? "" : teamLine}
         ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
       </div>
     `;
+    if (photoHeader) fetchPayLinkPhoto(leagueId);
     return;
   }
   const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
   content.innerHTML = `
-    <div class="pay-hero">
+    ${photoHeader}
+    <div class="pay-hero${photoHeader ? " pay-link-lower" : ""}">
       <div class="pay-hero-label">${escapeHtml(possessive(data.teamName))} season fee</div>
       <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
-      ${teamLine}
+      ${photoHeader ? "" : teamLine}
       <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
       <div class="error" id="pay-link-error"></div>
       <div class="pay-hero-secure">&#128274; Secured by PayFast</div>
     </div>
     ${sandboxNote}
   `;
+  if (photoHeader) fetchPayLinkPhoto(leagueId);
   el("pay-link-btn").onclick = async () => {
     el("pay-link-error").textContent = "";
     try {
@@ -1616,7 +1628,7 @@ async function renderAccountLineupsDue() {
   const list = el("account-lineups-list");
   const now = Date.now();
   list.innerHTML = due.map((d) => {
-    const meta = `${escapeHtml(d.teamName)} · ${escapeHtml(d.leagueName)}`;
+    const meta = `${escapeHtml(d.teamName)} · <span class="league-name">${escapeHtml(d.leagueName)}</span>`;
     const deadlineMs = d.kickoffMs ? d.kickoffMs - LINEUP_DEADLINE_LEAD_MS : null;
     const msUntilDeadline = deadlineMs !== null ? deadlineMs - now : null;
     let badge = "", bar = "", sub;
