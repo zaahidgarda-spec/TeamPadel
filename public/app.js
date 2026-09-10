@@ -2124,6 +2124,28 @@ function roundLabel(r) {
   const meta = league.roundMeta && league.roundMeta[r];
   return (meta && meta.label) || "Round " + r;
 }
+// Same idea as roundLabel, but also covers a court-schedule round key that
+// might be a playoff stage instead of a real round number — used only by
+// the optimum-layout/current-balance admin modals below, which (unlike
+// the round nav) get their round keys back as plain object keys off an
+// API response, not a full {stage,key,round} viewingKey.
+function courtScheduleRoundLabel(round) {
+  if (round === "semis") return "Semi finals";
+  if (round === "final") return "Final";
+  if (round === "positions") return "Final spot playoffs";
+  return roundLabel(round);
+}
+// Mirrors the server's fixturesForCourtScheduleKey — a plain round number
+// reads from league.fixtures as always, a playoff stage key reads from
+// league.playoffs instead.
+function courtScheduleFixturesFor(round) {
+  if (typeof round === "number") return league.fixtures.filter((f) => f.round === round);
+  if (!league.playoffs) return [];
+  if (round === "semis") return league.playoffs.semis || [];
+  if (round === "final") return league.playoffs.final ? [league.playoffs.final] : [];
+  if (round === "positions") return league.playoffs.matches || [];
+  return [];
+}
 // Fixtures belonging to the group currently on screen — or every fixture,
 // for a league that has no groups at all. Round numbers restart at 1 within
 // each group, so this must be filtered before rounds are ever counted.
@@ -4950,12 +4972,11 @@ function renderCourtScheduleGrid(fixtures) {
   card.style.display = "block";
   courtTapSelection = null;
   el("court-schedule-poster-row").style.display = myRole === "admin" ? "flex" : "none";
-  // Auto-fill/optimum-layout/balance are whole-season tools (they spread
-  // "who gets a double court" fairly across every regular round) — that
-  // doesn't mean anything for a single knockout round, so they stay
-  // regular-season only. Manual placement (tap/drag, below) still works
-  // for every stage.
-  el("court-schedule-generate-row").style.display = myRole === "admin" && viewingKey.stage === "regular" ? "flex" : "none";
+  // Auto-fill/optimum-layout/balance now cover playoffs too — server-side
+  // they run over every regular round plus whichever playoff stage(s)
+  // exist, in play order, so the season-long fairness tally carries
+  // straight through into semis/final/final-spot instead of resetting.
+  el("court-schedule-generate-row").style.display = myRole === "admin" ? "flex" : "none";
 
   // A regular round keeps its existing plain-number key (unchanged, so
   // every league's already-saved court schedule keeps working exactly as
@@ -7354,13 +7375,25 @@ el("generate-court-rotation-btn").onclick = async () => {
 // than just asserted. Nothing is saved yet — Cancel discards it, Optimise
 // resends this exact payload to /court-schedule/optimum-apply.
 function renderCourtBalanceGrids(rounds) {
-  const roundNums = Object.keys(rounds).map(Number).sort((a, b) => a - b);
+  // Every key arrives as a string (JSON object keys always are) — a
+  // regular round parses back to its real number so it sorts and looks up
+  // fixtures correctly; a playoff stage ("semis"/"final"/"positions")
+  // stays a string, and always sorts after every regular round since
+  // that's the order they're actually played in.
+  const roundKeys = Object.keys(rounds)
+    .map((k) => (["semis", "final", "positions"].includes(k) ? k : Number(k)))
+    .sort((a, b) => {
+      const na = typeof a === "number", nb = typeof b === "number";
+      if (na && nb) return a - b;
+      if (na !== nb) return na ? -1 : 1;
+      return ["semis", "final", "positions"].indexOf(a) - ["semis", "final", "positions"].indexOf(b);
+    });
   const body = el("optimum-layout-modal-body");
-  if (roundNums.length === 0) { body.innerHTML = ""; return; }
+  if (roundKeys.length === 0) { body.innerHTML = ""; return; }
   const courts = league.courtCount || 4;
   const courtNames = league.courtNames || [];
-  body.innerHTML = roundNums.map((round) => {
-    const fixtures = league.fixtures.filter((f) => f.round === round);
+  body.innerHTML = roundKeys.map((round) => {
+    const fixtures = courtScheduleFixturesFor(round);
     const options = courtScheduleOptions(fixtures);
     const { grid, courtLoad } = rounds[round];
     const maxLoad = Math.max(1, ...(courtLoad || []));
@@ -7399,7 +7432,7 @@ function renderCourtBalanceGrids(rounds) {
       return `<div class="opt-load-col"><div class="opt-load-track"><div class="opt-load-fill${allClose ? " opt-load-fill-danger" : ""}" style="height:${pct}%;"></div></div><span class="opt-load-label">${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</span></div>`;
     }).join("");
     return `<div class="card" style="margin-bottom:16px;">
-      <h4 style="margin:0 0 10px;">${escapeHtml(roundLabel(round))}</h4>
+      <h4 style="margin:0 0 10px;">${escapeHtml(courtScheduleRoundLabel(round))}</h4>
       <div class="cs-legend">${legend}</div>
       <div class="court-schedule-scroll hscroll"><table class="court-schedule-table"><thead><tr><th></th>${Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
       <div class="opt-load-row">${loadBars}</div>

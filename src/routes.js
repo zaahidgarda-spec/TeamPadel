@@ -2973,6 +2973,25 @@ function fixturesForCourtScheduleKey(league, key) {
   if (key === "positions") return league.playoffs.matches || [];
   return [];
 }
+// Every court-schedule round key worth generating/balancing, in the order
+// they're actually played: every regular round ascending, then whichever
+// playoff stage(s) exist with real fixtures in them. Playoffs are appended
+// (not interleaved) so the season-fairness tally in generateSeasonCourtRotation
+// and computeOptimumCourtSchedule carries forward naturally — a team that
+// already had more than its share of doubles in the regular season doesn't
+// get a clean slate the moment playoffs start.
+function courtScheduleRoundKeys(league) {
+  const keys = [...new Set(league.fixtures.map((f) => f.round))].sort((a, b) => a - b);
+  if (league.playoffs) {
+    if (league.playoffs.format === "position") {
+      if ((league.playoffs.matches || []).length) keys.push("positions");
+    } else {
+      if ((league.playoffs.semis || []).length) keys.push("semis");
+      if (league.playoffs.final) keys.push("final");
+    }
+  }
+  return keys;
+}
 function emptyCourtGrid(slots, courts) {
   return Array.from({ length: slots }, () => Array.from({ length: courts }, () => null));
 }
@@ -3045,17 +3064,15 @@ function pickDoubleSlots(fixtures, slots, teamTally) {
 // (if any) still counts toward the running fairness tally.
 function generateSeasonCourtRotation(league) {
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
-  const byRound = {};
-  league.fixtures.forEach((f) => { (byRound[f.round] || (byRound[f.round] = [])).push(f); });
-  const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  const roundKeys = courtScheduleRoundKeys(league);
   const tally = {};
   const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
   const needsDoubles = slots < 4;
 
   if (!league.courtSchedule) league.courtSchedule = {};
 
-  roundNums.forEach((round) => {
-    const fixtures = byRound[round];
+  roundKeys.forEach((round) => {
+    const fixtures = fixturesForCourtScheduleKey(league, round);
     if (fixtures.every((f) => f.finalized)) {
       getCourtGrid(league, round).forEach((row, s) => row.forEach((cell) => {
         if (!cell) return;
@@ -3133,9 +3150,7 @@ function matchPrediction(league, f, seed, ratingsData, identityOf) {
 }
 function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
-  const byRound = {};
-  league.fixtures.forEach((f) => { (byRound[f.round] || (byRound[f.round] = [])).push(f); });
-  const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  const roundKeys = courtScheduleRoundKeys(league);
   const tally = {};
   const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
   const needsDoubles = slots < 4;
@@ -3145,8 +3160,8 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const predictionOf = (f, seed) => matchPrediction(league, f, seed, ratingsData, identityOf) || { closeness: 50 };
 
   const rounds = {};
-  roundNums.forEach((round) => {
-    const fixtures = byRound[round];
+  roundKeys.forEach((round) => {
+    const fixtures = fixturesForCourtScheduleKey(league, round);
     if (fixtures.every((f) => f.finalized)) {
       getCourtGrid(league, round).forEach((row, s) => row.forEach((cell) => {
         if (!cell) return;
@@ -3223,13 +3238,11 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
 // whether regenerating it is even worth doing.
 function computeCurrentCourtLoad(league, ratingsData, identityOf) {
   const courts = league.courtCount || 4;
-  const byRound = {};
-  league.fixtures.forEach((f) => { (byRound[f.round] || (byRound[f.round] = [])).push(f); });
-  const roundNums = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  const roundKeys = courtScheduleRoundKeys(league);
 
   const rounds = {};
-  roundNums.forEach((round) => {
-    const fixtures = byRound[round];
+  roundKeys.forEach((round) => {
+    const fixtures = fixturesForCourtScheduleKey(league, round);
     if (fixtures.every((f) => f.finalized)) return;
     const courtLoad = Array(courts).fill(0);
     // Builds fresh cell objects for the response rather than mutating the
@@ -3699,9 +3712,13 @@ router.post("/leagues/:leagueId/court-schedule/optimum-apply", requireAdmin, (re
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   if (!league.courtSchedule) league.courtSchedule = {};
   Object.keys(rounds).forEach((roundKey) => {
-    const round = Number(roundKey);
-    if (!Number.isFinite(round)) return;
-    const roundFixtures = league.fixtures.filter((f) => f.round === round);
+    // Every object key arrives as a string over JSON regardless of what it
+    // was server-side — a regular round goes back to its real number, a
+    // playoff stage ("semis"/"final"/"positions") stays as-is.
+    const isPlayoffKey = ["semis", "final", "positions"].includes(roundKey);
+    const round = isPlayoffKey ? roundKey : Number(roundKey);
+    if (!isPlayoffKey && !Number.isFinite(round)) return;
+    const roundFixtures = fixturesForCourtScheduleKey(league, round);
     if (roundFixtures.length === 0 || roundFixtures.every((f) => f.finalized)) return;
     const fixturesById = {};
     roundFixtures.forEach((f) => { fixturesById[f.id] = f; });
