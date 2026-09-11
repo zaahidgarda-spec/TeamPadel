@@ -640,6 +640,7 @@
           <nav class="tabs tabs-sub" style="margin-bottom:14px;">
             <button class="pay-subtab-btn active" data-paysubview="status" type="button">Team payment status</button>
             <button class="pay-subtab-btn" data-paysubview="received" type="button">Payments received</button>
+            <button class="pay-subtab-btn" data-paysubview="custom" type="button">Custom charges</button>
           </nav>
           <div id="pay-subview-status">
             <div id="pay-summary"></div>
@@ -647,6 +648,32 @@
           </div>
           <div id="pay-subview-received" style="display:none;">
             <div id="pay-received-list"></div>
+          </div>
+          <div id="pay-subview-custom" style="display:none;">
+            <p class="note" style="margin-bottom:10px;">Charge a team or a specific player any amount, for any reason — a kit fee, a late fine, anything outside the season fee.</p>
+            <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;">
+              <div>
+                <label for="pay-custom-team-select">Team</label>
+                <select id="pay-custom-team-select"></select>
+              </div>
+              <div>
+                <label for="pay-custom-player-select">Player</label>
+                <select id="pay-custom-player-select">
+                  <option value="">Whole team</option>
+                </select>
+              </div>
+              <div>
+                <label for="pay-custom-amount-input">Amount (R)</label>
+                <input type="number" id="pay-custom-amount-input" min="0" step="1" style="max-width:120px;">
+              </div>
+              <div style="flex:1;min-width:180px;">
+                <label for="pay-custom-reason-input">Reason</label>
+                <input type="text" id="pay-custom-reason-input" placeholder="e.g. Kit fee" maxlength="200">
+              </div>
+              <button class="primary" id="pay-custom-create-btn">Create link</button>
+            </div>
+            <div class="error" id="pay-custom-error"></div>
+            <div id="pay-custom-list" style="margin-top:16px;"></div>
           </div>
         </div>
       </section>

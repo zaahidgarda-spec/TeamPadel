@@ -233,6 +233,27 @@ app.get("/pay-team/:leagueId/:teamId/:token", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.send(payLinkLandingHtml({ title, description, base, redirectHash }));
 });
+app.get("/pay-custom/:leagueId/:chargeId/:token", (req, res) => {
+  const { leagueId, chargeId, token } = req.params;
+  const base = `${req.protocol}://${req.get("host")}`;
+  const redirectHash = `/#pay-custom/${leagueId}/${chargeId}/${token}`;
+  let title = "Payment link — Team Padel", description = "Tap to pay securely via PayFast.";
+  try {
+    const league = store.getLeague(leagueId);
+    const charge = league && (league.customCharges || []).find((c) => c.id === chargeId);
+    if (league && charge && charge.payLinkToken === token) {
+      const team = league.teams.find((t) => t.id === charge.teamId);
+      const player = charge.playerId && team ? team.players.find((p) => p.id === charge.playerId) : null;
+      const amountRands = (charge.amountCents / 100).toFixed(2);
+      title = `Payment link — R${amountRands}`;
+      description = `${charge.reason} · ${(player || team || {}).name || league.name} · ${league.name} — tap to pay securely via PayFast.`;
+    }
+  } catch (e) {
+    console.error("Building custom-charge pay-link preview failed (redirect still proceeds):", e.message);
+  }
+  res.setHeader("Cache-Control", "no-cache");
+  res.send(payLinkLandingHtml({ title, description, base, redirectHash }));
+});
 
 app.get("*", sendVersionedIndex);
 

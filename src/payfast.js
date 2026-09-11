@@ -62,7 +62,7 @@ function sign(fields, passphrase) {
 // Everything a <form method="post"> needs to redirect the browser to
 // PayFast's own hosted checkout page — PayFast requires an actual browser
 // form submission here, not a server-side API call.
-function buildCheckout({ amountRands, itemName, returnUrl, cancelUrl, notifyUrl, customStr1, customStr2, customStr3 }) {
+function buildCheckout({ amountRands, itemName, returnUrl, cancelUrl, notifyUrl, customStr1, customStr2, customStr3, customStr4 }) {
   const cfg = config();
   const fields = {
     merchant_id: cfg.merchantId,
@@ -75,6 +75,7 @@ function buildCheckout({ amountRands, itemName, returnUrl, cancelUrl, notifyUrl,
     custom_str1: customStr1,
     custom_str2: customStr2,
     custom_str3: customStr3,
+    custom_str4: customStr4,
   };
   const signature = sign(fields, cfg.passphrase);
   return { action: cfg.processUrl, sandbox: cfg.sandbox, fields: { ...fields, signature } };

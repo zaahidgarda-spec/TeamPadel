@@ -268,6 +268,13 @@ async function boot() {
     await openPayLinkTeam(...payLinkTeamMatch.slice(1));
     return;
   }
+  // A one-off custom charge's own link — same standalone shape again, just
+  // reading its reason/amount instead of the season fee.
+  const payCustomMatch = window.location.hash.match(/^#pay-custom\/([^/]+)\/([^/]+)\/([^/]+)$/);
+  if (payCustomMatch) {
+    await openPayLinkCustom(...payCustomMatch.slice(1));
+    return;
+  }
   // Same standalone shape as a pay-link — a kit supplier following this
   // link has no login at all, so it has to work before ever touching the
   // hub or a session.
@@ -427,6 +434,63 @@ async function openPayLinkTeam(leagueId, teamId, token) {
     el("pay-link-error").textContent = "";
     try {
       const checkout = await api(`/leagues/${leagueId}/teams/${teamId}/pay-link/${token}/checkout`);
+      submitPayfastCheckout(checkout);
+    } catch (e) { el("pay-link-error").textContent = e.message; }
+  };
+}
+// A custom, admin-set charge's own standalone page — same hero layout as
+// the season-fee pay-links above, just with a free-text reason in place of
+// "season fee" and whatever amount the admin set instead of the league's
+// fixed fee.
+async function openPayLinkCustom(leagueId, chargeId, token) {
+  el("view-hub").style.display = "none";
+  el("view-league").style.display = "none";
+  el("view-pay-link").style.display = "block";
+  const content = el("pay-link-content");
+  const data = await api(`/leagues/${leagueId}/custom-charges/${chargeId}/pay-link/${token}`).catch(() => null);
+  const card = el("pay-link-card");
+  if (!data) {
+    card.classList.remove("pay-link-has-photo");
+    content.innerHTML = '<p class="note" style="text-align:center;">This payment link isn\'t valid — ask your league admin for a fresh one.</p>';
+    return;
+  }
+  const payerName = data.playerName || data.teamName;
+  trackPageView(`/pay-custom/${leagueId}`, `Pay — ${data.reason}`);
+  card.classList.toggle("pay-link-has-photo", !!data.hasCourtPhoto);
+  const photoHeader = payLinkPhotoHeaderHtml({ ...data, teamName: data.teamName, teamLogo: data.teamLogo });
+  const teamLine = `<div class="pay-hero-team">${data.teamLogo ? `<img class="pay-hero-crest" src="${data.teamLogo}" alt="">` : ""}${escapeHtml(data.teamName)} &middot; ${escapeHtml(data.leagueName)}</div>`;
+  if (data.paid) {
+    content.innerHTML = `
+      ${photoHeader}
+      <div class="pay-hero pay-hero-done${photoHeader ? " pay-link-lower" : ""}">
+        <div class="pay-hero-check">&#10003;</div>
+        <div class="pay-hero-label">${escapeHtml(payerName)}, you're all paid up</div>
+        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
+        ${photoHeader ? "" : teamLine}
+        ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
+      </div>
+    `;
+    if (photoHeader) fetchPayLinkPhoto(leagueId);
+    return;
+  }
+  const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
+  content.innerHTML = `
+    ${photoHeader}
+    <div class="pay-hero${photoHeader ? " pay-link-lower" : ""}">
+      <div class="pay-hero-label">${escapeHtml(data.reason)}</div>
+      <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
+      ${photoHeader ? "" : teamLine}
+      <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
+      <div class="error" id="pay-link-error"></div>
+      <div class="pay-hero-secure">&#128274; Secured by PayFast</div>
+    </div>
+    ${sandboxNote}
+  `;
+  if (photoHeader) fetchPayLinkPhoto(leagueId);
+  el("pay-link-btn").onclick = async () => {
+    el("pay-link-error").textContent = "";
+    try {
+      const checkout = await api(`/leagues/${leagueId}/custom-charges/${chargeId}/pay-link/${token}/checkout`);
       submitPayfastCheckout(checkout);
     } catch (e) { el("pay-link-error").textContent = e.message; }
   };
@@ -2550,6 +2614,7 @@ function renderPay() {
     el("pay-fee-input").value = (league.registrationFeeCents || 0) / 100;
     el("pay-summary").innerHTML = renderPaySummaryHtml();
     el("pay-received-list").innerHTML = renderPayReceivedHtml();
+    renderPayCustomSubview();
     const list = el("pay-teams-list");
     list.innerHTML = league.teams.map((t) => {
       const summary = !t.paymentMode ? "Payment method not chosen"
@@ -2582,6 +2647,82 @@ function renderPay() {
     }
   }
 }
+// Team/player dropdowns for the custom-charge form — the player list is
+// scoped to whichever team is currently selected, so it's rebuilt on every
+// team change rather than filtered client-side from one big list.
+function renderCustomChargeTeamPlayerSelects() {
+  const teamSelect = el("pay-custom-team-select");
+  const playerSelect = el("pay-custom-player-select");
+  const prevTeam = teamSelect.value;
+  teamSelect.innerHTML = league.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  if (prevTeam && league.teams.some((t) => t.id === prevTeam)) teamSelect.value = prevTeam;
+  const fillPlayers = () => {
+    const t = teamById(teamSelect.value);
+    playerSelect.innerHTML = '<option value="">Whole team</option>' + (t ? t.players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("") : "");
+  };
+  fillPlayers();
+  teamSelect.onchange = fillPlayers;
+}
+async function renderCustomChargesList() {
+  const listEl = el("pay-custom-list");
+  const charges = await api(`/leagues/${currentLeagueId}/custom-charges`).catch(() => []);
+  if (!charges.length) { listEl.innerHTML = '<p class="empty">No custom charges yet.</p>'; return; }
+  listEl.innerHTML = charges.map((c) => `
+    <div class="notif-row" data-charge="${c.id}">
+      <div>
+        <strong>${escapeHtml(c.reason)}</strong>
+        <div class="note">${escapeHtml(c.playerName || c.teamName)}${c.playerName ? " · " + escapeHtml(c.teamName) : ""} · ${fmtRands(c.amountCents)}${c.paid ? ` · Paid · ${paymentMethodLabel(c.paymentMethod)}` : ""}</div>
+      </div>
+      <span class="badge ${c.paid ? "done" : "outstanding"}">${c.paid ? "Paid" : "Unpaid"}</span>
+      ${c.paid
+        ? `<button class="link custom-charge-toggle-btn" type="button" data-paid="false">Mark unpaid</button>`
+        : `<button class="link custom-charge-copy-btn" type="button">Copy link</button><button class="link custom-charge-toggle-btn" type="button" data-paid="true">Mark paid</button><button class="link custom-charge-delete-btn" type="button">Delete</button>`}
+    </div>
+  `).join("");
+  listEl.querySelectorAll(".notif-row[data-charge]").forEach((row) => {
+    const chargeId = row.dataset.charge;
+    const copyBtn = row.querySelector(".custom-charge-copy-btn");
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        const charge = charges.find((c) => c.id === chargeId);
+        copyTextWhenReady(Promise.resolve(charge && charge.url), copyBtn);
+      };
+    }
+    const toggleBtn = row.querySelector(".custom-charge-toggle-btn");
+    if (toggleBtn) {
+      toggleBtn.onclick = async () => {
+        const paid = toggleBtn.dataset.paid === "true";
+        await api(`/leagues/${currentLeagueId}/custom-charges/${chargeId}/payment-status`, { method: "PUT", body: { paid } }).catch(() => {});
+        renderCustomChargesList();
+      };
+    }
+    const deleteBtn = row.querySelector(".custom-charge-delete-btn");
+    if (deleteBtn) {
+      deleteBtn.onclick = async () => {
+        if (!confirm("Delete this charge?")) return;
+        await api(`/leagues/${currentLeagueId}/custom-charges/${chargeId}`, { method: "DELETE" }).catch(() => {});
+        renderCustomChargesList();
+      };
+    }
+  });
+}
+function renderPayCustomSubview() {
+  renderCustomChargeTeamPlayerSelects();
+  renderCustomChargesList();
+}
+el("pay-custom-create-btn").onclick = async () => {
+  el("pay-custom-error").textContent = "";
+  try {
+    const teamId = el("pay-custom-team-select").value;
+    const playerId = el("pay-custom-player-select").value || null;
+    const amountRands = Number(el("pay-custom-amount-input").value);
+    const reason = el("pay-custom-reason-input").value;
+    await api(`/leagues/${currentLeagueId}/custom-charges`, { method: "POST", body: { teamId, playerId, amountRands, reason } });
+    el("pay-custom-amount-input").value = "";
+    el("pay-custom-reason-input").value = "";
+    renderCustomChargesList();
+  } catch (e) { el("pay-custom-error").textContent = e.message; }
+};
 el("pay-fee-save-btn").onclick = async () => {
   el("pay-fee-error").textContent = "";
   try {
@@ -2594,6 +2735,8 @@ document.querySelectorAll(".pay-subtab-btn").forEach((btn) => {
     document.querySelectorAll(".pay-subtab-btn").forEach((b) => b.classList.toggle("active", b === btn));
     el("pay-subview-status").style.display = btn.dataset.paysubview === "status" ? "block" : "none";
     el("pay-subview-received").style.display = btn.dataset.paysubview === "received" ? "block" : "none";
+    el("pay-subview-custom").style.display = btn.dataset.paysubview === "custom" ? "block" : "none";
+    if (btn.dataset.paysubview === "custom") renderPayCustomSubview();
   };
 });
 // A captain's own overdue-but-unscored match, surfaced above whichever tab

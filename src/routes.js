@@ -436,7 +436,11 @@ function sanitize(league, req) {
   // share page (below) — same reasoning as payLinkToken, never ships in the
   // general league payload, only ever handed out via the dedicated
   // get-link route to an admin who's already allowed to see it.
-  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, ...leagueRest } = league;
+  // customCharges (each with its own payLinkToken, standing in for auth on
+  // its public route) is fetched exclusively through the dedicated
+  // admin-gated /custom-charges endpoint below — never through this
+  // general payload, same reasoning as kitShareToken/payLinkToken above.
+  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, customCharges, ...leagueRest } = league;
   return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote, seasonHistoryCount: (seasonHistory || []).length, kitShareLinkActive: !!kitShareToken };
 }
 function sanitizeOne(f, isAdmin, teamId) {
@@ -3643,6 +3647,123 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/payment-status", 
   res.json({ ok: true });
 });
 
+/* ---------- Custom charges — a one-off amount + reason, not tied to the
+   season's own registration fee. The admin picks a team (or a specific
+   player on it), sets any price and a reason ("Kit fee", "Late fine",
+   whatever), and gets a link the same way the season fee does — this
+   just isn't limited to the one fixed, whole-season amount every team or
+   player already owes. ---------- */
+function customChargeSummary(league, c) {
+  const team = league.teams.find((t) => t.id === c.teamId);
+  const player = c.playerId && team ? team.players.find((p) => p.id === c.playerId) : null;
+  return {
+    id: c.id, teamId: c.teamId, teamName: team ? team.name : "Deleted team",
+    playerId: c.playerId, playerName: player ? player.name : null,
+    reason: c.reason, amountCents: c.amountCents,
+    paid: !!c.paid, paidAt: c.paidAt || null, paymentMethod: c.paymentMethod || null, paymentRef: c.paymentRef || null,
+    createdAt: c.createdAt,
+  };
+}
+router.get("/leagues/:leagueId/custom-charges", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const charges = (league.customCharges || []).slice().sort((a, b) => b.createdAt - a.createdAt).map((c) => customChargeSummary(league, c));
+  res.json(charges);
+});
+router.post("/leagues/:leagueId/custom-charges", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const { teamId, playerId, amountRands, reason } = req.body || {};
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team) return res.status(400).json({ error: "Team not found." });
+  if (playerId && !team.players.some((p) => p.id === playerId)) return res.status(400).json({ error: "Player not found on that team." });
+  const amount = Number(amountRands);
+  if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "Enter a valid amount." });
+  const reasonTrimmed = ((reason || "") + "").trim();
+  if (!reasonTrimmed) return res.status(400).json({ error: "Enter a reason for this payment." });
+  if (!league.customCharges) league.customCharges = [];
+  const charge = {
+    id: logic.uid(), teamId, playerId: playerId || null,
+    amountCents: Math.round(amount * 100), reason: reasonTrimmed.slice(0, 200),
+    payLinkToken: crypto.randomBytes(16).toString("hex"),
+    paid: false, paidAt: null, paymentMethod: null, paymentRef: null,
+    createdAt: Date.now(),
+  };
+  league.customCharges.push(charge);
+  store.saveLeague(league.id, league);
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.json({ ...customChargeSummary(league, charge), url: `${base}/pay-custom/${league.id}/${charge.id}/${charge.payLinkToken}` });
+});
+router.put("/leagues/:leagueId/custom-charges/:chargeId/payment-status", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const charge = (league.customCharges || []).find((c) => c.id === req.params.chargeId);
+  if (!charge) return res.status(404).json({ error: "Charge not found." });
+  const paid = !!req.body.paid;
+  charge.paid = paid;
+  charge.paymentMethod = paid ? "manual" : null;
+  charge.paymentRef = paid ? charge.paymentRef : null;
+  charge.paidAt = paid ? Date.now() : null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+// Only while unpaid — once real money has moved against it, deleting
+// would erase the only record of that payment ever happening.
+router.delete("/leagues/:leagueId/custom-charges/:chargeId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const charge = (league.customCharges || []).find((c) => c.id === req.params.chargeId);
+  if (!charge) return res.status(404).json({ error: "Charge not found." });
+  if (charge.paid) return res.status(400).json({ error: "This has already been paid — it can't be deleted." });
+  league.customCharges = league.customCharges.filter((c) => c.id !== req.params.chargeId);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+// Public read (no login) — the standalone pay page behind a custom
+// charge's own link needs to show it, same as any other pay-link.
+router.get("/leagues/:leagueId/custom-charges/:chargeId/pay-link/:token", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Link not found." });
+  const charge = (league.customCharges || []).find((c) => c.id === req.params.chargeId);
+  if (!charge || charge.payLinkToken !== req.params.token) return res.status(404).json({ error: "This payment link is invalid." });
+  const team = league.teams.find((t) => t.id === charge.teamId);
+  const player = charge.playerId && team ? team.players.find((p) => p.id === charge.playerId) : null;
+  res.json({
+    leagueName: league.name, teamName: team ? team.name : "", teamLogo: team ? (team.logo || "") : "",
+    playerName: player ? player.name : null,
+    reason: charge.reason, amountCents: charge.amountCents,
+    paid: charge.paid, paidAt: charge.paidAt,
+    // Same league-wide context the season-fee pay-link shows — see that
+    // route's comment for why the photo itself isn't embedded here.
+    venueName: league.defaultVenue || "", hasCourtPhoto: !!league.courtPhoto,
+    teamLogos: league.teams.map((t) => ({ name: t.name, logo: t.logo || "" })),
+    totalPlayers: league.teams.reduce((sum, t) => sum + t.players.length, 0),
+    teamCount: league.teams.length,
+  });
+});
+router.get("/leagues/:leagueId/custom-charges/:chargeId/pay-link/:token/checkout", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const charge = (league.customCharges || []).find((c) => c.id === req.params.chargeId);
+  if (!charge || charge.payLinkToken !== req.params.token) return res.status(404).json({ error: "This payment link is invalid." });
+  if (charge.paid) return res.status(400).json({ error: "This is already marked as paid." });
+  const team = league.teams.find((t) => t.id === charge.teamId);
+  const player = charge.playerId && team ? team.players.find((p) => p.id === charge.playerId) : null;
+  const base = `${req.protocol}://${req.get("host")}`;
+  const checkout = payfast.buildCheckout({
+    amountRands: charge.amountCents / 100,
+    itemName: `${league.name} — ${charge.reason}`.slice(0, 100),
+    returnUrl: `${base}/#pay-custom/${league.id}/${charge.id}/${charge.payLinkToken}`,
+    cancelUrl: `${base}/#pay-custom/${league.id}/${charge.id}/${charge.payLinkToken}`,
+    notifyUrl: `${base}/api/payfast/notify`,
+    customStr1: league.id,
+    customStr2: charge.teamId,
+    customStr3: player ? player.id : "",
+    customStr4: charge.id,
+  });
+  res.json(checkout);
+});
+
 // Every not-yet-finalized fixture across every league this account
 // captains where THIS team's own line-up hasn't been submitted yet — the
 // same "surface it on the homepage" treatment /players/dues gets for
@@ -3711,9 +3832,26 @@ router.post("/payfast/notify", express.raw({ type: "application/x-www-form-urlen
     if (!validated) return console.error("PayFast ITN: failed server-to-server validation", fields);
     if (fields.payment_status !== "COMPLETE") return; // PENDING/FAILED etc. — nothing to record yet
     const leagueId = fields.custom_str1, teamId = fields.custom_str2, playerId = fields.custom_str3 || null;
+    const chargeId = fields.custom_str4 || null;
     const league = store.getLeague(leagueId);
-    const team = league && league.teams.find((t) => t.id === teamId);
-    if (!league || !team) return console.error("PayFast ITN: unknown league/team", leagueId, teamId);
+    if (!league) return console.error("PayFast ITN: unknown league", leagueId);
+    if (chargeId) {
+      const charge = (league.customCharges || []).find((c) => c.id === chargeId);
+      if (!charge) return console.error("PayFast ITN: unknown custom charge", chargeId);
+      const paidRands = Number(fields.amount_gross);
+      const expectedRands = charge.amountCents / 100;
+      if (Math.abs(paidRands - expectedRands) > 0.01) {
+        return console.error(`PayFast ITN: amount mismatch for custom charge ${chargeId} — expected ${expectedRands}, got ${paidRands}`);
+      }
+      charge.paid = true;
+      charge.paymentMethod = "payfast";
+      charge.paymentRef = fields.pf_payment_id || null;
+      charge.paidAt = Date.now();
+      store.saveLeague(league.id, league);
+      return;
+    }
+    const team = league.teams.find((t) => t.id === teamId);
+    if (!team) return console.error("PayFast ITN: unknown team", leagueId, teamId);
     const paidRands = Number(fields.amount_gross);
     if (playerId) {
       const player = team.players.find((p) => p.id === playerId);
