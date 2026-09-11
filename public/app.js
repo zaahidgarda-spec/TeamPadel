@@ -4880,16 +4880,23 @@ function selectionForm(f, team, side) {
     if (!findDuplicate()) doubleUpCheckbox.checked = false;
   }
 
-  // One rating chip per seed row, plus a single summary line once every
-  // seed is filled in — both live off `localPairs`/`ratingById`, so they
-  // update on every pick without a round trip, and reflect whatever the
-  // captain actually chose, not just the suggestion above. This is the
-  // check-before-you-save step: it only has anything to say once the whole
-  // line-up is complete, right where the captain is about to hit Submit.
+  // One rating chip per seed row, plus a full re-ordering of the captain's
+  // OWN chosen pairs once every seed is filled in — who partners with whom
+  // is entirely the captain's call; this only ever reorders those same
+  // pairs strongest to weakest, never suggests a different partnership.
+  // Both live off `localPairs`/`ratingById`, updating on every pick with no
+  // round trip. This is the check-before-you-save step: it only has
+  // anything to say once the whole line-up is complete, right where the
+  // captain is about to hit Submit.
   const rowChips = [];
-  const seedRatingNote = document.createElement("p");
-  seedRatingNote.className = "note seed-rating-note";
+  const seedRatingNote = document.createElement("div");
+  seedRatingNote.className = "seed-rating-note";
   seedRatingNote.style.cssText = "display:none;margin:10px 0 0;";
+  function pairLabel(idx) {
+    const nameOf = (id) => { const p = team.players.find((x) => x.id === id); return p ? p.name : "?"; };
+    const [a, b] = localPairs[idx];
+    return `${escapeHtml(nameOf(a))} &amp; ${escapeHtml(nameOf(b))}`;
+  }
   function refreshSeedRatings() {
     if (!ratingById) return;
     const seedRatings = localPairs.map((pair, i) => {
@@ -4907,17 +4914,20 @@ function selectionForm(f, team, side) {
       seedRatingNote.style.display = "none";
       return;
     }
-    let outOfOrder = -1;
-    for (let i = 1; i < seedRatings.length; i++) {
-      if (seedRatings[i] > seedRatings[i - 1]) { outOfOrder = i; break; }
-    }
+    // The captain's own pairs, sorted by their own rating — this is
+    // "optimal seed order" for exactly the partnerships already chosen,
+    // not a different pairing.
+    const order = seedRatings.map((r, i) => i).sort((a, b) => seedRatings[b] - seedRatings[a]);
+    const alreadyOptimal = order.every((seedIdx, rank) => seedIdx === rank);
     seedRatingNote.style.display = "block";
-    if (outOfOrder === -1) {
-      seedRatingNote.classList.remove("seed-rating-warn");
-      seedRatingNote.textContent = "This line-up runs strongest to weakest, Seed 1 to Seed " + seedRatings.length + ".";
+    if (alreadyOptimal) {
+      seedRatingNote.innerHTML = `<p class="note">This line-up runs strongest to weakest, Seed 1 to Seed ${seedRatings.length}.</p>`;
     } else {
-      seedRatingNote.classList.add("seed-rating-warn");
-      seedRatingNote.textContent = `Seed ${outOfOrder + 1} rates higher than Seed ${outOfOrder} — you may want to swap them.`;
+      const rows = order.map((seedIdx, rank) => {
+        const already = seedIdx === rank;
+        return `<li>${pairLabel(seedIdx)}${already ? "" : ` <span class="note">(currently Seed ${seedIdx + 1})</span>`}</li>`;
+      }).join("");
+      seedRatingNote.innerHTML = `<p class="note seed-rating-warn">Suggested order for these pairs:</p><ol class="seed-rating-list">${rows}</ol>`;
     }
   }
 

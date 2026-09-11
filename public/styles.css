@@ -300,7 +300,8 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 /* One per seed row, once both its players are picked — a quiet rating
    readout, not a score to chase. */
 .seed-rating-chip{flex-shrink:0;font-family:var(--font-display);font-size:11px;font-variant-numeric:tabular-nums;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-full);padding:3px 9px;}
-.seed-rating-note.seed-rating-warn{color:var(--clay);font-weight:600;}
+.seed-rating-warn{color:var(--clay);font-weight:600;}
+.seed-rating-list{margin:6px 0 0;padding-left:20px;font-size:13px;line-height:1.7;}
 
 /* Admin > Schedule — one row per week (date/time/venue), same row-card
    language as everywhere else instead of a bare bordered line. */
