@@ -3383,7 +3383,7 @@ function renderRulesCard() {
 
   if (status !== "setup") {
     const resetBtn = document.createElement("button");
-    resetBtn.className = "danger"; resetBtn.textContent = "Reset season";
+    resetBtn.className = "danger"; resetBtn.textContent = "End season";
     resetBtn.onclick = async () => {
       if (!confirm("This clears the schedule, results and knockout stage to start a new season. The finished season itself is archived first, not lost — you'll find it under \"Past seasons\" afterward. Continue?")) return;
       const seasonLabel = prompt("Name this season for the archive (optional):", "");
