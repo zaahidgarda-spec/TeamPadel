@@ -3653,7 +3653,13 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/payment-status", 
    whatever), and gets a link the same way the season fee does — this
    just isn't limited to the one fixed, whole-season amount every team or
    player already owes. ---------- */
-function customChargeSummary(league, c) {
+// `base` is the list route's own req-derived origin — every charge needs
+// its pay link here, not just the one just created, so whoever's copying a
+// link for an older charge from the list gets the real URL instead of
+// "undefined" (payLinkToken itself stays out of this payload either way,
+// same as a player/team's own pay-link token never ships in the general
+// league payload — only ever folded into the URL string here).
+function customChargeSummary(league, c, base) {
   const team = league.teams.find((t) => t.id === c.teamId);
   const player = c.playerId && team ? team.players.find((p) => p.id === c.playerId) : null;
   return {
@@ -3662,12 +3668,14 @@ function customChargeSummary(league, c) {
     reason: c.reason, amountCents: c.amountCents,
     paid: !!c.paid, paidAt: c.paidAt || null, paymentMethod: c.paymentMethod || null, paymentRef: c.paymentRef || null,
     createdAt: c.createdAt,
+    url: base ? `${base}/pay-custom/${league.id}/${c.id}/${c.payLinkToken}` : undefined,
   };
 }
 router.get("/leagues/:leagueId/custom-charges", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
-  const charges = (league.customCharges || []).slice().sort((a, b) => b.createdAt - a.createdAt).map((c) => customChargeSummary(league, c));
+  const base = `${req.protocol}://${req.get("host")}`;
+  const charges = (league.customCharges || []).slice().sort((a, b) => b.createdAt - a.createdAt).map((c) => customChargeSummary(league, c, base));
   res.json(charges);
 });
 router.post("/leagues/:leagueId/custom-charges", requireAdmin, (req, res) => {
@@ -3692,7 +3700,7 @@ router.post("/leagues/:leagueId/custom-charges", requireAdmin, (req, res) => {
   league.customCharges.push(charge);
   store.saveLeague(league.id, league);
   const base = `${req.protocol}://${req.get("host")}`;
-  res.json({ ...customChargeSummary(league, charge), url: `${base}/pay-custom/${league.id}/${charge.id}/${charge.payLinkToken}` });
+  res.json(customChargeSummary(league, charge, base));
 });
 router.put("/leagues/:leagueId/custom-charges/:chargeId/payment-status", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
