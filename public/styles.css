@@ -303,6 +303,40 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .seed-rating-warn{color:var(--clay);font-weight:600;}
 .seed-rating-list{margin:6px 0 0;padding-left:20px;font-size:13px;line-height:1.7;}
 
+/* Custom-charge form — "who's this for" toggle, amount/reason quick-picks,
+   and the pre-submit preview line. */
+.field-group{margin-bottom:16px;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media (max-width:520px){.field-row{grid-template-columns:1fr;}}
+.pill-toggle{display:inline-flex;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-full);padding:3px;gap:2px;}
+.pill-toggle button{border:none;background:transparent;font-family:var(--font-display);font-size:12px;text-transform:uppercase;letter-spacing:.04em;padding:8px 16px;border-radius:var(--radius-full);cursor:pointer;color:var(--text-dim);}
+.pill-toggle button.active{background:var(--accent);color:#fff;font-weight:600;}
+.amount-input-wrap{position:relative;}
+.amount-input-wrap .prefix{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-family:var(--font-display);font-weight:600;color:var(--text-dim);font-size:15px;pointer-events:none;}
+.amount-input-wrap input{padding-left:26px;font-family:var(--font-display);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;width:100%;}
+.amount-presets,.reason-chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.reason-chips{margin-top:0;margin-bottom:8px;}
+.amount-presets button,.reason-chips button{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-full);padding:6px 13px;font-size:12.5px;font-family:var(--font-display);color:var(--text-dim);cursor:pointer;}
+.amount-presets button.active,.reason-chips button.active{background:var(--accent-soft);color:var(--accent);border-color:var(--accent);font-weight:600;}
+.preview-strip{background:var(--panel-2);border:1px dashed var(--line);border-radius:var(--radius-sm);padding:12px 14px;margin:4px 0 16px;font-size:13.5px;color:var(--text);}
+.preview-strip .amt{font-family:var(--font-display);font-weight:700;color:var(--accent);}
+
+/* Custom-charge list rows — an avatar/initial, a copy-link icon, and one or
+   two plain icon actions instead of a row of text buttons. */
+.charge-row{display:flex;align-items:center;gap:12px;padding:13px 4px;border-bottom:1px solid var(--line);}
+.charge-row:last-child{border-bottom:none;}
+.charge-row.charge-paid{opacity:.65;}
+.charge-avatar{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:12px;color:var(--text-dim);flex-shrink:0;}
+.charge-info{flex:1;min-width:0;}
+.charge-info strong{font-size:13.5px;}
+.charge-info .note{margin-top:1px;}
+.charge-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.icon-btn{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-dim);font-size:13px;flex-shrink:0;}
+.icon-btn:hover{background:var(--panel-2);}
+.icon-btn.icon-btn-danger:hover{background:var(--clay-soft);color:var(--clay);border-color:rgba(226,67,47,.35);}
+.charge-list-group-label{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:600;color:var(--text-faint);margin:16px 0 4px;}
+.charge-list-group-label:first-child{margin-top:0;}
+
 /* Admin > Schedule — one row per week (date/time/venue), same row-card
    language as everywhere else instead of a bare bordered line. */
 .schedule-row{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);flex-wrap:wrap;}

@@ -650,30 +650,59 @@
             <div id="pay-received-list"></div>
           </div>
           <div id="pay-subview-custom" style="display:none;">
-            <p class="note" style="margin-bottom:10px;">Charge a team or a specific player any amount, for any reason — a kit fee, a late fine, anything outside the season fee.</p>
-            <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;">
-              <div>
+            <p class="note" style="margin-bottom:16px;">Charge a team or a specific player any amount, for any reason — a kit fee, a late fine, anything outside the season fee.</p>
+
+            <div class="field-group">
+              <label>Who's this for?</label>
+              <div class="pill-toggle" id="pay-custom-who-toggle">
+                <button type="button" class="active" data-who="team">Whole team</button>
+                <button type="button" data-who="player">One player</button>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field-group">
                 <label for="pay-custom-team-select">Team</label>
                 <select id="pay-custom-team-select"></select>
               </div>
-              <div>
+              <div class="field-group" id="pay-custom-player-group" style="display:none;">
                 <label for="pay-custom-player-select">Player</label>
-                <select id="pay-custom-player-select">
-                  <option value="">Whole team</option>
-                </select>
+                <select id="pay-custom-player-select"></select>
               </div>
-              <div>
-                <label for="pay-custom-amount-input">Amount (R)</label>
-                <input type="number" id="pay-custom-amount-input" min="0" step="1" style="max-width:120px;">
-              </div>
-              <div style="flex:1;min-width:180px;">
-                <label for="pay-custom-reason-input">Reason</label>
-                <input type="text" id="pay-custom-reason-input" placeholder="e.g. Kit fee" maxlength="200">
-              </div>
-              <button class="primary" id="pay-custom-create-btn">Create link</button>
             </div>
+
+            <div class="field-group">
+              <label for="pay-custom-amount-input">Amount</label>
+              <div class="amount-input-wrap">
+                <span class="prefix">R</span>
+                <input type="number" id="pay-custom-amount-input" min="0" step="1">
+              </div>
+              <div class="amount-presets" id="pay-custom-amount-presets">
+                <button type="button" data-amount="50">R50</button>
+                <button type="button" data-amount="100">R100</button>
+                <button type="button" data-amount="250">R250</button>
+                <button type="button" class="active" data-amount="">Custom</button>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="pay-custom-reason-input">Reason</label>
+              <div class="reason-chips" id="pay-custom-reason-chips">
+                <button type="button" data-reason="Kit fee">Kit fee</button>
+                <button type="button" data-reason="Late fine">Late fine</button>
+                <button type="button" data-reason="Court fee">Court fee</button>
+                <button type="button" data-reason="Guest fee">Guest fee</button>
+                <button type="button" class="active" data-reason="">Other…</button>
+              </div>
+              <input type="text" id="pay-custom-reason-input" placeholder="Or type your own reason" maxlength="200">
+            </div>
+
+            <div class="preview-strip" id="pay-custom-preview" style="display:none;"></div>
+
             <div class="error" id="pay-custom-error"></div>
-            <div id="pay-custom-list" style="margin-top:16px;"></div>
+            <button class="primary" id="pay-custom-create-btn" style="width:100%;padding:13px;">Create payment link</button>
+
+            <div id="pay-custom-list" style="margin-top:20px;"></div>
           </div>
         </div>
       </section>

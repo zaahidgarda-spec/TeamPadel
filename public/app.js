@@ -2649,7 +2649,13 @@ function renderPay() {
 }
 // Team/player dropdowns for the custom-charge form — the player list is
 // scoped to whichever team is currently selected, so it's rebuilt on every
-// team change rather than filtered client-side from one big list.
+// team change rather than filtered client-side from one big list. Whether
+// the player row shows at all is driven by the "who's this for" toggle,
+// not folded into the player select itself as a "Whole team" option.
+function customChargeWhoMode() {
+  const active = document.querySelector("#pay-custom-who-toggle button.active");
+  return active ? active.dataset.who : "team";
+}
 function renderCustomChargeTeamPlayerSelects() {
   const teamSelect = el("pay-custom-team-select");
   const playerSelect = el("pay-custom-player-select");
@@ -2658,28 +2664,92 @@ function renderCustomChargeTeamPlayerSelects() {
   if (prevTeam && league.teams.some((t) => t.id === prevTeam)) teamSelect.value = prevTeam;
   const fillPlayers = () => {
     const t = teamById(teamSelect.value);
-    playerSelect.innerHTML = '<option value="">Whole team</option>' + (t ? t.players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("") : "");
+    playerSelect.innerHTML = t ? t.players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("") : "";
   };
   fillPlayers();
-  teamSelect.onchange = fillPlayers;
+  teamSelect.onchange = () => { fillPlayers(); updateCustomChargePreview(); };
+  document.querySelectorAll("#pay-custom-who-toggle button").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll("#pay-custom-who-toggle button").forEach((b) => b.classList.toggle("active", b === btn));
+      el("pay-custom-player-group").style.display = btn.dataset.who === "player" ? "block" : "none";
+      updateCustomChargePreview();
+    };
+  });
+  document.querySelectorAll("#pay-custom-amount-presets button").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll("#pay-custom-amount-presets button").forEach((b) => b.classList.toggle("active", b === btn));
+      if (btn.dataset.amount) el("pay-custom-amount-input").value = btn.dataset.amount;
+      else el("pay-custom-amount-input").focus();
+      updateCustomChargePreview();
+    };
+  });
+  document.querySelectorAll("#pay-custom-reason-chips button").forEach((btn) => {
+    btn.onclick = () => {
+      document.querySelectorAll("#pay-custom-reason-chips button").forEach((b) => b.classList.toggle("active", b === btn));
+      if (btn.dataset.reason) el("pay-custom-reason-input").value = btn.dataset.reason;
+      else el("pay-custom-reason-input").focus();
+      updateCustomChargePreview();
+    };
+  });
+  playerSelect.onchange = updateCustomChargePreview;
+  // Typing a value directly (rather than tapping a preset/chip) deselects
+  // whichever preset/chip no longer matches — never leaves a stale one
+  // highlighted next to a value it didn't actually set.
+  el("pay-custom-amount-input").oninput = () => {
+    const val = el("pay-custom-amount-input").value;
+    document.querySelectorAll("#pay-custom-amount-presets button").forEach((b) => b.classList.toggle("active", b.dataset.amount === val && val !== ""));
+    updateCustomChargePreview();
+  };
+  el("pay-custom-reason-input").oninput = () => {
+    const val = el("pay-custom-reason-input").value;
+    document.querySelectorAll("#pay-custom-reason-chips button").forEach((b) => b.classList.toggle("active", b.dataset.reason === val && val !== ""));
+    updateCustomChargePreview();
+  };
+  updateCustomChargePreview();
+}
+// One line, right above the button that commits it — who's being charged,
+// how much, for what — same "check before you save" spirit as the seed
+// rating note above the line-up Submit button.
+function updateCustomChargePreview() {
+  const preview = el("pay-custom-preview");
+  const team = teamById(el("pay-custom-team-select").value);
+  const amount = Number(el("pay-custom-amount-input").value);
+  if (!team || !(amount > 0)) { preview.style.display = "none"; return; }
+  const who = customChargeWhoMode() === "player"
+    ? (team.players.find((p) => p.id === el("pay-custom-player-select").value) || {}).name
+    : team.name;
+  if (!who) { preview.style.display = "none"; return; }
+  const reason = el("pay-custom-reason-input").value.trim();
+  preview.style.display = "block";
+  preview.innerHTML = `This charges <b>${escapeHtml(who)}</b> <span class="amt">${fmtRands(Math.round(amount * 100))}</span>${reason ? ` for &ldquo;${escapeHtml(reason)}&rdquo;` : ""} — a link is created once you confirm.`;
 }
 async function renderCustomChargesList() {
   const listEl = el("pay-custom-list");
   const charges = await api(`/leagues/${currentLeagueId}/custom-charges`).catch(() => []);
   if (!charges.length) { listEl.innerHTML = '<p class="empty">No custom charges yet.</p>'; return; }
-  listEl.innerHTML = charges.map((c) => `
-    <div class="notif-row" data-charge="${c.id}">
-      <div>
+  // Unpaid first (most recent within each group), so what still needs
+  // chasing doesn't get buried once a few charges have piled up.
+  const sorted = charges.slice().sort((a, b) => (a.paid === b.paid ? 0 : a.paid ? 1 : -1));
+  listEl.innerHTML = sorted.map((c) => {
+    const who = c.playerName || c.teamName;
+    const initial = who.charAt(0).toUpperCase();
+    return `
+    <div class="charge-row${c.paid ? " charge-paid" : ""}" data-charge="${c.id}">
+      <div class="charge-avatar">${escapeHtml(initial)}</div>
+      <div class="charge-info">
         <strong>${escapeHtml(c.reason)}</strong>
-        <div class="note">${escapeHtml(c.playerName || c.teamName)}${c.playerName ? " · " + escapeHtml(c.teamName) : ""} · ${fmtRands(c.amountCents)}${c.paid ? ` · Paid · ${paymentMethodLabel(c.paymentMethod)}` : ""}</div>
+        <div class="note">${escapeHtml(who)}${c.playerName ? " · " + escapeHtml(c.teamName) : ""} · ${fmtRands(c.amountCents)}${c.paid ? ` · ${paymentMethodLabel(c.paymentMethod)}` : ""}</div>
       </div>
       <span class="badge ${c.paid ? "done" : "outstanding"}">${c.paid ? "Paid" : "Unpaid"}</span>
-      ${c.paid
-        ? `<button class="link custom-charge-toggle-btn" type="button" data-paid="false">Mark unpaid</button>`
-        : `<button class="link custom-charge-copy-btn" type="button">Copy link</button><button class="link custom-charge-toggle-btn" type="button" data-paid="true">Mark paid</button><button class="link custom-charge-delete-btn" type="button">Delete</button>`}
+      <div class="charge-actions">
+        ${c.paid ? "" : `<button class="icon-btn custom-charge-copy-btn" type="button" title="Copy pay link">&#128279;</button>`}
+        <button class="icon-btn custom-charge-toggle-btn" type="button" data-paid="${c.paid ? "false" : "true"}" title="${c.paid ? "Mark unpaid" : "Mark paid"}">${c.paid ? "&#8634;" : "&#10003;"}</button>
+        ${c.paid ? "" : `<button class="icon-btn icon-btn-danger custom-charge-delete-btn" type="button" title="Delete">&#10005;</button>`}
+      </div>
     </div>
-  `).join("");
-  listEl.querySelectorAll(".notif-row[data-charge]").forEach((row) => {
+  `;
+  }).join("");
+  listEl.querySelectorAll(".charge-row[data-charge]").forEach((row) => {
     const chargeId = row.dataset.charge;
     const copyBtn = row.querySelector(".custom-charge-copy-btn");
     if (copyBtn) {
@@ -2714,12 +2784,15 @@ el("pay-custom-create-btn").onclick = async () => {
   el("pay-custom-error").textContent = "";
   try {
     const teamId = el("pay-custom-team-select").value;
-    const playerId = el("pay-custom-player-select").value || null;
+    const playerId = customChargeWhoMode() === "player" ? (el("pay-custom-player-select").value || null) : null;
     const amountRands = Number(el("pay-custom-amount-input").value);
     const reason = el("pay-custom-reason-input").value;
     await api(`/leagues/${currentLeagueId}/custom-charges`, { method: "POST", body: { teamId, playerId, amountRands, reason } });
     el("pay-custom-amount-input").value = "";
     el("pay-custom-reason-input").value = "";
+    document.querySelectorAll("#pay-custom-amount-presets button").forEach((b) => b.classList.toggle("active", !b.dataset.amount));
+    document.querySelectorAll("#pay-custom-reason-chips button").forEach((b) => b.classList.toggle("active", !b.dataset.reason));
+    updateCustomChargePreview();
     renderCustomChargesList();
   } catch (e) { el("pay-custom-error").textContent = e.message; }
 };
