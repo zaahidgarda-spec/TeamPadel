@@ -4780,11 +4780,15 @@ function selectionReveal(f, team, sel, side) {
   }
   return div;
 }
-// This team's own roster, ranked strongest to weakest by the same rating
+// This team's own roster, grouped into suggested seed PAIRS (a seed is a
+// pairing, not a single name) strongest to weakest, by the same rating
 // engine behind rankings/ratings-preview — collapsed by default (<details>,
 // no extra JS to open/close it) since it's a nudge for whoever's already
 // building the line-up, not something that needs to compete for attention
-// with the actual seed pickers below it.
+// with the actual seed pickers below it. Returns both the rendered element
+// and a promise for the raw per-player ratings, so selectionForm can rate
+// whatever the captain actually picks — not just this suggestion — live as
+// they go, before they submit.
 function seedSuggestionHint(team) {
   const details = document.createElement("details");
   details.className = "seed-hint";
@@ -4796,15 +4800,17 @@ function seedSuggestionHint(team) {
   body.style.marginTop = "8px";
   body.textContent = "Loading…";
   details.appendChild(body);
-  api(`/leagues/${currentLeagueId}/teams/${team.id}/suggested-seeds`).then((data) => {
-    const players = data.players || [];
-    if (!players.length) { body.textContent = "Nothing to suggest yet — no finalized matches for this team."; return; }
+  const ready = api(`/leagues/${currentLeagueId}/teams/${team.id}/suggested-seeds`).then((data) => {
+    const pairs = data.pairs || [];
+    if (!pairs.length) { body.textContent = "Nothing to suggest yet — no finalized matches for this team."; return data; }
     const list = document.createElement("ol");
     list.className = "seed-hint-list";
-    list.innerHTML = players.map((p) => `<li>${escapeHtml(p.playerName)}${p.provisional ? ' <span class="note">(new)</span>' : ""}</li>`).join("");
+    list.innerHTML = pairs.map((p) => `<li>${p.players.map((pl) => escapeHtml(pl.name)).join(" &amp; ")}</li>`).join("")
+      + (data.unpaired ? `<li class="note">${escapeHtml(data.unpaired.name)} — no pair suggested</li>` : "");
     details.replaceChild(list, body);
-  }).catch(() => { body.textContent = "Couldn't load a suggestion right now."; });
-  return details;
+    return data;
+  }).catch(() => { body.textContent = "Couldn't load a suggestion right now."; return null; });
+  return { el: details, ready };
 }
 function selectionForm(f, team, side) {
   const div = document.createElement("div"); div.className = "selection-side";
@@ -4825,8 +4831,20 @@ function selectionForm(f, team, side) {
   // never shown to the opposing captain (canEdit above already gates this
   // whole branch to admin or this team's own captain) and never for a
   // gold-tier league, which already has its own seeding ceremony (see
-  // tieringEnabled) this would just second-guess.
-  if (!league.tieringEnabled) div.appendChild(seedSuggestionHint(team));
+  // tieringEnabled) this would just second-guess. `ratingById` fills in
+  // once the same request resolves, feeding the live per-seed rating below
+  // — whatever the captain actually picks gets rated, not just this
+  // suggestion, since they're free to ignore it entirely.
+  let ratingById = null;
+  if (!league.tieringEnabled) {
+    const hint = seedSuggestionHint(team);
+    div.appendChild(hint.el);
+    hint.ready.then((data) => {
+      if (!data) return;
+      ratingById = new Map(data.players.map((p) => [p.playerId, p.rating]));
+      refreshSeedRatings();
+    });
+  }
   // sel.pairs already holds the right starting point either way — empty
   // arrays if nothing's ever been picked, or whatever was there before an
   // admin unlock (unlocking only flips `submitted`, it never clears pairs)
@@ -4862,6 +4880,47 @@ function selectionForm(f, team, side) {
     if (!findDuplicate()) doubleUpCheckbox.checked = false;
   }
 
+  // One rating chip per seed row, plus a single summary line once every
+  // seed is filled in — both live off `localPairs`/`ratingById`, so they
+  // update on every pick without a round trip, and reflect whatever the
+  // captain actually chose, not just the suggestion above. This is the
+  // check-before-you-save step: it only has anything to say once the whole
+  // line-up is complete, right where the captain is about to hit Submit.
+  const rowChips = [];
+  const seedRatingNote = document.createElement("p");
+  seedRatingNote.className = "note seed-rating-note";
+  seedRatingNote.style.cssText = "display:none;margin:10px 0 0;";
+  function refreshSeedRatings() {
+    if (!ratingById) return;
+    const seedRatings = localPairs.map((pair, i) => {
+      const [a, b] = pair;
+      const chip = rowChips[i];
+      if (a && b && ratingById.has(a) && ratingById.has(b)) {
+        const avg = Math.round((ratingById.get(a) + ratingById.get(b)) / 2);
+        if (chip) { chip.textContent = avg; chip.style.display = "inline-flex"; }
+        return avg;
+      }
+      if (chip) chip.style.display = "none";
+      return null;
+    });
+    if (seedRatings.some((r) => r === null) || seedRatings.length < 2) {
+      seedRatingNote.style.display = "none";
+      return;
+    }
+    let outOfOrder = -1;
+    for (let i = 1; i < seedRatings.length; i++) {
+      if (seedRatings[i] > seedRatings[i - 1]) { outOfOrder = i; break; }
+    }
+    seedRatingNote.style.display = "block";
+    if (outOfOrder === -1) {
+      seedRatingNote.classList.remove("seed-rating-warn");
+      seedRatingNote.textContent = "This line-up runs strongest to weakest, Seed 1 to Seed " + seedRatings.length + ".";
+    } else {
+      seedRatingNote.classList.add("seed-rating-warn");
+      seedRatingNote.textContent = `Seed ${outOfOrder + 1} rates higher than Seed ${outOfOrder} — you may want to swap them.`;
+    }
+  }
+
   // Normally always 4 (a team fixture's regular seed count), but a Super
   // Tie decider round can be 3 (3 pairs vs 3 pairs) or 1 (top pair only) —
   // driven by however many pairs the fixture actually has, not a fixed 4.
@@ -4888,6 +4947,7 @@ function selectionForm(f, team, side) {
         other.innerHTML = optionsFor(slot === 0 ? 1 : 0);
         other.value = otherVal;
         refreshDoubleUpNote();
+        refreshSeedRatings();
       };
       selects.push(select);
       row.appendChild(select);
@@ -4897,10 +4957,18 @@ function selectionForm(f, team, side) {
         row.appendChild(amp);
       }
     });
+    if (!league.tieringEnabled) {
+      const chip = document.createElement("span");
+      chip.className = "seed-rating-chip";
+      chip.style.display = "none";
+      rowChips.push(chip);
+      row.appendChild(chip);
+    }
     div.appendChild(row);
   }
   div.appendChild(doubleUpNote);
   refreshDoubleUpNote();
+  if (!league.tieringEnabled) div.appendChild(seedRatingNote);
 
   // Blind selection means the other captain can't see this until they've
   // also submitted, so there's nothing unfair about editing it right up to

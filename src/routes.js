@@ -4616,17 +4616,20 @@ router.get("/leagues/:leagueId/rankings", (req, res) => {
   res.json({ rankings: logic.leagueRankings(league, ratingsData, identityOf) });
 });
 // A quiet nudge for whoever's actually building the line-up — this team's
-// own roster, ranked strongest to weakest by the same rating engine behind
-// the (still-unreleased) rankings/ratings-preview features, so the captain
-// has something to go on beyond memory when assigning seeds 1-4. Gated to
-// admin or that team's own captain (never the opposing captain, never a
-// guest) — the same reason topScorers/rankings stay off the public UI while
-// RATINGS_ENABLED is off, just enforced server-side here since this one
-// carries a per-team roster rather than a leaguewide leaderboard nobody's
-// meant to see yet. Gold-tier leagues already have their own, deliberate
-// seeding ceremony (see tieringEnabled) — this would just be a second,
-// conflicting opinion on the same decision, so it's withheld there instead
-// of shown alongside it.
+// own roster, ranked strongest to weakest and grouped into suggested seed
+// pairs (a seed IS a pairing, not a single name), by the same rating engine
+// behind the (still-unreleased) rankings/ratings-preview features. Also
+// returns the flat per-player ranking (`players`) so the client can rate
+// whatever the captain actually picks — including combinations the
+// suggestion itself never proposed — live as they fill seeds in, before
+// they submit. Gated to admin or that team's own captain (never the
+// opposing captain, never a guest) — the same reason topScorers/rankings
+// stay off the public UI while RATINGS_ENABLED is off, just enforced
+// server-side here since this one carries a per-team roster rather than a
+// leaguewide leaderboard nobody's meant to see yet. Gold-tier leagues
+// already have their own, deliberate seeding ceremony (see tieringEnabled)
+// — this would just be a second, conflicting opinion on the same decision,
+// so it's withheld there instead of shown alongside it.
 router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
@@ -4645,7 +4648,24 @@ router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCap
     };
   });
   players.sort((a, b) => b.rating - a.rating || b.played - a.played);
-  res.json({ players });
+  // A seed IS a pairing, not a single name — the suggestion has to say who
+  // partners with whom, not just list the roster strongest to weakest.
+  // Pairing the ranked list off in adjacent twos (1st with 2nd, 3rd with
+  // 4th, ...) keeps each pair close in strength while still ordering the
+  // pairs themselves strongest to weakest, seed 1 down. An odd-sized
+  // roster leaves the last player unpaired rather than guessing a partner.
+  const pairs = [];
+  for (let i = 0; i + 1 < players.length; i += 2) {
+    const a = players[i], b = players[i + 1];
+    pairs.push({
+      seed: pairs.length + 1,
+      players: [{ id: a.playerId, name: a.playerName }, { id: b.playerId, name: b.playerName }],
+      rating: Math.round((a.rating + b.rating) / 2),
+    });
+  }
+  const last = players[players.length - 1];
+  const unpaired = players.length % 2 === 1 ? { id: last.playerId, name: last.playerName } : null;
+  res.json({ players, pairs, unpaired });
 });
 // Admin-only preview of what ratings/predictions could look like for this
 // league — the backend runs regardless of whether RATINGS_ENABLED shows
