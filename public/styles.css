@@ -291,6 +291,12 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
 .seed-row-amp{font-family:var(--font-display);color:var(--text-faint);font-size:13px;flex-shrink:0;}
 
+/* Collapsed by default (native <details>) — a nudge above the seed pickers,
+   not a competing headline. */
+.seed-hint{margin-bottom:12px;font-size:12px;}
+.seed-hint summary{cursor:pointer;font-weight:600;color:var(--text-dim);}
+.seed-hint-list{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.7;}
+
 /* Admin > Schedule — one row per week (date/time/venue), same row-card
    language as everywhere else instead of a bare bordered line. */
 .schedule-row{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);flex-wrap:wrap;}

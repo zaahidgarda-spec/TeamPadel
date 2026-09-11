@@ -4615,6 +4615,38 @@ router.get("/leagues/:leagueId/rankings", (req, res) => {
   const { ratingsData, identityOf } = loadGlobalRatings();
   res.json({ rankings: logic.leagueRankings(league, ratingsData, identityOf) });
 });
+// A quiet nudge for whoever's actually building the line-up — this team's
+// own roster, ranked strongest to weakest by the same rating engine behind
+// the (still-unreleased) rankings/ratings-preview features, so the captain
+// has something to go on beyond memory when assigning seeds 1-4. Gated to
+// admin or that team's own captain (never the opposing captain, never a
+// guest) — the same reason topScorers/rankings stay off the public UI while
+// RATINGS_ENABLED is off, just enforced server-side here since this one
+// carries a per-team roster rather than a leaguewide leaderboard nobody's
+// meant to see yet. Gold-tier leagues already have their own, deliberate
+// seeding ceremony (see tieringEnabled) — this would just be a second,
+// conflicting opinion on the same decision, so it's withheld there instead
+// of shown alongside it.
+router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (league.tieringEnabled) return res.status(400).json({ error: "This league seeds by gold tier, not by rating." });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  const players = team.players.map((p) => {
+    const stat = ratingsData.players.get(identityOf(league.id, p.id));
+    return {
+      playerId: p.id,
+      playerName: p.name,
+      rating: stat ? stat.rating : logic.ELO_BASE,
+      played: stat ? stat.played : 0,
+      provisional: !stat || stat.played < logic.ELO_PROVISIONAL_GAMES,
+    };
+  });
+  players.sort((a, b) => b.rating - a.rating || b.played - a.played);
+  res.json({ players });
+});
 // Admin-only preview of what ratings/predictions could look like for this
 // league — the backend runs regardless of whether RATINGS_ENABLED shows
 // any of it to everyone else, so this is a way for an admin to see the

@@ -4780,6 +4780,32 @@ function selectionReveal(f, team, sel, side) {
   }
   return div;
 }
+// This team's own roster, ranked strongest to weakest by the same rating
+// engine behind rankings/ratings-preview — collapsed by default (<details>,
+// no extra JS to open/close it) since it's a nudge for whoever's already
+// building the line-up, not something that needs to compete for attention
+// with the actual seed pickers below it.
+function seedSuggestionHint(team) {
+  const details = document.createElement("details");
+  details.className = "seed-hint";
+  const summary = document.createElement("summary");
+  summary.textContent = "Suggested seed order";
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "note";
+  body.style.marginTop = "8px";
+  body.textContent = "Loading…";
+  details.appendChild(body);
+  api(`/leagues/${currentLeagueId}/teams/${team.id}/suggested-seeds`).then((data) => {
+    const players = data.players || [];
+    if (!players.length) { body.textContent = "Nothing to suggest yet — no finalized matches for this team."; return; }
+    const list = document.createElement("ol");
+    list.className = "seed-hint-list";
+    list.innerHTML = players.map((p) => `<li>${escapeHtml(p.playerName)}${p.provisional ? ' <span class="note">(new)</span>' : ""}</li>`).join("");
+    details.replaceChild(list, body);
+  }).catch(() => { body.textContent = "Couldn't load a suggestion right now."; });
+  return details;
+}
 function selectionForm(f, team, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   const selField = side === "A" ? "selectionA" : "selectionB";
@@ -4795,6 +4821,12 @@ function selectionForm(f, team, side) {
     div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Add at least 2 players to this team's roster in the Admin tab first." }));
     return div;
   }
+  // A quiet, collapsed-by-default nudge for whoever's actually picking —
+  // never shown to the opposing captain (canEdit above already gates this
+  // whole branch to admin or this team's own captain) and never for a
+  // gold-tier league, which already has its own seeding ceremony (see
+  // tieringEnabled) this would just second-guess.
+  if (!league.tieringEnabled) div.appendChild(seedSuggestionHint(team));
   // sel.pairs already holds the right starting point either way — empty
   // arrays if nothing's ever been picked, or whatever was there before an
   // admin unlock (unlocking only flips `submitted`, it never clears pairs)
