@@ -3218,18 +3218,14 @@ async function renderAdminHallOfFame() {
         try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { winnerTeamId: winnerSelect.value } }); await refreshLeague(); renderAll(); }
         catch (err) { alert(err.message); winnerSelect.value = e.winnerTeamId; }
       };
-      const runnerUpInput = document.createElement("input");
-      runnerUpInput.type = "text"; runnerUpInput.value = e.runnerUp || ""; runnerUpInput.className = "inline-edit";
-      runnerUpInput.placeholder = "Runner-up (optional)";
-      runnerUpInput.style.cssText = "min-width:180px;";
-      runnerUpInput.onkeydown = (ev) => { if (ev.key === "Enter") runnerUpInput.blur(); };
-      runnerUpInput.onblur = async () => {
-        const val = runnerUpInput.value.trim();
-        if (val === (e.runnerUp || "")) return;
-        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { runnerUp: val } }); await refreshLeague(); renderAll(); }
-        catch (err) { alert(err.message); runnerUpInput.value = e.runnerUp || ""; }
+      const runnerUpSelect = document.createElement("select");
+      runnerUpSelect.innerHTML = '<option value="">No runner-up</option>' + hofTeamSelectHtml(teamsBySeason[s], e.runnerUpTeamId);
+      runnerUpSelect.style.cssText = "min-width:180px;";
+      runnerUpSelect.onchange = async () => {
+        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { runnerUpTeamId: runnerUpSelect.value } }); await refreshLeague(); renderAll(); }
+        catch (err) { alert(err.message); runnerUpSelect.value = e.runnerUpTeamId || ""; }
       };
-      left.appendChild(labelInput); left.appendChild(winnerSelect); left.appendChild(runnerUpInput);
+      left.appendChild(labelInput); left.appendChild(winnerSelect); left.appendChild(runnerUpSelect);
       const del = document.createElement("button");
       del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove entry";
       del.onclick = async () => {
@@ -3244,21 +3240,29 @@ async function renderAdminHallOfFame() {
 }
 el("new-hof-season").addEventListener("change", async () => {
   const season = el("new-hof-season").value;
-  const select = el("new-hof-winner-select");
-  if (!season) { select.innerHTML = '<option value="">Enter a season first…</option>'; return; }
-  select.innerHTML = '<option value="">Loading…</option>';
+  const winnerSelect = el("new-hof-winner-select");
+  const runnerUpSelect = el("new-hof-runner-up-select");
+  if (!season) {
+    winnerSelect.innerHTML = '<option value="">Enter a season first…</option>';
+    runnerUpSelect.innerHTML = '<option value="">No runner-up</option>';
+    return;
+  }
+  winnerSelect.innerHTML = '<option value="">Loading…</option>';
   const teams = await teamsForHofSeason(Number(season));
-  select.innerHTML = teams.length ? hofTeamSelectHtml(teams, null) : '<option value="">No teams found for that season</option>';
+  winnerSelect.innerHTML = teams.length ? hofTeamSelectHtml(teams, null) : '<option value="">No teams found for that season</option>';
+  runnerUpSelect.innerHTML = '<option value="">No runner-up</option>' + hofTeamSelectHtml(teams, null);
 });
 el("add-hof-btn").onclick = async () => {
   const season = el("new-hof-season").value;
   const label = el("new-hof-label").value.trim();
   const winnerTeamId = el("new-hof-winner-select").value;
-  const runnerUp = el("new-hof-runner-up").value.trim();
+  const runnerUpTeamId = el("new-hof-runner-up-select").value;
   if (!season || !label || !winnerTeamId) return alert("Enter a season, title, and pick a winning team.");
   try {
-    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winnerTeamId, runnerUp } });
-    el("new-hof-season").value = ""; el("new-hof-label").value = ""; el("new-hof-winner-select").innerHTML = '<option value="">Enter a season first…</option>'; el("new-hof-runner-up").value = "";
+    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winnerTeamId, runnerUpTeamId } });
+    el("new-hof-season").value = ""; el("new-hof-label").value = "";
+    el("new-hof-winner-select").innerHTML = '<option value="">Enter a season first…</option>';
+    el("new-hof-runner-up-select").innerHTML = '<option value="">No runner-up</option>';
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };
@@ -8289,7 +8293,7 @@ async function openArchivedSeason(seasonId) {
     html += `<div class="hof-row-list" style="margin-bottom:16px;">${hof.map((h) => `
       <div class="notif-row">
         <div><strong>${escapeHtml(h.label)}</strong></div>
-        <span class="note">${hofWinnerLinkHtml(h)}${h.runnerUp ? ` <span style="display:block;">Runner-up: ${escapeHtml(h.runnerUp)}</span>` : ""}</span>
+        <span class="note">${hofWinnerLinkHtml(h)}${h.runnerUp ? ` <span style="display:block;">Runner-up: ${hofRunnerUpLinkHtml(h)}</span>` : ""}</span>
       </div>`).join("")}</div>`;
   }
   html += `${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
@@ -9008,20 +9012,25 @@ async function renderStats() {
 // pattern as playerLinkHtml/bindPlayerLinks, just one step removed (team,
 // then from there into any one of its players).
 function hofWinnerLinkHtml(e) {
-  return `<button type="button" class="link hof-winner-link" data-entry="${e.id}">${escapeHtml(e.winner)}</button>`;
+  return `<button type="button" class="link hof-winner-link" data-entry="${e.id}" data-side="winner">${escapeHtml(e.winner)}</button>`;
+}
+function hofRunnerUpLinkHtml(e) {
+  if (!e.runnerUp) return "";
+  return `<button type="button" class="link hof-winner-link" data-entry="${e.id}" data-side="runnerUp">${escapeHtml(e.runnerUp)}</button>`;
 }
 function bindHofWinnerLinks(root, entries) {
   root.querySelectorAll(".hof-winner-link").forEach((btn) => {
     btn.onclick = () => {
       const entry = entries.find((e) => e.id === btn.dataset.entry);
-      if (entry) openHofTeamModal(entry);
+      if (entry) openHofTeamModal(entry, btn.dataset.side);
     };
   });
 }
-function openHofTeamModal(entry) {
-  el("hof-team-modal-title").textContent = entry.winner;
-  el("hof-team-modal-sub").textContent = `${entry.label} — Season ${entry.season}`;
-  const roster = entry.winnerRoster || [];
+function openHofTeamModal(entry, side) {
+  const name = side === "runnerUp" ? entry.runnerUp : entry.winner;
+  const roster = (side === "runnerUp" ? entry.runnerUpRoster : entry.winnerRoster) || [];
+  el("hof-team-modal-title").textContent = name;
+  el("hof-team-modal-sub").textContent = `${side === "runnerUp" ? "Runner-up — " : ""}${entry.label} — Season ${entry.season}`;
   el("hof-team-modal-roster").innerHTML = roster.length
     ? `<div class="combine-claim-list">${roster.map((p) => `<div class="notif-row">${playerLinkHtml(p)}</div>`).join("")}</div>`
     : '<p class="empty">No roster recorded for this team.</p>';
@@ -9045,7 +9054,7 @@ function renderHallOfFame() {
       ${entries.filter((e) => e.season === s).map((e) => `
         <div class="hof-row">
           <span>${escapeHtml(e.label)}</span>
-          <span class="pts">${hofWinnerLinkHtml(e)}${e.runnerUp ? `<span class="note" style="display:block;font-weight:400;">Runner-up: ${escapeHtml(e.runnerUp)}</span>` : ""}</span>
+          <span class="pts">${hofWinnerLinkHtml(e)}${e.runnerUp ? `<span class="note" style="display:block;font-weight:400;">Runner-up: ${hofRunnerUpLinkHtml(e)}</span>` : ""}</span>
         </div>`).join("")}
     </div>`).join("");
   bindHofWinnerLinks(c, entries);
