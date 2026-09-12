@@ -1849,29 +1849,40 @@ function renderTrophyRoom(cards) {
     .sort((a, b) => b.round - a.round);
   if (championships.length === 0 && awards.length === 0) { section.style.display = "none"; return; }
   section.style.display = "block";
-  let html = "";
+  // A lit "cabinet" card — a shelf per trophy type, each item's own glow —
+  // rather than a plain grid, so a real haul of trophies reads as a
+  // display case worth showing off instead of a settings-style list.
+  let html = '<div class="cab-card"><div class="cab-spotlight"></div>';
   if (championships.length) {
-    html += `<div class="trophy-grid">${championships.map((h) => `
-      <div class="trophy-card">
-        <div class="trophy-icon">🏆</div>
-        <div class="trophy-title">${escapeHtml(h.label)}</div>
-        <div class="trophy-meta-team">${avatarHtml({ name: h.teamName, logo: h.teamLogo })}<span>${escapeHtml(h.teamName)}</span></div>
-        <div class="trophy-meta">Season ${h.season} &middot; ${escapeHtml(h.leagueName)}</div>
-      </div>`).join("")}</div>`;
+    html += `<div class="cab-shelf">
+      <div class="cab-shelf-label">🏆 Championships</div>
+      <div class="cab-items">${championships.map((h) => `
+        <div class="cab-item">
+          <div class="cab-trophy-wrap">
+            <div class="cab-trophy">🏆</div>
+            <span class="cab-crest">${avatarHtml({ name: h.teamName, logo: h.teamLogo })}</span>
+          </div>
+          <div class="t">${escapeHtml(h.label)}</div>
+          <div class="s">Season ${h.season} &middot; ${escapeHtml(h.leagueName)}</div>
+        </div>`).join("")}</div>
+    </div>`;
   }
   if (awards.length) {
-    html += `<div class="potw-trophy-list"${championships.length ? ' style="margin-top:12px;"' : ""}>${awards.map((w) => {
-      const partner = w.playerAId === w.playerId ? w.playerBName : w.playerAName;
-      return `
-      <div class="potw-row">
-        <div class="potw-crown">👑</div>
-        <div class="potw-main">
-          <div class="potw-title">Round ${w.round} &middot; with ${escapeHtml(partner)}</div>
-          <div class="potw-meta">${escapeHtml(w.teamName)} &middot; ${escapeHtml(w.leagueName)}</div>
-        </div>
-      </div>`;
-    }).join("")}</div>`;
+    if (championships.length) html += '<div class="cab-glass-line"></div>';
+    html += `<div class="cab-shelf">
+      <div class="cab-shelf-label">👑 Pair of the Week</div>
+      <div class="cab-items">${awards.map((w) => {
+        const partner = w.playerAId === w.playerId ? w.playerBName : w.playerAName;
+        return `
+        <div class="cab-item">
+          <div class="cab-trophy-wrap"><div class="cab-trophy">👑</div></div>
+          <div class="t">Round ${w.round}</div>
+          <div class="s">with ${escapeHtml(partner)} &middot; ${escapeHtml(w.leagueName)}</div>
+        </div>`;
+      }).join("")}</div>
+    </div>`;
   }
+  html += "</div>";
   container.innerHTML = html;
 }
 // A signed-in player's own "Tonight's matches" — everything happening
