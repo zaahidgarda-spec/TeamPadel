@@ -2903,7 +2903,7 @@ function renderAdmin() {
   el("rosters-card").style.display = isPairs ? "none" : "block";
   el("court-settings-row").style.display = isPairs ? "none" : "flex";
   el("add-round-card").style.display = status !== "setup" && !isPairs ? "block" : "none";
-  if (status !== "setup" && !isPairs) renderNewRoundMatches();
+  if (status !== "setup" && !isPairs) { renderNewRoundMatches(); renderAdminExtraRounds(); }
 
   const list = el("admin-team-list");
   list.innerHTML = "";
@@ -3803,6 +3803,38 @@ function renderAdminFixtures() {
 
 /* ---------- Add a round (extra fixtures outside the round robin) ---------- */
 
+// Every round with a roundMeta entry — an admin-added extra round (Add a
+// round above), or an original round-robin round the admin explicitly
+// labeled via the table-count toggle elsewhere. Either way, the delete
+// button here is the undo for "I added one too many" — the server refuses
+// it once anything in that round has a finalized result, so this can't
+// silently take a real score down with it.
+function renderAdminExtraRounds() {
+  const list = el("admin-extra-rounds-list");
+  const roundMeta = league.roundMeta || {};
+  const rounds = Object.keys(roundMeta).map(Number).sort((a, b) => a - b);
+  if (rounds.length === 0) { list.innerHTML = ""; return; }
+  list.innerHTML = "";
+  rounds.forEach((r) => {
+    const meta = roundMeta[r];
+    const fixtureCount = league.fixtures.filter((f) => f.round === r && f.stage === "regular").length;
+    const li = document.createElement("li");
+    const left = document.createElement("span");
+    left.style.cssText = "flex:1;";
+    left.innerHTML = `<strong>${escapeHtml(meta.label || "Round " + r)}</strong> <span class="note">Round ${r} &middot; ${fixtureCount} fixture${fixtureCount === 1 ? "" : "s"} &middot; ${meta.type === "table" ? "Counts toward table" : "Knockout"}</span>`;
+    const del = document.createElement("button");
+    del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Delete this round";
+    del.onclick = async () => {
+      if (!confirm(`Delete "${meta.label || "Round " + r}" and its ${fixtureCount} fixture${fixtureCount === 1 ? "" : "s"}? This can't be undone.`)) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/rounds/${r}`, { method: "DELETE" });
+        await refreshLeague(); initViewingKey(); renderAll();
+      } catch (err) { alert(err.message); }
+    };
+    li.appendChild(left); li.appendChild(del);
+    list.appendChild(li);
+  });
+}
 let draftRoundMatches = [{ teamA: "", teamB: "" }];
 function renderNewRoundMatches() {
   const c = el("new-round-matches");

@@ -4057,6 +4057,32 @@ router.post("/leagues/:leagueId/rounds", requireAdmin, (req, res) => {
   store.saveLeague(league.id, league);
   res.json({ ok: true, round: nextRound });
 });
+// Undoes the route above — for when one too many extra rounds got added.
+// Only ever a round that shows up in roundMeta (an admin-added one, or an
+// original round-robin round the admin explicitly labeled via the
+// table-count toggle) and only while nothing in it has been played yet —
+// a round with even one finalized result is left alone, so a stray extra
+// round can't silently take a real score down with it.
+router.delete("/leagues/:leagueId/rounds/:round", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const round = Number(req.params.round);
+  if (!Number.isInteger(round) || round < 1) return res.status(400).json({ error: "Invalid round." });
+  const roundFixtures = league.fixtures.filter((f) => f.round === round && f.stage === "regular");
+  if (roundFixtures.length === 0) return res.status(404).json({ error: "That round doesn't exist." });
+  if (!league.roundMeta || !league.roundMeta[round]) return res.status(400).json({ error: "Only a round added here can be deleted this way." });
+  if (roundFixtures.some((f) => f.finalized)) return res.status(400).json({ error: "This round has finalized results — unlock and clear those first if you really want to delete it." });
+  league.fixtures = league.fixtures.filter((f) => !(f.round === round && f.stage === "regular"));
+  delete league.roundMeta[round];
+  // Round-keyed data left behind would otherwise resurface if a future
+  // round happens to land on this same number again.
+  if (league.courtSchedule) delete league.courtSchedule[round];
+  if (league.potwVotes) delete league.potwVotes[round];
+  if (league.potwNotified) delete league.potwNotified[round];
+  if (league.schedule) delete league.schedule["r" + round];
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
 
 // Unlike the route above (which only ever sets type for a brand-new
 // admin-added round), this retroactively flips whether an EXISTING round —
