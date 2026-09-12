@@ -849,6 +849,22 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    team-roster popup's own title, wherever a team name shows. */
 .hof-winner-link-crest{display:inline-flex;align-items:center;gap:6px;}
 .hof-winner-link-crest .avatar,.hof-winner-link-crest .avatar-fb{width:20px;height:20px;font-size:10px;}
+
+/* Past Seasons — a champion's own gold-lit plaque (same glow language as
+   the Trophy Room card), runner-up quieter underneath, instead of both
+   buried as equal-weight text in a plain settings-style row. */
+.hof-podium-card{border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;}
+.hof-podium-card + .hof-podium-card{margin-top:12px;}
+.hof-podium-champ{position:relative;padding:14px 16px;background:rgba(234,179,8,.12);overflow:hidden;}
+.hof-podium-champ::before{content:"";position:absolute;top:-18px;right:-18px;width:70px;height:70px;background:rgba(234,179,8,.16);border-radius:50%;}
+.hof-podium-runner{padding:11px 16px;border-top:1px solid var(--line);}
+.hof-podium-medal{position:relative;font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#B8860B;margin-bottom:6px;}
+.hof-podium-medal.silver{color:var(--text-faint);}
+.hof-podium-champ .hof-winner-link-crest{position:relative;gap:10px;font-size:16px;font-weight:700;color:var(--text);text-decoration:none;}
+.hof-podium-champ .avatar,.hof-podium-champ .avatar-fb{width:38px;height:38px;font-size:14px;}
+.hof-podium-runner .hof-winner-link-crest{gap:8px;font-size:13px;font-weight:600;color:var(--text-dim);text-decoration:none;}
+.hof-podium-runner .avatar,.hof-podium-runner .avatar-fb{width:26px;height:26px;font-size:10px;opacity:.85;}
+.hof-podium-champ .hof-winner-link-crest:hover,.hof-podium-runner .hof-winner-link-crest:hover{color:var(--accent);}
 #hof-team-modal-title{display:flex;align-items:center;gap:10px;}
 #hof-team-modal-title .avatar,#hof-team-modal-title .avatar-fb{width:32px;height:32px;font-size:14px;}
 .potw-trophy-list{display:flex;flex-direction:column;gap:8px;}

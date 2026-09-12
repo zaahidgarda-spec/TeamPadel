@@ -8411,10 +8411,17 @@ async function openArchivedSeason(seasonId) {
   const hof = snapshot.hallOfFame || [];
   let html = `<div class="card" style="margin-top:16px;"><h2 class="section-title">Season ${snapshot.season} — ${escapeHtml(snapshot.label)}</h2>`;
   if (hof.length) {
-    html += `<div class="hof-row-list" style="margin-bottom:16px;">${hof.map((h) => `
-      <div class="notif-row">
-        <div><strong>${escapeHtml(h.label)}</strong></div>
-        <span class="note">${hofWinnerLinkHtml(h)}${h.runnerUp ? ` <span style="display:block;">Runner-up: ${hofRunnerUpLinkHtml(h)}</span>` : ""}</span>
+    html += `<div style="margin-bottom:16px;">${hof.map((h) => `
+      <div class="hof-podium-card">
+        <div class="hof-podium-champ">
+          <div class="hof-podium-medal">🏆 ${escapeHtml(h.label)}</div>
+          ${hofWinnerLinkHtml(h)}
+        </div>
+        ${h.runnerUp ? `
+        <div class="hof-podium-runner">
+          <div class="hof-podium-medal silver">🥈 Runner-up</div>
+          ${hofRunnerUpLinkHtml(h)}
+        </div>` : ""}
       </div>`).join("")}</div>`;
   }
   html += `${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
@@ -9196,9 +9203,16 @@ function renderHallOfFame() {
     <div class="card" style="margin-bottom:16px;">
       <h2 class="section-title">Season ${s}</h2>
       ${entries.filter((e) => e.season === s).map((e) => `
-        <div class="hof-row">
-          <span>${escapeHtml(e.label)}</span>
-          <span class="pts">${hofWinnerLinkHtml(e)}${e.runnerUp ? `<span class="note" style="display:block;font-weight:400;">Runner-up: ${hofRunnerUpLinkHtml(e)}</span>` : ""}</span>
+        <div class="hof-podium-card">
+          <div class="hof-podium-champ">
+            <div class="hof-podium-medal">🏆 ${escapeHtml(e.label)}</div>
+            ${hofWinnerLinkHtml(e)}
+          </div>
+          ${e.runnerUp ? `
+          <div class="hof-podium-runner">
+            <div class="hof-podium-medal silver">🥈 Runner-up</div>
+            ${hofRunnerUpLinkHtml(e)}
+          </div>` : ""}
         </div>`).join("")}
     </div>`).join("");
   bindHofWinnerLinks(c, entries);
