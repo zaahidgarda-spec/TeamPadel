@@ -1634,9 +1634,19 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // claim still counts for rating purposes, it just gets no card here.
     if (hiddenLeagueIds.has(claim.leagueId)) return true;
     const rounds = [...new Set(league.fixtures.map((f) => f.round))];
+    // `round` wasn't on the winner object itself (potwTallyForRound is
+    // scoped to one round already, so it never needed to say which) —
+    // tagged on here since the Trophy Room shows awards from every league
+    // at once, where that context is the whole point.
     const awards = rounds
-      .flatMap((r) => logic.potwTallyForRound(league, r).winners)
+      .flatMap((r) => logic.potwTallyForRound(league, r).winners.map((w) => ({ ...w, round: r })))
       .filter((w) => w.playerAId === claim.playerId || w.playerBId === claim.playerId);
+    // Exact roster match against each Hall of Fame winner (see POST
+    // /hall-of-fame) — this player id was actually on the team when it won,
+    // same check the single-league player-history route uses.
+    const championships = (league.hallOfFame || [])
+      .filter((e) => (e.winnerRoster || []).some((p) => p.id === claim.playerId))
+      .map((e) => ({ season: e.season, label: e.label, teamName: e.winner }));
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     cards.push({
       leagueId: league.id, leagueName: league.name,
@@ -1645,6 +1655,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
       results: logic.playerMatchHistory(league, claim.playerId, ratingsData),
       awards,
+      championships,
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,

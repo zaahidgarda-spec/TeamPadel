@@ -1752,6 +1752,7 @@ async function renderAccountProfile() {
   renderAccountNextMatch(cards);
   renderAccountLeaguesList(cards);
   await renderAccountStats(cards);
+  renderTrophyRoom(cards);
   // Claiming (or unclaiming) a record can change which leagues count as
   // "yours", so this needs to stay in step with every renderAccountProfile
   // call, not just the one at login — folded in here rather than making
@@ -1817,6 +1818,45 @@ async function renderAccountStats(cards) {
     ${ratingTile}
     <div class="stat-tile"><div class="stat-num">${totalAwards ? totalAwards + "×" : "—"}</div><div class="stat-lbl">🏆 Pair of the Week</div></div>
   `;
+}
+// Every trophy this account's ever claimed a record for, across every
+// league at once — League Champions (an exact roster match against Hall
+// of Fame, see /players/profile) and Player of the Week wins, in one
+// place instead of scattered across each league's own Stats/Hall of Fame
+// pages. Hidden entirely (not just empty) when there's nothing here yet,
+// same as Line-ups due — an empty trophy cabinet isn't worth a section.
+function renderTrophyRoom(cards) {
+  const section = el("account-trophy-section");
+  const container = el("account-trophy-room");
+  const championships = cards.flatMap((c) => c.championships.map((h) => ({ ...h, leagueName: c.leagueName })))
+    .sort((a, b) => b.season - a.season);
+  const awards = cards.flatMap((c) => c.awards.map((w) => ({ ...w, leagueName: c.leagueName, playerId: c.playerId })))
+    .sort((a, b) => b.round - a.round);
+  if (championships.length === 0 && awards.length === 0) { section.style.display = "none"; return; }
+  section.style.display = "block";
+  let html = "";
+  if (championships.length) {
+    html += `<div class="trophy-grid">${championships.map((h) => `
+      <div class="trophy-card">
+        <div class="trophy-icon">🏆</div>
+        <div class="trophy-title">${escapeHtml(h.label)}</div>
+        <div class="trophy-meta">Season ${h.season} &middot; ${escapeHtml(h.teamName)}<br>${escapeHtml(h.leagueName)}</div>
+      </div>`).join("")}</div>`;
+  }
+  if (awards.length) {
+    html += `<div class="potw-trophy-list"${championships.length ? ' style="margin-top:12px;"' : ""}>${awards.map((w) => {
+      const partner = w.playerAId === w.playerId ? w.playerBName : w.playerAName;
+      return `
+      <div class="potw-row">
+        <div class="potw-crown">👑</div>
+        <div class="potw-main">
+          <div class="potw-title">Round ${w.round} &middot; with ${escapeHtml(partner)}</div>
+          <div class="potw-meta">${escapeHtml(w.teamName)} &middot; ${escapeHtml(w.leagueName)}</div>
+        </div>
+      </div>`;
+    }).join("")}</div>`;
+  }
+  container.innerHTML = html;
 }
 // A signed-in player's own "Tonight's matches" — everything happening
 // across the leagues they're actually in, not the site-wide carousel

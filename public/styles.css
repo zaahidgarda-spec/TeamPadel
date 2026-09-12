@@ -834,6 +834,21 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-card-list{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:2px 16px;}
 .pd-card-list .empty{border:none;padding:14px 0;}
 
+/* Trophy Room — League Champions cards + Player of the Week rows, on a
+   signed-in player's own profile. */
+.trophy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
+.trophy-card{background:var(--panel);border:1px solid rgba(184,134,11,.35);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;}
+.trophy-card::before{content:"";position:absolute;top:-18px;right:-18px;width:56px;height:56px;background:rgba(234,179,8,.14);border-radius:50%;}
+.trophy-card .trophy-icon{font-size:22px;position:relative;}
+.trophy-card .trophy-title{font-family:var(--font-display);font-weight:700;font-size:13.5px;margin:6px 0 2px;position:relative;}
+.trophy-card .trophy-meta{font-size:11.5px;color:var(--text-dim);position:relative;line-height:1.5;}
+.potw-trophy-list{display:flex;flex-direction:column;gap:8px;}
+.potw-row{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 13px;box-shadow:var(--shadow-sm);}
+.potw-crown{width:30px;height:30px;border-radius:50%;background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.35);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+.potw-main{flex:1;min-width:0;}
+.potw-title{font-size:13px;font-weight:600;}
+.potw-meta{font-size:11px;color:var(--text-dim);margin-top:1px;}
+
 .pd-utility{margin-top:6px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;}
 .pd-utility-link{background:transparent;border:none;color:var(--text-faint);font-size:12px;font-weight:600;cursor:pointer;padding:0;}
 .pd-utility-link:hover{color:var(--text-dim);}
