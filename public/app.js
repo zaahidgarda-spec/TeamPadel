@@ -8913,7 +8913,21 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
-  el("player-modal-tags").innerHTML = `<span class="p-tag team">${escapeHtml(data.teamName)}</span>`
+  // One tag per league won, not per tab open — a title belongs to the
+  // person, so it shows here regardless of which of their leagues you
+  // happen to be looking at (see allChampionships, aggregated server-side
+  // across every league this player is claimed in).
+  const championsByLeague = {};
+  (data.allChampionships || []).forEach((t) => {
+    if (!championsByLeague[t.leagueName]) championsByLeague[t.leagueName] = 0;
+    championsByLeague[t.leagueName]++;
+  });
+  const trophyTags = Object.keys(championsByLeague).map((leagueName) => {
+    const count = championsByLeague[leagueName];
+    return `<span class="p-tag trophy">🏆 ${escapeHtml(leagueName)} Champion${count > 1 ? ` &times;${count}` : ""}</span>`;
+  }).join("");
+  el("player-modal-tags").innerHTML = trophyTags
+    + `<span class="p-tag team">${escapeHtml(data.teamName)}</span>`
     + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "");
   const editBadge = el("player-modal-photo-edit");
   const photoInput = el("player-modal-photo-input");

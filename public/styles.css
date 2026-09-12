@@ -1177,6 +1177,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-tag{font-family:var(--font-display);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:4px 10px;border-radius:var(--radius-full);}
 .p-tag.team{background:rgba(127,168,255,.14);border:1px solid rgba(96,150,255,.35);color:#8FB4FF;}
 .p-tag.crown{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.35);color:#F0D98C;}
+.p-tag.trophy{background:rgba(234,179,8,.2);border:1px solid rgba(234,179,8,.55);color:#F7E39A;box-shadow:0 0 12px rgba(234,179,8,.25);}
 .p-content-pad{padding:0 20px;}
 .p-content-pad .tabs-sub{margin:14px 0 0;}
 .p-stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);}

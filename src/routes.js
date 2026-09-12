@@ -4872,10 +4872,17 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // Exact match against the winning team's own frozen roster (see
   // POST /hall-of-fame) — this player id was actually on that team when it
   // won, not just a name that happens to appear in the winner text.
-  const hallOfFameTitles = (league.hallOfFame || [])
-    .filter((e) => (e.winnerRoster || []).some((p) => p.id === player.id))
-    .sort((a, b) => b.season - a.season)
-    .map((e) => ({ season: e.season, label: e.label, teamName: e.winner }));
+  const hallOfFameTitlesFor = (aLeague, aPlayerId) => (aLeague.hallOfFame || [])
+    .filter((e) => (e.winnerRoster || []).some((p) => p.id === aPlayerId))
+    .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, leagueId: aLeague.id, leagueName: aLeague.name }));
+  const hallOfFameTitles = hallOfFameTitlesFor(league, player.id).sort((a, b) => b.season - a.season);
+  // A championship belongs to the person, not to whichever tab happens to
+  // be open — a claimed player's hero shows every title across every
+  // league they're claimed in, not just this one, so it doesn't look like
+  // they've never won anything the moment someone switches tabs. Starts
+  // with this league's own titles; the loop below (already walking every
+  // other claimed league for the tabs) adds the rest as it goes.
+  let allChampionships = hallOfFameTitles.slice();
   // If this player record has been claimed (see the player-accounts
   // feature), surface which other leagues that same real person plays
   // in — so a captain/admin browsing one league's roster can see this
@@ -4896,11 +4903,13 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
           const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
           if (!otherLeague || !otherTeam || !otherPlayer) return null;
+          allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id));
           return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name, playerId: otherPlayer.id, playerName: otherPlayer.name };
         })
         .filter(Boolean);
     }
   }
+  allChampionships.sort((a, b) => b.season - a.season);
   const isAdmin = isAdminSession(req, league.id);
   const u = resolveLeagueSession(req, league.id);
   const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
@@ -4922,6 +4931,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     rows,
     potwWins,
     hallOfFameTitles,
+    allChampionships,
     otherLeagues,
     claimed: !!player.claimedByUserId,
     canEditPhoto: isAdmin || isCaptain || isOwnProfile,
