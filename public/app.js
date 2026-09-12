@@ -3206,7 +3206,18 @@ function renderAdminHallOfFame() {
         try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { winner: val } }); await refreshLeague(); renderAll(); }
         catch (err) { alert(err.message); winnerInput.value = e.winner; }
       };
-      left.appendChild(labelInput); left.appendChild(winnerInput);
+      const runnerUpInput = document.createElement("input");
+      runnerUpInput.type = "text"; runnerUpInput.value = e.runnerUp || ""; runnerUpInput.className = "inline-edit";
+      runnerUpInput.placeholder = "Runner-up (optional)";
+      runnerUpInput.style.cssText = "min-width:180px;";
+      runnerUpInput.onkeydown = (ev) => { if (ev.key === "Enter") runnerUpInput.blur(); };
+      runnerUpInput.onblur = async () => {
+        const val = runnerUpInput.value.trim();
+        if (val === (e.runnerUp || "")) return;
+        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { runnerUp: val } }); await refreshLeague(); renderAll(); }
+        catch (err) { alert(err.message); runnerUpInput.value = e.runnerUp || ""; }
+      };
+      left.appendChild(labelInput); left.appendChild(winnerInput); left.appendChild(runnerUpInput);
       const del = document.createElement("button");
       del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove entry";
       del.onclick = async () => {
@@ -3223,10 +3234,11 @@ el("add-hof-btn").onclick = async () => {
   const season = el("new-hof-season").value;
   const label = el("new-hof-label").value.trim();
   const winner = el("new-hof-winner").value.trim();
+  const runnerUp = el("new-hof-runner-up").value.trim();
   if (!season || !label || !winner) return alert("Enter a season, title, and winner.");
   try {
-    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winner } });
-    el("new-hof-season").value = ""; el("new-hof-label").value = ""; el("new-hof-winner").value = "";
+    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winner, runnerUp } });
+    el("new-hof-season").value = ""; el("new-hof-label").value = ""; el("new-hof-winner").value = ""; el("new-hof-runner-up").value = "";
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };
@@ -8195,6 +8207,55 @@ function archivedKnockoutEditSection(seasonId, snapshot) {
   });
   return wrap;
 }
+// A past season's playoff outcome, for anyone — no per-set/per-rubber
+// scores, just who finished where. "semis_final" resolves to one champion;
+// "position" has no single decider (see /rounds/:round for how those
+// pairings are generated — 1st vs 2nd, 3rd vs 4th, ...), so every pairing's
+// result becomes one final-position slot instead.
+function archivedPlayoffSummaryHtml(snapshot) {
+  const playoffs = snapshot.playoffs;
+  if (!playoffs) return "";
+  const teamName = (id) => { const t = snapshot.teams.find((x) => x.id === id); return t ? t.name : "?"; };
+  if (playoffs.format === "semis_final") {
+    const fin = playoffs.final;
+    if (!fin || !fin.teamA || !fin.teamB || !fin.finalized) return "";
+    const winner = matchWinnerClient(fin);
+    if (!winner) return "";
+    const champId = winner === "A" ? fin.teamA : fin.teamB;
+    const runnerId = winner === "A" ? fin.teamB : fin.teamA;
+    const semiLines = (playoffs.semis || []).filter((s) => s && s.teamA && s.teamB && s.finalized && matchWinnerClient(s))
+      .map((s) => {
+        const w = matchWinnerClient(s);
+        return `${escapeHtml(teamName(w === "A" ? s.teamA : s.teamB))} beat ${escapeHtml(teamName(w === "A" ? s.teamB : s.teamA))}`;
+      }).join(" &middot; ");
+    return `
+      <div class="card" style="margin-top:16px;">
+        <h2 class="section-title">Playoffs</h2>
+        <div class="stat-row"><span>&#127942; Champion</span><span><strong>${escapeHtml(teamName(champId))}</strong></span></div>
+        <div class="stat-row"><span>Runner-up</span><span>${escapeHtml(teamName(runnerId))}</span></div>
+        ${semiLines ? `<p class="note" style="margin-top:8px;">${semiLines}</p>` : ""}
+      </div>
+    `;
+  }
+  if (playoffs.format === "position") {
+    const placements = [];
+    (playoffs.matches || []).forEach((m) => {
+      if (!m || !m.teamA || !m.teamB || !m.finalized) { placements.push(null, null); return; }
+      const w = matchWinnerClient(m);
+      if (!w) { placements.push(null, null); return; }
+      placements.push(w === "A" ? m.teamA : m.teamB, w === "A" ? m.teamB : m.teamA);
+    });
+    if (!placements.some(Boolean)) return "";
+    const rows = placements.map((id, i) => id ? `<li><strong>${i + 1}.</strong> ${escapeHtml(teamName(id))}</li>` : "").filter(Boolean).join("");
+    return `
+      <div class="card" style="margin-top:16px;">
+        <h2 class="section-title">Playoffs &mdash; final positions</h2>
+        <ol class="plain-numbered">${rows}</ol>
+      </div>
+    `;
+  }
+  return "";
+}
 async function openArchivedSeason(seasonId) {
   const detail = el("season-history-detail");
   detail.dataset.loaded = seasonId;
@@ -8208,18 +8269,15 @@ async function openArchivedSeason(seasonId) {
     html += `<div class="hof-row-list" style="margin-bottom:16px;">${hof.map((h) => `
       <div class="notif-row">
         <div><strong>${escapeHtml(h.label)}</strong></div>
-        <span class="note">${escapeHtml(h.winner)}</span>
+        <span class="note">${escapeHtml(h.winner)}${h.runnerUp ? ` <span style="display:block;">Runner-up: ${escapeHtml(h.runnerUp)}</span>` : ""}</span>
       </div>`).join("")}</div>`;
   }
   html += `${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
-  // Match-level results (the knockout bracket's scores, and every regular-
-  // season score) stay admin-only — a past season's standings table is the
-  // one thing meant to be public here; individual results are for the
-  // admin to review/correct, not for a general viewer to see.
-  if (myRole === "admin" && snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
-    const [s0, s1] = snapshot.playoffs.semis, fin = snapshot.playoffs.final;
-    html += `<div class="card" style="margin-top:16px;"><h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin, snapshot.teams, snapshot.schedule, snapshot.defaultVenue)}</div>`;
-  }
+  // The final table and the playoff outcome (winner shown, no scores) are
+  // the two things anyone looking at a past season should see. Match-level
+  // results — every individual score, editable — stay admin-only, further
+  // down: that's a correction tool, not part of what a season "was".
+  html += archivedPlayoffSummaryHtml(snapshot);
   detail.innerHTML = html;
   bindPlayerLinks(detail);
   if (myRole === "admin") {
@@ -8924,35 +8982,24 @@ async function renderStats() {
 
 /* ---------- Hall of Fame ---------- */
 
-// A season's final table sits right alongside its Champions/MVP/etc
-// entries here — pulled in from that season's archive (see season-history)
-// when one exists, so a visitor doesn't have to separately find Past
-// Seasons to see how a season actually finished. A hallOfFame entry
-// predating the season-archive feature (or a season nobody archived)
-// just shows its awards with no table, same as before.
-async function renderHallOfFame() {
+// Just the record — winner (and runner-up, when one's set) for each
+// season's Champions/MVP/etc entries. The full final table for a season
+// lives on Past Seasons, not duplicated here.
+function renderHallOfFame() {
   const c = el("hof-container");
   if (!c) return;
   const entries = league.hallOfFame || [];
   if (entries.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No past champions recorded yet.</p></div>'; return; }
   const seasons = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
-  const history = await api(`/leagues/${currentLeagueId}/season-history`).catch(() => []);
-  const tablesBySeason = {};
-  await Promise.all(seasons.map(async (s) => {
-    const summary = history.find((h) => h.season === s);
-    if (!summary) return;
-    const detail = await api(`/leagues/${currentLeagueId}/season-history/${summary.id}`).catch(() => null);
-    if (detail) tablesBySeason[s] = { standings: detail.standings, isPairs: detail.format === "pairs" };
-  }));
-  c.innerHTML = seasons.map((s) => {
-    const table = tablesBySeason[s];
-    return `
+  c.innerHTML = seasons.map((s) => `
     <div class="card" style="margin-bottom:16px;">
       <h2 class="section-title">Season ${s}</h2>
-      ${entries.filter((e) => e.season === s).map((e) => `<div class="hof-row"><span>${escapeHtml(e.label)}</span><span class="pts">${escapeHtml(e.winner)}</span></div>`).join("")}
-      ${table ? `<div style="margin-top:14px;">${standingsRowsHtml(table.standings, table.isPairs)}</div>` : ""}
-    </div>`;
-  }).join("");
+      ${entries.filter((e) => e.season === s).map((e) => `
+        <div class="hof-row">
+          <span>${escapeHtml(e.label)}</span>
+          <span class="pts">${escapeHtml(e.winner)}${e.runnerUp ? `<span class="note" style="display:block;font-weight:400;">Runner-up: ${escapeHtml(e.runnerUp)}</span>` : ""}</span>
+        </div>`).join("")}
+    </div>`).join("");
 }
 
 /* ---------- Awards ---------- */

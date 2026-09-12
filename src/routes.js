@@ -2354,11 +2354,12 @@ router.post("/leagues/:leagueId/hall-of-fame", requireAdmin, (req, res) => {
   const season = Number(req.body.season);
   const label = (req.body.label || "").trim();
   const winner = (req.body.winner || "").trim();
+  const runnerUp = (req.body.runnerUp || "").trim();
   if (!Number.isInteger(season) || season < 1) return res.status(400).json({ error: "Enter a valid season number." });
   if (!label) return res.status(400).json({ error: "Title is required." });
   if (!winner) return res.status(400).json({ error: "Winner is required." });
   if (!league.hallOfFame) league.hallOfFame = [];
-  const entry = { id: logic.uid(), season, label, winner };
+  const entry = { id: logic.uid(), season, label, winner, runnerUp: runnerUp || null };
   league.hallOfFame.push(entry);
   store.saveLeague(league.id, league);
   res.json({ id: entry.id });
@@ -2383,6 +2384,8 @@ router.put("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, res) 
     if (!winner) return res.status(400).json({ error: "Winner is required." });
     entry.winner = winner;
   }
+  // Optional — blank clears it, same as leaving it out of the add form.
+  if (req.body.runnerUp !== undefined) entry.runnerUp = req.body.runnerUp.trim() || null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
