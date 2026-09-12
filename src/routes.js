@@ -4599,17 +4599,31 @@ router.get("/leagues/:leagueId/audit-log", requireAdmin, (req, res) => {
   res.json({ entries });
 });
 
+// True once a generated playoffs bracket has nothing real riding on it yet
+// (no line-up submitted anywhere in it) — the only state it's ever safe to
+// silently overwrite, e.g. re-seeding after a tie that got missed (or was
+// only resolved after the fact) is fixed up.
+function playoffsUntouched(playoffs) {
+  if (!playoffs) return true;
+  const matches = playoffs.format === "position" ? (playoffs.matches || []) : [playoffs.final, ...(playoffs.semis || [])];
+  return matches.every((m) => !m || (!m.selectionA.submitted && !m.selectionB.submitted));
+}
 router.post("/leagues/:leagueId/knockout/generate", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!["semis_final", "position"].includes(league.playoffFormat)) return res.status(400).json({ error: "This league wasn't set up with playoffs." });
+  if (!playoffsUntouched(league.playoffs)) {
+    return res.status(400).json({ error: "A line-up has already been submitted against the existing playoffs — this can't be regenerated from here anymore." });
+  }
   const allDone = league.fixtures.length > 0 && league.fixtures.every((f) => f.finalized);
   if (!allDone) return res.status(400).json({ error: "Every regular-season fixture must be finalized first." });
   // The standings order below is what seeds every pairing — a genuine
-  // points-and-diff tie for 1st has to be resolved by a real Super Tie
-  // first, or "1st" only exists because logic.computeStandings' own
-  // alphabetical fallback broke the tie, not because anyone actually won it.
+  // points tie anywhere that leaves it ambiguous who plays whom (1st, or a
+  // final-spot pairing boundary further down — see logic.detectSuperTie)
+  // has to be resolved by a real Super Tie first, or that order only
+  // exists because logic.computeStandings' own diff/alphabetical fallback
+  // broke the tie, not because anyone actually won it.
   if (!league.superTie && logic.detectSuperTie(league)) {
-    return res.status(400).json({ error: "There's a points tie for 1st place — set up a Super Tie to decide it before generating playoffs." });
+    return res.status(400).json({ error: "There's a points tie that needs a Super Tie decider before playoffs can be generated." });
   }
   const standings = logic.computeStandings(league);
   if (league.playoffFormat === "semis_final") {

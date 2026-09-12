@@ -7938,10 +7938,20 @@ function computeStandingsClient() {
     return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, setsWon, setsLost, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
+  // Promotes the winner to the front of its OWN tied group's slice of the
+  // table — a super tie isn't always for 1st (see detectSuperTieClient),
+  // so this must never just unshift to the very top of the whole array.
   const stWinner = superTieWinnerClient();
-  if (stWinner) {
-    const idx = rows.findIndex((r) => r.id === stWinner);
-    if (idx > 0) rows.unshift(rows.splice(idx, 1)[0]);
+  if (stWinner && league.superTie) {
+    const groupIds = new Set(league.superTie.teamIds);
+    const indices = rows.reduce((acc, r, i) => { if (groupIds.has(r.id)) acc.push(i); return acc; }, []);
+    if (indices.length > 1) {
+      const start = indices[0], end = indices[indices.length - 1];
+      const group = rows.slice(start, end + 1);
+      const winnerIdx = group.findIndex((r) => r.id === stWinner);
+      if (winnerIdx > 0) group.unshift(group.splice(winnerIdx, 1)[0]);
+      rows.splice(start, group.length, ...group);
+    }
   }
   return rows;
 }
@@ -7963,9 +7973,23 @@ function detectSuperTieClient() {
   });
   if (rows.length < 2) return null;
   const topPoints = Math.max(...rows.map((r) => r.points));
-  const tied = rows.filter((r) => r.points === topPoints);
-  if (tied.length < 2) return null;
-  return { type: tied.length === 2 ? "3way" : "1way", teamIds: tied.map((r) => r.id) };
+  const topTied = rows.filter((r) => r.points === topPoints);
+  if (topTied.length >= 2) return { type: topTied.length === 2 ? "3way" : "1way", teamIds: topTied.map((r) => r.id) };
+  // A tie further down only matters for "position" format's final-spot
+  // pairings (1v2, 3v4, ...), and only when it straddles one of those
+  // pairing boundaries — see logic.js's detectSuperTie for the full
+  // reasoning, kept in sync by hand here.
+  if (league.playoffFormat === "position") {
+    rows.sort((a, b) => b.points - a.points);
+    for (let i = 1; i + 1 < rows.length; i += 2) {
+      if (rows[i].points === rows[i + 1].points) {
+        const boundaryPoints = rows[i].points;
+        const tied = rows.filter((r) => r.points === boundaryPoints);
+        return { type: tied.length === 2 ? "3way" : "1way", teamIds: tied.map((r) => r.id) };
+      }
+    }
+  }
+  return null;
 }
 function superTieWinnerClient() {
   const st = league.superTie;
@@ -8022,20 +8046,33 @@ function renderTable() {
     bindPlayerLinks(c);
   }
   const koCard = el("knockout-card");
-  // A 1st-place tie only still matters before playoffs exist — it's what
-  // decides the standings order Generate Playoffs seeds from. Once real
-  // playoffs are generated (captains may already have submitted real
-  // line-ups against that pairing), re-detecting the same tie every time
-  // the table refreshes must never hide the bracket they're actually
-  // playing — that decision is already made for this season.
-  const detectedSt = league.playoffs ? null : detectSuperTieClient();
-  const stPending = !league.playoffs && league.superTie && !stWinnerId;
+  // A tie only still matters while the standings order it affects hasn't
+  // actually been acted on yet — once any generated playoff match has a
+  // real line-up submitted against it, re-detecting the same tie every
+  // time the table refreshes must never hide the bracket someone's
+  // actually playing. But a bracket that's been generated and NOTHING has
+  // been submitted against yet (e.g. it was built off a tie that went
+  // undetected) is still safe to flag and let the admin regenerate once
+  // the tie's properly resolved — nothing real gets lost.
+  const playoffsUntouched = !league.playoffs || (
+    league.playoffs.format === "position"
+      ? (league.playoffs.matches || []).every((m) => !m || (!m.selectionA.submitted && !m.selectionB.submitted))
+      : [league.playoffs.final, ...(league.playoffs.semis || [])].every((m) => !m || (!m.selectionA.submitted && !m.selectionB.submitted))
+  );
+  const detectedSt = playoffsUntouched ? detectSuperTieClient() : null;
+  const stPending = playoffsUntouched && league.superTie && !stWinnerId;
   if (detectedSt) {
     koCard.style.display = "block";
     const teamNames = detectedSt.teamIds.map((id) => (teamById(id) || {}).name || "?");
+    // Rank range straight off the table already on screen — whichever
+    // spot(s) this particular tie is blocking, not assumed to always be 1st.
+    const rankIndices = detectedSt.teamIds.map((id) => rows.findIndex((r) => r.id === id)).filter((i) => i >= 0).sort((a, b) => a - b);
+    const spotLabel = rankIndices.length
+      ? (rankIndices[0] === rankIndices[rankIndices.length - 1] ? ordinal(rankIndices[0] + 1) : `${ordinal(rankIndices[0] + 1)}–${ordinal(rankIndices[rankIndices.length - 1] + 1)}`)
+      : "1st";
     const desc = detectedSt.type === "3way"
-      ? `${teamNames.join(" and ")} are tied on points for 1st. A Super Tie decides it — 3 pairs vs 3 pairs, most rubbers won takes the title.`
-      : `${teamNames.join(", ")} are tied on points for 1st. A Super Tie decides it — each team's top pair plays a round-robin; the winner takes 1st outright, and any remaining tie among the rest still falls back to points difference.`;
+      ? `${teamNames.join(" and ")} are tied on points for ${spotLabel}. A Super Tie decides it — 3 pairs vs 3 pairs, most rubbers won takes that spot.`
+      : `${teamNames.join(", ")} are tied on points for ${spotLabel}. A Super Tie decides it — each team's top pair plays a round-robin; the winner takes that spot outright, and any remaining tie among the rest still falls back to points difference.`;
     koCard.innerHTML = `<h2 class="section-title">Super Tie needed</h2><p class="note">${escapeHtml(desc)}</p>` +
       (myRole === "admin" ? `<div class="row" style="margin-top:12px;"><button class="primary" id="gen-st-btn">Set up Super Tie</button></div>` : "");
     if (myRole === "admin") el("gen-st-btn").onclick = async () => {
@@ -8070,16 +8107,44 @@ function renderTable() {
       html += matchCardHtml(positionMatchLabel(i), m.teamA, m.teamB, m);
     });
     html += `</div>`;
-    if (myRole === "admin") html += `<div class="row" style="margin-top:14px;"><button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
+    if (myRole === "admin") {
+      html += `<div class="row" style="margin-top:14px;">`;
+      // Nothing's been submitted against this bracket yet, so it's still
+      // safe to throw it away and re-seed from the table — the escape
+      // hatch for a tie that got missed (or was resolved after the fact)
+      // and left an incorrectly-paired bracket sitting here untouched.
+      if (playoffsUntouched) html += `<button class="secondary" id="regen-ko-btn">Regenerate from table</button>`;
+      html += `<button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
+    }
     koCard.innerHTML = html;
-    if (myRole === "admin") el("gen-playoffs-poster-btn").onclick = () => openPosterModal("playoffs");
+    if (myRole === "admin") {
+      el("gen-playoffs-poster-btn").onclick = () => openPosterModal("playoffs");
+      const regenBtn = el("regen-ko-btn");
+      if (regenBtn) regenBtn.onclick = async () => {
+        if (!confirm("Re-seed the final spot playoffs from the current table? This replaces the existing (untouched) pairings.")) return;
+        try { await api(`/leagues/${currentLeagueId}/knockout/generate`, { method: "POST" }); await refreshLeague(); initViewingKey(); renderAll(); }
+        catch (e) { alert(e.message); }
+      };
+    }
   } else if (league.playoffs) {
     koCard.style.display = "block";
     const [s0, s1] = league.playoffs.semis, fin = league.playoffs.final;
     let html = `<h2 class="section-title">Knockout stage</h2>${knockoutBracketSvg(s0, s1, fin)}`;
-    if (myRole === "admin") html += `<div class="row" style="margin-top:14px;"><button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
+    if (myRole === "admin") {
+      html += `<div class="row" style="margin-top:14px;">`;
+      if (playoffsUntouched) html += `<button class="secondary" id="regen-ko-btn">Regenerate from table</button>`;
+      html += `<button class="secondary" id="gen-playoffs-poster-btn">Generate poster</button></div>`;
+    }
     koCard.innerHTML = html;
-    if (myRole === "admin") el("gen-playoffs-poster-btn").onclick = () => openPosterModal("playoffs");
+    if (myRole === "admin") {
+      el("gen-playoffs-poster-btn").onclick = () => openPosterModal("playoffs");
+      const regenBtn = el("regen-ko-btn");
+      if (regenBtn) regenBtn.onclick = async () => {
+        if (!confirm("Re-seed the knockout stage from the current table? This replaces the existing (untouched) pairings.")) return;
+        try { await api(`/leagues/${currentLeagueId}/knockout/generate`, { method: "POST" }); await refreshLeague(); initViewingKey(); renderAll(); }
+        catch (e) { alert(e.message); }
+      };
+    }
   } else { koCard.style.display = "none"; }
 }
 // The same .rank-row markup renderTable() uses, pulled out so the season-

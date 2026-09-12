@@ -249,13 +249,23 @@ function computeStandings(league) {
   // difference for team leagues), then name as a last-resort stable order.
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
   // A resolved Super Tie only ever promotes its winner to the very top of
-  // its own tied group — everyone else in that group keeps the order the
-  // sort above already gave them (points-difference), per the "1 way super
-  // tie: wins 1st, then points difference" rule.
+  // its own tied group (wherever that group sits in the table — 1st isn't
+  // the only spot a tie can need deciding, see detectSuperTie) — everyone
+  // else in that group keeps the order the sort above already gave them
+  // (points-difference), per the "1 way super tie: wins that spot, then
+  // points difference" rule. The group's own slice of the table is found
+  // by team id, not assumed to start at index 0.
   const stWinner = superTieWinner(league);
-  if (stWinner) {
-    const idx = rows.findIndex((r) => r.id === stWinner);
-    if (idx > 0) rows.unshift(rows.splice(idx, 1)[0]);
+  if (stWinner && league.superTie) {
+    const groupIds = new Set(league.superTie.teamIds);
+    const indices = rows.reduce((acc, r, i) => { if (groupIds.has(r.id)) acc.push(i); return acc; }, []);
+    if (indices.length > 1) {
+      const start = indices[0], end = indices[indices.length - 1];
+      const group = rows.slice(start, end + 1);
+      const winnerIdx = group.findIndex((r) => r.id === stWinner);
+      if (winnerIdx > 0) group.unshift(group.splice(winnerIdx, 1)[0]);
+      rows.splice(start, group.length, ...group);
+    }
   }
   return rows;
 }
@@ -264,11 +274,23 @@ function computeStandings(league) {
 // decider is played: 2 teams tied plays a "3-way" super tie (3 pairs vs 3
 // pairs, one fixture, best rubber-count wins); 3+ teams tied plays a
 // "1-way" super tie (a mini round-robin of just their top pairs — the
-// winner of that group takes 1st outright, any further tie among the rest
-// still falls back to points difference). Only meaningful once every
+// winner of that group takes that spot outright, any further tie among the
+// rest still falls back to points difference). Only meaningful once every
 // regular fixture is finalized, for team-format leagues (a Vibora pair IS
 // the team, so "top pair" doesn't apply), and only while no decider has
 // been set up yet for this season.
+//
+// A tie for 1st always needs resolving, whatever the playoff format — it's
+// either the outright table winner (no playoffs) or decides who gets the
+// easier semi-final draw (semis+final), so it's checked unconditionally.
+// A tie further down the table only actually needs a decider for
+// "position" format's final-spot playoffs, and only when it straddles one
+// of those pairing boundaries (1v2, 3v4, 5v6, ...) — e.g. a tie for 2nd
+// between the team that would play 1st and the team that would play 3rd,
+// which leaves it genuinely ambiguous who plays whom. A tie fully INSIDE
+// one pairing (both tied teams already facing each other regardless of
+// which is "technically" ahead) doesn't need a separate decider — that
+// pairing's own match settles it.
 function detectSuperTie(league) {
   if (league.format === "pairs") return null;
   if (!league.fixtures.length || league.superTie) return null;
@@ -276,9 +298,18 @@ function detectSuperTie(league) {
   const rows = computeStandings(league);
   if (rows.length < 2) return null;
   const topPoints = rows[0].points;
-  const tied = rows.filter((r) => r.points === topPoints);
-  if (tied.length < 2) return null;
-  return { type: tied.length === 2 ? "3way" : "1way", teamIds: tied.map((r) => r.id) };
+  const topTied = rows.filter((r) => r.points === topPoints);
+  if (topTied.length >= 2) return { type: topTied.length === 2 ? "3way" : "1way", teamIds: topTied.map((r) => r.id) };
+  if (league.playoffFormat === "position") {
+    for (let i = 1; i + 1 < rows.length; i += 2) {
+      if (rows[i].points === rows[i + 1].points) {
+        const boundaryPoints = rows[i].points;
+        const tied = rows.filter((r) => r.points === boundaryPoints);
+        return { type: tied.length === 2 ? "3way" : "1way", teamIds: tied.map((r) => r.id) };
+      }
+    }
+  }
+  return null;
 }
 
 // Once every fixture in the generated Super Tie round(s) is finalized, the
