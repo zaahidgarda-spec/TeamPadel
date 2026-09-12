@@ -2151,13 +2151,13 @@ function tabDefs() {
   // UI, not the prediction teaser this league-scoped tab is).
   defs.push({ key: "predictions", label: "Predictions" });
   defs.push({ key: "table", label: "Table" });
-  if ((league.seasonHistoryCount || 0) > 0) defs.push({ key: "season-history", label: "Past seasons" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
   defs.push({ key: "stats", label: "Stats" });
-  if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
   defs.push({ key: "roster", label: isPairs ? "Pairs" : "Team roster" });
   defs.push({ key: "news", label: "News room" });
+  if ((league.seasonHistoryCount || 0) > 0) defs.push({ key: "season-history", label: "Past seasons" });
+  if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
   if (myRole === "captain") {
     const unread = myNotifications.filter((n) => !n.read).length;
     defs.push({ key: "notifications", label: unread ? `Notifications (${unread})` : "Notifications" });
