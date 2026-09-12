@@ -1596,7 +1596,12 @@ el("account-search-input").addEventListener("input", () => {
   clearTimeout(accountSearchTimer);
   const q = el("account-search-input").value.trim();
   if (!q) { el("account-search-results").innerHTML = ""; return; }
-  accountSearchTimer = setTimeout(() => runAccountSearch(q), 300);
+  // Immediate feedback the moment typing pauses, not just once the network
+  // round trip resolves — on a slow mobile connection that round trip alone
+  // can take longer than this whole debounce, and with nothing on screen in
+  // between it reads as the search having done nothing yet.
+  el("account-search-results").innerHTML = '<p class="empty">Searching…</p>';
+  accountSearchTimer = setTimeout(() => runAccountSearch(q), 200);
 });
 // A real card — avatar, name, team/league — instead of a bare text row,
 // shared by both search surfaces (claim-search here, and the read-only
@@ -1610,8 +1615,14 @@ function playerSearchRowHtml(r, actionHtml) {
     ${actionHtml}
   </div>`;
 }
+// Bumped on every call so a slower, now-stale request (the previous
+// keystroke's search, still in flight on a slow connection) can't land
+// after a newer one and flash outdated results over the current query.
+let accountSearchGen = 0;
 async function runAccountSearch(q) {
+  const gen = ++accountSearchGen;
   const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
+  if (gen !== accountSearchGen) return;
   const c = el("account-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   // Already claimed isn't a dead end — the real owner of that name can
@@ -1649,10 +1660,14 @@ el("player-search-input").addEventListener("input", () => {
   clearTimeout(playerSearchTimer);
   const q = el("player-search-input").value.trim();
   if (!q) { el("player-search-results").innerHTML = ""; return; }
-  playerSearchTimer = setTimeout(() => runPlayerSearch(q), 300);
+  el("player-search-results").innerHTML = '<p class="empty">Searching…</p>';
+  playerSearchTimer = setTimeout(() => runPlayerSearch(q), 200);
 });
+let playerSearchGen = 0;
 async function runPlayerSearch(q) {
+  const gen = ++playerSearchGen;
   const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
+  if (gen !== playerSearchGen) return;
   const c = el("player-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   c.innerHTML = results.map((r) => playerSearchRowHtml(r, '<button class="secondary view-player-btn" type="button">View profile</button>')).join("");

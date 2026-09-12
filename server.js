@@ -94,7 +94,15 @@ const sessionStore = createSessionStore();
 if (!sessionStore) {
   console.log("UPSTASH_REDIS_REST_URL/TOKEN not set — sessions are in-memory (fine locally, not for production).");
 }
+// Scoped to /api — static assets, index.html, and the pay-link preview
+// routes never read or write req.session, so mounting this globally was
+// forcing every one of those requests through a Redis round-trip (the
+// Upstash-backed store below does a real network call just to load the
+// session) for no reason. On a high-latency mobile connection that extra
+// round trip on every asset request is what made the whole app — not just
+// the API — feel slow.
 app.use(
+  "/api",
   session({
     store: sessionStore || undefined, // undefined lets express-session fall back to MemoryStore
     secret: SESSION_SECRET,
