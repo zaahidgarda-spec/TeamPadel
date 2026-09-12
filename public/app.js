@@ -3171,12 +3171,27 @@ el("add-group-btn").onclick = async () => {
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };
-function renderAdminHallOfFame() {
+// Teams for a given season — that season's own archived roster once it's
+// been ended, or the live league if it's still in progress (see
+// seasonTeamSource server-side, which this mirrors). Fetched fresh per
+// season rather than assumed to be `league.teams`, since an ended season's
+// roster can differ from whatever the league looks like today.
+async function teamsForHofSeason(season) {
+  if (!season) return [];
+  const data = await api(`/leagues/${currentLeagueId}/hall-of-fame/teams-for-season/${season}`).catch(() => ({ teams: [] }));
+  return data.teams || [];
+}
+function hofTeamSelectHtml(teams, selectedId) {
+  return teams.map((t) => `<option value="${t.id}" ${t.id === selectedId ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("");
+}
+async function renderAdminHallOfFame() {
   const list = el("admin-hof-list");
   const entries = league.hallOfFame || [];
   if (entries.length === 0) { list.innerHTML = '<li class="empty" style="border:none;justify-content:center;">No entries yet — add one below.</li>'; return; }
   list.innerHTML = "";
   const seasons = [...new Set(entries.map((e) => e.season))].sort((a, b) => b - a);
+  const teamsBySeason = {};
+  await Promise.all(seasons.map(async (s) => { teamsBySeason[s] = await teamsForHofSeason(s); }));
   seasons.forEach((s) => {
     const header = document.createElement("li");
     header.className = "plain-list-header";
@@ -3196,15 +3211,12 @@ function renderAdminHallOfFame() {
         try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { label: val } }); await refreshLeague(); renderAll(); }
         catch (err) { alert(err.message); labelInput.value = e.label; }
       };
-      const winnerInput = document.createElement("input");
-      winnerInput.type = "text"; winnerInput.value = e.winner; winnerInput.className = "inline-edit";
-      winnerInput.style.cssText = "min-width:200px;font-weight:600;";
-      winnerInput.onkeydown = (ev) => { if (ev.key === "Enter") winnerInput.blur(); };
-      winnerInput.onblur = async () => {
-        const val = winnerInput.value.trim();
-        if (!val || val === e.winner) { winnerInput.value = e.winner; return; }
-        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { winner: val } }); await refreshLeague(); renderAll(); }
-        catch (err) { alert(err.message); winnerInput.value = e.winner; }
+      const winnerSelect = document.createElement("select");
+      winnerSelect.innerHTML = hofTeamSelectHtml(teamsBySeason[s], e.winnerTeamId);
+      winnerSelect.style.cssText = "min-width:180px;font-weight:600;";
+      winnerSelect.onchange = async () => {
+        try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { winnerTeamId: winnerSelect.value } }); await refreshLeague(); renderAll(); }
+        catch (err) { alert(err.message); winnerSelect.value = e.winnerTeamId; }
       };
       const runnerUpInput = document.createElement("input");
       runnerUpInput.type = "text"; runnerUpInput.value = e.runnerUp || ""; runnerUpInput.className = "inline-edit";
@@ -3217,7 +3229,7 @@ function renderAdminHallOfFame() {
         try { await api(`/leagues/${currentLeagueId}/hall-of-fame/${e.id}`, { method: "PUT", body: { runnerUp: val } }); await refreshLeague(); renderAll(); }
         catch (err) { alert(err.message); runnerUpInput.value = e.runnerUp || ""; }
       };
-      left.appendChild(labelInput); left.appendChild(winnerInput); left.appendChild(runnerUpInput);
+      left.appendChild(labelInput); left.appendChild(winnerSelect); left.appendChild(runnerUpInput);
       const del = document.createElement("button");
       del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove entry";
       del.onclick = async () => {
@@ -3230,15 +3242,23 @@ function renderAdminHallOfFame() {
     });
   });
 }
+el("new-hof-season").addEventListener("change", async () => {
+  const season = el("new-hof-season").value;
+  const select = el("new-hof-winner-select");
+  if (!season) { select.innerHTML = '<option value="">Enter a season first…</option>'; return; }
+  select.innerHTML = '<option value="">Loading…</option>';
+  const teams = await teamsForHofSeason(Number(season));
+  select.innerHTML = teams.length ? hofTeamSelectHtml(teams, null) : '<option value="">No teams found for that season</option>';
+});
 el("add-hof-btn").onclick = async () => {
   const season = el("new-hof-season").value;
   const label = el("new-hof-label").value.trim();
-  const winner = el("new-hof-winner").value.trim();
+  const winnerTeamId = el("new-hof-winner-select").value;
   const runnerUp = el("new-hof-runner-up").value.trim();
-  if (!season || !label || !winner) return alert("Enter a season, title, and winner.");
+  if (!season || !label || !winnerTeamId) return alert("Enter a season, title, and pick a winning team.");
   try {
-    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winner, runnerUp } });
-    el("new-hof-season").value = ""; el("new-hof-label").value = ""; el("new-hof-winner").value = ""; el("new-hof-runner-up").value = "";
+    await api(`/leagues/${currentLeagueId}/hall-of-fame`, { method: "POST", body: { season: Number(season), label, winnerTeamId, runnerUp } });
+    el("new-hof-season").value = ""; el("new-hof-label").value = ""; el("new-hof-winner-select").innerHTML = '<option value="">Enter a season first…</option>'; el("new-hof-runner-up").value = "";
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 };
@@ -8269,7 +8289,7 @@ async function openArchivedSeason(seasonId) {
     html += `<div class="hof-row-list" style="margin-bottom:16px;">${hof.map((h) => `
       <div class="notif-row">
         <div><strong>${escapeHtml(h.label)}</strong></div>
-        <span class="note">${escapeHtml(h.winner)}${h.runnerUp ? ` <span style="display:block;">Runner-up: ${escapeHtml(h.runnerUp)}</span>` : ""}</span>
+        <span class="note">${hofWinnerLinkHtml(h)}${h.runnerUp ? ` <span style="display:block;">Runner-up: ${escapeHtml(h.runnerUp)}</span>` : ""}</span>
       </div>`).join("")}</div>`;
   }
   html += `${standingsRowsHtml(snapshot.standings, isPairs)}</div>`;
@@ -8280,6 +8300,7 @@ async function openArchivedSeason(seasonId) {
   html += archivedPlayoffSummaryHtml(snapshot);
   detail.innerHTML = html;
   bindPlayerLinks(detail);
+  bindHofWinnerLinks(detail, hof);
   if (myRole === "admin") {
     detail.appendChild(archivedResultsSection(seasonId, snapshot));
     if (snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
@@ -8854,7 +8875,7 @@ function renderPlayerHistoryBody(data, h2h) {
     : "";
   const { rows, isPairs, hallOfFameTitles } = data;
   const titlesBlock = hallOfFameTitles.length
-    ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)}`).join("<br>")}</div>`
+    ? `<div class="info-callout info-callout-success" style="margin-bottom:12px;"><strong>🏆 Hall of Fame</strong><br>${hallOfFameTitles.map((t) => `Season ${t.season} — ${escapeHtml(t.label)} with ${escapeHtml(t.teamName)}`).join("<br>")}</div>`
     : "";
   // Collapsed by default — links, not always-open sections, since these
   // are extra context on TOP of this player's own history below, not part
@@ -8982,6 +9003,33 @@ async function renderStats() {
 
 /* ---------- Hall of Fame ---------- */
 
+// A winner is a real team reference (see POST /hall-of-fame), so it opens
+// straight into that team's frozen roster from the season it won — same
+// pattern as playerLinkHtml/bindPlayerLinks, just one step removed (team,
+// then from there into any one of its players).
+function hofWinnerLinkHtml(e) {
+  return `<button type="button" class="link hof-winner-link" data-entry="${e.id}">${escapeHtml(e.winner)}</button>`;
+}
+function bindHofWinnerLinks(root, entries) {
+  root.querySelectorAll(".hof-winner-link").forEach((btn) => {
+    btn.onclick = () => {
+      const entry = entries.find((e) => e.id === btn.dataset.entry);
+      if (entry) openHofTeamModal(entry);
+    };
+  });
+}
+function openHofTeamModal(entry) {
+  el("hof-team-modal-title").textContent = entry.winner;
+  el("hof-team-modal-sub").textContent = `${entry.label} — Season ${entry.season}`;
+  const roster = entry.winnerRoster || [];
+  el("hof-team-modal-roster").innerHTML = roster.length
+    ? `<div class="combine-claim-list">${roster.map((p) => `<div class="notif-row">${playerLinkHtml(p)}</div>`).join("")}</div>`
+    : '<p class="empty">No roster recorded for this team.</p>';
+  bindPlayerLinks(el("hof-team-modal-roster"));
+  el("hof-team-modal-backdrop").classList.add("open");
+}
+el("hof-team-modal-close").onclick = () => el("hof-team-modal-backdrop").classList.remove("open");
+el("hof-team-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "hof-team-modal-backdrop") el("hof-team-modal-backdrop").classList.remove("open"); });
 // Just the record — winner (and runner-up, when one's set) for each
 // season's Champions/MVP/etc entries. The full final table for a season
 // lives on Past Seasons, not duplicated here.
@@ -8997,9 +9045,10 @@ function renderHallOfFame() {
       ${entries.filter((e) => e.season === s).map((e) => `
         <div class="hof-row">
           <span>${escapeHtml(e.label)}</span>
-          <span class="pts">${escapeHtml(e.winner)}${e.runnerUp ? `<span class="note" style="display:block;font-weight:400;">Runner-up: ${escapeHtml(e.runnerUp)}</span>` : ""}</span>
+          <span class="pts">${hofWinnerLinkHtml(e)}${e.runnerUp ? `<span class="note" style="display:block;font-weight:400;">Runner-up: ${escapeHtml(e.runnerUp)}</span>` : ""}</span>
         </div>`).join("")}
     </div>`).join("");
+  bindHofWinnerLinks(c, entries);
 }
 
 /* ---------- Awards ---------- */

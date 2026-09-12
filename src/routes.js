@@ -2346,20 +2346,49 @@ router.put("/leagues/:leagueId/teams/:teamId/group", requireAdmin, (req, res) =>
   res.json({ ok: true });
 });
 
-/* ---------- Hall of Fame: past-season champions, admin-entered free text —
-   not tied to any current pair/player record. ---------- */
+/* ---------- Hall of Fame: past-season champions, admin-picks-the-team —
+   the winner is a real team reference (so it can link to that team, and so
+   a player on its roster gets this on their own profile), not free text.
+   Runner-up stays free text — nothing links from it, nothing propagates to
+   a profile from it. ---------- */
 
+// Whichever roster actually existed for that season — the archived
+// snapshot if that season's already been ended (see season/reset), or the
+// live league if this entry is for the season still in progress. Frozen
+// onto the entry itself at save time (name + full roster), so a later
+// rename, roster change, or even deleting the team never breaks what
+// already got recorded as history.
+function seasonTeamSource(league, season) {
+  const history = league.seasonHistory || [];
+  const snapshot = history.find((s) => seasonNumberOf(history, s) === season);
+  return snapshot || league;
+}
+router.get("/leagues/:leagueId/hall-of-fame/teams-for-season/:season", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const season = Number(req.params.season);
+  if (!Number.isInteger(season) || season < 1) return res.status(400).json({ error: "Invalid season." });
+  const source = seasonTeamSource(league, season);
+  res.json({ teams: source.teams.map((t) => ({ id: t.id, name: t.name })) });
+});
 router.post("/leagues/:leagueId/hall-of-fame", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const season = Number(req.body.season);
   const label = (req.body.label || "").trim();
-  const winner = (req.body.winner || "").trim();
+  const winnerTeamId = (req.body.winnerTeamId || "").trim();
   const runnerUp = (req.body.runnerUp || "").trim();
   if (!Number.isInteger(season) || season < 1) return res.status(400).json({ error: "Enter a valid season number." });
   if (!label) return res.status(400).json({ error: "Title is required." });
-  if (!winner) return res.status(400).json({ error: "Winner is required." });
+  if (!winnerTeamId) return res.status(400).json({ error: "Choose a winning team." });
+  const team = seasonTeamSource(league, season).teams.find((t) => t.id === winnerTeamId);
+  if (!team) return res.status(400).json({ error: "That team isn't part of this season." });
   if (!league.hallOfFame) league.hallOfFame = [];
-  const entry = { id: logic.uid(), season, label, winner, runnerUp: runnerUp || null };
+  const entry = {
+    id: logic.uid(), season, label,
+    winnerTeamId, winner: team.name,
+    winnerRoster: team.players.map((p) => ({ id: p.id, name: p.name })),
+    runnerUp: runnerUp || null,
+  };
   league.hallOfFame.push(entry);
   store.saveLeague(league.id, league);
   res.json({ id: entry.id });
@@ -2369,23 +2398,27 @@ router.put("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, res) 
   const league = store.getLeague(req.params.leagueId);
   const entry = (league.hallOfFame || []).find((e) => e.id === req.params.entryId);
   if (!entry) return res.status(404).json({ error: "Entry not found." });
-  if (req.body.season !== undefined) {
-    const season = Number(req.body.season);
-    if (!Number.isInteger(season) || season < 1) return res.status(400).json({ error: "Enter a valid season number." });
-    entry.season = season;
-  }
   if (req.body.label !== undefined) {
     const label = req.body.label.trim();
     if (!label) return res.status(400).json({ error: "Title is required." });
     entry.label = label;
   }
-  if (req.body.winner !== undefined) {
-    const winner = req.body.winner.trim();
-    if (!winner) return res.status(400).json({ error: "Winner is required." });
-    entry.winner = winner;
-  }
   // Optional — blank clears it, same as leaving it out of the add form.
   if (req.body.runnerUp !== undefined) entry.runnerUp = req.body.runnerUp.trim() || null;
+  const nextSeason = req.body.season !== undefined ? Number(req.body.season) : entry.season;
+  if (!Number.isInteger(nextSeason) || nextSeason < 1) return res.status(400).json({ error: "Enter a valid season number." });
+  const nextTeamId = req.body.winnerTeamId !== undefined ? req.body.winnerTeamId.trim() : entry.winnerTeamId;
+  // Re-freeze the name/roster whenever either the season or the team
+  // itself actually changed — an edit to just the label/runner-up leaves
+  // the frozen roster exactly as it was.
+  if (nextSeason !== entry.season || nextTeamId !== entry.winnerTeamId) {
+    const team = seasonTeamSource(league, nextSeason).teams.find((t) => t.id === nextTeamId);
+    if (!team) return res.status(400).json({ error: "That team isn't part of this season." });
+    entry.season = nextSeason;
+    entry.winnerTeamId = nextTeamId;
+    entry.winner = team.name;
+    entry.winnerRoster = team.players.map((p) => ({ id: p.id, name: p.name }));
+  }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -4791,13 +4824,13 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const potwWins = rounds
     .flatMap((r) => logic.potwTallyForRound(league, r).winners)
     .filter((w) => w.playerAId === player.id || w.playerBId === player.id).length;
-  // Hall of Fame winners are free text (season history can predate this
-  // app's own data), so matching is just "does their name appear in the
-  // winner string" — a plain substring check, not tied to any player id.
+  // Exact match against the winning team's own frozen roster (see
+  // POST /hall-of-fame) — this player id was actually on that team when it
+  // won, not just a name that happens to appear in the winner text.
   const hallOfFameTitles = (league.hallOfFame || [])
-    .filter((e) => e.winner.toLowerCase().includes(player.name.toLowerCase()))
+    .filter((e) => (e.winnerRoster || []).some((p) => p.id === player.id))
     .sort((a, b) => b.season - a.season)
-    .map((e) => ({ season: e.season, label: e.label }));
+    .map((e) => ({ season: e.season, label: e.label, teamName: e.winner }));
   // If this player record has been claimed (see the player-accounts
   // feature), surface which other leagues that same real person plays
   // in — so a captain/admin browsing one league's roster can see this

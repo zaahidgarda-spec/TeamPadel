@@ -593,12 +593,12 @@
         </div>
         <div class="card">
           <h2 class="section-title">Hall of Fame</h2>
-          <p class="note">Past season champions — free text, not tied to any current pair record.</p>
+          <p class="note">Past season champions — the winner is a real team from that season, so it links there and shows up on its players' own profiles too.</p>
           <ul class="plain" id="admin-hof-list" style="margin-top:10px;"></ul>
           <div class="row" id="add-hof-row" style="margin-top:12px;flex-wrap:wrap;">
             <input type="number" id="new-hof-season" placeholder="Season #" min="1" style="width:100px;">
             <input type="text" id="new-hof-label" placeholder="Title, e.g. Champions" style="flex:1;min-width:180px;">
-            <input type="text" id="new-hof-winner" placeholder="Winner, e.g. Ahmed Khota &amp; Hussein Mohamedy" style="flex:1;min-width:220px;">
+            <select id="new-hof-winner-select" style="flex:1;min-width:180px;"><option value="">Enter a season first…</option></select>
             <input type="text" id="new-hof-runner-up" placeholder="Runner-up (optional)" style="flex:1;min-width:180px;">
             <button class="primary" id="add-hof-btn">Add</button>
           </div>
@@ -1069,6 +1069,19 @@
         <span id="team-count-label"></span>
       </footer>
     </section>
+
+    <!-- A Hall of Fame winner's roster at the time they won — same
+         frozen record whether or not the team still exists or looks like
+         this today. Each name opens straight into that player's own
+         profile below. -->
+    <div id="hof-team-modal-backdrop" class="modal-backdrop">
+      <div class="modal-box" style="max-width:360px;">
+        <button class="modal-close" id="hof-team-modal-close" aria-label="Close">&times;</button>
+        <h3 id="hof-team-modal-title" style="margin:0 0 4px;"></h3>
+        <p class="note" id="hof-team-modal-sub" style="margin:0 0 14px;"></p>
+        <div id="hof-team-modal-roster"></div>
+      </div>
+    </div>
 
     <!-- Top-level (not nested in view-league) so it can be opened from the
          hub too — e.g. the Search players tab and admin combine, which
