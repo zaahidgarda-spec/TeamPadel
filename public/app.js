@@ -8902,6 +8902,7 @@ async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-stats").innerHTML = "";
   el("player-modal-photo-slot").innerHTML = "";
+  el("player-modal-team-badge").innerHTML = "";
   el("player-modal-tags").innerHTML = "";
   el("player-modal-photo-edit").style.display = "none";
   el("player-modal-league-tabs").style.display = "none";
@@ -8928,6 +8929,11 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
+  // Crest, not initials-only fallback — reuses the same avatarHtml() every
+  // other team-logo spot in the app already uses, so a team without a
+  // logo yet gets the same plain-letter treatment everywhere, not a
+  // one-off look just for this badge.
+  el("player-modal-team-badge").innerHTML = avatarHtml({ logo: data.teamLogo, name: data.teamName });
   // One tag per league won, not per tab open — a title belongs to the
   // person, so it shows here regardless of which of their leagues you
   // happen to be looking at (see allChampionships, aggregated server-side
@@ -8942,7 +8948,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
     return `<span class="p-tag trophy">🏆 ${escapeHtml(leagueName)} Champion${count > 1 ? ` &times;${count}` : ""}</span>`;
   }).join("");
   el("player-modal-tags").innerHTML = trophyTags
-    + `<span class="p-tag team">${escapeHtml(data.teamName)}</span>`
+    + `<span class="p-tag team" title="${escapeHtml(data.teamName)}">${avatarHtml({ logo: data.teamLogo, name: data.teamName })}</span>`
     + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "");
   const editBadge = el("player-modal-photo-edit");
   const photoInput = el("player-modal-photo-input");
