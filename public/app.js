@@ -1840,7 +1840,8 @@ function renderTrophyRoom(cards) {
       <div class="trophy-card">
         <div class="trophy-icon">🏆</div>
         <div class="trophy-title">${escapeHtml(h.label)}</div>
-        <div class="trophy-meta">Season ${h.season} &middot; ${escapeHtml(h.teamName)}<br>${escapeHtml(h.leagueName)}</div>
+        <div class="trophy-meta-team">${avatarHtml({ name: h.teamName, logo: h.teamLogo })}<span>${escapeHtml(h.teamName)}</span></div>
+        <div class="trophy-meta">Season ${h.season} &middot; ${escapeHtml(h.leagueName)}</div>
       </div>`).join("")}</div>`;
   }
   if (awards.length) {
@@ -9115,13 +9116,15 @@ async function renderStats() {
 // A winner is a real team reference (see POST /hall-of-fame), so it opens
 // straight into that team's frozen roster from the season it won — same
 // pattern as playerLinkHtml/bindPlayerLinks, just one step removed (team,
-// then from there into any one of its players).
+// then from there into any one of its players). The crest shown is the
+// team's own logo as it was AT THE TIME (frozen alongside the name), not
+// whatever that team's logo looks like today.
 function hofWinnerLinkHtml(e) {
-  return `<button type="button" class="link hof-winner-link" data-entry="${e.id}" data-side="winner">${escapeHtml(e.winner)}</button>`;
+  return `<button type="button" class="link hof-winner-link hof-winner-link-crest" data-entry="${e.id}" data-side="winner">${avatarHtml({ name: e.winner, logo: e.winnerLogo })}${escapeHtml(e.winner)}</button>`;
 }
 function hofRunnerUpLinkHtml(e) {
   if (!e.runnerUp) return "";
-  return `<button type="button" class="link hof-winner-link" data-entry="${e.id}" data-side="runnerUp">${escapeHtml(e.runnerUp)}</button>`;
+  return `<button type="button" class="link hof-winner-link hof-winner-link-crest" data-entry="${e.id}" data-side="runnerUp">${avatarHtml({ name: e.runnerUp, logo: e.runnerUpLogo })}${escapeHtml(e.runnerUp)}</button>`;
 }
 function bindHofWinnerLinks(root, entries) {
   root.querySelectorAll(".hof-winner-link").forEach((btn) => {
@@ -9133,8 +9136,9 @@ function bindHofWinnerLinks(root, entries) {
 }
 function openHofTeamModal(entry, side) {
   const name = side === "runnerUp" ? entry.runnerUp : entry.winner;
+  const logo = side === "runnerUp" ? entry.runnerUpLogo : entry.winnerLogo;
   const roster = (side === "runnerUp" ? entry.runnerUpRoster : entry.winnerRoster) || [];
-  el("hof-team-modal-title").textContent = name;
+  el("hof-team-modal-title").innerHTML = `${avatarHtml({ name, logo })}${escapeHtml(name)}`;
   el("hof-team-modal-sub").textContent = `${side === "runnerUp" ? "Runner-up — " : ""}${entry.label} — Season ${entry.season}`;
   el("hof-team-modal-roster").innerHTML = roster.length
     ? `<div class="combine-claim-list">${roster.map((p) => `<div class="notif-row">${playerLinkHtml(p)}</div>`).join("")}</div>`

@@ -1646,7 +1646,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // same check the single-league player-history route uses.
     const championships = (league.hallOfFame || [])
       .filter((e) => (e.winnerRoster || []).some((p) => p.id === claim.playerId))
-      .map((e) => ({ season: e.season, label: e.label, teamName: e.winner }));
+      .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, teamLogo: e.winnerLogo || "" }));
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     cards.push({
       leagueId: league.id, leagueName: league.name,
@@ -2377,7 +2377,7 @@ function seasonTeamSource(league, season) {
 function freezeHofTeam(league, season, teamId) {
   const team = seasonTeamSource(league, season).teams.find((t) => t.id === teamId);
   if (!team) return null;
-  return { teamId, name: team.name, roster: team.players.map((p) => ({ id: p.id, name: p.name })) };
+  return { teamId, name: team.name, logo: team.logo || "", roster: team.players.map((p) => ({ id: p.id, name: p.name })) };
 }
 router.get("/leagues/:leagueId/hall-of-fame/teams-for-season/:season", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
@@ -2406,8 +2406,8 @@ router.post("/leagues/:leagueId/hall-of-fame", requireAdmin, (req, res) => {
   if (!league.hallOfFame) league.hallOfFame = [];
   const entry = {
     id: logic.uid(), season, label,
-    winnerTeamId, winner: winner.name, winnerRoster: winner.roster,
-    runnerUpTeamId: runnerUpTeamId || null, runnerUp: runnerUp ? runnerUp.name : null, runnerUpRoster: runnerUp ? runnerUp.roster : null,
+    winnerTeamId, winner: winner.name, winnerLogo: winner.logo, winnerRoster: winner.roster,
+    runnerUpTeamId: runnerUpTeamId || null, runnerUp: runnerUp ? runnerUp.name : null, runnerUpLogo: runnerUp ? runnerUp.logo : "", runnerUpRoster: runnerUp ? runnerUp.roster : null,
   };
   league.hallOfFame.push(entry);
   store.saveLeague(league.id, league);
@@ -2433,17 +2433,19 @@ router.put("/leagues/:leagueId/hall-of-fame/:entryId", requireAdmin, (req, res) 
     if (!winner) return res.status(400).json({ error: "That team isn't part of this season." });
     entry.winnerTeamId = nextWinnerTeamId;
     entry.winner = winner.name;
+    entry.winnerLogo = winner.logo;
     entry.winnerRoster = winner.roster;
   }
   if (req.body.runnerUpTeamId !== undefined) {
     const nextRunnerUpTeamId = req.body.runnerUpTeamId.trim();
     if (!nextRunnerUpTeamId) {
-      entry.runnerUpTeamId = null; entry.runnerUp = null; entry.runnerUpRoster = null;
+      entry.runnerUpTeamId = null; entry.runnerUp = null; entry.runnerUpLogo = ""; entry.runnerUpRoster = null;
     } else if (nextRunnerUpTeamId !== entry.runnerUpTeamId || nextSeason !== entry.season) {
       const runnerUp = freezeHofTeam(league, nextSeason, nextRunnerUpTeamId);
       if (!runnerUp) return res.status(400).json({ error: "That runner-up team isn't part of this season." });
       entry.runnerUpTeamId = nextRunnerUpTeamId;
       entry.runnerUp = runnerUp.name;
+      entry.runnerUpLogo = runnerUp.logo;
       entry.runnerUpRoster = runnerUp.roster;
     }
   }
