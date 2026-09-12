@@ -1188,27 +1188,32 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .player-modal-box{padding:0;}
 .player-modal-box .modal-close{top:16px;left:16px;right:auto;z-index:2;background:var(--panel);border:1px solid var(--line);color:var(--text-dim);box-shadow:var(--shadow-sm);}
 .player-modal-box .modal-close:hover{color:var(--text);border-color:var(--line);}
-.p-hero{position:relative;padding:56px 20px 22px;text-align:center;}
-.p-photo-wrap{position:relative;display:inline-block;margin-bottom:14px;}
-.p-photo{width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--panel);box-shadow:var(--shadow-sm);display:block;background:var(--panel-2);}
+.p-hero{position:relative;padding:52px 20px 18px;}
+/* Photo and name sit side by side instead of stacked — half the vertical
+   space a centered layout took, so the stat strip right below is visible
+   the moment the page opens instead of a scroll away. */
+.p-hero-row{display:flex;align-items:center;gap:14px;}
+.p-photo-wrap{position:relative;flex-shrink:0;}
+.p-photo{width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--panel);box-shadow:var(--shadow-sm);display:block;background:var(--panel-2);}
 /* A team-crest fallback needs contain (not cover) so a square badge logo
    isn't cropped the way a real cover-fit photo would be, plus a little
    padding so it doesn't touch the circle's edge. */
 .p-photo.p-photo-team-fallback{object-fit:contain;padding:10px;box-sizing:border-box;}
-.p-photo-fallback{width:88px;height:88px;border-radius:50%;border:3px solid var(--panel);box-shadow:var(--shadow-sm);background:linear-gradient(135deg,var(--accent),#1d4ed8);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:30px;font-weight:700;color:#fff;}
+.p-photo-fallback{width:64px;height:64px;border-radius:50%;border:3px solid var(--panel);box-shadow:var(--shadow-sm);background:linear-gradient(135deg,var(--accent),#1d4ed8);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:22px;font-weight:700;color:#fff;}
 /* The team crest riding on the corner of the player's own photo — same
    idea as a jersey badge, glanceable without reading the tag row below.
    Bottom-left, not bottom-right — the edit-photo camera badge (shown
    instead of this one to whoever can edit the photo) already owns that
    corner, and the two would otherwise overlap. */
-.p-team-badge{position:absolute;bottom:-2px;left:-6px;}
-.p-team-badge .avatar,.p-team-badge .avatar-fb{width:28px;height:28px;border:2.5px solid var(--bg);box-shadow:var(--shadow-sm);}
-.p-team-badge .avatar-fb{font-size:11px;font-weight:700;color:var(--accent);}
-.p-edit-badge{position:absolute;bottom:0;right:0;width:30px;height:30px;border-radius:50%;background:var(--accent);border:3px solid var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.p-edit-badge svg{width:14px;height:14px;}
+.p-team-badge{position:absolute;bottom:-2px;left:-4px;}
+.p-team-badge .avatar,.p-team-badge .avatar-fb{width:22px;height:22px;border:2px solid var(--bg);box-shadow:var(--shadow-sm);}
+.p-team-badge .avatar-fb{font-size:9px;font-weight:700;color:var(--accent);}
+.p-edit-badge{position:absolute;bottom:-2px;right:-4px;width:24px;height:24px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.p-edit-badge svg{width:12px;height:12px;}
 .p-edit-badge:hover{background:#1d4ed8;}
-.p-name{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--text);margin:0 0 8px;}
-.p-tags{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;align-items:center;}
+.p-hero-text{flex:1;min-width:0;}
+.p-name{font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--text);margin:0 0 6px;}
+.p-tags{display:flex;gap:6px;justify-content:flex-start;flex-wrap:wrap;align-items:center;}
 .p-tag{font-family:var(--font-display);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:4px 10px;border-radius:var(--radius-full);}
 /* The team tag shows the crest itself, not the team's name as text — a
    circular chip sized to match the row instead of a text pill. */
