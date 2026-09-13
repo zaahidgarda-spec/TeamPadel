@@ -1868,7 +1868,7 @@ const ICON_BUSINESS_CLASS = `<svg viewBox="0 0 24 24" fill="none"><path d="M7 3h
 // `leagueName`; `hasPlayed` hides the whole thing for someone who's
 // never played a single match anywhere, rather than showing an entirely
 // locked grid before they've even had a chance to try.
-function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, hasPlayed) {
+function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed) {
   if (!hasPlayed && championships.length === 0 && runnerUps.length === 0 && awards.length === 0) return "";
   const tile = (locked, icon, title, sub) => `
     <div class="ach-tile">
@@ -1900,6 +1900,8 @@ function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelC
   else tiles.push(tile(true, "🔥", "Win streak", `${WIN_STREAK_THRESHOLD}+ in a row`));
   if (bagelCount > 0) tiles.push(tile(false, "🎾", "6-0 Set", `${bagelCount} won`));
   else tiles.push(tile(true, "🎾", "6-0 Set", "Not yet"));
+  if (unbeatenSeasons.length) unbeatenSeasons.forEach((s) => tiles.push(tile(false, "💯", "Unbeaten Season", `${s.label} · ${s.leagueName}`)));
+  else tiles.push(tile(true, "💯", "Unbeaten Season", "Not yet"));
   return `<div class="ach-grid">${tiles.join("")}</div>`;
 }
 function renderTrophyRoom(cards) {
@@ -1913,8 +1915,10 @@ function renderTrophyRoom(cards) {
     .sort((a, b) => b.round - a.round);
   const winStreak = cards.reduce((best, c) => (c.bestStreak > (best ? best.count : -1) ? { count: c.bestStreak, leagueName: c.leagueName } : best), null);
   const bagelCount = cards.reduce((sum, c) => sum + (c.bagelCount || 0), 0);
+  const unbeatenSeasons = cards.flatMap((c) => (c.unbeatenSeasons || []).map((s) => ({ ...s, leagueName: c.leagueName })))
+    .sort((a, b) => b.season - a.season);
   const hasPlayed = cards.some((c) => c.results.length > 0);
-  const html = achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, hasPlayed);
+  const html = achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed);
   section.style.display = html ? "block" : "none";
   container.innerHTML = html;
 }
@@ -9045,7 +9049,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   // finishes, Pair of the Week awards, and best-ever win streak, aggregated
   // across every league they're claimed in, whether that's the one you're
   // currently viewing or not.
-  const trophyHtml = achievementGridHtml(data.allChampionships || [], data.allRunnerUps || [], data.allAwards || [], data.bestWinStreak, data.bagelCount || 0, data.rows.length > 0);
+  const trophyHtml = achievementGridHtml(data.allChampionships || [], data.allRunnerUps || [], data.allAwards || [], data.bestWinStreak, data.bagelCount || 0, data.allUnbeatenSeasons || [], data.rows.length > 0);
   el("player-modal-trophy-section").style.display = trophyHtml ? "block" : "none";
   el("player-modal-trophy-room").innerHTML = trophyHtml;
   const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);

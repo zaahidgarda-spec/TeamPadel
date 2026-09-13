@@ -1664,6 +1664,18 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0;
       if ((r.score || "").split(", ").includes("6-0")) bagelCount++;
     });
+    // Only archived (fully finished) seasons count — an ongoing unbeaten
+    // run isn't "unbeaten all season" yet. A season snapshot has the same
+    // teams/fixtures/playoffs shape a live league does, so
+    // playerMatchHistory works on it unchanged.
+    const MIN_UNBEATEN_MATCHES = 3;
+    const unbeatenSeasons = (league.seasonHistory || [])
+      .map((snap, idx) => {
+        const snapRows = logic.playerMatchHistory(snap, claim.playerId, ratingsData);
+        if (snapRows.length < MIN_UNBEATEN_MATCHES || snapRows.some((r) => r.result === "L")) return null;
+        return { season: snap.season || (league.seasonHistory.length - idx), label: snap.label };
+      })
+      .filter(Boolean);
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     cards.push({
       leagueId: league.id, leagueName: league.name,
@@ -1676,6 +1688,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       runnerUps,
       bestStreak,
       bagelCount,
+      unbeatenSeasons,
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
@@ -4939,6 +4952,20 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const myCareerStats = careerStatsIn(league, player.id);
   let bestWinStreak = { count: myCareerStats.bestStreak, leagueId: league.id, leagueName: league.name };
   let bagelCount = myCareerStats.bagels;
+  // Only archived (fully finished) seasons count — an ongoing unbeaten run
+  // isn't "unbeaten all season" yet, it's just unbeaten so far. A season
+  // snapshot has the same teams/fixtures/playoffs shape a live league
+  // does, so playerMatchHistory works on it unchanged. A minimum match
+  // count keeps a season with 1-2 games played from trivially counting.
+  const MIN_UNBEATEN_MATCHES = 3;
+  const unbeatenSeasonsIn = (aLeague, aPlayerId) => (aLeague.seasonHistory || [])
+    .map((snap, idx) => {
+      const snapRows = logic.playerMatchHistory(snap, aPlayerId, ratingsData);
+      if (snapRows.length < MIN_UNBEATEN_MATCHES || snapRows.some((r) => r.result === "L")) return null;
+      return { season: snap.season || (aLeague.seasonHistory.length - idx), label: snap.label, leagueId: aLeague.id, leagueName: aLeague.name };
+    })
+    .filter(Boolean);
+  let allUnbeatenSeasons = unbeatenSeasonsIn(league, player.id);
   // A championship belongs to the person, not to whichever tab happens to
   // be open — a claimed player's hero shows every title across every
   // league they're claimed in, not just this one, so it doesn't look like
@@ -4972,6 +4999,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           const otherStats = careerStatsIn(otherLeague, otherPlayer.id);
           if (otherStats.bestStreak > bestWinStreak.count) bestWinStreak = { count: otherStats.bestStreak, leagueId: otherLeague.id, leagueName: otherLeague.name };
           bagelCount += otherStats.bagels;
+          allUnbeatenSeasons = allUnbeatenSeasons.concat(unbeatenSeasonsIn(otherLeague, otherPlayer.id));
           return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name, playerId: otherPlayer.id, playerName: otherPlayer.name };
         })
         .filter(Boolean);
@@ -4980,6 +5008,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   allChampionships.sort((a, b) => b.season - a.season);
   allAwards.sort((a, b) => b.round - a.round);
   allRunnerUps.sort((a, b) => b.season - a.season);
+  allUnbeatenSeasons.sort((a, b) => b.season - a.season);
   const isAdmin = isAdminSession(req, league.id);
   const u = resolveLeagueSession(req, league.id);
   const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
@@ -5006,6 +5035,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     allRunnerUps,
     bestWinStreak,
     bagelCount,
+    allUnbeatenSeasons,
     otherLeagues,
     claimed: !!player.claimedByUserId,
     canEditPhoto: isAdmin || isCaptain || isOwnProfile,
