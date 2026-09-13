@@ -1860,6 +1860,7 @@ function trophyCabinetHtml(championships, awards) {
             <span class="cab-crest">${avatarHtml({ name: h.teamName, logo: h.teamLogo })}</span>
           </div>
           <div class="t">${escapeHtml(h.label)}</div>
+          <div class="cab-team">${escapeHtml(h.teamName)}</div>
           <div class="s">Season ${h.season} &middot; ${escapeHtml(h.leagueName)}</div>
         </div>`).join("")}</div>
     </div>`;
@@ -8956,11 +8957,11 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-topbar-label").textContent = `${data.teamName} · ${data.leagueName}`;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
-  // Crest, not initials-only fallback — reuses the same avatarHtml() every
-  // other team-logo spot in the app already uses, so a team without a
-  // logo yet gets the same plain-letter treatment everywhere, not a
-  // one-off look just for this badge.
-  el("player-modal-team-badge").innerHTML = avatarHtml({ logo: data.teamLogo, name: data.teamName });
+  // Only shown alongside an actual player photo — without one, the photo
+  // slot above already falls back to the team crest (or the team's own
+  // initials) as the main avatar, so badging it again here would just be
+  // the same team shown twice for no reason.
+  el("player-modal-team-badge").innerHTML = data.photo ? avatarHtml({ logo: data.teamLogo, name: data.teamName }) : "";
   // One tag per league won, not per tab open — a title belongs to the
   // person, so it shows here regardless of which of their leagues you
   // happen to be looking at (see allChampionships, aggregated server-side

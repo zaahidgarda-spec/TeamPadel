@@ -853,6 +853,7 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .cab-crest{position:absolute;bottom:-3px;right:-6px;}
 .cab-crest .avatar,.cab-crest .avatar-fb{width:16px;height:16px;font-size:8px;border:1.5px solid #2a1d13;}
 .cab-item .t{font-family:var(--font-display);font-size:10.5px;font-weight:700;color:#F2E7CE;line-height:1.3;}
+.cab-item .cab-team{font-size:9px;font-weight:600;color:#D8B45C;margin-top:1px;}
 .cab-item .s{font-size:8.5px;color:#B7A588;margin-top:2px;line-height:1.35;}
 .cab-glass-line{position:relative;height:3px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);}
 
