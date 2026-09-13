@@ -1844,6 +1844,18 @@ async function renderAccountStats(cards) {
 // short enough to be reachable, long enough that it isn't handed out for
 // nothing.
 const WIN_STREAK_THRESHOLD = 3;
+// Two real leagues on this site sit above the rest — a win there is its
+// own achievement, not just another instance of the generic Champion
+// badge, so it's pulled out by name rather than counted twice.
+const PREMIER_LEAGUE_NAME = "Premier League";
+const BUSINESS_CLASS_LEAGUE_NAME = "Business Class";
+// Custom trophy shapes, not the same 🏆 emoji recolored — a taller,
+// star-topped cup for Premier and a plainer cup for Business Class, so
+// the silhouette alone (before color even enters into it) says which
+// tier this is. `currentColor` picks up whatever the badge circle sets,
+// so the same markup goes gold when unlocked and grey when locked.
+const ICON_PREMIER = `<svg viewBox="0 0 32 32" fill="none"><path d="M16 2l1.6 3.6 3.9.4-3 2.6.9 3.9L16 10.5l-3.4 2 .9-3.9-3-2.6 3.9-.4L16 2z" fill="currentColor"/><path d="M10 12h12v5a6 6 0 0 1-12 0v-5z" fill="currentColor"/><path d="M10 13H5v3a5 5 0 0 0 5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M22 13h5v3a5 5 0 0 1-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="15" y="23" width="2" height="4" fill="currentColor"/><rect x="11" y="28" width="10" height="2" rx="1" fill="currentColor"/></svg>`;
+const ICON_BUSINESS_CLASS = `<svg viewBox="0 0 24 24" fill="none"><path d="M7 3h10v4a5 5 0 0 1-10 0V3z" fill="currentColor"/><path d="M7 4H3v2a4 4 0 0 0 4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M17 4h4v2a4 4 0 0 1-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="11" y="13" width="2" height="4" fill="currentColor"/><rect x="8" y="18" width="8" height="2" rx="1" fill="currentColor"/></svg>`;
 // A locked/unlocked achievement grid — every badge type is always on
 // screen, earned ones lit up gold, not-yet-earned ones the exact same
 // shape in flat grey, the same convention console/Steam achievement
@@ -1863,8 +1875,22 @@ function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelC
       <div class="ach-badge ${locked ? "locked" : "unlocked"}">${icon}</div>
       <div class="ach-cap"><b>${escapeHtml(title)}</b>${escapeHtml(sub)}</div>
     </div>`;
+  const wideTile = (locked, icon, title, sub) => `
+    <div class="ach-tile-wide ${locked ? "locked" : "unlocked"}">
+      <div class="ach-badge ${locked ? "locked" : "unlocked"}">${icon}</div>
+      <div class="ach-cap"><b>${escapeHtml(title)}</b>${escapeHtml(sub)}</div>
+    </div>`;
+  const premierWins = championships.filter((h) => h.leagueName === PREMIER_LEAGUE_NAME);
+  const businessClassWins = championships.filter((h) => h.leagueName === BUSINESS_CLASS_LEAGUE_NAME);
+  const regularChampionships = championships.filter((h) => h.leagueName !== PREMIER_LEAGUE_NAME && h.leagueName !== BUSINESS_CLASS_LEAGUE_NAME);
   const tiles = [];
-  if (championships.length) championships.forEach((h) => tiles.push(tile(false, "🏆", "Champion", `${h.teamName} · S${h.season}`)));
+  // Premier leads the grid, always — a wide tile so it visually outranks
+  // everything else regardless of win/lock state.
+  if (premierWins.length) premierWins.forEach((h) => tiles.push(wideTile(false, ICON_PREMIER, "Team Padel Premier Champion", `Season ${h.season}`)));
+  else tiles.push(wideTile(true, ICON_PREMIER, "Team Padel Premier Champion", "Not yet"));
+  if (businessClassWins.length) businessClassWins.forEach((h) => tiles.push(tile(false, ICON_BUSINESS_CLASS, "Business Class Champion", `Season ${h.season}`)));
+  else tiles.push(tile(true, ICON_BUSINESS_CLASS, "Business Class Champion", "Not yet"));
+  if (regularChampionships.length) regularChampionships.forEach((h) => tiles.push(tile(false, "🏆", "Champion", `${h.teamName} · S${h.season}`)));
   else tiles.push(tile(true, "🏆", "Champion", "Not yet"));
   if (runnerUps.length) runnerUps.forEach((h) => tiles.push(tile(false, "🥈", "Runner-up", `${h.teamName} · S${h.season}`)));
   else tiles.push(tile(true, "🥈", "Runner-up", "Not yet"));
