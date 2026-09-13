@@ -1886,8 +1886,8 @@ function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelC
   const tiles = [];
   // Premier leads the grid, always — a wide tile so it visually outranks
   // everything else regardless of win/lock state.
-  if (premierWins.length) premierWins.forEach((h) => tiles.push(wideTile(false, ICON_PREMIER, "Team Padel Premier Champion", `Season ${h.season}`)));
-  else tiles.push(wideTile(true, ICON_PREMIER, "Team Padel Premier Champion", "Not yet"));
+  if (premierWins.length) premierWins.forEach((h) => tiles.push(wideTile(false, ICON_PREMIER, "Premier League Champion", `Season ${h.season}`)));
+  else tiles.push(wideTile(true, ICON_PREMIER, "Premier League Champion", "Not yet"));
   if (businessClassWins.length) businessClassWins.forEach((h) => tiles.push(tile(false, ICON_BUSINESS_CLASS, "Business Class Champion", `Season ${h.season}`)));
   else tiles.push(tile(true, ICON_BUSINESS_CLASS, "Business Class Champion", "Not yet"));
   if (regularChampionships.length) regularChampionships.forEach((h) => tiles.push(tile(false, "🏆", "Champion", `${h.teamName} · S${h.season}`)));
