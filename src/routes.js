@@ -1647,15 +1647,29 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     const championships = (league.hallOfFame || [])
       .filter((e) => (e.winnerRoster || []).some((p) => p.id === claim.playerId))
       .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, teamLogo: e.winnerLogo || "" }));
+    // Same idea, the other half of each entry — a runner-up finish is
+    // still a real achievement worth a badge of its own.
+    const runnerUps = (league.hallOfFame || [])
+      .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === claim.playerId))
+      .map((e) => ({ season: e.season, label: e.label, teamName: e.runnerUp, teamLogo: e.runnerUpLogo || "" }));
+    const results = logic.playerMatchHistory(league, claim.playerId, ratingsData);
+    // Longest run of consecutive wins ever recorded in this league — not
+    // "current streak" (that resets the moment a loss happens and would
+    // make an unlocked achievement flicker back to locked), a permanent
+    // personal best instead.
+    let streak = 0, bestStreak = 0;
+    results.forEach((r) => { if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0; });
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
       upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
-      results: logic.playerMatchHistory(league, claim.playerId, ratingsData),
+      results,
       awards,
       championships,
+      runnerUps,
+      bestStreak,
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
@@ -4894,6 +4908,23 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
       }));
   };
   let allAwards = potwAwardsFor(league, player.id);
+  // Same idea, the other half of each Hall of Fame entry — a runner-up
+  // finish is still a real achievement worth its own badge.
+  const runnerUpTitlesFor = (aLeague, aPlayerId) => (aLeague.hallOfFame || [])
+    .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === aPlayerId))
+    .map((e) => ({ season: e.season, label: e.label, teamName: e.runnerUp, teamLogo: e.runnerUpLogo || "", leagueId: aLeague.id, leagueName: aLeague.name }));
+  let allRunnerUps = runnerUpTitlesFor(league, player.id);
+  // Longest run of consecutive wins EVER recorded in a league — not the
+  // "current streak" the Stats page shows (that resets the moment a loss
+  // happens, which would make an unlocked achievement flicker back to
+  // locked), a permanent personal best instead.
+  const bestWinStreakIn = (aLeague, aPlayerId) => {
+    const aRows = logic.playerMatchHistory(aLeague, aPlayerId, ratingsData);
+    let streak = 0, best = 0;
+    aRows.forEach((r) => { if (r.result === "W") { streak++; best = Math.max(best, streak); } else streak = 0; });
+    return best;
+  };
+  let bestWinStreak = { count: bestWinStreakIn(league, player.id), leagueId: league.id, leagueName: league.name };
   // A championship belongs to the person, not to whichever tab happens to
   // be open — a claimed player's hero shows every title across every
   // league they're claimed in, not just this one, so it doesn't look like
@@ -4923,6 +4954,9 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           if (!otherLeague || !otherTeam || !otherPlayer) return null;
           allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id));
           allAwards = allAwards.concat(potwAwardsFor(otherLeague, otherPlayer.id));
+          allRunnerUps = allRunnerUps.concat(runnerUpTitlesFor(otherLeague, otherPlayer.id));
+          const otherStreak = bestWinStreakIn(otherLeague, otherPlayer.id);
+          if (otherStreak > bestWinStreak.count) bestWinStreak = { count: otherStreak, leagueId: otherLeague.id, leagueName: otherLeague.name };
           return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name, playerId: otherPlayer.id, playerName: otherPlayer.name };
         })
         .filter(Boolean);
@@ -4930,6 +4964,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   }
   allChampionships.sort((a, b) => b.season - a.season);
   allAwards.sort((a, b) => b.round - a.round);
+  allRunnerUps.sort((a, b) => b.season - a.season);
   const isAdmin = isAdminSession(req, league.id);
   const u = resolveLeagueSession(req, league.id);
   const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
@@ -4953,6 +4988,8 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     hallOfFameTitles,
     allChampionships,
     allAwards,
+    allRunnerUps,
+    bestWinStreak,
     otherLeagues,
     claimed: !!player.claimedByUserId,
     canEditPhoto: isAdmin || isCaptain || isOwnProfile,

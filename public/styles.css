@@ -834,28 +834,19 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-card-list{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:2px 16px;}
 .pd-card-list .empty{border:none;padding:14px 0;}
 
-/* Trophy Room — a lit "cabinet" card, shelves of trophies grouped by
-   type, on a signed-in player's own profile. A warm wood-toned panel
-   with a soft spotlight top and a thin glass-shelf line between
-   sections — restrained enough to stay one component, not an
-   illustration, but still a real nod to an actual trophy case. */
-.cab-card{position:relative;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md);background:linear-gradient(180deg,#3b2a1d 0%,#2a1d13 100%);}
-.cab-spotlight{position:relative;height:30px;background:linear-gradient(180deg,rgba(255,225,160,.35),transparent);}
-.cab-spotlight::before,.cab-spotlight::after{content:"";position:absolute;top:5px;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle,#FFE9B0,rgba(255,233,176,0) 70%);}
-.cab-spotlight::before{left:28%;}
-.cab-spotlight::after{left:62%;}
-.cab-shelf{position:relative;padding:14px 16px 16px;background:linear-gradient(180deg,rgba(255,255,255,.03),transparent);}
-.cab-shelf-label{font-family:var(--font-display);font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#D8B45C;margin-bottom:10px;}
-.cab-items{display:flex;gap:14px;flex-wrap:wrap;}
-.cab-item{width:92px;text-align:center;}
-.cab-trophy-wrap{position:relative;display:inline-block;margin-bottom:6px;}
-.cab-trophy{width:38px;height:38px;border-radius:50%;background:radial-gradient(circle,rgba(234,179,8,.32),transparent 70%);display:flex;align-items:center;justify-content:center;font-size:19px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
-.cab-crest{position:absolute;bottom:-3px;right:-6px;}
-.cab-crest .avatar,.cab-crest .avatar-fb{width:16px;height:16px;font-size:8px;border:1.5px solid #2a1d13;}
-.cab-item .t{font-family:var(--font-display);font-size:10.5px;font-weight:700;color:#F2E7CE;line-height:1.3;}
-.cab-item .cab-team{font-size:9px;font-weight:600;color:#D8B45C;margin-top:1px;}
-.cab-item .s{font-size:8.5px;color:#B7A588;margin-top:2px;line-height:1.35;}
-.cab-glass-line{position:relative;height:3px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);}
+/* Trophy Room — a locked/unlocked achievement grid, on a signed-in
+   player's own profile and the read-only version shown on anyone else's.
+   Every badge type is always visible, in the same shape whether earned
+   or not — earned ones lit gold, everything else the same icon in flat
+   grey — the same convention console/Steam achievement showcases use,
+   so there's always something visibly left to chase. */
+.ach-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.ach-tile{text-align:center;}
+.ach-badge{width:52px;height:52px;margin:0 auto;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:21px;}
+.ach-badge.unlocked{background:linear-gradient(160deg,#F9E38B,#B8860B);box-shadow:var(--shadow-sm),inset 0 0 0 2px rgba(255,255,255,.35);}
+.ach-badge.locked{background:var(--panel-2);border:1.5px dashed var(--line);filter:grayscale(1);opacity:.55;}
+.ach-cap{font-size:9.5px;color:var(--text-dim);margin-top:6px;line-height:1.3;}
+.ach-cap b{display:block;color:var(--text);font-size:10.5px;font-family:var(--font-display);font-weight:700;}
 
 /* Hall of Fame's winner/runner-up crest — inline in the row, in the
    team-roster popup's own title, wherever a team name shows. */

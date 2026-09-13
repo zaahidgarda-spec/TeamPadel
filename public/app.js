@@ -1840,54 +1840,52 @@ async function renderAccountStats(cards) {
 // place instead of scattered across each league's own Stats/Hall of Fame
 // pages. Hidden entirely (not just empty) when there's nothing here yet,
 // same as Line-ups due — an empty trophy cabinet isn't worth a section.
-// A lit "cabinet" card — a shelf per trophy type, each item's own glow —
-// rather than a plain grid, so a real haul of trophies reads as a display
-// case worth showing off instead of a settings-style list. Shared by a
-// signed-in player's own Trophy Room and the read-only version shown when
-// browsing anyone else's profile, so both stay visually identical.
-// `awards` items need a `partnerName` already resolved (the two call sites
-// compute "who the other pair member was" differently) and a `leagueName`.
-function trophyCabinetHtml(championships, awards) {
-  if (championships.length === 0 && awards.length === 0) return "";
-  let html = '<div class="cab-card"><div class="cab-spotlight"></div>';
-  if (championships.length) {
-    html += `<div class="cab-shelf">
-      <div class="cab-shelf-label">🏆 Championships</div>
-      <div class="cab-items">${championships.map((h) => `
-        <div class="cab-item">
-          <div class="cab-trophy-wrap">
-            <div class="cab-trophy">🏆</div>
-            <span class="cab-crest">${avatarHtml({ name: h.teamName, logo: h.teamLogo })}</span>
-          </div>
-          <div class="t">${escapeHtml(h.label)}</div>
-          <div class="cab-team">${escapeHtml(h.teamName)}</div>
-          <div class="s">Season ${h.season} &middot; ${escapeHtml(h.leagueName)}</div>
-        </div>`).join("")}</div>
+// A win streak this long or longer counts as a badge-worthy achievement —
+// short enough to be reachable, long enough that it isn't handed out for
+// nothing.
+const WIN_STREAK_THRESHOLD = 3;
+// A locked/unlocked achievement grid — every badge type is always on
+// screen, earned ones lit up gold, not-yet-earned ones the exact same
+// shape in flat grey, the same convention console/Steam achievement
+// showcases use. The point is showing what's still worth chasing, not
+// just what's already been won. Shared by a signed-in player's own
+// Trophy Room and the read-only version shown when browsing anyone
+// else's profile, so both stay visually identical.
+// `awards` items need a `partnerName` already resolved (the two call
+// sites compute "who the other pair member was" differently) and a
+// `leagueName`; `hasPlayed` hides the whole thing for someone who's
+// never played a single match anywhere, rather than showing an entirely
+// locked grid before they've even had a chance to try.
+function achievementGridHtml(championships, runnerUps, awards, winStreak, hasPlayed) {
+  if (!hasPlayed && championships.length === 0 && runnerUps.length === 0 && awards.length === 0) return "";
+  const tile = (locked, icon, title, sub) => `
+    <div class="ach-tile">
+      <div class="ach-badge ${locked ? "locked" : "unlocked"}">${icon}</div>
+      <div class="ach-cap"><b>${escapeHtml(title)}</b>${escapeHtml(sub)}</div>
     </div>`;
-  }
-  if (awards.length) {
-    if (championships.length) html += '<div class="cab-glass-line"></div>';
-    html += `<div class="cab-shelf">
-      <div class="cab-shelf-label">👑 Pair of the Week</div>
-      <div class="cab-items">${awards.map((w) => `
-        <div class="cab-item">
-          <div class="cab-trophy-wrap"><div class="cab-trophy">👑</div></div>
-          <div class="t">Round ${w.round}</div>
-          <div class="s">with ${escapeHtml(w.partnerName)} &middot; ${escapeHtml(w.leagueName)}</div>
-        </div>`).join("")}</div>
-    </div>`;
-  }
-  html += "</div>";
-  return html;
+  const tiles = [];
+  if (championships.length) championships.forEach((h) => tiles.push(tile(false, "🏆", "Champion", `${h.teamName} · S${h.season}`)));
+  else tiles.push(tile(true, "🏆", "Champion", "Not yet"));
+  if (runnerUps.length) runnerUps.forEach((h) => tiles.push(tile(false, "🥈", "Runner-up", `${h.teamName} · S${h.season}`)));
+  else tiles.push(tile(true, "🥈", "Runner-up", "Not yet"));
+  if (awards.length) awards.forEach((w) => tiles.push(tile(false, "👑", "MVP", `Round ${w.round} · ${w.leagueName}`)));
+  else tiles.push(tile(true, "👑", "MVP", "Not yet"));
+  if (winStreak && winStreak.count >= WIN_STREAK_THRESHOLD) tiles.push(tile(false, "🔥", "Win streak", `${winStreak.count} in a row · ${winStreak.leagueName}`));
+  else tiles.push(tile(true, "🔥", "Win streak", `${WIN_STREAK_THRESHOLD}+ in a row`));
+  return `<div class="ach-grid">${tiles.join("")}</div>`;
 }
 function renderTrophyRoom(cards) {
   const section = el("account-trophy-section");
   const container = el("account-trophy-room");
   const championships = cards.flatMap((c) => c.championships.map((h) => ({ ...h, leagueName: c.leagueName })))
     .sort((a, b) => b.season - a.season);
+  const runnerUps = cards.flatMap((c) => c.runnerUps.map((h) => ({ ...h, leagueName: c.leagueName })))
+    .sort((a, b) => b.season - a.season);
   const awards = cards.flatMap((c) => c.awards.map((w) => ({ ...w, leagueName: c.leagueName, partnerName: w.playerAId === c.playerId ? w.playerBName : w.playerAName })))
     .sort((a, b) => b.round - a.round);
-  const html = trophyCabinetHtml(championships, awards);
+  const winStreak = cards.reduce((best, c) => (c.bestStreak > (best ? best.count : -1) ? { count: c.bestStreak, leagueName: c.leagueName } : best), null);
+  const hasPlayed = cards.some((c) => c.results.length > 0);
+  const html = achievementGridHtml(championships, runnerUps, awards, winStreak, hasPlayed);
   section.style.display = html ? "block" : "none";
   container.innerHTML = html;
 }
@@ -9013,11 +9011,12 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   } else {
     tabsEl.innerHTML = "";
   }
-  // Read-only version of the same cabinet a signed-in player sees on their
-  // own My Profile — this player's championships and Pair of the Week
-  // awards, aggregated across every league they're claimed in, whether
-  // that's the one you're currently viewing or not.
-  const trophyHtml = trophyCabinetHtml(data.allChampionships || [], data.allAwards || []);
+  // Read-only version of the same achievement grid a signed-in player sees
+  // on their own My Profile — this player's championships, runner-up
+  // finishes, Pair of the Week awards, and best-ever win streak, aggregated
+  // across every league they're claimed in, whether that's the one you're
+  // currently viewing or not.
+  const trophyHtml = achievementGridHtml(data.allChampionships || [], data.allRunnerUps || [], data.allAwards || [], data.bestWinStreak, data.rows.length > 0);
   el("player-modal-trophy-section").style.display = trophyHtml ? "block" : "none";
   el("player-modal-trophy-room").innerHTML = trophyHtml;
   const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);
