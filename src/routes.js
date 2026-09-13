@@ -1656,9 +1656,14 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // Longest run of consecutive wins ever recorded in this league — not
     // "current streak" (that resets the moment a loss happens and would
     // make an unlocked achievement flicker back to locked), a permanent
-    // personal best instead.
-    let streak = 0, bestStreak = 0;
-    results.forEach((r) => { if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0; });
+    // personal best instead. A "6-0" set (a bagel) is counted the same
+    // pass — `score` is already flipped so this player's own side leads
+    // each set, so "6-0" always means they won it.
+    let streak = 0, bestStreak = 0, bagelCount = 0;
+    results.forEach((r) => {
+      if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0;
+      if ((r.score || "").split(", ").includes("6-0")) bagelCount++;
+    });
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     cards.push({
       leagueId: league.id, leagueName: league.name,
@@ -1670,6 +1675,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       championships,
       runnerUps,
       bestStreak,
+      bagelCount,
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
@@ -4917,14 +4923,22 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // Longest run of consecutive wins EVER recorded in a league — not the
   // "current streak" the Stats page shows (that resets the moment a loss
   // happens, which would make an unlocked achievement flicker back to
-  // locked), a permanent personal best instead.
-  const bestWinStreakIn = (aLeague, aPlayerId) => {
+  // locked), a permanent personal best instead. A "6-0" set (a bagel) is
+  // counted the same pass over the same rows — `score` is already
+  // flipped so this player's own side leads each set, so "6-0" always
+  // means they won it, never the opponent.
+  const careerStatsIn = (aLeague, aPlayerId) => {
     const aRows = logic.playerMatchHistory(aLeague, aPlayerId, ratingsData);
-    let streak = 0, best = 0;
-    aRows.forEach((r) => { if (r.result === "W") { streak++; best = Math.max(best, streak); } else streak = 0; });
-    return best;
+    let streak = 0, bestStreak = 0, bagels = 0;
+    aRows.forEach((r) => {
+      if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0;
+      if ((r.score || "").split(", ").includes("6-0")) bagels++;
+    });
+    return { bestStreak, bagels };
   };
-  let bestWinStreak = { count: bestWinStreakIn(league, player.id), leagueId: league.id, leagueName: league.name };
+  const myCareerStats = careerStatsIn(league, player.id);
+  let bestWinStreak = { count: myCareerStats.bestStreak, leagueId: league.id, leagueName: league.name };
+  let bagelCount = myCareerStats.bagels;
   // A championship belongs to the person, not to whichever tab happens to
   // be open — a claimed player's hero shows every title across every
   // league they're claimed in, not just this one, so it doesn't look like
@@ -4955,8 +4969,9 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id));
           allAwards = allAwards.concat(potwAwardsFor(otherLeague, otherPlayer.id));
           allRunnerUps = allRunnerUps.concat(runnerUpTitlesFor(otherLeague, otherPlayer.id));
-          const otherStreak = bestWinStreakIn(otherLeague, otherPlayer.id);
-          if (otherStreak > bestWinStreak.count) bestWinStreak = { count: otherStreak, leagueId: otherLeague.id, leagueName: otherLeague.name };
+          const otherStats = careerStatsIn(otherLeague, otherPlayer.id);
+          if (otherStats.bestStreak > bestWinStreak.count) bestWinStreak = { count: otherStats.bestStreak, leagueId: otherLeague.id, leagueName: otherLeague.name };
+          bagelCount += otherStats.bagels;
           return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name, playerId: otherPlayer.id, playerName: otherPlayer.name };
         })
         .filter(Boolean);
@@ -4990,6 +5005,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     allAwards,
     allRunnerUps,
     bestWinStreak,
+    bagelCount,
     otherLeagues,
     claimed: !!player.claimedByUserId,
     canEditPhoto: isAdmin || isCaptain || isOwnProfile,
