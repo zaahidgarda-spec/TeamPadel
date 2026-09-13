@@ -1093,9 +1093,12 @@
          have no league open at all. -->
     <div id="player-modal-backdrop" class="modal-backdrop">
       <div class="modal-box player-modal-box">
-        <button class="modal-close" id="player-modal-close" aria-label="Back">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        </button>
+        <div class="p-topbar">
+          <button class="p-topbar-back" id="player-modal-close" aria-label="Back">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <span class="p-topbar-label" id="player-modal-topbar-label"></span>
+        </div>
         <div class="p-hero">
           <div class="p-hero-row">
             <div class="p-photo-wrap">

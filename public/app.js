@@ -8924,6 +8924,7 @@ function insightRowsHtml(records) {
 async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-stats").innerHTML = "";
+  el("player-modal-topbar-label").textContent = "";
   el("player-modal-photo-slot").innerHTML = "";
   el("player-modal-team-badge").innerHTML = "";
   el("player-modal-tags").innerHTML = "";
@@ -8953,6 +8954,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   ]);
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
+  el("player-modal-topbar-label").textContent = `${data.teamName} · ${data.leagueName}`;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
   // Crest, not initials-only fallback — reuses the same avatarHtml() every
   // other team-logo spot in the app already uses, so a team without a
