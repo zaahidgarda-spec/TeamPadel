@@ -1223,6 +1223,14 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-tag.trophy{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.4);color:#8A6300;}
 .p-content-pad{padding:0 20px;}
 .p-content-pad .tabs-sub{margin:14px 0 0;}
+/* League-switching gets the same soft hero treatment My Profile gives its
+   own "next match" card, instead of a bare tab strip — so hopping between
+   a claimed player's leagues feels like part of the same product. */
+.p-leagues-hero{background:linear-gradient(155deg, var(--accent-soft) 0%, var(--panel) 55%);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);padding:14px 16px 12px;margin:14px 0;}
+.p-leagues-hero-top{display:flex;align-items:center;gap:7px;font-family:var(--font-display);font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);}
+.p-leagues-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex-shrink:0;}
+.p-leagues-hero .tabs-sub{margin:10px 0 0;}
+.p-section-label{font-family:var(--font-display);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text);margin:0 0 10px;}
 .p-stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);margin-top:18px;}
 .p-stat{padding:14px 6px;text-align:center;border-right:1px solid var(--line);}
 .p-stat:last-child{border-right:none;}

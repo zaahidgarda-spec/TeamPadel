@@ -4874,8 +4874,26 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // won, not just a name that happens to appear in the winner text.
   const hallOfFameTitlesFor = (aLeague, aPlayerId) => (aLeague.hallOfFame || [])
     .filter((e) => (e.winnerRoster || []).some((p) => p.id === aPlayerId))
-    .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, leagueId: aLeague.id, leagueName: aLeague.name }));
+    .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, teamLogo: e.winnerLogo || "", leagueId: aLeague.id, leagueName: aLeague.name }));
   const hallOfFameTitles = hallOfFameTitlesFor(league, player.id).sort((a, b) => b.season - a.season);
+  // Same idea as hallOfFameTitlesFor below — a Pair of the Week award
+  // belongs to the person, not to whichever league tab happens to be open,
+  // so the Trophy Room on this page needs the actual round/partner detail
+  // for every league they're claimed in, not just a bare count.
+  const potwAwardsFor = (aLeague, aPlayerId) => {
+    const aRounds = [...new Set(aLeague.fixtures.map((f) => f.round))];
+    return aRounds
+      .flatMap((r) => logic.potwTallyForRound(aLeague, r).winners.map((w) => ({ ...w, round: r })))
+      .filter((w) => w.playerAId === aPlayerId || w.playerBId === aPlayerId)
+      .map((w) => ({
+        round: w.round,
+        leagueId: aLeague.id,
+        leagueName: aLeague.name,
+        teamName: w.teamName,
+        partnerName: w.playerAId === aPlayerId ? w.playerBName : w.playerAName,
+      }));
+  };
+  let allAwards = potwAwardsFor(league, player.id);
   // A championship belongs to the person, not to whichever tab happens to
   // be open — a claimed player's hero shows every title across every
   // league they're claimed in, not just this one, so it doesn't look like
@@ -4904,12 +4922,14 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
           if (!otherLeague || !otherTeam || !otherPlayer) return null;
           allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id));
+          allAwards = allAwards.concat(potwAwardsFor(otherLeague, otherPlayer.id));
           return { leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name, playerId: otherPlayer.id, playerName: otherPlayer.name };
         })
         .filter(Boolean);
     }
   }
   allChampionships.sort((a, b) => b.season - a.season);
+  allAwards.sort((a, b) => b.round - a.round);
   const isAdmin = isAdminSession(req, league.id);
   const u = resolveLeagueSession(req, league.id);
   const isCaptain = u && u.leagueId === league.id && u.role === "captain" && u.teamId === team.id;
@@ -4932,6 +4952,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     potwWins,
     hallOfFameTitles,
     allChampionships,
+    allAwards,
     otherLeagues,
     claimed: !!player.claimedByUserId,
     canEditPhoto: isAdmin || isCaptain || isOwnProfile,

@@ -1840,18 +1840,15 @@ async function renderAccountStats(cards) {
 // place instead of scattered across each league's own Stats/Hall of Fame
 // pages. Hidden entirely (not just empty) when there's nothing here yet,
 // same as Line-ups due — an empty trophy cabinet isn't worth a section.
-function renderTrophyRoom(cards) {
-  const section = el("account-trophy-section");
-  const container = el("account-trophy-room");
-  const championships = cards.flatMap((c) => c.championships.map((h) => ({ ...h, leagueName: c.leagueName })))
-    .sort((a, b) => b.season - a.season);
-  const awards = cards.flatMap((c) => c.awards.map((w) => ({ ...w, leagueName: c.leagueName, playerId: c.playerId })))
-    .sort((a, b) => b.round - a.round);
-  if (championships.length === 0 && awards.length === 0) { section.style.display = "none"; return; }
-  section.style.display = "block";
-  // A lit "cabinet" card — a shelf per trophy type, each item's own glow —
-  // rather than a plain grid, so a real haul of trophies reads as a
-  // display case worth showing off instead of a settings-style list.
+// A lit "cabinet" card — a shelf per trophy type, each item's own glow —
+// rather than a plain grid, so a real haul of trophies reads as a display
+// case worth showing off instead of a settings-style list. Shared by a
+// signed-in player's own Trophy Room and the read-only version shown when
+// browsing anyone else's profile, so both stay visually identical.
+// `awards` items need a `partnerName` already resolved (the two call sites
+// compute "who the other pair member was" differently) and a `leagueName`.
+function trophyCabinetHtml(championships, awards) {
+  if (championships.length === 0 && awards.length === 0) return "";
   let html = '<div class="cab-card"><div class="cab-spotlight"></div>';
   if (championships.length) {
     html += `<div class="cab-shelf">
@@ -1871,18 +1868,26 @@ function renderTrophyRoom(cards) {
     if (championships.length) html += '<div class="cab-glass-line"></div>';
     html += `<div class="cab-shelf">
       <div class="cab-shelf-label">👑 Pair of the Week</div>
-      <div class="cab-items">${awards.map((w) => {
-        const partner = w.playerAId === w.playerId ? w.playerBName : w.playerAName;
-        return `
+      <div class="cab-items">${awards.map((w) => `
         <div class="cab-item">
           <div class="cab-trophy-wrap"><div class="cab-trophy">👑</div></div>
           <div class="t">Round ${w.round}</div>
-          <div class="s">with ${escapeHtml(partner)} &middot; ${escapeHtml(w.leagueName)}</div>
-        </div>`;
-      }).join("")}</div>
+          <div class="s">with ${escapeHtml(w.partnerName)} &middot; ${escapeHtml(w.leagueName)}</div>
+        </div>`).join("")}</div>
     </div>`;
   }
   html += "</div>";
+  return html;
+}
+function renderTrophyRoom(cards) {
+  const section = el("account-trophy-section");
+  const container = el("account-trophy-room");
+  const championships = cards.flatMap((c) => c.championships.map((h) => ({ ...h, leagueName: c.leagueName })))
+    .sort((a, b) => b.season - a.season);
+  const awards = cards.flatMap((c) => c.awards.map((w) => ({ ...w, leagueName: c.leagueName, partnerName: w.playerAId === c.playerId ? w.playerBName : w.playerAName })))
+    .sort((a, b) => b.round - a.round);
+  const html = trophyCabinetHtml(championships, awards);
+  section.style.display = html ? "block" : "none";
   container.innerHTML = html;
 }
 // A signed-in player's own "Tonight's matches" — everything happening
@@ -8923,8 +8928,10 @@ async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-team-badge").innerHTML = "";
   el("player-modal-tags").innerHTML = "";
   el("player-modal-photo-edit").style.display = "none";
-  el("player-modal-league-tabs").style.display = "none";
+  el("player-modal-leagues-hero").style.display = "none";
   el("player-modal-league-tabs").innerHTML = "";
+  el("player-modal-trophy-section").style.display = "none";
+  el("player-modal-trophy-room").innerHTML = "";
   el("player-modal-backdrop").classList.add("open");
   await loadPlayerHistoryTab(leagueId, playerId);
 }
@@ -8989,8 +8996,8 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
     .concat(data.otherLeagues)
     .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
   const tabsEl = el("player-modal-league-tabs");
+  el("player-modal-leagues-hero").style.display = allLeagues.length > 1 ? "block" : "none";
   if (allLeagues.length > 1) {
-    tabsEl.style.display = "flex";
     tabsEl.innerHTML = allLeagues.map((l) => `<button type="button" class="player-league-tab${l.leagueId === leagueId ? " active" : ""}" data-league="${l.leagueId}" data-player="${l.playerId}">${escapeHtml(l.leagueName)}</button>`).join("");
     tabsEl.querySelectorAll(".player-league-tab").forEach((btn) => {
       btn.onclick = () => {
@@ -9001,9 +9008,15 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
       };
     });
   } else {
-    tabsEl.style.display = "none";
     tabsEl.innerHTML = "";
   }
+  // Read-only version of the same cabinet a signed-in player sees on their
+  // own My Profile — this player's championships and Pair of the Week
+  // awards, aggregated across every league they're claimed in, whether
+  // that's the one you're currently viewing or not.
+  const trophyHtml = trophyCabinetHtml(data.allChampionships || [], data.allAwards || []);
+  el("player-modal-trophy-section").style.display = trophyHtml ? "block" : "none";
+  el("player-modal-trophy-room").innerHTML = trophyHtml;
   const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);
   el("player-modal-stats").innerHTML = statsHtml;
   el("player-modal-stats").style.display = statsHtml ? "grid" : "none";
