@@ -1877,7 +1877,14 @@ const VIBORA_LOGO_UNLOCKED = "/images/vibora-50-champion.png";
 // `leagueName`; `hasPlayed` hides the whole thing for someone who's
 // never played a single match anywhere, rather than showing an entirely
 // locked grid before they've even had a chance to try.
-function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed) {
+// `inViboraLeague` is different from every other badge's lock state:
+// Premier/Business Class show locked-and-greyed-out for anyone (a
+// generic "here's what you could chase"), but Vibora 50+ is an age-band
+// league — showing it, even locked, on a 25-year-old's profile who could
+// never actually play there isn't "not yet," it's just irrelevant. So
+// this tile is omitted entirely rather than shown locked for anyone who
+// isn't (and never was) rostered in that league.
+function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed, inViboraLeague) {
   if (!hasPlayed && championships.length === 0 && runnerUps.length === 0 && awards.length === 0) return "";
   const tile = (locked, icon, title, sub) => `
     <div class="ach-tile">
@@ -1902,7 +1909,7 @@ function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelC
   if (businessClassWins.length) businessClassWins.forEach((h) => tiles.push(tile(false, ICON_BUSINESS_CLASS, "Business Class Champion", `Season ${h.season}`)));
   else tiles.push(tile(true, ICON_BUSINESS_CLASS, "Business Class Champion", "Not yet"));
   if (viboraWins.length) viboraWins.forEach((h) => tiles.push(imgTile(false, "Vibora 50+ Champion", `Season ${h.season}`)));
-  else tiles.push(imgTile(true, "Vibora 50+ Champion", "Not yet"));
+  else if (inViboraLeague) tiles.push(imgTile(true, "Vibora 50+ Champion", "Not yet"));
   if (regularChampionships.length) regularChampionships.forEach((h) => tiles.push(tile(false, "🏆", "Champion", `${h.teamName} · S${h.season}`)));
   else tiles.push(tile(true, "🏆", "Champion", "Not yet"));
   if (runnerUps.length) runnerUps.forEach((h) => tiles.push(tile(false, "🥈", "Runner-up", `${h.teamName} · S${h.season}`)));
@@ -1931,7 +1938,8 @@ function renderTrophyRoom(cards) {
   const unbeatenSeasons = cards.flatMap((c) => (c.unbeatenSeasons || []).map((s) => ({ ...s, leagueName: c.leagueName })))
     .sort((a, b) => b.season - a.season);
   const hasPlayed = cards.some((c) => c.results.length > 0);
-  const html = achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed);
+  const inViboraLeague = cards.some((c) => c.leagueName === VIBORA_LEAGUE_NAME);
+  const html = achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed, inViboraLeague);
   section.style.display = html ? "block" : "none";
   container.innerHTML = html;
 }
@@ -9062,7 +9070,8 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   // finishes, Pair of the Week awards, and best-ever win streak, aggregated
   // across every league they're claimed in, whether that's the one you're
   // currently viewing or not.
-  const trophyHtml = achievementGridHtml(data.allChampionships || [], data.allRunnerUps || [], data.allAwards || [], data.bestWinStreak, data.bagelCount || 0, data.allUnbeatenSeasons || [], data.rows.length > 0);
+  const inViboraLeague = allLeagues.some((l) => l.leagueName === VIBORA_LEAGUE_NAME);
+  const trophyHtml = achievementGridHtml(data.allChampionships || [], data.allRunnerUps || [], data.allAwards || [], data.bestWinStreak, data.bagelCount || 0, data.allUnbeatenSeasons || [], data.rows.length > 0, inViboraLeague);
   el("player-modal-trophy-section").style.display = trophyHtml ? "block" : "none";
   el("player-modal-trophy-room").innerHTML = trophyHtml;
   const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);
