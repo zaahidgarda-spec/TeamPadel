@@ -1488,17 +1488,32 @@ router.post("/admin/players/combine", async (req, res) => {
   if (!normalized || !normalized.includes("@")) return res.status(400).json({ error: "A valid email is required." });
   if (!Array.isArray(records) || records.length < 2) return res.status(400).json({ error: "Select at least two records to combine." });
   let userId = findUserIdByEmail(normalized);
-  let user;
-  if (userId) {
-    user = store.getUser(userId);
-  } else {
-    userId = logic.uid();
+  let user = userId ? store.getUser(userId) : null;
+  // A userId with no matching user record means an earlier attempt at
+  // this same email got as far as saving the index entry, then failed
+  // claim validation below before the user record itself was ever
+  // written — reuse that id and rebuild the record rather than leaving
+  // the index permanently pointing at nothing.
+  const needsIndexEntry = !userId;
+  if (!user) {
+    if (!userId) userId = logic.uid();
     // No password — this profile exists so its records show up combined,
     // but nobody can log into it until the real player sets one up
     // themselves. /players/signup, if it sees this exact email with no
     // password set, adopts this account (setting the password on it)
     // instead of blocking them or creating a duplicate.
     user = { id: userId, email: normalized, passwordHash: null, name: name.trim(), createdAt: Date.now(), claims: [] };
+  }
+  // All-or-nothing, and validated before anything is persisted — if any
+  // one record is already claimed by a different profile, reject the
+  // whole combine rather than saving a new account/index entry for a
+  // combine that didn't actually go through.
+  try {
+    records.forEach((r) => claimPlayerRecord(user, r.leagueId, r.teamId, r.playerId));
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  if (needsIndexEntry) {
     const index = store.getUsersIndex();
     index.push({ id: userId, email: normalized });
     try {
@@ -1506,14 +1521,6 @@ router.post("/admin/players/combine", async (req, res) => {
     } catch (e) {
       return res.status(503).json({ error: "Couldn't save just now — try again in a moment." });
     }
-  }
-  // All-or-nothing: if any one record is already claimed by a different
-  // profile, reject the whole combine rather than silently applying half
-  // of it — the admin can go unclaim the conflicting one first.
-  try {
-    records.forEach((r) => claimPlayerRecord(user, r.leagueId, r.teamId, r.playerId));
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
   }
   try {
     await store.saveUserDurable(user.id, user);
