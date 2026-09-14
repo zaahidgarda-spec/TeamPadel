@@ -1240,6 +1240,16 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-tag.team .avatar,.p-tag.team .avatar-fb{width:100%;height:100%;border:none;background:transparent;color:var(--accent);}
 .p-tag.crown{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.35);color:#8A6300;}
 .p-tag.trophy{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.4);color:#8A6300;}
+.p-tag.owner{background:transparent;border:1.5px solid #B8860B;color:#B8860B;}
+/* A team owner's avatar gets a soft gold ring — reads as a real
+   distinction at a glance, before you even reach the tags below it.
+   Sits behind the photo (z-index -1) so the photo's own white border
+   still shows as a gap between the ring and the image itself. */
+.p-photo-wrap.owner-ring::before{
+  content:"";position:absolute;inset:-4px;border-radius:50%;z-index:-1;
+  background:conic-gradient(from 180deg,#F9E38B,#B8860B,#F9E38B,#B8860B,#F9E38B);
+  box-shadow:0 4px 14px rgba(184,134,11,.35);
+}
 .p-content-pad{padding:0 20px;}
 .p-content-pad .tabs-sub{margin:14px 0 0;}
 /* League-switching gets the same soft hero treatment My Profile gives its

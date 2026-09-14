@@ -5087,6 +5087,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     playerId: player.id,
     playerName: player.name,
     photo: player.photo || "",
+    isTeamOwner: (team.ownerIds || []).includes(player.id),
     isPairs: league.format === "pairs",
     rows,
     potwWins,

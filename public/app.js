@@ -8397,7 +8397,7 @@ function openTeamModal(teamId) {
   el("team-modal-name").textContent = team.name;
   const rankTag = row ? `<span class="p-tag" style="background:var(--accent-soft);color:var(--accent);">${ordinal(rank + 1)} place</span>` : "";
   const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
-  const ownerTag = ownerNames.length ? `<span class="p-tag" style="background:var(--panel-2);color:var(--text-dim);">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
+  const ownerTag = ownerNames.length ? `<span class="p-tag owner">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
   el("team-modal-tags").innerHTML = rankTag + ownerTag;
   el("team-modal-stats").innerHTML = row
     ? [
@@ -9102,6 +9102,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-topbar-label").textContent = `${data.teamName} · ${data.leagueName}`;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
+  el("player-modal-photo-slot").parentElement.classList.toggle("owner-ring", !!data.isTeamOwner);
   // Only shown alongside an actual player photo — without one, the photo
   // slot above already falls back to the team crest (or the team's own
   // initials) as the main avatar, so badging it again here would just be
@@ -9122,7 +9123,8 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   }).join("");
   el("player-modal-tags").innerHTML = trophyTags
     + `<span class="p-tag team" title="${escapeHtml(data.teamName)}">${avatarHtml({ logo: data.teamLogo, name: data.teamName })}</span>`
-    + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "");
+    + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "")
+    + (data.isTeamOwner ? `<span class="p-tag owner">Owner</span>` : "");
   const editBadge = el("player-modal-photo-edit");
   const photoInput = el("player-modal-photo-input");
   editBadge.style.display = data.canEditPhoto ? "flex" : "none";
