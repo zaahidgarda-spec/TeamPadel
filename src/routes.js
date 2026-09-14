@@ -1348,9 +1348,14 @@ function claimPlayerRecord(user, leagueId, teamId, playerId) {
     // it only exists because an admin combined this record with others on
     // this player's behalf before they'd ever signed up themselves. The
     // real player showing up now to claim it absorbs everything already
-    // linked there instead of hitting a wall.
+    // linked there instead of hitting a wall. A holder that no longer
+    // exists at all (the account was deleted at some point without
+    // clearing this reference first) is the same story minus anything to
+    // absorb — nothing real is holding this claim, so it's free to take.
     const other = store.getUser(player.claimedByUserId);
-    if (other && !other.passwordHash) {
+    if (!other) {
+      player.claimedByUserId = null;
+    } else if (!other.passwordHash) {
       absorbPlaceholderAccount(user, other);
     } else {
       throw new Error(`${player.name} (${team.name}, ${league.name}) has already been claimed by another profile.`);
