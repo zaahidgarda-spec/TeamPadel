@@ -1718,7 +1718,11 @@ async function runPlayerSearch(q) {
 function renderAccountAvatar(cards) {
   const btn = el("account-avatar-btn");
   if (!cards.length) { btn.style.display = "none"; return; }
-  const withPhoto = cards.find((c) => c.photo) || cards[0];
+  // A team-owner record takes priority so the Team Owner strip is what
+  // greets an owner by default, instead of landing on some other league
+  // they happen to also play in just because that one has a photo set.
+  const withPhoto = cards.find((c) => c.isTeamOwner && c.photo) || cards.find((c) => c.isTeamOwner)
+    || cards.find((c) => c.photo) || cards[0];
   btn.style.display = "block";
   btn.innerHTML = withPhoto.photo
     ? `<img src="${withPhoto.photo}" alt="">`

@@ -1694,6 +1694,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
+      isTeamOwner: (team.ownerIds || []).includes(player.id),
     });
     return true;
   });
