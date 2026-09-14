@@ -5021,6 +5021,10 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // in — so a captain/admin browsing one league's roster can see this
   // isn't the only team this player is on, and can switch straight to
   // that league's record for the same player without leaving the modal.
+  // Excludes only this exact record, not the whole league — a claim on a
+  // *different* team in this same league is real too (e.g. the same
+  // person won a title with one team, then moved to another the next
+  // season) and still deserves its own tab, not to be silently dropped.
   let otherLeagues = [];
   if (player.claimedByUserId) {
     const user = store.getUser(player.claimedByUserId);
@@ -5030,7 +5034,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
       // here either.
       const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
       otherLeagues = user.claims
-        .filter((c) => c.leagueId !== league.id && !hiddenLeagueIds.has(c.leagueId))
+        .filter((c) => !(c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id) && !hiddenLeagueIds.has(c.leagueId))
         .map((c) => {
           const otherLeague = store.getLeague(c.leagueId);
           const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);

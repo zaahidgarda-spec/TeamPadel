@@ -9102,13 +9102,22 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   // reshuffles every time you switch (whichever league you just picked
   // becomes "current" and jumps to the front), so the same visual
   // position wouldn't reliably mean the same league from click to click.
-  const allLeagues = [{ leagueId: data.leagueId, leagueName: data.leagueName, playerId: data.playerId }]
+  const allLeagues = [{ leagueId: data.leagueId, leagueName: data.leagueName, teamName: data.teamName, playerId: data.playerId }]
     .concat(data.otherLeagues)
     .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
   const tabsEl = el("player-modal-league-tabs");
   el("player-modal-leagues-hero").style.display = allLeagues.length > 1 ? "block" : "none";
   if (allLeagues.length > 1) {
-    tabsEl.innerHTML = allLeagues.map((l) => `<button type="button" class="player-league-tab${l.leagueId === leagueId ? " active" : ""}" data-league="${l.leagueId}" data-player="${l.playerId}">${escapeHtml(l.leagueName)}</button>`).join("");
+    // Same person can hold two different team memberships in the very
+    // same league (moved teams between seasons) — a bare league name
+    // can't tell those two tabs apart, so the team name joins it only
+    // when that league genuinely appears more than once here.
+    tabsEl.innerHTML = allLeagues.map((l) => {
+      const dupeLeague = allLeagues.filter((x) => x.leagueId === l.leagueId).length > 1;
+      const label = dupeLeague ? `${l.leagueName} · ${l.teamName}` : l.leagueName;
+      const isActive = l.leagueId === leagueId && l.playerId === playerId;
+      return `<button type="button" class="player-league-tab${isActive ? " active" : ""}" data-league="${l.leagueId}" data-player="${l.playerId}">${escapeHtml(label)}</button>`;
+    }).join("");
     tabsEl.querySelectorAll(".player-league-tab").forEach((btn) => {
       btn.onclick = () => {
         tabsEl.querySelectorAll(".player-league-tab").forEach((b) => b.classList.remove("active"));
