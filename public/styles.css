@@ -499,6 +499,12 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .leaderboard{display:flex;flex-direction:column;gap:8px;}
 .rank-row{display:grid;grid-template-columns:34px 1fr auto 64px;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;transition:border-color .15s ease,box-shadow .15s ease;}
 .rank-row:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);}
+/* Teams-format rows open that team's roster — a pairs-format row has no
+   equivalent tap target of its own since each player's own name is
+   already its own link (see .player-link). */
+.rank-row.row-clickable{cursor:pointer;}
+.team-roster-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);}
+.team-roster-row:last-child{border-bottom:none;}
 .rank-row.leader{background:linear-gradient(90deg,var(--accent-soft),var(--panel) 68%);border-color:var(--accent);}
 .rank-badge{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
 /* Full names, never truncated — the row grows taller instead of cutting a
@@ -1190,11 +1196,11 @@ nav.tabs::-webkit-scrollbar{display:none;}
    one takes over the screen like drilling into any other section,
    scoped to this one backdrop by id so every other .modal-backdrop in
    the app keeps its normal small-dialog behavior. ---------- */
-#player-modal-backdrop{background:var(--bg);padding:0;align-items:flex-start;justify-content:center;overflow-y:auto;}
-#player-modal-backdrop .player-modal-box{max-width:600px;width:100%;min-height:100%;margin:0;border-radius:0;box-shadow:none;}
+#player-modal-backdrop,#team-modal-backdrop{background:var(--bg);padding:0;align-items:flex-start;justify-content:center;overflow-y:auto;}
+#player-modal-backdrop .player-modal-box,#team-modal-backdrop .player-modal-box{max-width:600px;width:100%;min-height:100%;margin:0;border-radius:0;box-shadow:none;}
 @media (min-width:680px){
-  #player-modal-backdrop{padding:28px 20px;}
-  #player-modal-backdrop .player-modal-box{min-height:auto;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);}
+  #player-modal-backdrop,#team-modal-backdrop{padding:28px 20px;}
+  #player-modal-backdrop .player-modal-box,#team-modal-backdrop .player-modal-box{min-height:auto;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);}
 }
 .player-modal-box{padding:0;}
 /* A real top bar instead of a bare circle floating over empty space —

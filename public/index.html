@@ -1088,6 +1088,34 @@
       </div>
     </div>
 
+    <!-- A team's current roster — tapping its row on the League Table
+         (teams-format leagues only; a pairs-format row already links each
+         player's own name directly, so there's no separate "team" to open
+         there) opens this. Same full-page treatment as the player profile
+         modal below, just for a team. -->
+    <div id="team-modal-backdrop" class="modal-backdrop">
+      <div class="modal-box player-modal-box team-modal-box">
+        <div class="p-topbar">
+          <button class="p-topbar-back" id="team-modal-close" aria-label="Back">&larr;</button>
+          <span class="p-topbar-label" id="team-modal-topbar-label"></span>
+        </div>
+        <div class="p-hero">
+          <div class="p-hero-row">
+            <div id="team-modal-crest-slot"></div>
+            <div class="p-hero-text">
+              <h3 id="team-modal-name" class="p-name"></h3>
+              <div class="p-tags" id="team-modal-tags"></div>
+            </div>
+          </div>
+        </div>
+        <div id="team-modal-stats" class="p-stats"></div>
+        <div class="p-content-pad" style="padding-top:18px;">
+          <p class="p-section-label">Roster</p>
+          <div id="team-modal-roster"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Top-level (not nested in view-league) so it can be opened from the
          hub too — e.g. the Search players tab and admin combine, which
          have no league open at all. -->

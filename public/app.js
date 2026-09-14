@@ -8169,6 +8169,7 @@ function renderTable() {
   else {
     c.innerHTML = standingsRowsHtml(rows, league.format === "pairs", stWinnerId);
     bindPlayerLinks(c);
+    bindTeamRowLinks(c);
   }
   const koCard = el("knockout-card");
   // A tie only still matters while the standings order it affects hasn't
@@ -8293,7 +8294,11 @@ function standingsRowsHtml(rows, isPairs, superTieWinnerId) {
       ? r.players.map(playerLinkHtml).join(" / ")
       : escapeHtml(r.name);
     const stTag = r.id === superTieWinnerId ? '<span class="note" style="margin-left:6px;">Won a Super Tie</span>' : "";
-    html += `<div class="rank-row${isLeader ? " leader" : ""}">
+    // Teams format: the whole row opens that team's roster (see
+    // openTeamModal) — pairs format skips this, each player's own name is
+    // already its own link right there in nameHtml.
+    const teamAttr = isPairs ? "" : ` data-team-id="${r.id}"`;
+    html += `<div class="rank-row${isLeader ? " leader" : ""}${isPairs ? "" : " row-clickable"}"${teamAttr}>
       <div class="rank-badge">${i + 1}</div>
       <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span>${stTag}</div>
       <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
@@ -8304,6 +8309,43 @@ function standingsRowsHtml(rows, isPairs, superTieWinnerId) {
   html += "</div>";
   return html;
 }
+function bindTeamRowLinks(root) {
+  root.querySelectorAll(".rank-row[data-team-id]").forEach((row) => {
+    row.onclick = () => openTeamModal(row.dataset.teamId);
+  });
+}
+// A team's current roster, opened by tapping its row on the League Table
+// (teams format only — see standingsRowsHtml). Everything here is already
+// sitting in the league object client-side, so unlike the player-history
+// modal this needs no round-trip to the server.
+function openTeamModal(teamId) {
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team) return;
+  const rows = computeStandingsClient();
+  const rank = rows.findIndex((r) => r.id === teamId);
+  const row = rank >= 0 ? rows[rank] : null;
+  el("team-modal-topbar-label").textContent = league.name;
+  el("team-modal-crest-slot").innerHTML = team.logo
+    ? `<img class="p-photo p-photo-team-fallback" src="${team.logo}" alt="">`
+    : `<div class="p-photo-fallback">${escapeHtml(playerInitials(team.name))}</div>`;
+  el("team-modal-name").textContent = team.name;
+  el("team-modal-tags").innerHTML = row ? `<span class="p-tag" style="background:var(--accent-soft);color:var(--accent);">${ordinal(rank + 1)} place</span>` : "";
+  el("team-modal-stats").innerHTML = row
+    ? [
+        { n: row.points, l: "Pts" },
+        { n: row.played, l: "Played" },
+        { n: row.rubbersWon, l: "Won" },
+        { n: (row.diff > 0 ? "+" : "") + row.diff, l: "Diff" },
+      ].map((s) => `<div class="p-stat"><div class="n">${s.n}</div><div class="lbl">${s.l}</div></div>`).join("")
+    : "";
+  el("team-modal-roster").innerHTML = team.players.length
+    ? team.players.map((p) => `<div class="team-roster-row">${avatarHtml(p)}${playerLinkHtml(p)}</div>`).join("")
+    : '<p class="empty">No players added yet.</p>';
+  bindPlayerLinks(el("team-modal-roster"));
+  el("team-modal-backdrop").classList.add("open");
+}
+el("team-modal-close").onclick = () => el("team-modal-backdrop").classList.remove("open");
+el("team-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "team-modal-backdrop") el("team-modal-backdrop").classList.remove("open"); });
 async function renderSeasonHistory() {
   const list = await api(`/leagues/${currentLeagueId}/season-history`).catch(() => []);
   el("season-history-list").innerHTML = list.length
