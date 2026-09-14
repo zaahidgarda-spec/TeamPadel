@@ -1842,6 +1842,14 @@ async function renderAccountStats(cards) {
   const captainTile = captaincies.length
     ? `<div class="stat-tile"><div class="stat-num" style="font-size:19px;">${escapeHtml(captaincies[0].teamName)}</div><div class="stat-lbl">Captain of<span class="tag">${escapeHtml(captaincies[0].leagueName)}</span>${captaincies.length > 1 ? ` +${captaincies.length - 1} more` : ""}</div></div>`
     : `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">Not a captain yet</div></div>`;
+  // Owner status lives on the team (team.ownerIds), not the account, so it's
+  // read off whichever claimed cards are flagged isTeamOwner rather than a
+  // separate playerAccount field the way captaincies are. Only rendered when
+  // it applies — most accounts own no team, same as the captain tile above.
+  const ownerCards = cards.filter((c) => c.isTeamOwner);
+  const ownerTile = ownerCards.length
+    ? `<div class="stat-tile stat-tile-owner"><div class="stat-num" style="font-size:19px;">${escapeHtml(ownerCards[0].teamName)}</div><div class="stat-lbl">Team Owner<span class="tag">${escapeHtml(ownerCards[0].leagueName)}</span>${ownerCards.length > 1 ? ` +${ownerCards.length - 1} more` : ""}</div></div>`
+    : "";
   // Rating is now one number shared across every league this account has
   // claimed a record in (the backend replays a claimed player's history
   // globally) — every card agrees, so picking one is just about which
@@ -1864,6 +1872,7 @@ async function renderAccountStats(cards) {
     <div class="stat-tile"><div class="stat-num">${results.length ? record : "—"}</div><div class="stat-lbl">Season record</div></div>
     <div class="stat-tile"><div class="stat-num">${seenLeagues.size}</div><div class="stat-lbl">League${seenLeagues.size === 1 ? "" : "s"} this season</div></div>
     ${captainTile}
+    ${ownerTile}
     ${ratingTile}
     <div class="stat-tile"><div class="stat-num">${totalAwards ? totalAwards + "×" : "—"}</div><div class="stat-lbl">🏆 Pair of the Week</div></div>
   `;

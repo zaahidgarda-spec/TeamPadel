@@ -1132,6 +1132,10 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .stat-tile{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;}
 .stat-tile .stat-num{font-family:var(--font-display);font-size:26px;font-weight:700;color:var(--accent);line-height:1;}
 .stat-tile .stat-lbl{font-size:11px;color:var(--text-dim);margin-top:4px;}
+.stat-tile.stat-tile-owner{background:linear-gradient(100deg,#1a1330,#3d2a6b 65%,#5b3fa8);border-color:transparent;}
+.stat-tile-owner .stat-num{color:#F9E38B;}
+.stat-tile-owner .stat-lbl{color:rgba(255,255,255,.75);}
+.stat-tile-owner .stat-lbl .tag{background:rgba(255,255,255,.14);color:#fff;}
 .stat-row{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);font-size:14px;}
 .stat-row:last-child{border-bottom:none;}
 /* Top Scorers / Best Partnerships / Win Streaks — the same row-card and
