@@ -5031,6 +5031,12 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // with this league's own titles; the loop below (already walking every
   // other claimed league for the tabs) adds the rest as it goes.
   let allChampionships = hallOfFameTitles.slice();
+  // Same "belongs to the person, not the open tab" rule as championships —
+  // owning a team in one league shouldn't vanish the moment the viewer
+  // switches to a different one of this player's claimed records.
+  let allOwnedTeams = (team.ownerIds || []).includes(player.id)
+    ? [{ leagueId: league.id, leagueName: league.name, teamName: team.name }]
+    : [];
   // If this player record has been claimed (see the player-accounts
   // feature), surface which other leagues that same real person plays
   // in — so a captain/admin browsing one league's roster can see this
@@ -5055,6 +5061,9 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
           const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
           if (!otherLeague || !otherTeam || !otherPlayer) return null;
+          if ((otherTeam.ownerIds || []).includes(otherPlayer.id)) {
+            allOwnedTeams.push({ leagueId: otherLeague.id, leagueName: otherLeague.name, teamName: otherTeam.name });
+          }
           allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id, otherPlayer.name));
           allAwards = allAwards.concat(potwAwardsFor(otherLeague, otherPlayer.id));
           allRunnerUps = allRunnerUps.concat(runnerUpTitlesFor(otherLeague, otherPlayer.id, otherPlayer.name));
@@ -5089,6 +5098,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     playerName: player.name,
     photo: player.photo || "",
     isTeamOwner: (team.ownerIds || []).includes(player.id),
+    allOwnedTeams,
     isPairs: league.format === "pairs",
     rows,
     potwWins,

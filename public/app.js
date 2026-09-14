@@ -9115,7 +9115,7 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-topbar-label").textContent = `${data.teamName} · ${data.leagueName}`;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
-  el("player-modal-photo-slot").parentElement.classList.toggle("owner-ring", !!data.isTeamOwner);
+  el("player-modal-photo-slot").parentElement.classList.toggle("owner-ring", (data.allOwnedTeams || []).length > 0);
   // Only shown alongside an actual player photo — without one, the photo
   // slot above already falls back to the team crest (or the team's own
   // initials) as the main avatar, so badging it again here would just be
@@ -9142,15 +9142,16 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   // Uses the same league icon the Champion badge already draws for this
   // named league (there's no separate real league logo on file), falling
   // back to a plain crown for any other league.
-  const ownerLeagueIcon = data.leagueName === PREMIER_LEAGUE_NAME ? ICON_PREMIER
-    : data.leagueName === BUSINESS_CLASS_LEAGUE_NAME ? ICON_BUSINESS_CLASS
+  const ownedTeams = data.allOwnedTeams || [];
+  const ownerIconFor = (leagueName) => leagueName === PREMIER_LEAGUE_NAME ? ICON_PREMIER
+    : leagueName === BUSINESS_CLASS_LEAGUE_NAME ? ICON_BUSINESS_CLASS
     : `<svg viewBox="0 0 24 24" fill="none"><path d="M12 2l7 3v6c0 5-3 8.5-7 11-4-2.5-7-6-7-11V5l7-3z" fill="currentColor"/></svg>`;
-  el("player-modal-owner-strip").innerHTML = data.isTeamOwner
+  el("player-modal-owner-strip").innerHTML = ownedTeams.length
     ? `<div class="owner-strip">
-        <div class="owner-strip-icon">${ownerLeagueIcon}</div>
+        <div class="owner-strip-icon">${ownerIconFor(ownedTeams[0].leagueName)}</div>
         <div class="owner-strip-text">
           <div class="owner-strip-title">Team Owner</div>
-          <div class="owner-strip-sub">${escapeHtml(data.leagueName)} · ${escapeHtml(data.teamName)}</div>
+          <div class="owner-strip-sub">${escapeHtml(ownedTeams[0].leagueName)} · ${escapeHtml(ownedTeams[0].teamName)}${ownedTeams.length > 1 ? ` +${ownedTeams.length - 1} more` : ""}</div>
         </div>
       </div>`
     : "";
