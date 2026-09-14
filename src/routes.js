@@ -1643,14 +1643,16 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       .filter((w) => w.playerAId === claim.playerId || w.playerBId === claim.playerId);
     // Exact roster match against each Hall of Fame winner (see POST
     // /hall-of-fame) — this player id was actually on the team when it won,
-    // same check the single-league player-history route uses.
+    // same check the single-league player-history route uses. Falls back to
+    // a name match against the entry's free-text winner for legacy entries
+    // that never got a roster at all (see hofWinnerNameMatch).
     const championships = (league.hallOfFame || [])
-      .filter((e) => (e.winnerRoster || []).some((p) => p.id === claim.playerId))
+      .filter((e) => (e.winnerRoster || []).some((p) => p.id === claim.playerId) || (!e.winnerRoster && hofWinnerNameMatch(e.winner, player.name)))
       .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, teamLogo: e.winnerLogo || "" }));
     // Same idea, the other half of each entry — a runner-up finish is
     // still a real achievement worth a badge of its own.
     const runnerUps = (league.hallOfFame || [])
-      .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === claim.playerId))
+      .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === claim.playerId) || (!e.runnerUpRoster && hofWinnerNameMatch(e.runnerUp, player.name)))
       .map((e) => ({ season: e.season, label: e.label, teamName: e.runnerUp, teamLogo: e.runnerUpLogo || "" }));
     const results = logic.playerMatchHistory(league, claim.playerId, ratingsData);
     // Longest run of consecutive wins ever recorded in this league — not
@@ -2406,6 +2408,21 @@ function seasonTeamSource(league, season) {
   const history = league.seasonHistory || [];
   const snapshot = history.find((s) => seasonNumberOf(history, s) === season);
   return snapshot || league;
+}
+
+// Hall of Fame entries added before roster-linking existed (this site's two
+// oldest leagues have a batch each) only ever recorded the winner as free
+// text, e.g. "Ahmed Khota & Hussain Mohamedy" — no winnerRoster at all, so
+// exact-id matching alone silently credits nobody. Falls back to matching
+// the player's own name against that text, but only a whole "&"/"/"-
+// separated segment (not a substring) — "Ahmed" alone shouldn't match
+// "Ahmed Khota", and this never runs at all once an entry actually has a
+// roster, so two different people sharing a name can't cross-credit each
+// other there.
+function hofWinnerNameMatch(winnerText, playerName) {
+  if (!winnerText || !playerName) return false;
+  const target = playerName.trim().toLowerCase();
+  return winnerText.split(/[&/]/).some((part) => part.trim().toLowerCase() === target);
 }
 function freezeHofTeam(league, season, teamId) {
   const team = seasonTeamSource(league, season).teams.find((t) => t.id === teamId);
@@ -4929,11 +4946,12 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     .filter((w) => w.playerAId === player.id || w.playerBId === player.id).length;
   // Exact match against the winning team's own frozen roster (see
   // POST /hall-of-fame) — this player id was actually on that team when it
-  // won, not just a name that happens to appear in the winner text.
-  const hallOfFameTitlesFor = (aLeague, aPlayerId) => (aLeague.hallOfFame || [])
-    .filter((e) => (e.winnerRoster || []).some((p) => p.id === aPlayerId))
+  // won. Falls back to a name match against the free-text winner (see
+  // hofWinnerNameMatch) only for legacy entries with no roster at all.
+  const hallOfFameTitlesFor = (aLeague, aPlayerId, aPlayerName) => (aLeague.hallOfFame || [])
+    .filter((e) => (e.winnerRoster || []).some((p) => p.id === aPlayerId) || (!e.winnerRoster && hofWinnerNameMatch(e.winner, aPlayerName)))
     .map((e) => ({ season: e.season, label: e.label, teamName: e.winner, teamLogo: e.winnerLogo || "", leagueId: aLeague.id, leagueName: aLeague.name }));
-  const hallOfFameTitles = hallOfFameTitlesFor(league, player.id).sort((a, b) => b.season - a.season);
+  const hallOfFameTitles = hallOfFameTitlesFor(league, player.id, player.name).sort((a, b) => b.season - a.season);
   // Same idea as hallOfFameTitlesFor below — a Pair of the Week award
   // belongs to the person, not to whichever league tab happens to be open,
   // so the Trophy Room on this page needs the actual round/partner detail
@@ -4954,10 +4972,10 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   let allAwards = potwAwardsFor(league, player.id);
   // Same idea, the other half of each Hall of Fame entry — a runner-up
   // finish is still a real achievement worth its own badge.
-  const runnerUpTitlesFor = (aLeague, aPlayerId) => (aLeague.hallOfFame || [])
-    .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === aPlayerId))
+  const runnerUpTitlesFor = (aLeague, aPlayerId, aPlayerName) => (aLeague.hallOfFame || [])
+    .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === aPlayerId) || (!e.runnerUpRoster && hofWinnerNameMatch(e.runnerUp, aPlayerName)))
     .map((e) => ({ season: e.season, label: e.label, teamName: e.runnerUp, teamLogo: e.runnerUpLogo || "", leagueId: aLeague.id, leagueName: aLeague.name }));
-  let allRunnerUps = runnerUpTitlesFor(league, player.id);
+  let allRunnerUps = runnerUpTitlesFor(league, player.id, player.name);
   // Longest run of consecutive wins EVER recorded in a league — not the
   // "current streak" the Stats page shows (that resets the moment a loss
   // happens, which would make an unlocked achievement flicker back to
@@ -5018,9 +5036,9 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
           const otherTeam = otherLeague && otherLeague.teams.find((t) => t.id === c.teamId);
           const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
           if (!otherLeague || !otherTeam || !otherPlayer) return null;
-          allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id));
+          allChampionships = allChampionships.concat(hallOfFameTitlesFor(otherLeague, otherPlayer.id, otherPlayer.name));
           allAwards = allAwards.concat(potwAwardsFor(otherLeague, otherPlayer.id));
-          allRunnerUps = allRunnerUps.concat(runnerUpTitlesFor(otherLeague, otherPlayer.id));
+          allRunnerUps = allRunnerUps.concat(runnerUpTitlesFor(otherLeague, otherPlayer.id, otherPlayer.name));
           const otherStats = careerStatsIn(otherLeague, otherPlayer.id);
           if (otherStats.bestStreak > bestWinStreak.count) bestWinStreak = { count: otherStats.bestStreak, leagueId: otherLeague.id, leagueName: otherLeague.name };
           bagelCount += otherStats.bagels;
