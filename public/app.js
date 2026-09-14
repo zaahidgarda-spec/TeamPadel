@@ -8126,6 +8126,53 @@ function roundCountsToTable(round) {
   const meta = league.roundMeta && league.roundMeta[round];
   return !meta || meta.type !== "knockout";
 }
+// The highest table-counting round where every one of its fixtures is
+// finalized — "no round finished yet" (null) is exactly when movement
+// arrows have nothing to compare against and must not show at all.
+function lastCompletedRoundClient() {
+  const tableRounds = [...new Set(league.fixtures.filter((f) => roundCountsToTable(f.round)).map((f) => f.round))];
+  const completed = tableRounds.filter((r) => league.fixtures.filter((f) => f.round === r && roundCountsToTable(f.round)).every((f) => f.finalized));
+  return completed.length ? Math.max(...completed) : null;
+}
+// Same accumulation as computeStandingsClient, but only counting fixtures
+// from strictly before `beforeRound` — i.e. the table exactly as it stood
+// before that round's results came in, so it can be diffed against today's
+// table to show who moved up or down because of that round.
+function standingsBeforeRoundClient(beforeRound) {
+  const isPairs = league.format === "pairs";
+  const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
+  const rows = scopedTeams.map((t) => {
+    let rubbersWon = 0, rubbersLost = 0, nightsWon = 0, nightsDrawn = 0, setsWon = 0, setsLost = 0;
+    league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round) && f.round < beforeRound).forEach((f) => {
+      const isA = f.teamA === t.id;
+      const { winsA, winsB } = fixtureScoreClient(f);
+      const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
+      rubbersWon += myWins; rubbersLost += oppWins;
+      if (myWins > oppWins) nightsWon++; else if (myWins === oppWins) nightsDrawn++;
+      if (isPairs) {
+        f.rubbers[0].sets.forEach((s) => {
+          const w = setWinnerClient(s);
+          if (!w) return;
+          if ((w === "A") === isA) setsWon++; else setsLost++;
+        });
+      }
+    });
+    const diff = isPairs ? setsWon - setsLost : rubbersWon - rubbersLost;
+    return { id: t.id, name: t.name, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
+  });
+  rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
+  return rows;
+}
+// Team id -> rank index before the last completed round, or null if no
+// round has finished yet — the single source both renderTable() and the
+// arrow markup below check before drawing anything.
+function priorRankMapClient() {
+  const lcr = lastCompletedRoundClient();
+  if (lcr == null) return null;
+  const map = {};
+  standingsBeforeRoundClient(lcr).forEach((r, i) => { map[r.id] = i; });
+  return map;
+}
 function computeStandingsClient() {
   const isPairs = league.format === "pairs";
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
@@ -8257,7 +8304,7 @@ function renderTable() {
   const stWinnerId = superTieWinnerClient();
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
-    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs", stWinnerId);
+    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs", stWinnerId, priorRankMapClient());
     bindPlayerLinks(c);
     bindTeamRowLinks(c);
   }
@@ -8367,10 +8414,18 @@ function renderTable() {
 // history archive view (a read-only look at a past, no-longer-live season)
 // can show an identical-looking table from its own precomputed rows,
 // without duplicating the row-building logic.
-function standingsRowsHtml(rows, isPairs, superTieWinnerId) {
+function standingsRowsHtml(rows, isPairs, superTieWinnerId, priorRankMap) {
   let html = '<div class="leaderboard">';
   rows.forEach((r, i) => {
     const isLeader = i === 0 && r.played > 0;
+    // No completed round yet (priorRankMap null) or this exact team wasn't
+    // ranked before it (e.g. added mid-season) both mean there's nothing
+    // real to compare against — show no arrow rather than a fake "–".
+    const priorRank = priorRankMap ? priorRankMap[r.id] : undefined;
+    const moveBy = priorRank === undefined ? 0 : priorRank - i;
+    const moveHtml = moveBy > 0 ? `<div class="rank-move up">▲${moveBy > 1 ? moveBy : ""}</div>`
+      : moveBy < 0 ? `<div class="rank-move down">▼${-moveBy > 1 ? -moveBy : ""}</div>`
+      : "";
     const diffText = (r.diff > 0 ? "+" : "") + r.diff;
     const stats = [
       { v: r.played, l: "P" },
@@ -8389,7 +8444,7 @@ function standingsRowsHtml(rows, isPairs, superTieWinnerId) {
     // already its own link right there in nameHtml.
     const teamAttr = isPairs ? "" : ` data-team-id="${r.id}"`;
     html += `<div class="rank-row${isLeader ? " leader" : ""}${isPairs ? "" : " row-clickable"}"${teamAttr}>
-      <div class="rank-badge">${i + 1}</div>
+      <div class="rank-badge">${i + 1}${moveHtml}</div>
       <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span>${stTag}</div>
       <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
       <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>

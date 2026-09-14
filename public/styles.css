@@ -506,7 +506,10 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .team-roster-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);}
 .team-roster-row:last-child{border-bottom:none;}
 .rank-row.leader{background:linear-gradient(90deg,var(--accent-soft),var(--panel) 68%);border-color:var(--accent);}
-.rank-badge{width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
+.rank-badge{position:relative;width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
+.rank-move{position:absolute;top:-6px;right:-8px;font-size:8.5px;font-weight:700;line-height:1;background:var(--panel);border-radius:999px;padding:1.5px 3px;box-shadow:0 1px 2px rgba(18,32,58,.15);}
+.rank-move.up{color:var(--success);}
+.rank-move.down{color:var(--clay);}
 /* Full names, never truncated — the row grows taller instead of cutting a
    pair down to one name and an ellipsis (same fix as the Next Matches
    carousel). Most rows are one line, so the avatar stays vertically
