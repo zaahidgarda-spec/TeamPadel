@@ -1472,6 +1472,36 @@ async function renderCombineAccounts() {
     };
   });
 }
+// A field's own value, not a team/league contact address (that's
+// team.notifyEmail elsewhere) — the real email each person signed up
+// with, straight off their own player account.
+function csvField(v) {
+  const s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+el("export-accounts-btn").onclick = async () => {
+  const btn = el("export-accounts-btn");
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = "Exporting…";
+  try {
+    const accounts = await api("/admin/players/accounts");
+    const header = ["Name", "Email", "Leagues", "Records"];
+    const rows = accounts.map((a) => [
+      a.name,
+      a.email,
+      a.claims.map((c) => c.leagueName).filter((v, i, arr) => arr.indexOf(v) === i).join("; "),
+      String(a.claims.length),
+    ]);
+    const csv = [header, ...rows].map((r) => r.map(csvField).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `player-accounts-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) { alert("Export failed: " + e.message); }
+  finally { btn.disabled = false; btn.textContent = original; }
+};
 
 /* ---------- Player accounts (sign up, claim player records, see profile) ----------
    Independent of the site owner / team captain logins above — one real
