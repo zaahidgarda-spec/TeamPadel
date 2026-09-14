@@ -8420,7 +8420,7 @@ function openTeamModal(teamId) {
     ? `<img class="p-photo p-photo-team-fallback" src="${team.logo}" alt="">`
     : `<div class="p-photo-fallback">${escapeHtml(playerInitials(team.name))}</div>`;
   el("team-modal-name").textContent = team.name;
-  const rankTag = row ? `<span class="p-tag" style="background:var(--accent-soft);color:var(--accent);">${ordinal(rank + 1)} place</span>` : "";
+  const rankTag = row ? `<span class="p-tag team-rank-tag">${ordinal(rank + 1)} place</span>` : "";
   const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
   const ownerTag = ownerNames.length ? `<span class="p-tag owner">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
   el("team-modal-tags").innerHTML = rankTag + ownerTag;
@@ -8434,7 +8434,7 @@ function openTeamModal(teamId) {
     : "";
   const rosterEl = el("team-modal-roster");
   rosterEl.innerHTML = team.players.length
-    ? team.players.map((p) => `<div class="team-roster-row">${avatarHtml(p)}${playerLinkHtml(p)}</div>`).join("")
+    ? team.players.map((p, i) => `<div class="team-roster-row"><span class="team-roster-num">${String(i + 1).padStart(2, "0")}</span>${playerLinkHtml(p)}</div>`).join("")
     : '<p class="empty">No players added yet.</p>';
   bindPlayerLinks(rosterEl);
   // A captain looking at their own team gets the same add/rename/remove

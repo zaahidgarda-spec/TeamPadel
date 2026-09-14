@@ -1285,6 +1285,23 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-stat .n{font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
 .p-stat .lbl{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
 .p-body{padding:18px 20px 20px;}
+
+/* Team page hero — a deep blue gradient banner behind the crest, with the
+   stat row floating on its own card that overlaps the bottom edge. Scoped
+   to .team-hero/.team-stats-float only; .p-hero/.p-stats stay unstyled by
+   default since the player-history modal reuses those same base classes. */
+.team-hero{background:linear-gradient(150deg,#1a2a5c,var(--accent) 65%,#4f8cf0);padding-bottom:34px;position:relative;overflow:hidden;}
+.team-hero::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 90% at 100% -10%,rgba(255,255,255,.18),transparent 60%);pointer-events:none;}
+.team-hero .p-hero-row{position:relative;}
+.team-hero .p-name{color:#fff;}
+.team-hero .team-rank-tag{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);color:#fff;}
+.team-stats-float{margin:-22px 20px 0;position:relative;z-index:1;background:var(--panel);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;}
+.team-stats-float .p-stats{border-bottom:none;margin-top:0;}
+
+/* Numbered roster rows (in place of the plain initial circle every row
+   used to lead with — team rosters never had real player photos here
+   anyway, avatarHtml() only ever fell back to an initial for this list). */
+.team-roster-num{font-family:var(--font-display);font-size:11px;color:var(--text-faint);width:20px;flex-shrink:0;font-variant-numeric:tabular-nums;}
 .history-row{padding:10px 0;border-bottom:1px solid var(--line);}
 .history-row:last-child{border-bottom:none;}
 .history-top{display:flex;align-items:center;gap:8px;}
