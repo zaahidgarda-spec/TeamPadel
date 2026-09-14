@@ -3729,6 +3729,22 @@ function adminRosterBlock(t) {
   };
   uploadLabel.appendChild(fileInput);
   nameWrap.appendChild(uploadLabel);
+  const ownerRow = document.createElement("div");
+  ownerRow.style.cssText = "margin-top:6px;display:flex;align-items:center;gap:5px;";
+  const ownerLabel = document.createElement("span");
+  ownerLabel.className = "note"; ownerLabel.textContent = "Owner:";
+  const ownerInput = document.createElement("input");
+  ownerInput.type = "text"; ownerInput.value = t.owner || ""; ownerInput.placeholder = "Owner name"; ownerInput.className = "inline-edit";
+  ownerInput.style.cssText = "min-width:130px;";
+  ownerInput.onkeydown = (e) => { if (e.key === "Enter") ownerInput.blur(); };
+  ownerInput.onblur = async () => {
+    const val = ownerInput.value.trim();
+    if (val === (t.owner || "")) return;
+    try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { owner: val } }); await refreshLeague(); renderAdminRoster(); }
+    catch (e) { alert(e.message); ownerInput.value = t.owner || ""; }
+  };
+  ownerRow.appendChild(ownerLabel); ownerRow.appendChild(ownerInput);
+  nameWrap.appendChild(ownerRow);
   if (league.tieringEnabled) {
     const goldCount = t.players.filter((p) => p.gold).length;
     const goldTag = document.createElement("div");
@@ -8360,7 +8376,9 @@ function openTeamModal(teamId) {
     ? `<img class="p-photo p-photo-team-fallback" src="${team.logo}" alt="">`
     : `<div class="p-photo-fallback">${escapeHtml(playerInitials(team.name))}</div>`;
   el("team-modal-name").textContent = team.name;
-  el("team-modal-tags").innerHTML = row ? `<span class="p-tag" style="background:var(--accent-soft);color:var(--accent);">${ordinal(rank + 1)} place</span>` : "";
+  const rankTag = row ? `<span class="p-tag" style="background:var(--accent-soft);color:var(--accent);">${ordinal(rank + 1)} place</span>` : "";
+  const ownerTag = team.owner ? `<span class="p-tag" style="background:var(--panel-2);color:var(--text-dim);">Owner: ${escapeHtml(team.owner)}</span>` : "";
+  el("team-modal-tags").innerHTML = rankTag + ownerTag;
   el("team-modal-stats").innerHTML = row
     ? [
         { n: row.points, l: "Pts" },

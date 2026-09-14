@@ -2072,6 +2072,10 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
       return res.status(400).json({ error: "A team with that name already exists." });
     team.name = name;
   }
+  // A name/title shown alongside the team — who owns it, not who's logged
+  // in as its captain (that's still the access code). Purely informational:
+  // grants no login or permissions of its own.
+  if (req.body.owner !== undefined) team.owner = req.body.owner.trim();
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
