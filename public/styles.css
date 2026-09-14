@@ -915,19 +915,22 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .news-post time{font-size:11px;color:var(--text-dim);}
 .news-post p{font-size:14px;line-height:1.55;margin:8px 0 0;white-space:pre-wrap;}
 
-.roster-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
-.roster-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;box-shadow:var(--shadow-sm);}
-.roster-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md);}
-.roster-card .avatar-big{width:64px;height:64px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--line);}
-.roster-card .avatar-big-fb{width:64px;height:64px;border-radius:50%;background:var(--panel-2);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:24px;color:var(--text-dim);}
+/* A directory of crests, not a card per team — tapping one opens the same
+   full team page the League Table's own rows open (see openTeamModal),
+   so the roster itself lives in exactly one place regardless of which
+   tab you got here from. */
+.roster-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;}
+.roster-tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 10px;text-align:center;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;box-shadow:var(--shadow-sm);cursor:pointer;font-family:var(--font-body);}
+.roster-tile:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md);}
+.roster-tile .avatar-big{width:52px;height:52px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--line);margin:0 auto;}
+.roster-tile .avatar-big-fb{width:52px;height:52px;border-radius:50%;background:var(--panel-2);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:19px;color:var(--text-dim);margin:0 auto;}
 /* Same team-logo markup, but a compact row on My Profile — otherwise these
    render at their uploaded (up to 128px) size with no sizing rule at all,
-   since the roster-card rule above doesn't reach outside .roster-card. */
+   since the roster-tile rule above doesn't reach outside .roster-tile. */
 #account-team-logos .avatar-big{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--line);}
 #account-team-logos .avatar-big-fb{width:40px;height:40px;border-radius:50%;background:var(--panel-2);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:16px;color:var(--text-dim);}
-.roster-card .team-name{font-family:var(--font-display);font-size:17px;text-transform:uppercase;letter-spacing:.01em;margin-top:10px;}
-.roster-card .player-count{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
-.player-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+.roster-tile-name{font-family:var(--font-display);font-size:12.5px;text-transform:uppercase;letter-spacing:.01em;margin-top:9px;line-height:1.25;}
+.roster-tile .player-count{font-size:9.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
 .sponsor-strip{margin-top:36px;padding-top:24px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:28px;}
 .sponsor-strip-top{margin-top:0;margin-bottom:22px;padding:14px 0;border-top:none;border-bottom:1px solid var(--line);}
 .sponsor-strip:empty{display:none;}
@@ -982,12 +985,8 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
   .row input[type=text],.row input[type=email],.row input[type=password]{width:100%;}
   button.primary,button.secondary,button.danger{min-height:42px;}
   table.log{font-size:13px;}
-  .roster-grid{grid-template-columns:1fr;}
-  .roster-card{padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
-  .roster-card .avatar-big,.roster-card .avatar-big-fb{width:48px;height:48px;flex-shrink:0;}
-  .roster-card .team-name{margin-top:0;font-size:15px;}
-  .roster-card .team-name-wrap{flex:1;min-width:120px;}
-  .roster-card .player-chips{width:100%;margin-top:10px;}
+  .roster-grid{grid-template-columns:repeat(3,1fr);gap:8px;}
+  .roster-tile{padding:12px 6px;}
   /* Stacked single-column layout loses the visual "these two boxes face
      each other" grouping a side-by-side grid gives for free — wrap each
      seed in its own card and reorder so both pairs sit together above
@@ -1157,14 +1156,6 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .opponent-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md);}
 .opponent-card:disabled{cursor:default;font-weight:500;color:var(--text-dim);}
 .opponent-card:disabled:hover{border-color:var(--line);transform:none;box-shadow:var(--shadow-sm);}
-.player-chip{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-full);padding:6px 12px;font-size:13px;color:var(--text);cursor:pointer;font-family:var(--font-body);}
-.player-chip:hover{border-color:var(--accent);color:var(--accent);}
-.chip-remove{color:var(--text-dim);margin-left:4px;}
-.chip-remove:hover{color:var(--clay);}
-.chip-edit{color:var(--text-dim);margin-left:4px;}
-.chip-edit:hover{color:var(--accent);}
-.player-chip.gold-chip{border-color:#B8860B;background:rgba(184,134,11,.12);color:#8a6508;}
-.player-chip.gold-chip:hover{border-color:#B8860B;color:#8a6508;}
 .gold-name{color:#B8860B;font-weight:600;}
 /* A substitute's name wherever a pairing gets rendered — Selection Room,
    court schedule, match cards, the score modal — so it's clear at a

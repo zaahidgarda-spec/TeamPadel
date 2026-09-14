@@ -8345,9 +8345,10 @@ function bindTeamRowLinks(root) {
   });
 }
 // A team's current roster, opened by tapping its row on the League Table
-// (teams format only — see standingsRowsHtml). Everything here is already
-// sitting in the league object client-side, so unlike the player-history
-// modal this needs no round-trip to the server.
+// (teams format only — see standingsRowsHtml) or its crest on the Roster
+// tab (see renderRoster, every format). Everything here is already sitting
+// in the league object client-side, so unlike the player-history modal
+// this needs no round-trip to the server.
 function openTeamModal(teamId) {
   const team = league.teams.find((t) => t.id === teamId);
   if (!team) return;
@@ -8368,10 +8369,25 @@ function openTeamModal(teamId) {
         { n: (row.diff > 0 ? "+" : "") + row.diff, l: "Diff" },
       ].map((s) => `<div class="p-stat"><div class="n">${s.n}</div><div class="lbl">${s.l}</div></div>`).join("")
     : "";
-  el("team-modal-roster").innerHTML = team.players.length
+  const rosterEl = el("team-modal-roster");
+  rosterEl.innerHTML = team.players.length
     ? team.players.map((p) => `<div class="team-roster-row">${avatarHtml(p)}${playerLinkHtml(p)}</div>`).join("")
     : '<p class="empty">No players added yet.</p>';
-  bindPlayerLinks(el("team-modal-roster"));
+  bindPlayerLinks(rosterEl);
+  // A captain looking at their own team gets the same add/rename/remove
+  // controls the Roster tab used to show inline — re-opening this same
+  // modal (not the tab behind it) after every change, so it doesn't
+  // silently close on you mid-edit.
+  if (myRole === "captain" && myTeamId === teamId) {
+    rosterEl.appendChild(ownRosterEditControls(team, () => {
+      // Redraws the modal in place (not just the tile grid behind it, which
+      // is closed right now) — the tile grid's own player count still
+      // needs to catch up too, so it isn't showing a stale number the next
+      // time this modal closes.
+      openTeamModal(teamId);
+      if (el("view-roster").classList.contains("active")) renderRoster();
+    }));
+  }
   el("team-modal-backdrop").classList.add("open");
 }
 el("team-modal-close").onclick = () => el("team-modal-backdrop").classList.remove("open");
@@ -8872,6 +8888,12 @@ el("fixtures-signup-cta").onclick = () => {
   showHub();
   switchHubTab("account");
 };
+// A directory of crests, not a wall of chips — tapping a team opens the
+// same full team page the League Table's rows already open (see
+// openTeamModal), so a roster lives in exactly one place in the app
+// regardless of which tab you found the team from. A captain looking at
+// their own team's crest gets the add/rename/remove controls inside that
+// same modal (openTeamModal appends ownRosterEditControls for them).
 function renderRoster() {
   el("roster-signup-banner").style.display = (!playerAccount && !rosterBannerDismissed) ? "flex" : "none";
   const c = el("roster-container");
@@ -8880,61 +8902,22 @@ function renderRoster() {
   const grid = document.createElement("div");
   grid.className = "roster-grid";
   scopedTeams.forEach((t) => {
-    const card = document.createElement("div");
-    card.className = "roster-card";
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "roster-tile";
     const avatar = t.logo
       ? `<img class="avatar-big" src="${t.logo}" alt="">`
       : `<span class="avatar-big-fb">${escapeHtml(t.name.charAt(0).toUpperCase())}</span>`;
-    const canManage = myRole === "captain" && myTeamId === t.id;
-    let chips = t.players.length
-      ? t.players.map((p) => `<button class="player-chip${isGoldPlayer(p) ? " gold-chip" : ""}" data-pid="${p.id}" data-pname="${escapeHtml(p.name)}">${isGoldPlayer(p) ? "★ " : ""}${escapeHtml(p.name)}${canManage ? ' <span class="chip-edit" data-edit-pid="' + p.id + '">&#9998;</span> <span class="chip-remove" data-remove-pid="' + p.id + '">&times;</span>' : ""}</button>`).join("")
-      : '<span class="note">No players added yet.</span>';
-    card.innerHTML = `${avatar}<div class="team-name-wrap"><div class="team-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}${league.tieringEnabled ? " · Gold: " + t.players.filter((p) => p.gold).length + "/" + league.goldTierCount : ""}</div></div><div class="player-chips">${chips}</div>`;
-    if (canManage) card.appendChild(ownRosterEditControls(t));
-    grid.appendChild(card);
+    const goldLine = league.tieringEnabled ? ` · Gold: ${t.players.filter((p) => p.gold).length}/${league.goldTierCount}` : "";
+    tile.innerHTML = `${avatar}<div class="roster-tile-name">${escapeHtml(t.name)}</div><div class="player-count">${t.players.length} player${t.players.length === 1 ? "" : "s"}${goldLine}</div>`;
+    tile.onclick = () => openTeamModal(t.id);
+    grid.appendChild(tile);
   });
   c.innerHTML = "";
   c.appendChild(grid);
-  grid.querySelectorAll(".player-chip").forEach((btn) => {
-    btn.onclick = (e) => {
-      if (e.target.dataset.removePid || e.target.dataset.editPid) return;
-      openPlayerHistory(currentLeagueId, btn.dataset.pid);
-    };
-  });
-  grid.querySelectorAll(".chip-edit").forEach((span) => {
-    span.onclick = (e) => {
-      e.stopPropagation();
-      const pid = span.dataset.editPid;
-      const btn = span.closest(".player-chip");
-      const current = btn.dataset.pname;
-      btn.innerHTML = "";
-      const input = document.createElement("input");
-      input.type = "text"; input.value = current; input.className = "inline-edit";
-      input.style.cssText = "width:110px;";
-      input.onclick = (ev) => ev.stopPropagation();
-      input.onkeydown = (ev) => { if (ev.key === "Enter") input.blur(); if (ev.key === "Escape") renderRoster(); };
-      input.onblur = async () => {
-        const val = input.value.trim();
-        if (!val || val === current) { renderRoster(); return; }
-        try { await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/players/${pid}`, { method: "PUT", body: { name: val } }); await refreshLeague(); renderRoster(); }
-        catch (err) { alert(err.message); renderRoster(); }
-      };
-      btn.appendChild(input);
-      input.focus(); input.select();
-    };
-  });
-  grid.querySelectorAll(".chip-remove").forEach((span) => {
-    span.onclick = async (e) => {
-      e.stopPropagation();
-      const pid = span.dataset.removePid;
-      try {
-        await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/players/${pid}`, { method: "DELETE" });
-        await refreshLeague(); renderRoster();
-      } catch (err) { alert(err.message); }
-    };
-  });
 }
-function ownRosterEditControls(t) {
+function ownRosterEditControls(t, onChange) {
+  const refresh = onChange || renderRoster;
   const wrap = document.createElement("div");
   wrap.style.cssText = "width:100%;margin-top:12px;";
 
@@ -8948,7 +8931,7 @@ function ownRosterEditControls(t) {
     const name = addInput.value.trim();
     if (!name) return;
     await api(`/leagues/${currentLeagueId}/teams/${t.id}/players`, { method: "POST", body: { name } });
-    addInput.value = ""; await refreshLeague(); renderRoster();
+    addInput.value = ""; await refreshLeague(); refresh();
   };
   addRow.appendChild(addInput); addRow.appendChild(addBtn);
   wrap.appendChild(addRow);
@@ -8965,7 +8948,7 @@ function ownRosterEditControls(t) {
     const text = bulkTextarea.value;
     if (!text.trim()) return;
     await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/bulk`, { method: "POST", body: { text } });
-    bulkTextarea.value = ""; bulkDetails.open = false; await refreshLeague(); renderRoster();
+    bulkTextarea.value = ""; bulkDetails.open = false; await refreshLeague(); refresh();
   };
   bulkDetails.appendChild(bulkSummary); bulkDetails.appendChild(bulkTextarea); bulkDetails.appendChild(bulkBtn);
   wrap.appendChild(bulkDetails);
@@ -8987,7 +8970,7 @@ function ownRosterEditControls(t) {
       cb.onchange = async () => {
         try {
           await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}/tier`, { method: "PUT", body: { gold: cb.checked } });
-          await refreshLeague(); renderRoster();
+          await refreshLeague(); refresh();
         } catch (e) { alert(e.message); cb.checked = !cb.checked; }
       };
       const label = document.createElement("span");
