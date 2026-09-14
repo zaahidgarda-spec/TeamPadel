@@ -297,6 +297,28 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
 .seed-row-amp{font-family:var(--font-display);color:var(--text-faint);font-size:13px;flex-shrink:0;}
 
+/* Tap-to-pick field, in place of the native <select> above — same flex
+   slot, but a button that opens .pick-list below the row instead of the
+   OS's own (cramped, hard-to-scan-on-a-phone) picker UI. */
+.pick-field{flex:1;display:flex;align-items:center;gap:6px;font-size:13px;font-family:var(--font-body);text-align:left;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 10px;cursor:pointer;color:var(--text);min-width:0;}
+.pick-field:hover{border-color:var(--accent);}
+.pick-field.filled{border-color:var(--accent);background:var(--accent-soft);}
+.pick-field .placeholder{color:var(--text-faint);}
+.pick-field span:not(.pick-avatar):not(.placeholder){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pick-field .chevron{margin-left:auto;color:var(--text-faint);font-size:10px;flex-shrink:0;}
+.pick-avatar{width:20px;height:20px;border-radius:50%;background:var(--panel);border:1px solid var(--line);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-family:var(--font-display);font-weight:700;color:var(--text-dim);}
+.pick-field.filled .pick-avatar{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pick-list{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-md);max-height:280px;overflow-y:auto;}
+.pick-row{display:flex;align-items:center;gap:8px;padding:11px 12px;font-size:13px;border-bottom:1px solid var(--line);cursor:pointer;}
+.pick-row:last-child{border-bottom:none;}
+.pick-row:hover{background:var(--panel-2);}
+.pick-row.hi{background:var(--accent-soft);}
+.pick-row.disabled{color:var(--text-faint);cursor:not-allowed;}
+.pick-row.disabled .pick-avatar{opacity:.5;}
+.pick-row .reason{margin-left:auto;font-size:10.5px;color:var(--text-faint);}
+.pick-row.hi .reason{color:var(--accent);}
+.pick-row .check{margin-left:auto;color:var(--accent);font-size:13px;flex-shrink:0;}
+
 /* Collapsed by default (native <details>) — a nudge above the seed pickers,
    not a competing headline. */
 .seed-hint{margin-bottom:12px;font-size:12px;}
@@ -1014,6 +1036,7 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
      truncating names into unreadable mush. */
   .seed-row{flex-wrap:wrap;}
   .seed-row select{flex:1 1 100%;min-width:0;}
+  .pick-field{flex:1 1 100%;min-width:0;}
   /* Was only wrapping once a team's/pair's name got too long for the row,
      so otherwise-identical cards rendered inconsistently depending on name
      length — always stack instead, so every card reads the same way. */

@@ -5287,6 +5287,15 @@ function selectionForm(f, team, side) {
     }
   }
 
+  // Tap-to-pick instead of a native <select> — a long roster on a phone is
+  // a lot of scrolling through a cramped native picker; this opens as a
+  // plain in-page list of big, thumb-sized rows instead. Only one list is
+  // ever open at a time across this whole form (closing the previous one
+  // whenever a new field is tapped), tracked here rather than per-row
+  // since a row's own DOM gets rebuilt every time a pick changes.
+  let openList = null;
+  const closeOpenList = () => { if (openList) { openList.remove(); openList = null; } };
+
   // Normally always 4 (a team fixture's regular seed count), but a Super
   // Tie decider round can be 3 (3 pairs vs 3 pairs) or 1 (top pair only) —
   // driven by however many pairs the fixture actually has, not a fixed 4.
@@ -5294,29 +5303,57 @@ function selectionForm(f, team, side) {
     const row = document.createElement("div"); row.className = "seed-row";
     row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : "Seed " + (i + 1)}</span>`;
     const seedIdx = i;
-    const selects = [];
-    // A player picked in one slot is disabled in the other slot of the same
-    // pair — you can't be your own partner, so this rules it out before
-    // it's ever submitted rather than erroring after the fact.
-    const optionsFor = (mySlot) => {
-      const otherVal = localPairs[seedIdx][mySlot === 0 ? 1 : 0];
-      return '<option value="">Player…</option>' + team.players.map((p) => `<option value="${p.id}" ${p.id === otherVal ? "disabled" : ""}>${goldPrefix(p)}${escapeHtml(p.name)}</option>`).join("");
+    const fields = [];
+    const fieldLabel = (slot) => {
+      const pid = localPairs[seedIdx][slot];
+      const p = pid && team.players.find((x) => x.id === pid);
+      return p ? `<span class="pick-avatar">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>${goldPrefix(p)}${escapeHtml(p.name)}` : `<span class="pick-avatar">?</span><span class="placeholder">Tap to pick</span>`;
+    };
+    const renderField = (slot) => {
+      const field = fields[slot];
+      field.innerHTML = fieldLabel(slot) + '<span class="chevron">&#9662;</span>';
+      field.classList.toggle("filled", !!localPairs[seedIdx][slot]);
+    };
+    // Same rule as before: you can't be your own partner, so the player
+    // already sitting in this seed's OTHER slot is disabled here. A player
+    // already used in a DIFFERENT seed is deliberately still pickable — a
+    // double-up is a supported (warned-about) choice, not an error — so
+    // that only gets a quiet note, never a disabled row.
+    const openPickList = (slot) => {
+      if (openList && openList.dataset.slot === String(slot) && openList.dataset.seed === String(seedIdx)) { closeOpenList(); return; }
+      closeOpenList();
+      const otherVal = localPairs[seedIdx][slot === 0 ? 1 : 0];
+      const usedElsewhere = {};
+      localPairs.forEach((pair, pIdx) => { if (pIdx !== seedIdx) pair.forEach((pid) => { if (pid) usedElsewhere[pid] = pIdx; }); });
+      const list = document.createElement("div");
+      list.className = "pick-list";
+      list.dataset.slot = String(slot); list.dataset.seed = String(seedIdx);
+      list.innerHTML = team.players.map((p) => {
+        const disabled = p.id === otherVal;
+        const current = p.id === localPairs[seedIdx][slot];
+        const elsewhereIdx = usedElsewhere[p.id];
+        const note = elsewhereIdx !== undefined ? `<span class="reason">${localPairs.length === 1 ? "Also in" : "Also Seed " + (elsewhereIdx + 1)}</span>` : "";
+        return `<div class="pick-row${disabled ? " disabled" : ""}${current ? " hi" : ""}" data-pid="${p.id}"><span class="pick-avatar">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>${goldPrefix(p)}${escapeHtml(p.name)}${note}${current ? '<span class="check">&#10003;</span>' : ""}</div>`;
+      }).join("");
+      list.querySelectorAll(".pick-row:not(.disabled)").forEach((rowEl) => {
+        rowEl.onclick = () => {
+          localPairs[seedIdx][slot] = rowEl.dataset.pid;
+          closeOpenList();
+          renderField(slot);
+          refreshDoubleUpNote();
+          refreshSeedRatings();
+        };
+      });
+      row.insertAdjacentElement("afterend", list);
+      openList = list;
     };
     [0, 1].forEach((slot) => {
-      const select = document.createElement("select");
-      select.innerHTML = optionsFor(slot);
-      select.value = localPairs[seedIdx][slot] || "";
-      select.onchange = () => {
-        localPairs[seedIdx][slot] = select.value || null;
-        const other = selects[slot === 0 ? 1 : 0];
-        const otherVal = other.value;
-        other.innerHTML = optionsFor(slot === 0 ? 1 : 0);
-        other.value = otherVal;
-        refreshDoubleUpNote();
-        refreshSeedRatings();
-      };
-      selects.push(select);
-      row.appendChild(select);
+      const field = document.createElement("button");
+      field.type = "button"; field.className = "pick-field";
+      field.onclick = () => openPickList(slot);
+      fields.push(field);
+      row.appendChild(field);
+      renderField(slot);
       if (slot === 0) {
         const amp = document.createElement("span");
         amp.className = "seed-row-amp"; amp.textContent = "&";
