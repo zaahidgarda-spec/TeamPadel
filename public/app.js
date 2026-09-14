@@ -2236,6 +2236,10 @@ function tabDefs() {
   const defs = [];
   const isPairs = league.format === "pairs";
   if (myRole === "admin") defs.push({ key: "admin", label: "Admin" });
+  // Right after Admin, ahead of Fixtures/Results — the standings are what
+  // most people open a league for, so it shouldn't be buried behind four
+  // other tabs.
+  defs.push({ key: "table", label: "Table" });
   // A pair IS the line-up, every week — there's nothing to blind-pick, so
   // Selection Room doesn't exist for a Vibora League. Pair of the Week
   // (under Awards) is similarly redundant when the "team" never re-pairs.
@@ -2251,7 +2255,6 @@ function tabDefs() {
   // RATINGS_ENABLED (that flag is about this deployment's OWN ratings
   // UI, not the prediction teaser this league-scoped tab is).
   defs.push({ key: "predictions", label: "Predictions" });
-  defs.push({ key: "table", label: "Table" });
   if (RATINGS_ENABLED) defs.push({ key: "rankings", label: "Rankings" });
   defs.push({ key: "stats", label: "Stats" });
   if (!isPairs) defs.push({ key: "awards", label: "Awards" });
