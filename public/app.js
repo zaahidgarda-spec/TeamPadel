@@ -1902,7 +1902,7 @@ function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelC
   else tiles.push(tile(true, "🎾", "6-0 Set", "Not yet"));
   if (unbeatenSeasons.length) unbeatenSeasons.forEach((s) => tiles.push(tile(false, "💯", "Unbeaten Season", `${s.label} · ${s.leagueName}`)));
   else tiles.push(tile(true, "💯", "Unbeaten Season", "Not yet"));
-  return `<div class="ach-grid">${tiles.join("")}</div>`;
+  return `<div class="trophy-shade"><div class="ach-grid">${tiles.join("")}</div></div>`;
 }
 function renderTrophyRoom(cards) {
   const section = el("account-trophy-section");
