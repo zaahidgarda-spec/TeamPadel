@@ -9123,8 +9123,24 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   }).join("");
   el("player-modal-tags").innerHTML = trophyTags
     + `<span class="p-tag team" title="${escapeHtml(data.teamName)}">${avatarHtml({ logo: data.teamLogo, name: data.teamName })}</span>`
-    + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "")
-    + (data.isTeamOwner ? `<span class="p-tag owner">Owner</span>` : "");
+    + (data.potwWins > 0 ? `<span class="p-tag crown">👑 Pair of the Week × ${data.potwWins}</span>` : "");
+  // Its own dark "hero moment" below the name, not just another tag in the
+  // row above — otherwise it gets lost next to the trophy/crown tags.
+  // Uses the same league icon the Champion badge already draws for this
+  // named league (there's no separate real league logo on file), falling
+  // back to a plain crown for any other league.
+  const ownerLeagueIcon = data.leagueName === PREMIER_LEAGUE_NAME ? ICON_PREMIER
+    : data.leagueName === BUSINESS_CLASS_LEAGUE_NAME ? ICON_BUSINESS_CLASS
+    : `<svg viewBox="0 0 24 24" fill="none"><path d="M12 2l7 3v6c0 5-3 8.5-7 11-4-2.5-7-6-7-11V5l7-3z" fill="currentColor"/></svg>`;
+  el("player-modal-owner-strip").innerHTML = data.isTeamOwner
+    ? `<div class="owner-strip">
+        <div class="owner-strip-icon">${ownerLeagueIcon}</div>
+        <div class="owner-strip-text">
+          <div class="owner-strip-title">Team Owner</div>
+          <div class="owner-strip-sub">${escapeHtml(data.leagueName)} · ${escapeHtml(data.teamName)}</div>
+        </div>
+      </div>`
+    : "";
   const editBadge = el("player-modal-photo-edit");
   const photoInput = el("player-modal-photo-input");
   editBadge.style.display = data.canEditPhoto ? "flex" : "none";

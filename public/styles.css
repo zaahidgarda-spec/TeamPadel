@@ -1250,6 +1250,17 @@ nav.tabs::-webkit-scrollbar{display:none;}
   background:conic-gradient(from 180deg,#F9E38B,#B8860B,#F9E38B,#B8860B,#F9E38B);
   box-shadow:0 4px 14px rgba(184,134,11,.35);
 }
+/* A team owner's own strip on their profile — deliberately its own dark
+   "hero moment" (not just another .p-tag) so it doesn't get lost next to
+   the trophy/crown tags. Names the league (icon) and the team, not just
+   the word "Owner" alone. */
+.owner-strip{margin:12px 20px 0;background:linear-gradient(100deg,#1a1330,#3d2a6b 55%,#5b3fa8);border-radius:var(--radius);padding:10px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 16px rgba(61,42,107,.35);position:relative;overflow:hidden;}
+.owner-strip::after{content:"";position:absolute;inset:0;background:radial-gradient(80% 120% at 100% -20%,rgba(184,134,11,.35),transparent 60%);pointer-events:none;}
+.owner-strip-icon{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;color:#F9E38B;}
+.owner-strip-icon svg{width:16px;height:16px;}
+.owner-strip-text{position:relative;}
+.owner-strip-title{font-family:var(--font-display);font-size:11.5px;font-weight:700;letter-spacing:.03em;color:#fff;text-transform:uppercase;}
+.owner-strip-sub{font-size:10px;color:rgba(255,255,255,.65);margin-top:1px;}
 .p-content-pad{padding:0 20px;}
 .p-content-pad .tabs-sub{margin:14px 0 0;}
 /* League-switching gets the same soft hero treatment My Profile gives its
