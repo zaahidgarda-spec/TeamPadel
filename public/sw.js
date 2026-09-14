@@ -1,4 +1,4 @@
-const CACHE_NAME = "padel-league-shell-v2";
+const CACHE_NAME = "padel-league-shell-v3";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -8,6 +8,8 @@ const SHELL_ASSETS = [
   "/images/logo-dark.png",
   "/images/icon-192.png",
   "/images/icon-512.png",
+  "/images/icon-192-maskable.png",
+  "/images/icon-512-maskable.png",
 ];
 
 self.addEventListener("install", (event) => {
