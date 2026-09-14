@@ -3730,20 +3730,39 @@ function adminRosterBlock(t) {
   uploadLabel.appendChild(fileInput);
   nameWrap.appendChild(uploadLabel);
   const ownerRow = document.createElement("div");
-  ownerRow.style.cssText = "margin-top:6px;display:flex;align-items:center;gap:5px;";
+  ownerRow.style.cssText = "margin-top:6px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;";
   const ownerLabel = document.createElement("span");
-  ownerLabel.className = "note"; ownerLabel.textContent = "Owner:";
-  const ownerInput = document.createElement("input");
-  ownerInput.type = "text"; ownerInput.value = t.owner || ""; ownerInput.placeholder = "Owner name"; ownerInput.className = "inline-edit";
-  ownerInput.style.cssText = "min-width:130px;";
-  ownerInput.onkeydown = (e) => { if (e.key === "Enter") ownerInput.blur(); };
-  ownerInput.onblur = async () => {
-    const val = ownerInput.value.trim();
-    if (val === (t.owner || "")) return;
-    try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { owner: val } }); await refreshLeague(); renderAdminRoster(); }
-    catch (e) { alert(e.message); ownerInput.value = t.owner || ""; }
+  ownerLabel.className = "note"; ownerLabel.textContent = "Owners:";
+  ownerRow.appendChild(ownerLabel);
+  const ownerIds = t.ownerIds || [];
+  const buildOwnerSelect = (slotIdx) => {
+    const sel = document.createElement("select");
+    sel.className = "inline-edit"; sel.style.cssText = "min-width:110px;";
+    const noneOpt = document.createElement("option");
+    noneOpt.value = ""; noneOpt.textContent = "— none —";
+    sel.appendChild(noneOpt);
+    t.players.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id; opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    sel.value = ownerIds[slotIdx] || "";
+    sel.onchange = async () => {
+      const other = slotIdx === 0 ? sel1 : sel0;
+      const next = [sel0.value, sel1.value].filter(Boolean);
+      if (sel.value && sel.value === other.value) {
+        alert("Pick two different players.");
+        sel.value = ownerIds[slotIdx] || "";
+        return;
+      }
+      try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { ownerIds: next } }); await refreshLeague(); renderAdminRoster(); }
+      catch (e) { alert(e.message); sel.value = ownerIds[slotIdx] || ""; }
+    };
+    return sel;
   };
-  ownerRow.appendChild(ownerLabel); ownerRow.appendChild(ownerInput);
+  const sel0 = buildOwnerSelect(0);
+  const sel1 = buildOwnerSelect(1);
+  ownerRow.appendChild(sel0); ownerRow.appendChild(sel1);
   nameWrap.appendChild(ownerRow);
   if (league.tieringEnabled) {
     const goldCount = t.players.filter((p) => p.gold).length;
@@ -8377,7 +8396,8 @@ function openTeamModal(teamId) {
     : `<div class="p-photo-fallback">${escapeHtml(playerInitials(team.name))}</div>`;
   el("team-modal-name").textContent = team.name;
   const rankTag = row ? `<span class="p-tag" style="background:var(--accent-soft);color:var(--accent);">${ordinal(rank + 1)} place</span>` : "";
-  const ownerTag = team.owner ? `<span class="p-tag" style="background:var(--panel-2);color:var(--text-dim);">Owner: ${escapeHtml(team.owner)}</span>` : "";
+  const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
+  const ownerTag = ownerNames.length ? `<span class="p-tag" style="background:var(--panel-2);color:var(--text-dim);">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
   el("team-modal-tags").innerHTML = rankTag + ownerTag;
   el("team-modal-stats").innerHTML = row
     ? [

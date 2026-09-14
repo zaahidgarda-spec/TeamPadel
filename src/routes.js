@@ -2072,10 +2072,20 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
       return res.status(400).json({ error: "A team with that name already exists." });
     team.name = name;
   }
-  // A name/title shown alongside the team — who owns it, not who's logged
-  // in as its captain (that's still the access code). Purely informational:
-  // grants no login or permissions of its own.
-  if (req.body.owner !== undefined) team.owner = req.body.owner.trim();
+  // Up to 2 of this team's own roster players, tagged as its "owner" —
+  // who owns it, not who's logged in as its captain (that's still the
+  // access code). Purely informational: grants no login or permissions
+  // of its own. Picked from a dropdown (not free text) so it's always a
+  // real player id on this exact team, never a name that drifts out of
+  // sync with a rename or a since-removed player.
+  if (req.body.ownerIds !== undefined) {
+    const ids = Array.isArray(req.body.ownerIds) ? req.body.ownerIds.filter(Boolean) : [];
+    if (ids.length > 2) return res.status(400).json({ error: "A team can have at most 2 owners." });
+    if (new Set(ids).size !== ids.length) return res.status(400).json({ error: "Pick two different players." });
+    if (ids.some((id) => !team.players.some((p) => p.id === id)))
+      return res.status(400).json({ error: "That player isn't on this team's roster." });
+    team.ownerIds = ids;
+  }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
