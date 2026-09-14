@@ -4785,17 +4785,42 @@ router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCap
   if (!team) return res.status(404).json({ error: "Team not found." });
   if (league.tieringEnabled) return res.status(400).json({ error: "This league seeds by gold tier, not by rating." });
   const { ratingsData, identityOf } = loadGlobalRatings();
+  // How much weight a player's own seed history carries against today's
+  // pure rating rank, once blended below — ramps up to
+  // SEED_HISTORY_MAX_WEIGHT once they've played SEED_HISTORY_STABILIZE_
+  // MATCHES seeds in this league, so a captain can't game the suggestion:
+  // parking a strong pair at a soft seed for one easy win doesn't send
+  // next week's suggestion straight back to Seed 1 for them, and sending
+  // a weak pair up to Seed 1 to dodge tougher opposition further down
+  // doesn't stick either — an established pattern resists both. A
+  // player with no seed history yet (new, or this is their first game)
+  // is suggested on rating alone, same as before.
+  const SEED_HISTORY_STABILIZE_MATCHES = 6;
+  const SEED_HISTORY_MAX_WEIGHT = 0.6;
   const players = team.players.map((p) => {
     const stat = ratingsData.players.get(identityOf(league.id, p.id));
+    const seedRows = logic.playerMatchHistory(league, p.id, ratingsData);
+    const avgSeedPlayed = seedRows.length ? seedRows.reduce((sum, r) => sum + r.seed, 0) / seedRows.length : null;
     return {
       playerId: p.id,
       playerName: p.name,
       rating: stat ? stat.rating : logic.ELO_BASE,
       played: stat ? stat.played : 0,
       provisional: !stat || stat.played < logic.ELO_PROVISIONAL_GAMES,
+      avgSeedPlayed,
+      seedsPlayed: seedRows.length,
     };
   });
-  players.sort((a, b) => b.rating - a.rating || b.played - a.played);
+  // Rating alone gives every player a rank (1 = strongest) — the same
+  // scale a seed number already uses, which is what makes blending the
+  // two directly possible below.
+  const byRating = players.slice().sort((a, b) => b.rating - a.rating || b.played - a.played);
+  players.forEach((p) => { p.ratingRank = byRating.indexOf(p) + 1; });
+  players.forEach((p) => {
+    const historyWeight = p.avgSeedPlayed == null ? 0 : Math.min(p.seedsPlayed / SEED_HISTORY_STABILIZE_MATCHES, 1) * SEED_HISTORY_MAX_WEIGHT;
+    p.blendedRank = p.avgSeedPlayed == null ? p.ratingRank : p.ratingRank * (1 - historyWeight) + p.avgSeedPlayed * historyWeight;
+  });
+  players.sort((a, b) => a.blendedRank - b.blendedRank || b.rating - a.rating);
   // A seed IS a pairing, not a single name — the suggestion has to say who
   // partners with whom, not just list the roster strongest to weakest.
   // Pairing the ranked list off in adjacent twos (1st with 2nd, 3rd with
