@@ -1847,8 +1847,17 @@ async function renderAccountStats(cards) {
   // separate playerAccount field the way captaincies are. Only rendered when
   // it applies — most accounts own no team, same as the captain tile above.
   const ownerCards = cards.filter((c) => c.isTeamOwner);
+  const ownerTileIcon = ownerCards.length && ownerCards[0].leagueName === PREMIER_LEAGUE_NAME ? ICON_PREMIER
+    : ownerCards.length && ownerCards[0].leagueName === BUSINESS_CLASS_LEAGUE_NAME ? ICON_BUSINESS_CLASS
+    : `<svg viewBox="0 0 24 24" fill="none"><path d="M12 2l7 3v6c0 5-3 8.5-7 11-4-2.5-7-6-7-11V5l7-3z" fill="currentColor"/></svg>`;
   const ownerTile = ownerCards.length
-    ? `<div class="stat-tile stat-tile-owner"><div class="stat-num" style="font-size:19px;">${escapeHtml(ownerCards[0].teamName)}</div><div class="stat-lbl">Team Owner<span class="tag">${escapeHtml(ownerCards[0].leagueName)}</span>${ownerCards.length > 1 ? ` +${ownerCards.length - 1} more` : ""}</div></div>`
+    ? `<div class="stat-tile stat-tile-owner">
+        <div class="owner-tile-icon">${ownerTileIcon}</div>
+        <div class="owner-tile-text">
+          <div class="stat-num" style="font-size:16px;">${escapeHtml(ownerCards[0].teamName)}</div>
+          <div class="stat-lbl">Team Owner · <span class="tag">${escapeHtml(ownerCards[0].leagueName)}</span>${ownerCards.length > 1 ? ` +${ownerCards.length - 1} more` : ""}</div>
+        </div>
+      </div>`
     : "";
   // Rating is now one number shared across every league this account has
   // claimed a record in (the backend replays a claimed player's history
