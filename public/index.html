@@ -248,6 +248,15 @@
 
           <div class="pd-stats" id="account-stats"></div>
 
+          <section class="pd-section" id="account-push-section" style="display:none;">
+            <div class="pd-section-head"><h2>Push notifications</h2></div>
+            <div class="card" style="padding:14px 16px;">
+              <p class="note" id="account-push-note" style="margin-bottom:10px;">Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.</p>
+              <div id="account-push-teams" style="margin-bottom:10px;"></div>
+              <button class="secondary" id="account-push-btn"></button>
+            </div>
+          </section>
+
           <section class="pd-section">
             <div class="pd-section-head"><h2>Your leagues</h2></div>
             <div class="pd-leagues-glass" id="account-leagues-list"></div>
@@ -486,6 +495,13 @@
       </div>
 
       <div id="sponsor-strip" class="sponsor-strip sponsor-strip-top"></div>
+
+      <div class="roster-signup-strip" id="push-prompt-banner" style="display:none;">
+        <span class="icon">🔔</span>
+        <div class="txt"><b>Get notified on this device</b><span>Turn on push notifications for line-ups, results, and more — even with the app closed.</span></div>
+        <button class="primary" id="push-prompt-cta">Turn on</button>
+        <button class="dismiss" id="push-prompt-dismiss" aria-label="Dismiss" type="button">&times;</button>
+      </div>
 
       <nav class="tabs" id="tabs"></nav>
 

@@ -1896,6 +1896,7 @@ async function renderAccountProfile() {
   renderAccountNextMatch(cards);
   renderAccountLeaguesList(cards);
   await renderAccountStats(cards);
+  renderAccountPushSection();
   renderTrophyRoom(cards);
   // Claiming (or unclaiming) a record can change which leagues count as
   // "yours", so this needs to stay in step with every renderAccountProfile
@@ -2669,6 +2670,7 @@ function renderAll() {
   el("auth-toggle").textContent = myRole === "guest" ? "Log in" : "Log out";
 
   renderPendingScoreBanner();
+  renderPushPromptBanner();
   if (myRole === "admin") renderAdmin();
   if (myRole === "admin") renderPay();
   if (myRole === "admin") renderAdminAuditLog();
@@ -4329,6 +4331,40 @@ function urlBase64ToUint8Array(base64String) {
   const rawData = atob(base64);
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }
+// Just gets (or creates, prompting for permission the first time) this
+// device's own push subscription — team-agnostic, since a browser only
+// ever holds one subscription per site regardless of how many teams it
+// ends up registered against. `anyLeagueId` only matters for the very
+// first subscribe (fetching the VAPID key, which is the same for every
+// league on this deployment) — any league id works.
+async function getOrCreatePushSubscription(reg, anyLeagueId) {
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) return existing;
+  const { key } = await api(`/leagues/${anyLeagueId}/push/vapid-public-key`);
+  if (!key) throw new Error("Push notifications aren't set up on this server yet.");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("Permission denied.");
+  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+}
+// Registering/unregistering is a separate step from getting the device
+// subscription above, so My Profile can turn it on for every team someone
+// captains in one go without re-prompting for permission per team.
+async function registerPushForTeam(leagueId, teamId, subscription) {
+  await api(`/leagues/${leagueId}/teams/${teamId}/push-subscribe`, { method: "POST", body: { subscription: subscription.toJSON() } });
+}
+async function unregisterPushForTeam(leagueId, teamId, endpoint) {
+  await api(`/leagues/${leagueId}/teams/${teamId}/push-unsubscribe`, { method: "POST", body: { endpoint } });
+}
+// Shared by both the Notifications-tab card and the top-of-page prompt
+// banner below — the current league page's own single team.
+async function enablePushForCaptain(reg) {
+  const sub = await getOrCreatePushSubscription(reg, currentLeagueId);
+  await registerPushForTeam(currentLeagueId, myTeamId, sub);
+}
+async function disablePushForCaptain(existing) {
+  await unregisterPushForTeam(currentLeagueId, myTeamId, existing.endpoint);
+  await existing.unsubscribe();
+}
 // Reuses the service worker already registered for the installed-app shell
 // (see the serviceWorker.register call further down) via the standard
 // navigator.serviceWorker.ready promise — doesn't register a second one.
@@ -4356,10 +4392,7 @@ async function renderPushCard() {
     btn.style.display = "inline-block";
     btn.onclick = async () => {
       btn.disabled = true;
-      try {
-        await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/push-unsubscribe`, { method: "POST", body: { endpoint: existing.endpoint } });
-        await existing.unsubscribe();
-      } catch (e) { alert(e.message); }
+      try { await disablePushForCaptain(existing); } catch (e) { alert(e.message); }
       btn.disabled = false;
       renderPushCard();
     };
@@ -4369,16 +4402,109 @@ async function renderPushCard() {
     btn.style.display = "inline-block";
     btn.onclick = async () => {
       btn.disabled = true;
-      try {
-        const { key } = await api(`/leagues/${currentLeagueId}/push/vapid-public-key`);
-        if (!key) throw new Error("Push notifications aren't set up on this server yet.");
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") throw new Error("Permission denied.");
-        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
-        await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/push-subscribe`, { method: "POST", body: { subscription: sub.toJSON() } });
-      } catch (e) { alert(e.message); }
+      try { await enablePushForCaptain(reg); } catch (e) { alert(e.message); }
       btn.disabled = false;
       renderPushCard();
+      renderPushPromptBanner();
+    };
+  }
+}
+// A one-time nudge shown at the top of the league page (any tab, not just
+// Notifications) the moment a captain session starts, since the card above
+// is easy to never stumble onto otherwise. Deliberately temporary rather
+// than a persistent setting — dismissing it (or turning notifications on)
+// just hides it for the rest of this page load; it comes back next visit
+// same as before, rather than tracking a permanent "never ask again" per
+// device. Never shown at all once it's genuinely irrelevant (unsupported
+// browser, already subscribed, permission already denied).
+let pushPromptDismissed = false;
+async function renderPushPromptBanner() {
+  const banner = el("push-prompt-banner");
+  if (!banner) return;
+  if (myRole !== "captain" || pushPromptDismissed) { banner.style.display = "none"; return; }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || Notification.permission === "denied") {
+    banner.style.display = "none";
+    return;
+  }
+  try {
+    // getRegistration() rather than .ready here — this runs on every
+    // renderAll(), including before the service worker has necessarily
+    // finished installing, and .ready would hang waiting for that instead
+    // of just quietly resolving to "nothing to show yet".
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) { banner.style.display = "none"; return; }
+    const existing = await reg.pushManager.getSubscription();
+    banner.style.display = existing ? "none" : "flex";
+  } catch (e) { banner.style.display = "none"; }
+}
+el("push-prompt-dismiss").onclick = () => {
+  pushPromptDismissed = true;
+  el("push-prompt-banner").style.display = "none";
+};
+el("push-prompt-cta").onclick = async () => {
+  const btn = el("push-prompt-cta");
+  btn.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await enablePushForCaptain(reg);
+    pushPromptDismissed = true;
+    el("push-prompt-banner").style.display = "none";
+    renderPushCard();
+  } catch (e) { alert(e.message); }
+  btn.disabled = false;
+};
+// My Profile's own version — one toggle covers every team this account
+// captains at once (a browser only ever has one subscription per site
+// regardless of team count), rather than a separate on/off per team. This
+// is the surface someone who signed up for a real account and uses My
+// Profile as their main view will actually find, unlike the per-league
+// card above which only shows up inside a specific league's own page.
+async function renderAccountPushSection() {
+  const section = el("account-push-section");
+  const teamsEl = el("account-push-teams");
+  const note = el("account-push-note");
+  const btn = el("account-push-btn");
+  const captaincies = (playerAccount && playerAccount.captaincies) || [];
+  if (!captaincies.length) { section.style.display = "none"; return; }
+  section.style.display = "block";
+  teamsEl.innerHTML = captaincies.map((c) => `<span class="tag">${escapeHtml(c.teamName)} · ${escapeHtml(c.leagueName)}</span>`).join(" ");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    note.textContent = "Not supported on this browser.";
+    btn.style.display = "none";
+    return;
+  }
+  if (Notification.permission === "denied") {
+    note.textContent = "Blocked — you've denied notifications for this site. Allow them in your browser's site settings to turn this on.";
+    btn.style.display = "none";
+    return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    note.textContent = "Notifications are on for this device, for every team below.";
+    btn.textContent = "Turn off";
+    btn.style.display = "inline-block";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await Promise.all(captaincies.map((c) => unregisterPushForTeam(c.leagueId, c.teamId, existing.endpoint)));
+        await existing.unsubscribe();
+      } catch (e) { alert(e.message); }
+      btn.disabled = false;
+      renderAccountPushSection();
+    };
+  } else {
+    note.textContent = "Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.";
+    btn.textContent = "Enable notifications on this device";
+    btn.style.display = "inline-block";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const sub = await getOrCreatePushSubscription(reg, captaincies[0].leagueId);
+        await Promise.all(captaincies.map((c) => registerPushForTeam(c.leagueId, c.teamId, sub)));
+      } catch (e) { alert(e.message); }
+      btn.disabled = false;
+      renderAccountPushSection();
     };
   }
 }

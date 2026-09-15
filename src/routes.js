@@ -384,7 +384,7 @@ function sanitize(league, req) {
   const teamId = user ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
-    const { code, notifyEmail, kit, ...rest } = t;
+    const { code, notifyEmail, kit, pushSubscriptions, ...rest } = t;
     const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
     // A pay-link token stands in for auth on its own public route — never
     // ships in the general league payload, only ever handed out via the
@@ -400,6 +400,10 @@ function sanitize(league, req) {
       // private as the team's own login code — nobody outside that team's
       // captain/admin has any reason to see it.
       kit: viewerIsThisTeam ? (kit || defaultKit()) : undefined,
+      // A push subscription's endpoint+keys are sensitive in the same way a
+      // login code is (anyone holding one could push-spam that device) —
+      // never belonged in the general public league payload.
+      pushSubscriptions: viewerIsThisTeam ? pushSubscriptions : undefined,
     };
   });
 
