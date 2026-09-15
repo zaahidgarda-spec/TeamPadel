@@ -136,6 +136,15 @@ nav.tabs button.active{background:var(--accent);color:var(--accent-ink);font-wei
 /* Admin-only reminder that a tab isn't finished yet — never shown to
    captains, since the tab itself is hidden from them entirely. */
 nav.tabs button.tab-wip:not(.active){color:var(--clay);}
+/* Live Court Control's own "something's happening right now" signal — same
+   pulsing dot look as the league-card/badge-live "Live now" tag elsewhere,
+   toggled purely by leagueIsLiveNow(league) (see updateLiveCourtTabPulse),
+   independent of whether the tab itself is the active one. */
+nav.tabs button{position:relative;}
+nav.tabs button.tab-live-pulse::after{
+  content:"";position:absolute;top:5px;right:6px;width:6px;height:6px;border-radius:50%;
+  background:var(--clay);animation:league-live-pulse 1.6s ease-in-out infinite;
+}
 nav.tabs.tabs-sub{padding:3px;}
 nav.tabs.tabs-sub button{font-size:11px;padding:7px 12px;}
 nav.tabs.tabs-sub button.active{background:var(--accent-soft);color:var(--accent);}
@@ -801,6 +810,40 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    dark cells here. Neutralized rather than re-implemented for dark, since
    the mobile "Swipe to see all courts" hint already covers narrow screens. */
 .floodlit.urgent .hscroll{background:transparent;}
+
+/* ---------- Live Court Control ---------- */
+/* Same table shell as Court Schedule (table.court-schedule-table, already
+   styled dark by the floodlit.urgent rules above) but each td holds one of
+   these instead of the plain cs-cell-content — a state (upcoming/live/done)
+   matters more here than which fixture a cell belongs to, so state gets the
+   dominant color and the fixture's own color is just a thin top accent. */
+.live-court-table td{vertical-align:top;padding:4px;}
+.lc-cell{position:relative;min-width:150px;border-radius:10px;padding:10px 10px 8px;text-align:left;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.14);border-top:3px solid var(--fx-glow,rgba(255,255,255,.3));}
+.lc-empty{min-width:60px;text-align:center;color:#4E5D82;padding:14px 0;border:1px dashed rgba(255,255,255,.1);border-radius:10px;}
+.lc-teams{display:flex;align-items:center;justify-content:center;gap:6px;}
+.lc-vs{font-size:9px;color:#7C8CB0;text-transform:uppercase;}
+.lc-pair-label{font-size:11px;color:#C7D2E8;text-align:center;margin-top:4px;line-height:1.3;}
+.lc-tag{display:flex;align-items:center;justify-content:center;gap:5px;font-family:var(--font-display);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:3px 7px;border-radius:999px;margin:7px auto 0;width:fit-content;}
+.lc-fav-quick{background:rgba(110,231,168,.14);color:#6EE7A8;}
+.lc-fav-close{background:rgba(255,184,77,.16);color:#FFB84D;}
+.lc-tag-live{background:var(--clay);color:#fff;}
+.lc-dot{width:5px;height:5px;border-radius:50%;background:#fff;animation:league-live-pulse 1.4s ease-in-out infinite;}
+.lc-tag-done{background:rgba(110,231,168,.16);color:#6EE7A8;}
+.lc-score{text-align:center;font-family:var(--font-display);font-size:15px;color:#F2F6FF;margin-top:6px;font-variant-numeric:tabular-nums;}
+.lc-timer{text-align:center;font-size:10px;color:#7C8CB0;margin-top:2px;font-variant-numeric:tabular-nums;}
+.lc-pbar-wrap{margin-top:7px;}
+.lc-pbar{position:relative;height:6px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden;}
+.lc-pfill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:4px;background:#7FA8FF;transition:width 1s linear;}
+.lc-pfill.over{background:#FFB84D;}
+.lc-actions{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;}
+.lc-actions button{flex:1;font-size:10.5px;padding:6px 4px;white-space:nowrap;}
+.lc-cell[draggable]{cursor:grab;}
+.lc-cell[draggable]:active{cursor:grabbing;}
+.live-court-table td.cs-dragging .lc-cell{opacity:.35;}
+.live-court-table td.cs-drop-target{outline:2px dashed #7FA8FF;outline-offset:-3px;border-radius:10px;background:rgba(127,168,255,.12);}
+.floodlit.urgent .lc-cell.lc-live{border-color:var(--clay);}
+.floodlit.urgent .lc-cell.lc-done{border-color:rgba(110,231,168,.4);opacity:.9;}
+.floodlit.urgent .lc-cell.lc-upcoming{border-style:dashed;}
 
 /* ---------- My Profile: player dashboard ---------- */
 .pd-card{padding-top:22px;}

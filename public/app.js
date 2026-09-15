@@ -735,6 +735,92 @@ function leagueIsLiveNow(l) {
   const sched = l.schedule || {};
   return Object.values(sched).some((s) => s && isWithinLiveWindow(s.date, s.time));
 }
+// Just toggles the pulsing dot on the Live Court Control tab button — not a
+// full buildTabs() rebuild, which would also wipe out whichever tab is
+// currently marked .active. Safe to call often (every buildTabs() call, and
+// on the interval below), and a no-op if the tab isn't in the bar at all
+// (not an admin session).
+function updateLiveCourtTabPulse() {
+  const btn = document.querySelector('#tabs button[data-view="live-court"]');
+  if (btn) btn.classList.toggle("tab-live-pulse", !!(league && leagueIsLiveNow(league)));
+}
+// tabDefs() moves Live Court Control to the very front of the bar while
+// leagueIsLiveNow(league) is true, and back to its normal spot (right after
+// Results) once the window closes — but tabDefs() is only ever read inside
+// buildTabs(), which otherwise only runs at login. Without this, someone
+// already sitting on the page when matchday starts wouldn't see the tab
+// jump to the front until they refreshed. Only rebuilds the whole bar when
+// the live status has actually flipped since last checked — everything
+// else (the pulse dot alone) is the cheap, common case below.
+let lastLiveCourtLiveStatus = null;
+function refreshLiveCourtTabPosition() {
+  if (!league || myRole !== "admin") { updateLiveCourtTabPulse(); return; }
+  const live = leagueIsLiveNow(league);
+  if (live === lastLiveCourtLiveStatus) { updateLiveCourtTabPulse(); return; }
+  const activeBtn = document.querySelector("#tabs button.active");
+  const activeKey = activeBtn ? activeBtn.dataset.view : null;
+  buildTabs();
+  if (activeKey) {
+    const again = document.querySelector(`#tabs button[data-view="${activeKey}"]`);
+    if (again) again.classList.add("active");
+  }
+}
+// Keeps the Live Court Control tab's position/pulse current, and — only
+// while that tab is the one actually open — quietly re-fetches the league
+// so a second admin device's Start/score/complete taps show up here too.
+// The per-second countdown/progress-bar tick itself (see the ticker below)
+// is local and needs none of this.
+setInterval(async () => {
+  if (!league) return;
+  refreshLiveCourtTabPosition();
+  const activeBtn = document.querySelector("#tabs button.active");
+  if (activeBtn && activeBtn.dataset.view === "live-court") {
+    await refreshLeague();
+    renderAll();
+  }
+}, 30000);
+// Which of the 5 learned-duration buckets a closeness score falls into —
+// mirrors closenessBucket in src/routes.js exactly, since both read/write
+// the same league.courtDurationStats shape.
+function closenessBucket(closeness) {
+  return Math.min(4, Math.max(0, Math.floor(closeness / 20)));
+}
+// Estimated minutes for a rubber at this closeness — the learned average
+// for its bucket once there's enough of a track record (5+ completed
+// matches), a straight-line guess from lopsided/quick to even/long before
+// that. This is what a live cell's progress bar fills toward.
+function estimateMinutesForCloseness(closeness) {
+  const bucket = closenessBucket(closeness);
+  const stat = (league.courtDurationStats || {})[bucket];
+  if (stat && stat.count >= 5) return Math.round(stat.totalMinutes / stat.count);
+  return Math.round(18 + (closeness / 100) * 20);
+}
+// One ticker for every live/finished cell on screen, wherever it is in the
+// DOM — cheap enough to just run always rather than start/stop it per
+// render. Reads plain data-* attributes rather than closing over any
+// render-time state, so it keeps working across re-renders with no
+// cleanup to worry about.
+setInterval(() => {
+  document.querySelectorAll(".lc-timer[data-started]").forEach((node) => {
+    const started = Number(node.dataset.started);
+    const completed = node.dataset.completed ? Number(node.dataset.completed) : null;
+    const end = completed || Date.now();
+    const totalSecs = Math.max(0, Math.floor((end - started) / 1000));
+    const mm = String(Math.floor(totalSecs / 60)).padStart(2, "0");
+    const ss = String(totalSecs % 60).padStart(2, "0");
+    node.textContent = `${mm}:${ss} ${completed ? "total" : "elapsed"}`;
+  });
+  document.querySelectorAll(".lc-pfill[data-started]").forEach((node) => {
+    const started = Number(node.dataset.started);
+    const completed = node.dataset.completed ? Number(node.dataset.completed) : null;
+    const est = Number(node.dataset.est) || 25;
+    const end = completed || Date.now();
+    const elapsedMin = (end - started) / 60000;
+    const pct = Math.min(100, (elapsedMin / est) * 100);
+    node.style.width = pct + "%";
+    node.classList.toggle("over", elapsedMin > est);
+  });
+}, 1000);
 function leagueCardHtml(l) {
   // Setup-phase leagues are a teaser for the public — visible, but only the
   // owner (who's actually building it) can click through. An offseason
@@ -2258,6 +2344,12 @@ function tabDefs() {
   // been played, and who's left to play.
   if (!isPairs) defs.push({ key: "fixtures", label: "Fixtures" });
   defs.push({ key: "results", label: "Results" });
+  // Live Court Control: a normal-day admin utility, tucked away right after
+  // Results rather than competing with the tabs people actually open a
+  // league for. On an actual matchday it's pulled to the very front of the
+  // bar instead (see the leagueIsLiveNow reorder below) — that's the one
+  // tab that matters in the moment, so it shouldn't take three taps to find.
+  if (myRole === "admin") defs.push({ key: "live-court", label: "Live Court Control" });
   // Win-probability per undecided seed — always shown, same "force show,
   // branded to the sister site" exception already made for the homepage
   // carousel and My Profile's own next-match cards, independent of
@@ -2303,6 +2395,14 @@ function tabDefs() {
   // captain never sees this (view-only, admin-only concern), so it's
   // fine to sit alongside the other admin-only utility tabs above.
   if (myRole === "admin") defs.push({ key: "audit-log", label: "Change history" });
+  // Matchday: Live Court Control jumps to the very front of the bar — ahead
+  // of Admin, ahead of everything — since it's the one tab that matters
+  // right now. Same leagueIsLiveNow signal as its tab-pulse dot, so the
+  // "it's live" and "it's first" cues always agree with each other.
+  if (myRole === "admin" && leagueIsLiveNow(league)) {
+    const idx = defs.findIndex((d) => d.key === "live-court");
+    if (idx > 0) defs.unshift(defs.splice(idx, 1)[0]);
+  }
   return defs;
 }
 function buildTabs() {
@@ -2315,6 +2415,8 @@ function buildTabs() {
     btn.onclick = () => switchTab(d.key);
     nav.appendChild(btn);
   });
+  updateLiveCourtTabPulse();
+  lastLiveCourtLiveStatus = league ? leagueIsLiveNow(league) : null;
   el("role-flag").style.display = myRole === "guest" ? "none" : "inline-block";
   el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? (league.format === "pairs" ? "Player view" : "Captain view") : "";
   const myTeam = myRole === "captain" ? teamById(myTeamId) : null;
@@ -2562,6 +2664,7 @@ function renderAll() {
   if (myRole === "admin") renderPay();
   if (myRole === "admin") renderAdminAuditLog();
   renderSelection();
+  if (myRole === "admin") renderLiveCourtControl();
   if (myRole === "admin" && league.tieringEnabled) renderToss();
   renderFixtures();
   renderResults();
@@ -5892,6 +5995,173 @@ function renderCourtScheduleGrid(fixtures) {
   scroll.appendChild(table);
   wrap.appendChild(scroll);
   if (myRole === "admin") wrap.appendChild(courtBalanceStrip());
+}
+// Admin-only live match-night board — same grid shape (slots x courts) as
+// the Court Schedule above, reusing its own options/color/swap helpers, but
+// each cell now reflects real timing instead of just a static assignment:
+// "upcoming" (draggable, shows a Quick/Close read and an estimated length),
+// "live" (started, running timer + progress bar, optional score entry,
+// Mark complete), or "done" (completed, final time, score if one was
+// posted — it's optional). A match already started can never be dragged —
+// enforced here by simply never wiring drag/drop onto it, and enforced
+// again server-side (court-schedule/:round/assign now 400s that move).
+async function renderLiveCourtControl() {
+  const card = el("live-court-card");
+  if (!card) return;
+  if (league.format === "pairs" || !viewingKey) {
+    card.style.display = "none";
+    el("round-nav-live-court").innerHTML = "";
+    return;
+  }
+  card.style.display = "block";
+  renderRoundNav("round-nav-live-court");
+
+  const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
+  const fixtures = courtScheduleFixturesFor(round).filter((f) => f.selectionA.submitted && f.selectionB.submitted);
+  const wrap = el("live-court-grid");
+  wrap.innerHTML = "";
+  if (fixtures.length === 0) {
+    wrap.innerHTML = '<p class="empty">No revealed match-ups this round yet — check back once both sides have submitted in Selection Room.</p>';
+    return;
+  }
+
+  const courts = league.courtCount || 4;
+  const slots = league.slotCount || 3;
+  const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
+  const grid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) => (rawGrid[s] && rawGrid[s][c]) || null));
+  const options = courtScheduleOptions(fixtures);
+
+  // Same predictions endpoint the Predictions tab already uses — no new
+  // server work needed just to read each seed's win% split here too.
+  const qs = viewingKey.stage === "regular" ? `?round=${viewingKey.round}` : `?stage=${viewingKey.key}`;
+  const predData = await api(`/leagues/${currentLeagueId}/predictions${qs}`).catch(() => ({ fixtures: [] }));
+  const predictionFor = (fixtureId, seedIdx) => {
+    const pf = (predData.fixtures || []).find((x) => x.fixtureId === fixtureId);
+    const s = pf && pf.seeds.find((x) => x.seed === seedIdx + 1);
+    return s ? s.prediction : null;
+  };
+
+  const courtNames = league.courtNames || [];
+  const scroll = document.createElement("div");
+  scroll.className = "court-schedule-scroll hscroll";
+  const table = document.createElement("table");
+  table.className = "court-schedule-table live-court-table";
+  const thead = document.createElement("thead");
+  thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr>";
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+
+  for (let s = 0; s < slots; s++) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th"); th.textContent = "Match " + (s + 1); tr.appendChild(th);
+    for (let c = 0; c < courts; c++) {
+      const cell = grid[s] && grid[s][c];
+      const td = document.createElement("td");
+      const f = cell ? fixtures.find((x) => x.id === cell.fixtureId) : null;
+      if (!cell || !f) {
+        td.innerHTML = '<div class="lc-cell lc-empty">&mdash;</div>';
+        tr.appendChild(td);
+        continue;
+      }
+
+      const rubber = f.rubbers[cell.seed];
+      const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
+      const state = rubber.completedAt ? "done" : rubber.startedAt ? "live" : "upcoming";
+      const pred = predictionFor(cell.fixtureId, cell.seed);
+      const closeness = pred ? 100 - Math.abs(pred.winPctA - pred.winPctB) : 50;
+      const estMins = estimateMinutesForCloseness(closeness);
+
+      const box = document.createElement("div");
+      box.className = "lc-cell lc-" + state;
+      const color = fixtureColor(cell.fixtureId, fixtures);
+      box.style.setProperty("--fx-glow", fixtureGlow(color));
+
+      let inner = `<div class="lc-teams">${avatarHtml(opt.teamA)}<span class="lc-vs">v</span>${avatarHtml(opt.teamB)}</div>`;
+      inner += `<div class="lc-pair-label">${escapeHtml(opt.shortLabel)}</div>`;
+      if (state === "upcoming") {
+        const favCls = closeness < 50 ? "lc-fav-quick" : "lc-fav-close";
+        const favLabel = closeness < 50 ? "Quick" : "Close";
+        inner += `<span class="lc-tag ${favCls}">${favLabel} &middot; ~${estMins} min</span>`;
+      } else {
+        inner += state === "live"
+          ? '<span class="lc-tag lc-tag-live"><span class="lc-dot"></span>Live</span>'
+          : '<span class="lc-tag lc-tag-done">Finished</span>';
+        inner += `<div class="lc-score">${escapeHtml(rubberScoreText(rubber) || "No score posted")}</div>`;
+        const completedAttr = rubber.completedAt ? ` data-completed="${rubber.completedAt}"` : "";
+        inner += `<div class="lc-timer" data-started="${rubber.startedAt}"${completedAttr}></div>`;
+        inner += `<div class="lc-pbar-wrap"><div class="lc-pbar"><div class="lc-pfill" data-started="${rubber.startedAt}"${completedAttr} data-est="${estMins}"></div></div></div>`;
+      }
+      box.innerHTML = inner;
+
+      const actions = document.createElement("div");
+      actions.className = "lc-actions";
+      if (state === "upcoming") {
+        const startBtn = document.createElement("button");
+        startBtn.className = "secondary"; startBtn.textContent = "Start";
+        startBtn.onclick = async () => {
+          try {
+            await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/start`, { method: "POST" });
+            await refreshLeague(); renderAll();
+          } catch (e) { alert(e.message); }
+        };
+        actions.appendChild(startBtn);
+      } else {
+        const pairAHtml = pairNamesGoldHtml(opt.teamA, f.selectionA.pairs[cell.seed], f.selectionA);
+        const pairBHtml = pairNamesGoldHtml(opt.teamB, f.selectionB.pairs[cell.seed], f.selectionB);
+        const scoreBtn = document.createElement("button");
+        scoreBtn.className = "secondary"; scoreBtn.textContent = "Current score";
+        scoreBtn.onclick = () => openScoreModal(f, cell.seed, rubber, opt.teamA, opt.teamB, false, pairAHtml, pairBHtml, {
+          skipFinalize: true,
+          onSaved: async () => { await refreshLeague(); renderAll(); },
+        });
+        actions.appendChild(scoreBtn);
+        if (state === "live") {
+          const completeBtn = document.createElement("button");
+          completeBtn.className = "secondary"; completeBtn.textContent = "Mark complete";
+          completeBtn.onclick = async () => {
+            try {
+              await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/complete`, { method: "POST" });
+              await refreshLeague(); renderAll();
+            } catch (e) { alert(e.message); }
+          };
+          actions.appendChild(completeBtn);
+        }
+      }
+      box.appendChild(actions);
+      td.appendChild(box);
+
+      // Drag/drop only ever wired up for an upcoming match — never for one
+      // that's already started, on either end of the move.
+      if (state === "upcoming") {
+        box.draggable = true;
+        box.title = "Drag to move to another court";
+        box.ondragstart = (e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", JSON.stringify({ slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed }));
+          td.classList.add("cs-dragging");
+        };
+        box.ondragend = () => td.classList.remove("cs-dragging");
+      }
+      if (state !== "live" && state !== "done") {
+        td.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("cs-drop-target"); };
+        td.ondragleave = () => td.classList.remove("cs-drop-target");
+        td.ondrop = (e) => {
+          e.preventDefault();
+          td.classList.remove("cs-drop-target");
+          let dragged;
+          try { dragged = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
+          if (!dragged) return;
+          performCourtSwap(round, dragged, { slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed });
+        };
+      }
+
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  scroll.appendChild(table);
+  wrap.appendChild(scroll);
 }
 function renderFixtures() {
   el("fixtures-signup-banner").style.display = (!playerAccount && !fixturesBannerDismissed) ? "flex" : "none";

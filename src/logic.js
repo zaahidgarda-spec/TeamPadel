@@ -10,7 +10,14 @@ function uid() {
 // its existence.
 function emptyRubber(setCount) {
   const n = setCount || 2;
-  return { sets: Array.from({ length: n }, () => [null, null]), tb: [null, null] };
+  return {
+    sets: Array.from({ length: n }, () => [null, null]),
+    tb: [null, null],
+    // Live Court Control's own timing, independent of the score — a court
+    // can be started and marked complete with no score posted at all.
+    startedAt: null,
+    completedAt: null,
+  };
 }
 // seedCount is 4 for a team fixture (4 sub-matches/seeds a night) and 1 for
 // a Vibora (pairs) fixture — a pair IS the line-up, so there's only ever

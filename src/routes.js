@@ -1761,6 +1761,19 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (!league.slotCount) league.slotCount = 3;
   if (!league.courtNames) league.courtNames = [];
   if (!league.courtSchedule) league.courtSchedule = {};
+  // Live Court Control's own learned-duration log — a running average of
+  // actual minutes played per closeness bucket (see matchPrediction), so
+  // its "quick vs close" time estimate improves instead of staying a
+  // fixed guess forever.
+  if (!league.courtDurationStats) league.courtDurationStats = {};
+  // Rubbers created before Live Court Control existed won't have these —
+  // backfill so every fixture's rubbers can be addressed the same way.
+  league.fixtures.forEach((f) => {
+    (f.rubbers || []).forEach((r) => {
+      if (r.startedAt === undefined) r.startedAt = null;
+      if (r.completedAt === undefined) r.completedAt = null;
+    });
+  });
   if (league.tieringEnabled === undefined) league.tieringEnabled = false;
   if (!league.goldTierCount) league.goldTierCount = 0;
   if (league.allowRoundsByDate === undefined) league.allowRoundsByDate = false;
@@ -3420,6 +3433,13 @@ function matchPrediction(league, f, seed, ratingsData, identityOf) {
   const { winPctA, winPctB, provisional } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
   return { winPctA, winPctB, provisional, closeness: 100 - Math.abs(winPctA - winPctB) };
 }
+// Which of Live Court Control's 5 learned-duration buckets a closeness
+// score falls into (0 = lopsided/quick, 4 = dead even/long) — shared by
+// the rubbers/:idx/complete route (writes) and left for the client to use
+// the same way when reading league.courtDurationStats back (reads).
+function closenessBucket(closeness) {
+  return Math.min(4, Math.max(0, Math.floor(closeness / 20)));
+}
 function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   const roundKeys = courtScheduleRoundKeys(league);
@@ -4064,6 +4084,23 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   const grid = getCourtGrid(league, round);
   const roundFixtures = fixturesForRoundKey(league, round);
 
+  // Live Court Control's own rule: once a rubber has been started courtside,
+  // it can't be dragged to a different slot/court — only still-upcoming
+  // matches are movable. Applies to both the match being placed and
+  // whatever it would displace, and to both roles equally.
+  const rubberIsStarted = (fxId, sd) => {
+    if (!fxId) return false;
+    const f = roundFixtures.find((x) => x.id === fxId);
+    return !!(f && f.rubbers[sd] && f.rubbers[sd].startedAt);
+  };
+  const targetCell = grid[slot] && grid[slot][court];
+  if (targetCell && rubberIsStarted(targetCell.fixtureId, targetCell.seed)) {
+    return res.status(400).json({ error: "That court's match is already in play — it can't be moved." });
+  }
+  if (fixtureId && rubberIsStarted(fixtureId, seed)) {
+    return res.status(400).json({ error: "That match is already in play — it can't be moved." });
+  }
+
   if (isCaptain) {
     const ownsFixture = (fxId) => {
       if (!fxId) return true;
@@ -4483,6 +4520,57 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
   }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// Live Court Control: mark a rubber as under way courtside. Independent of
+// score entry entirely — this just starts the clock the live board times
+// against, so an admin can tap "Start" the moment players walk on.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/start", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
+  if (!f.rubbers[idx].startedAt) {
+    f.rubbers[idx].startedAt = Date.now();
+    store.saveLeague(league.id, league);
+  }
+  res.json({ ok: true, startedAt: f.rubbers[idx].startedAt });
+});
+
+// Live Court Control: mark a rubber finished — deliberately independent of
+// posting a score (that stays the existing, optional PUT .../rubbers/:idx
+// above) and of finalizing the whole fixture (POST .../finalize below,
+// which requires every rubber to carry a real score). The first time a
+// rubber completes, its actual elapsed time is folded into
+// league.courtDurationStats — see closenessBucket above — so the live
+// board's "quick vs close" time estimate keeps learning from real nights
+// instead of staying a fixed guess.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  const rubber = f.rubbers[idx];
+  if (!rubber.startedAt) return res.status(400).json({ error: "This match hasn't been started yet." });
+  if (!rubber.completedAt) {
+    rubber.completedAt = Date.now();
+    const { ratingsData, identityOf } = loadGlobalRatings();
+    const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
+    if (pred) {
+      if (!league.courtDurationStats) league.courtDurationStats = {};
+      const bucket = closenessBucket(pred.closeness);
+      const stat = league.courtDurationStats[bucket] || (league.courtDurationStats[bucket] = { count: 0, totalMinutes: 0 });
+      stat.count += 1;
+      stat.totalMinutes += (rubber.completedAt - rubber.startedAt) / 60000;
+    }
+  }
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, completedAt: rubber.completedAt });
 });
 
 router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
