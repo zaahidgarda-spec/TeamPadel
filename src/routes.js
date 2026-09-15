@@ -2417,6 +2417,38 @@ router.post(
   }
 );
 
+// Sends one push to just the caller's own current subscription (identified
+// by its endpoint, not the whole team) — a way to actually verify push
+// works end-to-end without needing a second captain to trigger a real
+// notify() event. Real errors (a genuinely dead endpoint, say) are
+// surfaced back to the client rather than silently swallowed the way
+// notify()'s fire-and-forget send is, since this IS the diagnostic.
+router.post(
+  "/leagues/:leagueId/teams/:teamId/push-test",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  async (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const endpoint = req.body.endpoint;
+    const sub = (team.pushSubscriptions || []).find((s) => s.endpoint === endpoint);
+    if (!sub) return res.status(404).json({ error: "This device isn't subscribed yet." });
+    if (!getVapidPublicKey()) return res.status(503).json({ error: "Push notifications aren't set up on this server yet." });
+    const { deadEndpoints, errors } = await sendPushToSubscriptions([sub], {
+      title: league.name,
+      body: "Test notification — if you're seeing this, push is working.",
+      type: "test",
+    });
+    if (deadEndpoints.length) {
+      team.pushSubscriptions = team.pushSubscriptions.filter((s) => s.endpoint !== endpoint);
+      store.saveLeague(league.id, league);
+      return res.status(410).json({ error: "That subscription is no longer valid — try turning notifications off and on again." });
+    }
+    if (errors.length) return res.status(502).json({ error: "Push service rejected it: " + errors[0].message });
+    res.json({ ok: true });
+  }
+);
+
 router.post("/leagues/:leagueId/teams/:teamId/reset-code", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);

@@ -4377,6 +4377,11 @@ async function registerPushForTeam(leagueId, teamId, subscription) {
 async function unregisterPushForTeam(leagueId, teamId, endpoint) {
   await api(`/leagues/${leagueId}/teams/${teamId}/push-unsubscribe`, { method: "POST", body: { endpoint } });
 }
+// One real push to just this device, on demand — a way to actually SEE it
+// arrive without waiting on (or staging) a real notify() event elsewhere.
+async function sendTestPush(leagueId, teamId, endpoint) {
+  await api(`/leagues/${leagueId}/teams/${teamId}/push-test`, { method: "POST", body: { endpoint } });
+}
 // Shared by both the Notifications-tab card and the top-of-page prompt
 // banner below — the current league page's own single team.
 async function enablePushForCaptain(reg) {
@@ -4394,7 +4399,12 @@ async function renderPushCard() {
   const card = el("push-notify-card");
   const btn = el("push-notify-btn");
   const note = el("push-notify-note");
-  if (!myPushTeamId()) { card.style.display = "none"; return; }
+  const testBtn = el("push-notify-test-btn");
+  const testStatus = el("push-notify-test-status");
+  testBtn.style.display = "none";
+  testStatus.textContent = "";
+  const teamId = myPushTeamId();
+  if (!teamId) { card.style.display = "none"; return; }
   card.style.display = "block";
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     note.textContent = "Not supported on this browser.";
@@ -4417,6 +4427,16 @@ async function renderPushCard() {
       try { await disablePushForCaptain(existing); } catch (e) { alert(e.message); }
       btn.disabled = false;
       renderPushCard();
+    };
+    testBtn.style.display = "inline-block";
+    testBtn.onclick = async () => {
+      testBtn.disabled = true;
+      testStatus.textContent = "Sending…";
+      try {
+        await sendTestPush(currentLeagueId, teamId, existing.endpoint);
+        testStatus.textContent = "Sent — should arrive any moment.";
+      } catch (e) { testStatus.textContent = e.message; }
+      testBtn.disabled = false;
     };
   } else {
     note.textContent = "Optional — get these notifications pushed straight to this device, even with the app closed.";
@@ -4488,6 +4508,10 @@ async function renderAccountPushSection() {
   const btn = el("account-push-btn");
   const codeRow = el("account-push-code-row");
   const codeError = el("account-push-code-error");
+  const testBtn = el("account-push-test-btn");
+  const testStatus = el("account-push-test-status");
+  testBtn.style.display = "none";
+  testStatus.textContent = "";
   if (!playerAccount) { section.style.display = "none"; return; }
   section.style.display = "block";
   codeError.textContent = "";
@@ -4533,6 +4557,18 @@ async function renderAccountPushSection() {
       } catch (e) { alert(e.message); }
       btn.disabled = false;
       renderAccountPushSection();
+    };
+    testBtn.style.display = "inline-block";
+    testBtn.onclick = async () => {
+      testBtn.disabled = true;
+      testStatus.textContent = "Sending…";
+      try {
+        // Any one of the linked teams works — this is testing the device's
+        // own subscription, not any particular team's data.
+        await sendTestPush(captaincies[0].leagueId, captaincies[0].teamId, existing.endpoint);
+        testStatus.textContent = "Sent — should arrive any moment.";
+      } catch (e) { testStatus.textContent = e.message; }
+      testBtn.disabled = false;
     };
   } else {
     note.textContent = "Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.";
