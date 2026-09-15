@@ -4379,8 +4379,8 @@ async function unregisterPushForTeam(leagueId, teamId, endpoint) {
 }
 // One real push to just this device, on demand — a way to actually SEE it
 // arrive without waiting on (or staging) a real notify() event elsewhere.
-async function sendTestPush(leagueId, teamId, endpoint) {
-  await api(`/leagues/${leagueId}/teams/${teamId}/push-test`, { method: "POST", body: { endpoint } });
+async function sendTestPush(leagueId, teamId, endpoint, message) {
+  await api(`/leagues/${leagueId}/teams/${teamId}/push-test`, { method: "POST", body: { endpoint, message: message || "" } });
 }
 // Shared by both the Notifications-tab card and the top-of-page prompt
 // banner below — the current league page's own single team.
@@ -4399,9 +4399,11 @@ async function renderPushCard() {
   const card = el("push-notify-card");
   const btn = el("push-notify-btn");
   const note = el("push-notify-note");
+  const testRow = el("push-notify-test-row");
   const testBtn = el("push-notify-test-btn");
+  const testMessage = el("push-notify-test-message");
   const testStatus = el("push-notify-test-status");
-  testBtn.style.display = "none";
+  testRow.style.display = "none";
   testStatus.textContent = "";
   const teamId = myPushTeamId();
   if (!teamId) { card.style.display = "none"; return; }
@@ -4428,12 +4430,12 @@ async function renderPushCard() {
       btn.disabled = false;
       renderPushCard();
     };
-    testBtn.style.display = "inline-block";
+    testRow.style.display = "flex";
     testBtn.onclick = async () => {
       testBtn.disabled = true;
       testStatus.textContent = "Sending…";
       try {
-        await sendTestPush(currentLeagueId, teamId, existing.endpoint);
+        await sendTestPush(currentLeagueId, teamId, existing.endpoint, testMessage.value);
         testStatus.textContent = "Sent — should arrive any moment.";
       } catch (e) { testStatus.textContent = e.message; }
       testBtn.disabled = false;
@@ -4501,6 +4503,14 @@ el("push-prompt-cta").onclick = async () => {
 // is the surface someone who signed up for a real account and uses My
 // Profile as their main view will actually find, unlike the per-league
 // card above which only shows up inside a specific league's own page.
+// Decided once per signed-in session (null = not decided yet), not
+// recomputed on every render — otherwise the section would jump position
+// mid-visit the moment the "seen" call above resolves. First time this
+// account has ever had it shown, it goes right to the top of My Profile
+// where it can't be missed; every render after that (this visit AND every
+// future one, since the "seen" flag lives on the account) it sits in its
+// normal spot below the stats instead.
+let showPushSectionAtTop = null;
 async function renderAccountPushSection() {
   const section = el("account-push-section");
   const teamsEl = el("account-push-teams");
@@ -4508,11 +4518,21 @@ async function renderAccountPushSection() {
   const btn = el("account-push-btn");
   const codeRow = el("account-push-code-row");
   const codeError = el("account-push-code-error");
+  const testRow = el("account-push-test-row");
   const testBtn = el("account-push-test-btn");
+  const testMessage = el("account-push-test-message");
   const testStatus = el("account-push-test-status");
-  testBtn.style.display = "none";
+  testRow.style.display = "none";
   testStatus.textContent = "";
-  if (!playerAccount) { section.style.display = "none"; return; }
+  if (!playerAccount) { section.style.display = "none"; showPushSectionAtTop = null; return; }
+  if (showPushSectionAtTop === null) {
+    showPushSectionAtTop = !playerAccount.hasSeenPushPrompt;
+    if (showPushSectionAtTop) api("/players/push-prompt-seen", { method: "POST" }).catch(() => {});
+  }
+  const topAnchor = el("account-push-top-anchor");
+  const statsEl = el("account-stats");
+  const anchor = showPushSectionAtTop ? topAnchor : statsEl;
+  if (anchor && anchor.nextElementSibling !== section) anchor.insertAdjacentElement("afterend", section);
   section.style.display = "block";
   codeError.textContent = "";
   const captaincies = playerAccount.captaincies || [];
@@ -4558,14 +4578,14 @@ async function renderAccountPushSection() {
       btn.disabled = false;
       renderAccountPushSection();
     };
-    testBtn.style.display = "inline-block";
+    testRow.style.display = "flex";
     testBtn.onclick = async () => {
       testBtn.disabled = true;
       testStatus.textContent = "Sending…";
       try {
         // Any one of the linked teams works — this is testing the device's
         // own subscription, not any particular team's data.
-        await sendTestPush(captaincies[0].leagueId, captaincies[0].teamId, existing.endpoint);
+        await sendTestPush(captaincies[0].leagueId, captaincies[0].teamId, existing.endpoint, testMessage.value);
         testStatus.textContent = "Sent — should arrive any moment.";
       } catch (e) { testStatus.textContent = e.message; }
       testBtn.disabled = false;

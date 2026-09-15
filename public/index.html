@@ -233,6 +233,8 @@
             <button class="secondary" id="account-logout-btn">Log out</button>
           </div>
 
+          <div id="account-push-top-anchor"></div>
+
           <div class="pd-hero" id="account-next-match-card" style="display:none;">
             <div class="pd-hero-top">
               <span class="pd-hero-eyebrow"><span class="pd-dot"></span>Your next match</span>
@@ -254,7 +256,11 @@
               <p class="note" id="account-push-note" style="margin-bottom:10px;">Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.</p>
               <div id="account-push-teams" style="margin-bottom:10px;"></div>
               <button class="secondary" id="account-push-btn"></button>
-              <button class="secondary" id="account-push-test-btn" style="display:none;margin-left:8px;">Send test notification</button>
+              <div class="row" id="account-push-test-row" style="display:none;margin-top:8px;">
+                <label class="sr-only" for="account-push-test-message">Custom test message</label>
+                <input type="text" id="account-push-test-message" placeholder="Custom message (optional)" style="flex:1;min-width:160px;">
+                <button class="secondary" id="account-push-test-btn">Send test notification</button>
+              </div>
               <div class="note" id="account-push-test-status" style="margin-top:6px;"></div>
               <div id="account-push-code-row" style="display:none;" class="row">
                 <label class="sr-only" for="account-push-code">Team code</label>
@@ -983,7 +989,11 @@
           <h2 class="section-title">Push notifications</h2>
           <p class="note" style="margin-bottom:10px;" id="push-notify-note">Optional — get these notifications pushed straight to this device, even with the app closed.</p>
           <button class="secondary" id="push-notify-btn" style="display:none;"></button>
-          <button class="secondary" id="push-notify-test-btn" style="display:none;margin-left:8px;">Send test notification</button>
+          <div class="row" id="push-notify-test-row" style="display:none;margin-top:8px;">
+            <label class="sr-only" for="push-notify-test-message">Custom test message</label>
+            <input type="text" id="push-notify-test-message" placeholder="Custom message (optional)" style="flex:1;min-width:160px;">
+            <button class="secondary" id="push-notify-test-btn">Send test notification</button>
+          </div>
           <div class="note" id="push-notify-test-status" style="margin-top:6px;"></div>
         </div>
         <div class="card">

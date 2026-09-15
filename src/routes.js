@@ -1246,7 +1246,23 @@ router.get("/players/me", (req, res) => {
     user.captaincies = captaincies.map((c) => ({ leagueId: c.leagueId, teamId: c.teamId }));
     store.saveUser(user.id, user);
   }
-  res.json({ id: user.id, name: user.name, email: user.email, captaincies });
+  res.json({ id: user.id, name: user.name, email: user.email, captaincies, hasSeenPushPrompt: !!user.hasSeenPushPrompt });
+});
+
+// One-time flag: the Push notifications section shows at the very top of
+// My Profile until an account has actually seen it once (across any
+// device — this is on the account record, not a per-browser thing), then
+// drops back to its normal spot for every visit after. Called once,
+// client-side, the first time that top placement actually rendered.
+router.post("/players/push-prompt-seen", (req, res) => {
+  const pu = req.session.playerUser;
+  const user = pu && store.getUser(pu.id);
+  if (!user) return res.status(401).json({ error: "Not logged in." });
+  if (!user.hasSeenPushPrompt) {
+    user.hasSeenPushPrompt = true;
+    store.saveUser(user.id, user);
+  }
+  res.json({ ok: true });
 });
 
 // Every player record in the store, flat — any league, any format, any
@@ -2434,9 +2450,13 @@ router.post(
     const sub = (team.pushSubscriptions || []).find((s) => s.endpoint === endpoint);
     if (!sub) return res.status(404).json({ error: "This device isn't subscribed yet." });
     if (!getVapidPublicKey()) return res.status(503).json({ error: "Push notifications aren't set up on this server yet." });
+    // An optional custom body — lets whoever's testing put something
+    // specific and recognizable in it ("mentions tonight's venue", say),
+    // rather than always getting the same generic line every time.
+    const customBody = typeof req.body.message === "string" ? req.body.message.trim().slice(0, 200) : "";
     const { deadEndpoints, errors } = await sendPushToSubscriptions([sub], {
       title: league.name,
-      body: "Test notification — if you're seeing this, push is working.",
+      body: customBody || "Test notification — if you're seeing this, push is working.",
       type: "test",
     });
     if (deadEndpoints.length) {
