@@ -74,6 +74,22 @@ function fmtDateTime(ms) {
   if (isNaN(d)) return "";
   return d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
+// Just the clock face ("9:47 PM") — Live Court Control's own "est. finish" /
+// "finished at" reads, where the full weekday+date of fmtDateTime would be
+// noise (it's always tonight).
+function clockTimeOnly(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  if (isNaN(d)) return "";
+  // Built by hand, same as fmtTime above — toLocaleTimeString's en-ZA output
+  // drops the AM/PM designator entirely (just "3:10", genuinely ambiguous)
+  // unless hour12 is forced, so it's simpler to just match fmtTime's own
+  // manual format than fight the locale for it.
+  const h = d.getHours(), m = d.getMinutes();
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return h12 + ":" + String(m).padStart(2, "0") + " " + period;
+}
 function teamById(id) { return league.teams.find((t) => t.id === id); }
 function playerById(team, id) { return team ? team.players.find((p) => p.id === id) : null; }
 // Matches a league's name against the two branded leagues (Premier League,
@@ -808,17 +824,7 @@ setInterval(() => {
     const totalSecs = Math.max(0, Math.floor((end - started) / 1000));
     const mm = String(Math.floor(totalSecs / 60)).padStart(2, "0");
     const ss = String(totalSecs % 60).padStart(2, "0");
-    node.textContent = `${mm}:${ss} ${completed ? "total" : "elapsed"}`;
-  });
-  document.querySelectorAll(".lc-pfill[data-started]").forEach((node) => {
-    const started = Number(node.dataset.started);
-    const completed = node.dataset.completed ? Number(node.dataset.completed) : null;
-    const est = Number(node.dataset.est) || 25;
-    const end = completed || Date.now();
-    const elapsedMin = (end - started) / 60000;
-    const pct = Math.min(100, (elapsedMin / est) * 100);
-    node.style.width = pct + "%";
-    node.classList.toggle("over", elapsedMin > est);
+    node.textContent = `${mm}:${ss}`;
   });
 }, 1000);
 function leagueCardHtml(l) {
@@ -6041,7 +6047,45 @@ async function renderLiveCourtControl() {
     return s ? s.prediction : null;
   };
 
+  // First pass: work out every cell's state/estimate up front, and total up
+  // each court's predicted minutes across only its still-upcoming matches —
+  // the same "closeness" load the court-load optimiser already balances by,
+  // just scoped to what hasn't started yet (a live or finished match's time
+  // is already spoken for, so it shouldn't count toward "which court is
+  // lighter" for a match still deciding where to play).
+  const cellInfo = Array.from({ length: slots }, () => Array(courts).fill(null));
+  const courtLoadUpcoming = Array(courts).fill(0);
+  for (let s = 0; s < slots; s++) {
+    for (let c = 0; c < courts; c++) {
+      const cell = grid[s] && grid[s][c];
+      const f = cell ? fixtures.find((x) => x.id === cell.fixtureId) : null;
+      if (!cell || !f) continue;
+      const rubber = f.rubbers[cell.seed];
+      const state = rubber.completedAt ? "done" : rubber.startedAt ? "live" : "upcoming";
+      const pred = predictionFor(cell.fixtureId, cell.seed);
+      const closeness = pred ? 100 - Math.abs(pred.winPctA - pred.winPctB) : 50;
+      const estMins = estimateMinutesForCloseness(closeness);
+      cellInfo[s][c] = { f, rubber, state, closeness, estMins };
+      if (state === "upcoming") courtLoadUpcoming[c] += estMins;
+    }
+  }
+  // A move suggestion only ever points at a court that's actually free in
+  // this same time slot (no swap needed to act on it) and only when it's
+  // meaningfully lighter — a 2-minute difference isn't worth interrupting
+  // someone for.
+  const SUGGEST_THRESHOLD_MINS = 8;
+  function suggestBetterCourt(s, currentCourt) {
+    let best = -1, bestLoad = Infinity;
+    for (let c = 0; c < courts; c++) {
+      if (c === currentCourt || grid[s][c]) continue;
+      if (courtLoadUpcoming[c] < bestLoad) { bestLoad = courtLoadUpcoming[c]; best = c; }
+    }
+    if (best === -1 || courtLoadUpcoming[currentCourt] - bestLoad < SUGGEST_THRESHOLD_MINS) return null;
+    return best;
+  }
+
   const courtNames = league.courtNames || [];
+  const courtLabel = (c) => courtNames[c] || ("Court " + (c + 1));
   const scroll = document.createElement("div");
   scroll.className = "court-schedule-scroll hscroll";
   const table = document.createElement("table");
@@ -6064,12 +6108,8 @@ async function renderLiveCourtControl() {
         continue;
       }
 
-      const rubber = f.rubbers[cell.seed];
+      const { rubber, state, closeness, estMins } = cellInfo[s][c];
       const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
-      const state = rubber.completedAt ? "done" : rubber.startedAt ? "live" : "upcoming";
-      const pred = predictionFor(cell.fixtureId, cell.seed);
-      const closeness = pred ? 100 - Math.abs(pred.winPctA - pred.winPctB) : 50;
-      const estMins = estimateMinutesForCloseness(closeness);
 
       const box = document.createElement("div");
       box.className = "lc-cell lc-" + state;
@@ -6082,16 +6122,38 @@ async function renderLiveCourtControl() {
         const favCls = closeness < 50 ? "lc-fav-quick" : "lc-fav-close";
         const favLabel = closeness < 50 ? "Quick" : "Close";
         inner += `<span class="lc-tag ${favCls}">${favLabel} &middot; ~${estMins} min</span>`;
+        const target = suggestBetterCourt(s, c);
+        if (target !== null) {
+          inner += `<div class="lc-suggest"><span><b>${escapeHtml(courtLabel(target))}</b> is lighter tonight — would even out the load.</span><span class="lc-suggest-apply" data-move-to="${target}">Move</span></div>`;
+        }
       } else {
         inner += state === "live"
           ? '<span class="lc-tag lc-tag-live"><span class="lc-dot"></span>Live</span>'
           : '<span class="lc-tag lc-tag-done">Finished</span>';
         inner += `<div class="lc-score">${escapeHtml(rubberScoreText(rubber) || "No score posted")}</div>`;
         const completedAttr = rubber.completedAt ? ` data-completed="${rubber.completedAt}"` : "";
-        inner += `<div class="lc-timer" data-started="${rubber.startedAt}"${completedAttr}></div>`;
-        inner += `<div class="lc-pbar-wrap"><div class="lc-pbar"><div class="lc-pfill" data-started="${rubber.startedAt}"${completedAttr} data-est="${estMins}"></div></div></div>`;
+        const finishLabel = state === "live" ? "Est. finish" : "Finished at";
+        const finishMs = state === "live" ? rubber.startedAt + estMins * 60000 : rubber.completedAt;
+        inner += `<div class="lc-strip">
+          <div><div class="lc-strip-lbl">Elapsed</div><div class="lc-strip-val lc-timer" data-started="${rubber.startedAt}"${completedAttr}></div></div>
+          <div><div class="lc-strip-lbl">Status</div><div class="lc-strip-val${state === "live" ? " lc-strip-live" : " lc-strip-done"}">${state === "live" ? "Live" : "Finished"}</div></div>
+          <div><div class="lc-strip-lbl">${finishLabel}</div><div class="lc-strip-val">${escapeHtml(clockTimeOnly(finishMs))}</div></div>
+        </div>`;
       }
       box.innerHTML = inner;
+      if (state === "upcoming") {
+        const applyBtn = box.querySelector(".lc-suggest-apply");
+        if (applyBtn) {
+          applyBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const targetCourt = Number(applyBtn.dataset.moveTo);
+            try {
+              await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: targetCourt, fixtureId: cell.fixtureId, seed: cell.seed } });
+              await refreshLeague(); renderAll();
+            } catch (err) { alert(err.message); }
+          };
+        }
+      }
 
       const actions = document.createElement("div");
       actions.className = "lc-actions";

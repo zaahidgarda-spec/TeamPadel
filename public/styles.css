@@ -820,21 +820,39 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .live-court-table td{vertical-align:top;padding:4px;}
 .lc-cell{position:relative;min-width:150px;border-radius:10px;padding:10px 10px 8px;text-align:left;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.14);border-top:3px solid var(--fx-glow,rgba(255,255,255,.3));}
 .lc-empty{min-width:60px;text-align:center;color:#4E5D82;padding:14px 0;border:1px dashed rgba(255,255,255,.1);border-radius:10px;}
-.lc-teams{display:flex;align-items:center;justify-content:center;gap:6px;}
+.lc-teams{display:flex;align-items:center;justify-content:center;gap:10px;}
+/* Bumped up from the site's usual 28px avatar — these are the first thing
+   meant to catch your eye walking past a court, not a small identity tag
+   next to a name. */
+/* Extra class in the selector (not just element specificity) so this beats
+   table.court-schedule-table's own 18px avatar rule (styles.css ~line 449)
+   — the two tables share a base class, so a plain .lc-teams .avatar rule
+   quietly lost that fight and rendered smaller than the default, not bigger. */
+.live-court-table .lc-teams .avatar,.live-court-table .lc-teams .avatar-fb{width:44px;height:44px;font-size:16px;border-width:2px;}
 .lc-vs{font-size:9px;color:#7C8CB0;text-transform:uppercase;}
-.lc-pair-label{font-size:11px;color:#C7D2E8;text-align:center;margin-top:4px;line-height:1.3;}
+.lc-pair-label{font-size:11px;color:#C7D2E8;text-align:center;margin-top:6px;line-height:1.3;}
 .lc-tag{display:flex;align-items:center;justify-content:center;gap:5px;font-family:var(--font-display);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:3px 7px;border-radius:999px;margin:7px auto 0;width:fit-content;}
 .lc-fav-quick{background:rgba(110,231,168,.14);color:#6EE7A8;}
 .lc-fav-close{background:rgba(255,184,77,.16);color:#FFB84D;}
 .lc-tag-live{background:var(--clay);color:#fff;}
 .lc-dot{width:5px;height:5px;border-radius:50%;background:#fff;animation:league-live-pulse 1.4s ease-in-out infinite;}
 .lc-tag-done{background:rgba(110,231,168,.16);color:#6EE7A8;}
-.lc-score{text-align:center;font-family:var(--font-display);font-size:15px;color:#F2F6FF;margin-top:6px;font-variant-numeric:tabular-nums;}
-.lc-timer{text-align:center;font-size:10px;color:#7C8CB0;margin-top:2px;font-variant-numeric:tabular-nums;}
-.lc-pbar-wrap{margin-top:7px;}
-.lc-pbar{position:relative;height:6px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden;}
-.lc-pfill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:4px;background:#7FA8FF;transition:width 1s linear;}
-.lc-pfill.over{background:#FFB84D;}
+.lc-score{text-align:center;font-family:var(--font-display);font-size:17px;color:#F2F6FF;margin-top:8px;font-variant-numeric:tabular-nums;}
+/* The elapsed/status/finish-time strip that replaced the old progress bar —
+   one number an admin actually wants (a clock time) instead of a bar they'd
+   have to interpret. */
+.lc-strip{display:flex;background:rgba(255,255,255,.05);border-radius:8px;overflow:hidden;margin-top:9px;}
+.lc-strip > div{flex:1;padding:6px 4px;text-align:center;min-width:0;}
+.lc-strip > div + div{border-left:1px solid rgba(255,255,255,.1);}
+.lc-strip-lbl{font-family:var(--font-display);font-size:7.5px;letter-spacing:.05em;text-transform:uppercase;color:#7C8CB0;}
+.lc-strip-val{font-family:var(--font-display);font-size:12.5px;color:#fff;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.lc-strip-live{color:#FF9A8A;}
+.lc-strip-done{color:#6EE7A8;}
+/* The one-line "a lighter court exists" nudge on an upcoming card — reuses
+   the success-green treatment of a finished tag since it's good news
+   (a free improvement), not a warning. */
+.lc-suggest{margin-top:7px;background:rgba(23,138,76,.14);border-radius:8px;padding:7px 8px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:9.5px;color:#6EE7A8;text-align:left;line-height:1.3;}
+.lc-suggest-apply{font-family:var(--font-display);font-size:8.5px;text-transform:uppercase;background:var(--success);color:#fff;padding:4px 7px;border-radius:6px;white-space:nowrap;cursor:pointer;flex-shrink:0;}
 .lc-actions{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;}
 .lc-actions button{flex:1;font-size:10.5px;padding:6px 4px;white-space:nowrap;}
 .lc-cell[draggable]{cursor:grab;}
