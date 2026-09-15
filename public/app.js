@@ -5437,14 +5437,27 @@ function selectionForm(f, team, side) {
       const list = document.createElement("div");
       list.className = "pick-list";
       list.dataset.slot = String(slot); list.dataset.seed = String(seedIdx);
-      list.innerHTML = team.players.map((p) => {
+      // Blank always sits first — the only way back to "Tap to pick" once a
+      // slot's been set, since there's otherwise no way to undo a pick short
+      // of picking someone else.
+      const isBlank = !localPairs[seedIdx][slot];
+      const blankHtml = `<div class="pick-row pick-row-blank${isBlank ? " hi" : ""}"><span class="pick-avatar">&mdash;</span><span class="placeholder">Blank</span>${isBlank ? '<span class="check">&#10003;</span>' : ""}</div>`;
+      const playersHtml = team.players.map((p) => {
         const disabled = p.id === otherVal;
         const current = p.id === localPairs[seedIdx][slot];
         const elsewhereIdx = usedElsewhere[p.id];
         const note = elsewhereIdx !== undefined ? `<span class="reason">${localPairs.length === 1 ? "Also in" : "Also Seed " + (elsewhereIdx + 1)}</span>` : "";
-        return `<div class="pick-row${disabled ? " disabled" : ""}${current ? " hi" : ""}" data-pid="${p.id}"><span class="pick-avatar">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>${goldPrefix(p)}${escapeHtml(p.name)}${note}${current ? '<span class="check">&#10003;</span>' : ""}</div>`;
+        return `<div class="pick-row pick-row-player${disabled ? " disabled" : ""}${current ? " hi" : ""}" data-pid="${p.id}"><span class="pick-avatar">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>${goldPrefix(p)}${escapeHtml(p.name)}${note}${current ? '<span class="check">&#10003;</span>' : ""}</div>`;
       }).join("");
-      list.querySelectorAll(".pick-row:not(.disabled)").forEach((rowEl) => {
+      list.innerHTML = blankHtml + playersHtml;
+      list.querySelector(".pick-row-blank").onclick = () => {
+        localPairs[seedIdx][slot] = null;
+        closeOpenList();
+        renderField(slot);
+        refreshDoubleUpNote();
+        refreshSeedRatings();
+      };
+      list.querySelectorAll(".pick-row-player:not(.disabled)").forEach((rowEl) => {
         rowEl.onclick = () => {
           localPairs[seedIdx][slot] = rowEl.dataset.pid;
           closeOpenList();

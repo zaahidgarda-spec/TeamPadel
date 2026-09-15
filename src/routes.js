@@ -1766,6 +1766,9 @@ router.get("/leagues/:leagueId", (req, res) => {
   // its "quick vs close" time estimate improves instead of staying a
   // fixed guess forever.
   if (!league.courtDurationStats) league.courtDurationStats = {};
+  // The raw per-match log courtDurationStats is aggregated from — see
+  // findCourtScheduleCell / the rubbers/:idx/complete route.
+  if (!league.courtMatchLog) league.courtMatchLog = [];
   // Rubbers created before Live Court Control existed won't have these —
   // backfill so every fixture's rubbers can be addressed the same way.
   league.fixtures.forEach((f) => {
@@ -3292,6 +3295,27 @@ function getCourtGrid(league, round) {
   return grid;
 }
 
+// Where a fixture+seed currently sits on the court schedule, if anywhere —
+// scans every round key rather than assuming f.round, since a knockout
+// fixture's own round is always 0 internally (its court schedule instead
+// lives under a "semis"/"final"/"positions" key). Used only for enriching
+// the courtMatchLog entry below with which physical court a match was
+// actually played on; a league is small enough that scanning is cheap.
+function findCourtScheduleCell(league, fixtureId, seed) {
+  const schedule = league.courtSchedule || {};
+  for (const roundKey of Object.keys(schedule)) {
+    const grid = schedule[roundKey] || [];
+    for (let s = 0; s < grid.length; s++) {
+      const row = grid[s] || [];
+      for (let c = 0; c < row.length; c++) {
+        const cell = row[c];
+        if (cell && cell.fixtureId === fixtureId && cell.seed === seed) return { roundKey, slot: s, court: c };
+      }
+    }
+  }
+  return null;
+}
+
 function permutations(arr) {
   if (arr.length <= 1) return [arr];
   const res = [];
@@ -4568,6 +4592,36 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requ
       stat.count += 1;
       stat.totalMinutes += (rubber.completedAt - rubber.startedAt) / 60000;
     }
+    // A raw, per-match record alongside the courtDurationStats aggregate —
+    // the aggregate can always be recomputed from this, but not the other
+    // way around, so this is where any future "what actually predicts a
+    // long match" analysis (by pairing, by court, by time of night, ...)
+    // would read from. Not surfaced in any UI yet — purely collection for
+    // now, per an explicit "gather more than just duration" ask.
+    const where = findCourtScheduleCell(league, f.id, idx);
+    if (!league.courtMatchLog) league.courtMatchLog = [];
+    league.courtMatchLog.push({
+      fixtureId: f.id,
+      round: f.round,
+      stage: f.stage,
+      seed: idx,
+      teamAId: f.teamA,
+      teamBId: f.teamB,
+      pairAIds: (f.selectionA.pairs[idx] || []).slice(),
+      pairBIds: (f.selectionB.pairs[idx] || []).slice(),
+      court: where ? where.court : null,
+      courtName: where ? ((league.courtNames || [])[where.court] || null) : null,
+      slot: where ? where.slot : null,
+      startedAt: rubber.startedAt,
+      completedAt: rubber.completedAt,
+      durationMinutes: (rubber.completedAt - rubber.startedAt) / 60000,
+      closeness: pred ? pred.closeness : null,
+      winPctA: pred ? pred.winPctA : null,
+      winPctB: pred ? pred.winPctB : null,
+      provisional: pred ? pred.provisional : null,
+      sets: rubber.sets.map((set) => set.slice()),
+      tb: rubber.tb.slice(),
+    });
   }
   store.saveLeague(league.id, league);
   res.json({ ok: true, completedAt: rubber.completedAt });
@@ -4927,8 +4981,16 @@ router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCap
   // doesn't stick either — an established pattern resists both. A
   // player with no seed history yet (new, or this is their first game)
   // is suggested on rating alone, same as before.
+  // Kept deliberately low (was 0.6 — historical seed alone could swing more
+  // than half the suggestion) — where someone has HISTORICALLY played isn't
+  // reliable evidence of strength on its own: Seed 1 faces the toughest
+  // opposition every week, so a genuinely strong pair parked there can carry
+  // a worse record than a weaker pair cleaning up at Seed 4. Rating already
+  // accounts for opponent strength (that's what Elo is for), so it stays
+  // the dominant signal; seed history now only nudges, mainly to resist the
+  // week-to-week gaming described above.
   const SEED_HISTORY_STABILIZE_MATCHES = 6;
-  const SEED_HISTORY_MAX_WEIGHT = 0.6;
+  const SEED_HISTORY_MAX_WEIGHT = 0.2;
   const players = team.players.map((p) => {
     const stat = ratingsData.players.get(identityOf(league.id, p.id));
     const seedRows = logic.playerMatchHistory(league, p.id, ratingsData);

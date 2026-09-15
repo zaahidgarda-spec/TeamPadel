@@ -327,6 +327,7 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .pick-row .reason{margin-left:auto;font-size:10.5px;color:var(--text-faint);}
 .pick-row.hi .reason{color:var(--accent);}
 .pick-row .check{margin-left:auto;color:var(--accent);font-size:13px;flex-shrink:0;}
+.pick-row-blank .placeholder{color:var(--text-faint);font-style:italic;}
 
 /* Collapsed by default (native <details>) — a nudge above the seed pickers,
    not a competing headline. */
