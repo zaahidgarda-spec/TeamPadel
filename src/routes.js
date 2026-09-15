@@ -1913,6 +1913,57 @@ router.get("/admin/leagues", (req, res) => {
   res.json(leagues);
 });
 
+// Owner-only real push broadcast — every subscribed device in one league,
+// or (no leagueId) every subscribed device across every league on the
+// site. Hidden leagues (data-only imports, and the separate ELOPadel-owned
+// "Community" league that happens to share this database) are never
+// included, whether picked explicitly or via "every league" — same
+// identity-safety boundary already drawn elsewhere for that data. Awaited
+// and its real failure count returned, unlike notify()'s routine
+// fire-and-forget send — a deliberate one-off broadcast is worth knowing
+// actually went out.
+router.post("/admin/push/broadcast", async (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const { leagueId, message } = req.body || {};
+  const text = (message || "").trim();
+  if (!text) return res.status(400).json({ error: "Enter a message to send." });
+  if (!getVapidPublicKey()) return res.status(503).json({ error: "Push notifications aren't set up on this server yet." });
+
+  const hiddenIds = new Set(store.getIndex().filter((e) => e.hidden).map((e) => e.id));
+  let targetEntries;
+  if (leagueId) {
+    if (hiddenIds.has(leagueId)) return res.status(400).json({ error: "Can't broadcast to a hidden league." });
+    targetEntries = store.getIndex().filter((e) => e.id === leagueId);
+    if (!targetEntries.length) return res.status(404).json({ error: "League not found." });
+  } else {
+    targetEntries = store.getIndex().filter((e) => !hiddenIds.has(e.id));
+  }
+
+  const jobs = [];
+  targetEntries.forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    league.teams.forEach((team) => {
+      (team.pushSubscriptions || []).forEach((sub) => jobs.push({ league, team, sub }));
+    });
+  });
+  if (!jobs.length) return res.json({ ok: true, total: 0, sent: 0, failed: 0 });
+
+  const { deadEndpoints, errors } = await sendPushToSubscriptions(jobs.map((j) => j.sub), { title: "Team Padel", body: text, type: "announcement" });
+  if (deadEndpoints.length) {
+    const dead = new Set(deadEndpoints);
+    const touchedLeagues = new Map();
+    jobs.forEach(({ league, team, sub }) => {
+      if (dead.has(sub.endpoint)) {
+        team.pushSubscriptions = team.pushSubscriptions.filter((s) => s.endpoint !== sub.endpoint);
+        touchedLeagues.set(league.id, league);
+      }
+    });
+    touchedLeagues.forEach((l) => store.saveLeague(l.id, l));
+  }
+  res.json({ ok: true, total: jobs.length, sent: jobs.length - errors.length, failed: errors.length });
+});
+
 // Owner-only, not per-league admin: hiding a league affects site-wide
 // lists (search, login lookup, every player's "Your leagues"), not just
 // this one league's own management — same bar as creating/deleting a

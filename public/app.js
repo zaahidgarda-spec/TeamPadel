@@ -1317,7 +1317,7 @@ async function refreshOwnerStatus() {
   const paymentsTabBtn = el("hub-payments-tab-btn");
   paymentsTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); }
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushBroadcastCard(); }
   renderHub();
 }
 // "Select a league from a menu, then find a player or team and send them
@@ -1354,6 +1354,36 @@ async function renderLiveCount() {
 // a real, currently-running league (e.g. a second city's) that just isn't
 // ready to advertise site-wide yet. See visibleIndexEntries server-side
 // for the full distinction.
+// Owner-only real push broadcast — reuses the same /admin/leagues list the
+// visibility manager below already fetches, filtered to non-hidden leagues
+// only (same boundary the server enforces again either way).
+async function renderPushBroadcastCard() {
+  const card = el("push-broadcast-card");
+  card.style.display = "block";
+  const select = el("push-broadcast-league");
+  const leagues = await api("/admin/leagues").catch(() => []);
+  const visible = leagues.filter((l) => !l.hidden).sort((a, b) => a.name.localeCompare(b.name));
+  select.innerHTML = '<option value="">All leagues</option>' + visible.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("");
+}
+el("push-broadcast-btn").onclick = async () => {
+  const btn = el("push-broadcast-btn");
+  const status = el("push-broadcast-status");
+  const leagueId = el("push-broadcast-league").value;
+  const message = el("push-broadcast-message").value.trim();
+  if (!message) { status.textContent = "Enter a message first."; return; }
+  const leagueLabel = leagueId ? el("push-broadcast-league").selectedOptions[0].textContent : "every league";
+  if (!confirm(`Send this push notification to every subscribed device in ${leagueLabel}?\n\n"${message}"`)) return;
+  btn.disabled = true;
+  status.textContent = "Sending…";
+  try {
+    const res = await api("/admin/push/broadcast", { method: "POST", body: { leagueId: leagueId || null, message } });
+    status.textContent = res.total === 0
+      ? "Nobody's subscribed yet — nothing to send."
+      : `Sent to ${res.sent} of ${res.total} subscribed device${res.total === 1 ? "" : "s"}${res.failed ? ` (${res.failed} failed)` : ""}.`;
+    el("push-broadcast-message").value = "";
+  } catch (e) { status.textContent = e.message; }
+  btn.disabled = false;
+};
 async function renderManageLeagues() {
   const leagues = await api("/admin/leagues").catch(() => []);
   const c = el("manage-leagues-list");

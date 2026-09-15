@@ -388,6 +388,22 @@
           </div>
           <p class="note" style="margin-top:10px;">You'll register a password for this email the first time you log in. A Vibora League is fixed pairs playing each other directly — one match a night, no weekly line-up selection.</p>
         </div>
+        <div class="card" id="push-broadcast-card" style="display:none;">
+          <h2 class="section-title">Send push announcement</h2>
+          <p class="note" style="margin-bottom:10px;">A real push notification to every device already subscribed — every captain in the chosen league, or across every league on the site. Hidden leagues are never included.</p>
+          <div class="row">
+            <label class="sr-only" for="push-broadcast-league">League</label>
+            <select id="push-broadcast-league" style="min-width:200px;"></select>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <label class="sr-only" for="push-broadcast-message">Message</label>
+            <textarea id="push-broadcast-message" placeholder="Message" rows="3" style="flex:1;min-width:260px;font:inherit;"></textarea>
+          </div>
+          <div class="row" style="margin-top:8px;justify-content:space-between;">
+            <div class="note" id="push-broadcast-status"></div>
+            <button class="primary" id="push-broadcast-btn">Send announcement</button>
+          </div>
+        </div>
         <div class="card" id="manage-leagues-card" style="display:none;">
           <h2 class="section-title">Manage league visibility</h2>
           <p class="note" style="margin-bottom:10px;">Every league, including ones already hidden or incognito. Hidden is for data-only imports (still counts for ratings, but never shows in search, login, or anyone's "Your leagues"). Incognito is for a real, currently-running league — off the public Leagues page and homepage, but otherwise works normally: its players can still find and claim their record, and it shows on their own profile. Either way, the league stays reachable at its own link.</p>
