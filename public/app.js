@@ -805,11 +805,14 @@ function closenessBucket(closeness) {
 // for its bucket once there's enough of a track record (5+ completed
 // matches), a straight-line guess from lopsided/quick to even/long before
 // that. This is what a live cell's progress bar fills toward.
+// Real matches run ~65 min on average — a lopsided one still tends to run
+// ~50, a tight one closer to ~80 — so the placeholder spans 50-80 (average
+// 65) rather than the original, much-too-short 18-38 guess.
 function estimateMinutesForCloseness(closeness) {
   const bucket = closenessBucket(closeness);
   const stat = (league.courtDurationStats || {})[bucket];
   if (stat && stat.count >= 5) return Math.round(stat.totalMinutes / stat.count);
-  return Math.round(18 + (closeness / 100) * 20);
+  return Math.round(50 + (closeness / 100) * 30);
 }
 // One ticker for every live/finished cell on screen, wherever it is in the
 // DOM — cheap enough to just run always rather than start/stop it per
@@ -4317,8 +4320,71 @@ el("notify-email-save-btn").onclick = async () => {
     await refreshLeague();
   } catch (e) { el("notify-email-status").textContent = e.message; }
 };
+// Converts the VAPID public key (base64url, as the server hands it back)
+// into the raw Uint8Array applicationServerKey wants — the browser API
+// doesn't accept the base64 string directly.
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+// Reuses the service worker already registered for the installed-app shell
+// (see the serviceWorker.register call further down) via the standard
+// navigator.serviceWorker.ready promise — doesn't register a second one.
+async function renderPushCard() {
+  const card = el("push-notify-card");
+  const btn = el("push-notify-btn");
+  const note = el("push-notify-note");
+  if (myRole !== "captain") { card.style.display = "none"; return; }
+  card.style.display = "block";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    note.textContent = "Not supported on this browser.";
+    btn.style.display = "none";
+    return;
+  }
+  if (Notification.permission === "denied") {
+    note.textContent = "Blocked — you've denied notifications for this site. Allow them in your browser's site settings to turn this on.";
+    btn.style.display = "none";
+    return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    note.textContent = "Notifications are on for this device.";
+    btn.textContent = "Turn off";
+    btn.style.display = "inline-block";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/push-unsubscribe`, { method: "POST", body: { endpoint: existing.endpoint } });
+        await existing.unsubscribe();
+      } catch (e) { alert(e.message); }
+      btn.disabled = false;
+      renderPushCard();
+    };
+  } else {
+    note.textContent = "Optional — get these notifications pushed straight to this device, even with the app closed.";
+    btn.textContent = "Enable notifications on this device";
+    btn.style.display = "inline-block";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const { key } = await api(`/leagues/${currentLeagueId}/push/vapid-public-key`);
+        if (!key) throw new Error("Push notifications aren't set up on this server yet.");
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") throw new Error("Permission denied.");
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+        await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/push-subscribe`, { method: "POST", body: { subscription: sub.toJSON() } });
+      } catch (e) { alert(e.message); }
+      btn.disabled = false;
+      renderPushCard();
+    };
+  }
+}
 function renderNotificationsList() {
   renderNotifyEmailCard();
+  renderPushCard();
   const c = el("notifications-list");
   if (!c) return;
   if (myRole !== "captain") { c.innerHTML = '<p class="empty">Notifications are for team captains.</p>'; return; }

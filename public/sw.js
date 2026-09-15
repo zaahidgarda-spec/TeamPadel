@@ -28,6 +28,38 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Real Web Push — a payload the server sent via web-push, delivered even
+// when no tab is open. Falls back to a plain title if the payload isn't
+// there or isn't JSON (a push service is allowed to redeliver without a
+// body in some retry scenarios), so a malformed payload never means no
+// notification shows at all.
+self.addEventListener("push", (event) => {
+  let data = { title: "Team Padel", body: "You have a new notification." };
+  try { if (event.data) data = { ...data, ...event.data.json() }; } catch (e) { /* keep the fallback above */ }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/images/icon-192.png",
+      badge: "/images/icon-192.png",
+      tag: data.type || "general",
+    })
+  );
+});
+
+// Focuses an already-open tab rather than always opening a new one — most
+// people already have the app open in a background tab when this fires.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) return client.focus();
+      }
+      return self.clients.openWindow("/");
+    })
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 

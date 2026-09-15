@@ -4,6 +4,7 @@ const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail } = require("./mailer");
+const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
 
 const router = express.Router();
@@ -130,6 +131,20 @@ function notify(league, teamId, type, message, extra) {
   const team = league.teams.find((t) => t.id === teamId);
   if (team && team.notifyEmail) {
     sendMail({ to: team.notifyEmail, subject: league.name + ": " + type, text: message }).catch(() => {});
+  }
+  // Fire-and-forget, same as the email above — every existing call site
+  // (selection reveal, substitution, round complete, timeslot proposals,
+  // lineup reminders, ...) starts reaching a subscribed device for free,
+  // with no new trigger logic anywhere. A dead/expired subscription (the
+  // browser unsubscribed on its own end) is pruned from this same team
+  // object and re-saved once the send settles — consistent with how the
+  // rest of this app has no stronger write-concurrency guarantee than that.
+  if (team && team.pushSubscriptions && team.pushSubscriptions.length) {
+    sendPushToSubscriptions(team.pushSubscriptions, { title: league.name, body: message, type, ...extra }).then(({ deadEndpoints }) => {
+      if (!deadEndpoints.length) return;
+      team.pushSubscriptions = team.pushSubscriptions.filter((s) => !deadEndpoints.includes(s.endpoint));
+      store.saveLeague(league.id, league);
+    });
   }
 }
 
@@ -1806,6 +1821,7 @@ router.get("/leagues/:leagueId", (req, res) => {
     if (!t.code) { t.code = genTeamCode(league); migrated = true; }
     if (!t.paymentStatus) { t.paymentStatus = "unpaid"; migrated = true; }
     if (t.paymentMode === undefined) { t.paymentMode = null; migrated = true; }
+    if (!t.pushSubscriptions) { t.pushSubscriptions = []; migrated = true; }
     t.players.forEach((p) => {
       if (!p.paymentStatus) { p.paymentStatus = "unpaid"; migrated = true; }
     });
@@ -2350,6 +2366,48 @@ router.put(
     const email = (req.body.email || "").trim();
     if (email && !email.includes("@")) return res.status(400).json({ error: "Enter a valid email, or leave it blank to turn notifications off." });
     team.notifyEmail = email;
+    store.saveLeague(league.id, league);
+    res.json({ ok: true });
+  }
+);
+
+// Public — it's a public key by design (that's the whole point of the
+// VAPID key PAIR: the public half is safe to hand to any client, only the
+// private half server-side ever signs anything). No leagueId scoping needed
+// either, since there's exactly one key pair for the whole deployment, but
+// it lives under /leagues/:leagueId for symmetry with the subscribe route
+// right below, which the client calls in the same breath.
+router.get("/leagues/:leagueId/push/vapid-public-key", (req, res) => {
+  res.json({ key: getVapidPublicKey() });
+});
+
+router.post(
+  "/leagues/:leagueId/teams/:teamId/push-subscribe",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const subscription = req.body.subscription;
+    if (!subscription || !subscription.endpoint) return res.status(400).json({ error: "Invalid subscription." });
+    if (!team.pushSubscriptions) team.pushSubscriptions = [];
+    if (!team.pushSubscriptions.some((s) => s.endpoint === subscription.endpoint)) {
+      team.pushSubscriptions.push(subscription);
+      store.saveLeague(league.id, league);
+    }
+    res.json({ ok: true });
+  }
+);
+
+router.post(
+  "/leagues/:leagueId/teams/:teamId/push-unsubscribe",
+  requireAdminOrCaptain((req) => req.params.teamId),
+  (req, res) => {
+    const league = store.getLeague(req.params.leagueId);
+    const team = league.teams.find((t) => t.id === req.params.teamId);
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    const endpoint = req.body.endpoint;
+    team.pushSubscriptions = (team.pushSubscriptions || []).filter((s) => s.endpoint !== endpoint);
     store.saveLeague(league.id, league);
     res.json({ ok: true });
   }
