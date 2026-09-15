@@ -2373,7 +2373,13 @@ function tabDefs() {
   defs.push({ key: "news", label: "News room" });
   if ((league.seasonHistoryCount || 0) > 0) defs.push({ key: "season-history", label: "Past seasons" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
-  if (myRole === "captain") {
+  // Admin sees this too, not just captain — the notifications LIST already
+  // shows every team's activity to an admin (see the server-side route),
+  // and the email/push cards inside light up for an admin who's ALSO
+  // personally captain of a team here (see myPushTeamId) — the site owner
+  // who also runs a team, say, shouldn't have to log out of admin and back
+  // in as that team's captain just to turn push on for themselves.
+  if (myRole === "captain" || myRole === "admin") {
     const unread = myNotifications.filter((n) => !n.read).length;
     defs.push({ key: "notifications", label: unread ? `Notifications (${unread})` : "Notifications" });
   }
@@ -4297,7 +4303,7 @@ function renderSponsorStrip() {
 /* ---------- Notifications ---------- */
 
 async function refreshNotifications() {
-  if (myRole !== "captain") { myNotifications = []; return; }
+  if (myRole !== "captain" && myRole !== "admin") { myNotifications = []; return; }
   myNotifications = await api(`/leagues/${currentLeagueId}/notifications`).catch(() => []);
 }
 function updateNotifTabLabel() {
@@ -4306,18 +4312,34 @@ function updateNotifTabLabel() {
   const unread = myNotifications.filter((n) => !n.read).length;
   btn.textContent = unread ? `Notifications (${unread})` : "Notifications";
 }
+// Which team the Notifications tab's email/push cards act on for whoever's
+// currently viewing this league page — the captain's own team normally,
+// or, for an admin who ALSO personally captains a team in this same league
+// (the site owner who also runs a team, say), that team — resolved off the
+// signed-in player account's own captaincies rather than myTeamId, which is
+// null for a plain admin session. Null when neither applies, meaning these
+// cards simply have nothing to act on for this viewer.
+function myPushTeamId() {
+  if (myRole === "captain") return myTeamId;
+  if (myRole === "admin" && playerAccount) {
+    const cap = (playerAccount.captaincies || []).find((c) => c.leagueId === currentLeagueId);
+    if (cap) return cap.teamId;
+  }
+  return null;
+}
 function renderNotifyEmailCard() {
   const card = el("notify-email-input").closest(".card");
-  if (myRole !== "captain") { card.style.display = "none"; return; }
+  const teamId = myPushTeamId();
+  if (!teamId) { card.style.display = "none"; return; }
   card.style.display = "block";
-  const team = teamById(myTeamId);
+  const team = teamById(teamId);
   el("notify-email-input").value = (team && team.notifyEmail) || "";
   el("notify-email-status").textContent = "";
 }
 el("notify-email-save-btn").onclick = async () => {
   const email = el("notify-email-input").value.trim();
   try {
-    await api(`/leagues/${currentLeagueId}/teams/${myTeamId}/notify-email`, { method: "PUT", body: { email } });
+    await api(`/leagues/${currentLeagueId}/teams/${myPushTeamId()}/notify-email`, { method: "PUT", body: { email } });
     el("notify-email-status").textContent = email ? "Saved — notifications will be emailed to " + email + "." : "Saved — email notifications are off.";
     await refreshLeague();
   } catch (e) { el("notify-email-status").textContent = e.message; }
@@ -4359,10 +4381,10 @@ async function unregisterPushForTeam(leagueId, teamId, endpoint) {
 // banner below — the current league page's own single team.
 async function enablePushForCaptain(reg) {
   const sub = await getOrCreatePushSubscription(reg, currentLeagueId);
-  await registerPushForTeam(currentLeagueId, myTeamId, sub);
+  await registerPushForTeam(currentLeagueId, myPushTeamId(), sub);
 }
 async function disablePushForCaptain(existing) {
-  await unregisterPushForTeam(currentLeagueId, myTeamId, existing.endpoint);
+  await unregisterPushForTeam(currentLeagueId, myPushTeamId(), existing.endpoint);
   await existing.unsubscribe();
 }
 // Reuses the service worker already registered for the installed-app shell
@@ -4372,7 +4394,7 @@ async function renderPushCard() {
   const card = el("push-notify-card");
   const btn = el("push-notify-btn");
   const note = el("push-notify-note");
-  if (myRole !== "captain") { card.style.display = "none"; return; }
+  if (!myPushTeamId()) { card.style.display = "none"; return; }
   card.style.display = "block";
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     note.textContent = "Not supported on this browser.";
@@ -4421,7 +4443,7 @@ let pushPromptDismissed = false;
 async function renderPushPromptBanner() {
   const banner = el("push-prompt-banner");
   if (!banner) return;
-  if (myRole !== "captain" || pushPromptDismissed) { banner.style.display = "none"; return; }
+  if (!myPushTeamId() || pushPromptDismissed) { banner.style.display = "none"; return; }
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || Notification.permission === "denied") {
     banner.style.display = "none";
     return;
@@ -4545,7 +4567,7 @@ function renderNotificationsList() {
   renderPushCard();
   const c = el("notifications-list");
   if (!c) return;
-  if (myRole !== "captain") { c.innerHTML = '<p class="empty">Notifications are for team captains.</p>'; return; }
+  if (myRole !== "captain" && myRole !== "admin") { c.innerHTML = '<p class="empty">Notifications are for team captains.</p>'; return; }
   if (myNotifications.length === 0) { c.innerHTML = '<p class="empty">No notifications yet.</p>'; return; }
   c.innerHTML = "";
   myNotifications.forEach((n) => {
