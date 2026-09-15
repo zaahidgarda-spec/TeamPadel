@@ -4464,9 +4464,28 @@ async function renderAccountPushSection() {
   const teamsEl = el("account-push-teams");
   const note = el("account-push-note");
   const btn = el("account-push-btn");
-  const captaincies = (playerAccount && playerAccount.captaincies) || [];
-  if (!captaincies.length) { section.style.display = "none"; return; }
+  const codeRow = el("account-push-code-row");
+  const codeError = el("account-push-code-error");
+  if (!playerAccount) { section.style.display = "none"; return; }
   section.style.display = "block";
+  codeError.textContent = "";
+  const captaincies = playerAccount.captaincies || [];
+  // No linked team yet — shown to EVERY signed-in account, captain or not,
+  // since there's no way to tell "is this person actually a captain" without
+  // asking for their code (a team's code is the only thing that proves it —
+  // captaincies only gets populated at the moment one's entered while
+  // signed in, see persistCaptaincy). Entering it here both links the team
+  // AND leaves this section ready to turn push on in the very same visit,
+  // instead of sending them off to a separate "+ Enter a team code" link
+  // and back.
+  if (!captaincies.length) {
+    teamsEl.innerHTML = "";
+    note.textContent = "Manage a team? Enter your team code below to link it here, then turn on notifications for it.";
+    btn.style.display = "none";
+    codeRow.style.display = "flex";
+    return;
+  }
+  codeRow.style.display = "none";
   teamsEl.innerHTML = captaincies.map((c) => `<span class="tag">${escapeHtml(c.teamName)} · ${escapeHtml(c.leagueName)}</span>`).join(" ");
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     note.textContent = "Not supported on this browser.";
@@ -4508,6 +4527,19 @@ async function renderAccountPushSection() {
     };
   }
 }
+el("account-push-code-btn").onclick = async () => {
+  const btn = el("account-push-code-btn");
+  const code = el("account-push-code").value;
+  const errorEl = el("account-push-code-error");
+  btn.disabled = true;
+  try {
+    await api("/captain-login", { method: "POST", body: { code, email: playerAccount ? playerAccount.email : "" } });
+    el("account-push-code").value = "";
+    errorEl.textContent = "";
+    await refreshAccountStatus();
+  } catch (e) { errorEl.textContent = e.message; }
+  btn.disabled = false;
+};
 function renderNotificationsList() {
   renderNotifyEmailCard();
   renderPushCard();
