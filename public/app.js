@@ -256,7 +256,26 @@ function startPresencePing() {
   setInterval(ping, 60000);
   document.addEventListener("visibilitychange", ping);
 }
+// A per-browser, per-calendar-day visit counter — purely a client-side
+// nicety (localStorage only, never sent anywhere) for the loading-screen
+// caption below. Resets itself the moment the date rolls over, so it's
+// really "how many times today", not a running total.
+function bumpDailyVisitCount() {
+  const today = new Date().toISOString().slice(0, 10);
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem("dailyVisitCount") || "null"); } catch { /* ignore corrupted value */ }
+  const count = stored && stored.date === today ? stored.count + 1 : 1;
+  try { localStorage.setItem("dailyVisitCount", JSON.stringify({ date: today, count })); } catch { /* private mode, storage full, etc. — just skip the count */ }
+  return count;
+}
 async function boot() {
+  // 5th+ open today gets a knowing wink instead of the plain caption —
+  // set immediately (before the config/leagues fetches below) so it's
+  // actually there while the bar is up, not just for a flash at the end.
+  if (bumpDailyVisitCount() >= 5) {
+    const caption = el("loading-caption");
+    if (caption) caption.textContent = "Addicted much? 😄";
+  }
   const config = await api("/config").catch(() => ({ ratingsEnabled: false, payfastSandbox: true }));
   RATINGS_ENABLED = !!config.ratingsEnabled;
   PAYFAST_SANDBOX = config.payfastSandbox !== false;
