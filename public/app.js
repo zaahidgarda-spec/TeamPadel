@@ -822,7 +822,12 @@ setInterval(async () => {
   const activeBtn = document.querySelector("#tabs button.active");
   if (activeBtn && activeBtn.dataset.view === "live-court") {
     await refreshLeague();
-    renderAll();
+    // Only the Live Court Control grid itself, not renderAll() — that
+    // rebuilds every other tab's DOM too (Selection, Fixtures, Results,
+    // Predictions, ...) even though only this one is on screen, which was
+    // wiping out anything mid-interaction here every 30 seconds — an open
+    // Forfeit picker, a half-open menu, even just scroll position.
+    renderLiveCourtControl();
   }
 }, 30000);
 // Which of the 5 learned-duration buckets a closeness score falls into —
