@@ -1050,6 +1050,11 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .loading-bar-track{width:120px;height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden;}
 .loading-bar-fill{width:40%;height:100%;border-radius:2px;background:var(--accent);animation:loading-bar-slide 1.3s ease-in-out infinite;}
 @media (prefers-reduced-motion: reduce){.loading-bar-fill{animation:none;width:100%;}}
+/* Escalating "you're back again today" tiers — see DAILY_VISIT_TIERS in
+   app.js — amber at 5+ visits, orange at 8+, red at 12+. */
+.loading-bar-fill.tier-1{background:#f5a623;}
+.loading-bar-fill.tier-2{background:#ff7a1a;}
+.loading-bar-fill.tier-3{background:#e6383f;}
 .loading-caption{font-family:var(--font-display);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.45);}
 @keyframes loading-fade-in{from{opacity:0;}to{opacity:1;}}
 @keyframes loading-bar-slide{0%{transform:translateX(-100%);}50%{transform:translateX(60%);}100%{transform:translateX(220%);}}

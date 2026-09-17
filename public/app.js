@@ -268,13 +268,24 @@ function bumpDailyVisitCount() {
   try { localStorage.setItem("dailyVisitCount", JSON.stringify({ date: today, count })); } catch { /* private mode, storage full, etc. — just skip the count */ }
   return count;
 }
+// Escalates the further past the 5-visit mark someone gets today — each
+// tier gets its own message and a hotter bar color (amber → orange → red)
+// so it reads as a running joke, not just a one-off wink.
+const DAILY_VISIT_TIERS = [
+  { min: 12, message: "Go outside and actually play a match", barClass: "tier-3" },
+  { min: 8, message: "Okay, we get it — you love padel", barClass: "tier-2" },
+  { min: 5, message: "Addicted much? 😄", barClass: "tier-1" },
+];
 async function boot() {
-  // 5th+ open today gets a knowing wink instead of the plain caption —
-  // set immediately (before the config/leagues fetches below) so it's
+  // Set immediately (before the config/leagues fetches below) so it's
   // actually there while the bar is up, not just for a flash at the end.
-  if (bumpDailyVisitCount() >= 5) {
+  const visitCount = bumpDailyVisitCount();
+  const tier = DAILY_VISIT_TIERS.find((t) => visitCount >= t.min);
+  if (tier) {
     const caption = el("loading-caption");
-    if (caption) caption.textContent = "Addicted much? 😄";
+    const fill = document.querySelector(".loading-bar-fill");
+    if (caption) caption.textContent = tier.message;
+    if (fill) fill.classList.add(tier.barClass);
   }
   const config = await api("/config").catch(() => ({ ratingsEnabled: false, payfastSandbox: true }));
   RATINGS_ENABLED = !!config.ratingsEnabled;
