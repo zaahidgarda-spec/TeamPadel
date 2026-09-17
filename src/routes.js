@@ -4301,7 +4301,7 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   const isCaptain = !isAdmin && !!u && u.leagueId === league.id && u.role === "captain";
   if (!isAdmin && !isCaptain) return res.status(403).json({ error: "Not allowed." });
 
-  const { slot, court, fixtureId, seed } = req.body || {};
+  const { slot, court, fixtureId, seed, expectedTargetFixtureId, expectedTargetSeed } = req.body || {};
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   if (!Number.isInteger(slot) || slot < 0 || slot >= slots) return res.status(400).json({ error: "Invalid slot." });
   if (!Number.isInteger(court) || court < 0 || court >= courts) return res.status(400).json({ error: "Invalid court." });
@@ -4324,6 +4324,22 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
   }
   if (fixtureId && rubberIsStarted(fixtureId, seed)) {
     return res.status(400).json({ error: "That match is already in play — it can't be moved." });
+  }
+  // Courtside, more than one captain/admin can easily be rearranging the
+  // board at the same moment. Every caller already knows what it expects
+  // to find in the target cell (empty, or a specific match it's swapping
+  // with) from the grid it just rendered — if that's changed by the time
+  // this write lands, someone else got there first, so this rejects
+  // instead of silently overwriting whatever they just placed there.
+  // Optional (omitted) so nothing outside this app's own client breaks.
+  if (expectedTargetFixtureId !== undefined) {
+    const actualFixtureId = targetCell ? targetCell.fixtureId : null;
+    const actualSeed = targetCell ? targetCell.seed : null;
+    const expectedFixtureId = expectedTargetFixtureId || null;
+    const mismatch = expectedFixtureId
+      ? (actualFixtureId !== expectedFixtureId || actualSeed !== expectedTargetSeed)
+      : !!actualFixtureId;
+    if (mismatch) return res.status(409).json({ error: "That court's schedule just changed — refresh and try again." });
   }
 
   if (isCaptain) {

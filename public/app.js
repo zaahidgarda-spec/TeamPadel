@@ -6096,9 +6096,15 @@ async function performCourtSwap(round, posA, posB) {
   if (!from.fixtureId) return;
   const wasSwap = to.fixtureId && !(to.fixtureId === from.fixtureId && to.seed === from.seed);
   try {
-    await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: to.slot, court: to.court, fixtureId: from.fixtureId, seed: from.seed } });
+    // Both calls tell the server exactly what this drag/tap saw at the
+    // target a moment ago — empty, or a specific match to swap with —
+    // so a near-simultaneous change by someone else (an admin and a
+    // captain rearranging the same round at once, say) gets rejected
+    // instead of silently overwritten. The second call's target (`from`'s
+    // own spot) is expected empty because the first call just vacated it.
+    await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: to.slot, court: to.court, fixtureId: from.fixtureId, seed: from.seed, expectedTargetFixtureId: to.fixtureId || null, expectedTargetSeed: to.fixtureId ? to.seed : null } });
     if (wasSwap) {
-      await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: from.slot, court: from.court, fixtureId: to.fixtureId, seed: to.seed } });
+      await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: from.slot, court: from.court, fixtureId: to.fixtureId, seed: to.seed, expectedTargetFixtureId: null } });
     }
     // Shown once in the hint area on the very next render, then cleared —
     // the render that follows a successful swap is the confirmation, not a
@@ -6106,7 +6112,13 @@ async function performCourtSwap(round, posA, posB) {
     courtSwapNotice = wasSwap ? "Swapped — schedule updated." : "Moved — schedule updated.";
     await refreshLeague(); renderAll();
     setTimeout(() => { courtSwapNotice = null; renderFixtures(); }, 2200);
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    alert(err.message);
+    // A rejected move (someone else changed this cell first) leaves the
+    // board stale in front of whoever just got the error — pull the real
+    // current state rather than making them notice and refresh manually.
+    await refreshLeague(); renderAll();
+  }
 }
 function renderCourtScheduleGrid(fixtures) {
   const card = el("court-schedule-card");
@@ -6343,11 +6355,14 @@ function renderCourtScheduleGrid(fixtures) {
           if (!select.value) return;
           const [fixtureId, seedStr] = select.value.split(":");
           try {
-            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: c, fixtureId, seed: Number(seedStr) } });
+            await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: c, fixtureId, seed: Number(seedStr), expectedTargetFixtureId: null } });
             courtSwapNotice = "Placed — schedule updated.";
             await refreshLeague(); renderAll();
             setTimeout(() => { courtSwapNotice = null; renderFixtures(); }, 2200);
-          } catch (err) { alert(err.message); }
+          } catch (err) {
+            alert(err.message);
+            await refreshLeague(); renderAll();
+          }
         };
         td.appendChild(select);
       } else {
@@ -6511,10 +6526,15 @@ async function renderLiveCourtControl() {
         const completedAttr = rubber.completedAt ? ` data-completed="${rubber.completedAt}"` : "";
         const finishLabel = state === "live" ? "Est. finish" : "Finished at";
         const finishMs = state === "live" ? rubber.startedAt + estMins * 60000 : rubber.completedAt;
+        // A real match running longer than its estimate (common enough)
+        // would otherwise show a finish time already in the past — this
+        // only ever looks right for the few minutes after a refresh
+        // happens to land before the estimate's passed.
+        const finishOverdue = state === "live" && finishMs < Date.now();
         inner += `<div class="lc-strip">
           <div><div class="lc-strip-lbl">Elapsed</div><div class="lc-strip-val lc-timer" data-started="${rubber.startedAt}"${completedAttr}></div></div>
           <div><div class="lc-strip-lbl">Status</div><div class="lc-strip-val${state === "live" ? " lc-strip-live" : " lc-strip-done"}">${state === "live" ? "Live" : "Finished"}</div></div>
-          <div><div class="lc-strip-lbl">${finishLabel}</div><div class="lc-strip-val">${escapeHtml(clockTimeOnly(finishMs))}</div></div>
+          <div><div class="lc-strip-lbl">${finishLabel}</div><div class="lc-strip-val">${finishOverdue ? "Any time now" : escapeHtml(clockTimeOnly(finishMs))}</div></div>
         </div>`;
       }
       box.innerHTML = inner;
@@ -6525,9 +6545,19 @@ async function renderLiveCourtControl() {
             e.stopPropagation();
             const targetCourt = Number(applyBtn.dataset.moveTo);
             try {
-              await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: targetCourt, fixtureId: cell.fixtureId, seed: cell.seed } });
+              // The suggestion only ever points at a court this render saw
+              // as empty — tell the server that's what's expected so a
+              // near-simultaneous move by someone else (courtside, more
+              // than one person can easily be working the board at once)
+              // gets rejected instead of silently overwritten.
+              await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: targetCourt, fixtureId: cell.fixtureId, seed: cell.seed, expectedTargetFixtureId: null } });
               await refreshLeague(); renderAll();
-            } catch (err) { alert(err.message); }
+            } catch (err) {
+              alert(err.message);
+              // Someone else already claimed that court — show what's
+              // actually there now instead of leaving a stale suggestion.
+              await refreshLeague(); renderAll();
+            }
           };
         }
       }
