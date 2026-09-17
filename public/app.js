@@ -4724,7 +4724,7 @@ function renderNotificationsList() {
     // one jumps straight to that round's Awards page instead of leaving the
     // captain to go find it themselves. A line-up unlock request/response is
     // the same idea, but jumps to Selection Room, where it's actionable.
-    const jumpTab = n.type === "potw" ? "awards" : (n.type === "selection_unlock" || n.type === "lineup_reminder") ? "selection" : null;
+    const jumpTab = n.type === "potw" ? "awards" : (n.type === "selection_unlock" || n.type === "lineup_reminder") ? "selection" : n.type === "forfeit" ? "results" : null;
     const goToRound = jumpTab && Number.isInteger(n.round) ? getRoundsList().find((k) => k.stage === "regular" && k.round === n.round) : null;
     row.className = "notif-row" + (n.read ? "" : " unread") + (goToRound ? " notif-clickable" : "");
     row.innerHTML = `<span class="notif-msg">${escapeHtml(n.message)}</span><time class="notif-time">${new Date(n.createdAt).toLocaleString()}</time>`;
@@ -7120,6 +7120,15 @@ function resultsCard(f) {
     const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
     scoreText.textContent = rubberScoreText(rubber) || "Not played yet";
     scores.appendChild(scoreText);
+    // Visible to anyone (not just admin) — the score itself already reads
+    // as a real 6-0, 6-0 win, so this is the only thing on screen telling
+    // a captain it was a walkover, not an actual beatdown.
+    if (rubber.forfeited) {
+      const winnerTeam = rubber.forfeited === "A" ? teamA : teamB;
+      const tag = document.createElement("span"); tag.className = "tag"; tag.style.marginLeft = "6px";
+      tag.textContent = "Forfeit — " + (winnerTeam ? winnerTeam.name : "?") + " awarded the win";
+      scores.appendChild(tag);
+    }
     [0, 1].forEach((si) => {
       const valid = isValidSetClient(rubber.sets[si][0], rubber.sets[si][1]);
       if (valid === false) { const w = document.createElement("div"); w.className = "warn"; w.textContent = "Set " + (si + 1) + ": not a real padel score"; scores.appendChild(w); }
@@ -7129,6 +7138,38 @@ function resultsCard(f) {
       editBtn.textContent = rubberScoreText(rubber) ? "Edit score" : "Enter score";
       editBtn.onclick = () => openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml);
       scores.appendChild(editBtn);
+    }
+    // Admin-only, and only while there's still something to declare — once
+    // finalized the server refuses anyway (unlock first), and an already-
+    // forfeited rubber shows its tag above instead of the trigger again.
+    if (myRole === "admin" && !f.finalized && !rubber.forfeited && teamA && teamB) {
+      const forfeitBtn = document.createElement("button"); forfeitBtn.className = "secondary forfeit-btn"; forfeitBtn.style.marginLeft = "6px";
+      forfeitBtn.textContent = "Forfeit";
+      forfeitBtn.onclick = () => {
+        // Replaces itself with one button per side rather than a native
+        // confirm() straight away — picking the wrong side of a two-option
+        // browser dialog by mid-click is an easy, hard-to-undo mistake for
+        // something that posts a real result.
+        const picker = document.createElement("div"); picker.className = "forfeit-picker";
+        [["A", teamA], ["B", teamB]].forEach(([side, t]) => {
+          const btn = document.createElement("button"); btn.className = "secondary";
+          btn.textContent = t.name + " forfeits";
+          btn.onclick = async () => {
+            const winnerName = side === "A" ? teamB.name : teamA.name;
+            if (!confirm(`${t.name} forfeits to ${winnerName} — posts a 6-0, 6-0 walkover for the table. Elo ratings won't be affected either way. Continue?`)) return;
+            try {
+              await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}/forfeit`, { method: "POST", body: { winner: side === "A" ? "B" : "A" } });
+              await refreshLeague(); renderAll();
+            } catch (e) { alert(e.message); }
+          };
+          picker.appendChild(btn);
+        });
+        const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
+        cancelBtn.onclick = () => { picker.replaceWith(forfeitBtn); };
+        picker.appendChild(cancelBtn);
+        forfeitBtn.replaceWith(picker);
+      };
+      scores.appendChild(forfeitBtn);
     }
     row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
     rubbersWrap.appendChild(row);

@@ -4757,10 +4757,58 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
   if (req.body.tb) f.rubbers[idx].tb = req.body.tb;
   const after = { sets: f.rubbers[idx].sets, tb: f.rubbers[idx].tb };
   if (JSON.stringify(before) !== JSON.stringify(after)) {
+    // A hand-entered score means this is a real, played result after all
+    // (correcting a mistaken forfeit, most likely) — clears the walkover
+    // flag so it goes back to counting for Elo like any other rubber.
+    if (f.rubbers[idx].forfeited) f.rubbers[idx].forfeited = null;
     logAudit(league, req, f, "score_edit", { seedIdx: idx, before, after, wasFinalized: f.finalized });
   }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// A no-show/withdrawal gets a real result on the board — a 6-0, 6-0
+// walkover posts for standings exactly like any other decisive win — but
+// it never happened as a match, so nobody's rating should move for it
+// either direction. Admin-only (unlike the score PUT above, which a
+// captain can also use pre-finalize) since either side unilaterally
+// declaring the other forfeited is exactly the kind of call that needs a
+// neutral adjudicator, not a self-interested party.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  const winner = req.body && req.body.winner;
+  if (winner !== "A" && winner !== "B") return res.status(400).json({ error: "Say which side gets the walkover." });
+  if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
+  if (f.finalized) return res.status(400).json({ error: "This fixture is already finalized — unlock it first." });
+
+  const rubber = f.rubbers[idx];
+  rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
+  rubber.tb = [null, null];
+  rubber.forfeited = winner;
+  // Matches how a real completion reads everywhere that checks these two
+  // fields (Live Court Control's live/done state, the elapsed-time strip)
+  // — same instant for both so it shows a clean 00:00 rather than however
+  // long ago the round started.
+  rubber.startedAt = Date.now();
+  rubber.completedAt = rubber.startedAt;
+
+  const teamA = league.teams.find((t) => t.id === f.teamA);
+  const teamB = league.teams.find((t) => t.id === f.teamB);
+  const label = fixtureLabel(league, f);
+  const winnerName = winner === "A" ? (teamA ? teamA.name : "?") : (teamB ? teamB.name : "?");
+  const loserName = winner === "A" ? (teamB ? teamB.name : "?") : (teamA ? teamA.name : "?");
+  const seedLabel = f.rubbers.length === 1 ? "The match" : "Seed " + (idx + 1);
+  const msg = `${seedLabel} for ${label} was forfeited — ${winnerName} awarded a 6-0, 6-0 walkover over ${loserName}.`;
+  notify(league, f.teamA, "forfeit", msg, { round: f.round });
+  notify(league, f.teamB, "forfeit", msg, { round: f.round });
+  logAudit(league, req, f, "forfeit", { seedIdx: idx, winner, winnerName, loserName });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, rubber });
 });
 
 // Live Court Control: mark a rubber as under way courtside. Independent of

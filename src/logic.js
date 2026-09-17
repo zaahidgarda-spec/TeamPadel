@@ -17,6 +17,10 @@ function emptyRubber(setCount) {
     // can be started and marked complete with no score posted at all.
     startedAt: null,
     completedAt: null,
+    // "A" or "B" once an admin declares a walkover for that side — see
+    // POST .../rubbers/:idx/forfeit. Null for an ordinary, actually-played
+    // rubber.
+    forfeited: null,
   };
 }
 // seedCount is 4 for a team fixture (4 sub-matches/seeds a night) and 1 for
@@ -874,6 +878,10 @@ function computeGlobalRatings(leagues, identityOf) {
       if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return;
       const rubber = f.rubbers[i];
       if (!rubber) return;
+      // A declared forfeit posts a real 6-0, 6-0 walkover for standings —
+      // that's a real result, not a played match, so nobody's rating moves
+      // for it either direction.
+      if (rubber.forfeited) return;
       const winner = rubberWinner(rubber);
       // A finalized team-league rubber always has a winner (finalize
       // requires it). A finalized pairs match can stand as a draw instead
