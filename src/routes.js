@@ -1680,14 +1680,11 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // league to manage here) never surfaces in any list on this site — the
     // claim still counts for rating purposes, it just gets no card here.
     if (hiddenLeagueIds.has(claim.leagueId)) return true;
-    const rounds = [...new Set(league.fixtures.map((f) => f.round))];
-    // `round` wasn't on the winner object itself (potwTallyForRound is
-    // scoped to one round already, so it never needed to say which) —
-    // tagged on here since the Trophy Room shows awards from every league
-    // at once, where that context is the whole point.
-    const awards = rounds
-      .flatMap((r) => logic.potwTallyForRound(league, r).winners.map((w) => ({ ...w, round: r })))
-      .filter((w) => w.playerAId === claim.playerId || w.playerBId === claim.playerId);
+    // Spans every archived season plus the live one — a Pair of the Week
+    // win from a season that's since ended shouldn't vanish off the
+    // Trophy Room just because the next season started. See
+    // logic.allSeasonsOf.
+    const awards = logic.potwAwardsAllSeasons(league, claim.playerId);
     // Exact roster match against each Hall of Fame winner (see POST
     // /hall-of-fame) — this player id was actually on the team when it won,
     // same check the single-league player-history route uses. Falls back to
@@ -1701,7 +1698,10 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     const runnerUps = (league.hallOfFame || [])
       .filter((e) => (e.runnerUpRoster || []).some((p) => p.id === claim.playerId) || (!e.runnerUpRoster && hofWinnerNameMatch(e.runnerUp, player.name)))
       .map((e) => ({ season: e.season, label: e.label, teamName: e.runnerUp, teamLogo: e.runnerUpLogo || "" }));
-    const results = logic.playerMatchHistory(league, claim.playerId, ratingsData);
+    // Same "spans every season" reasoning as awards above — a claimed
+    // player's results shouldn't reset to empty the moment their league
+    // starts a new season.
+    const results = logic.playerMatchHistoryAllSeasons(league, claim.playerId, ratingsData);
     // Longest run of consecutive wins ever recorded in this league — not
     // "current streak" (that resets the moment a loss happens and would
     // make an unlocked achievement flicker back to locked), a permanent
@@ -1835,6 +1835,35 @@ router.get("/leagues/:leagueId", (req, res) => {
   league.hidden = !!(indexEntry && indexEntry.hidden);
   let migrated = syncPlayoffs(league);
   if (migrateLegacyKnockoutRounds(league)) migrated = true;
+  // One-time backward-compat recovery for a season ended before this fix
+  // (see /season/reset): that route used to leave potwVotes behind on the
+  // live league instead of archiving them, so a Pair of the Week vote cast
+  // in a season that's since ended can still be sitting here, keyed by a
+  // round number the live league has since moved past. Move anything whose
+  // round doesn't match one of the LIVE league's own current rounds — but
+  // does match a round the most recently archived season actually played —
+  // into that snapshot, where it belongs. Only for an archive made before
+  // this fix (one with no potwVotes of its own already); skips silently
+  // once migrated, or if a round number already collides with the live
+  // season (nothing safe to disentangle there).
+  if (league.seasonHistory && league.seasonHistory.length && league.potwVotes && Object.keys(league.potwVotes).length) {
+    const mostRecent = league.seasonHistory[0];
+    if (!mostRecent.potwVotes) {
+      const liveRounds = new Set(league.fixtures.map((f) => f.round));
+      const archivedRounds = new Set(mostRecent.fixtures.map((f) => f.round));
+      const orphaned = {};
+      Object.keys(league.potwVotes).forEach((r) => {
+        if (!liveRounds.has(Number(r)) && archivedRounds.has(Number(r))) {
+          orphaned[r] = league.potwVotes[r];
+          delete league.potwVotes[r];
+        }
+      });
+      if (Object.keys(orphaned).length) {
+        mostRecent.potwVotes = orphaned;
+        migrated = true;
+      }
+    }
+  }
   // Teams created before per-team access codes existed won't have one —
   // give them one automatically so every captain can log in.
   league.teams.forEach((t) => {
@@ -3213,12 +3242,19 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
       roundMeta: league.roundMeta,
       schedule: league.schedule,
       defaultVenue: league.defaultVenue,
+      // Pair of the Week votes are keyed by round NUMBER, not by fixture —
+      // without archiving them here and clearing the live copy below, the
+      // next season's own round 1/2/3... would silently inherit whatever
+      // votes this season cast for those same round numbers, crowning the
+      // wrong pair (or nobody at all) once the new season reaches them.
+      potwVotes: league.potwVotes || {},
     });
   }
   league.fixtures = [];
   league.byes = [];
   league.playoffs = null;
   league.roundMeta = {};
+  league.potwVotes = {};
   league.status = "setup";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -5281,11 +5317,11 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const player = team && team.players.find((p) => p.id === req.params.playerId);
   if (!team || !player) return res.status(404).json({ error: "Player not found." });
   const { ratingsData } = loadGlobalRatings();
-  const rows = logic.playerMatchHistory(league, req.params.playerId, ratingsData);
-  const rounds = [...new Set(league.fixtures.map((f) => f.round))];
-  const potwWins = rounds
-    .flatMap((r) => logic.potwTallyForRound(league, r).winners)
-    .filter((w) => w.playerAId === player.id || w.playerBId === player.id).length;
+  // Both span every archived season plus the live one — see
+  // logic.allSeasonsOf. A player's own record shouldn't shrink back to
+  // nothing the moment their league starts a new season.
+  const rows = logic.playerMatchHistoryAllSeasons(league, req.params.playerId, ratingsData);
+  const potwWins = logic.potwAwardsAllSeasons(league, player.id).length;
   // Exact match against the winning team's own frozen roster (see
   // POST /hall-of-fame) — this player id was actually on that team when it
   // won. Falls back to a name match against the free-text winner (see
@@ -5299,10 +5335,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // so the Trophy Room on this page needs the actual round/partner detail
   // for every league they're claimed in, not just a bare count.
   const potwAwardsFor = (aLeague, aPlayerId) => {
-    const aRounds = [...new Set(aLeague.fixtures.map((f) => f.round))];
-    return aRounds
-      .flatMap((r) => logic.potwTallyForRound(aLeague, r).winners.map((w) => ({ ...w, round: r })))
-      .filter((w) => w.playerAId === aPlayerId || w.playerBId === aPlayerId)
+    return logic.potwAwardsAllSeasons(aLeague, aPlayerId)
       .map((w) => ({
         round: w.round,
         leagueId: aLeague.id,
@@ -5326,7 +5359,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   // flipped so this player's own side leads each set, so "6-0" always
   // means they won it, never the opponent.
   const careerStatsIn = (aLeague, aPlayerId) => {
-    const aRows = logic.playerMatchHistory(aLeague, aPlayerId, ratingsData);
+    const aRows = logic.playerMatchHistoryAllSeasons(aLeague, aPlayerId, ratingsData);
     let streak = 0, bestStreak = 0, bagels = 0;
     aRows.forEach((r) => {
       if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0;

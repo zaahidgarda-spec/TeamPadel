@@ -390,6 +390,33 @@ function allFixturesOf(league) {
   if (league.playoffs.format === "position") return league.fixtures.concat(league.playoffs.matches || []);
   return league.fixtures.concat([league.playoffs.semis[0], league.playoffs.semis[1], league.playoffs.final]);
 }
+// Every season this league has ever gone through, oldest first, ending
+// with the live one — a season/reset archives the old fixtures into
+// league.seasonHistory and starts fresh, but never touches league.teams,
+// so player/team ids carry over unchanged and each snapshot is safe to
+// treat as a league in its own right (same shape playerMatchHistory and
+// potwTallyForRound already expect). seasonHistory is stored newest-first
+// (unshift), so it's reversed here to end up oldest-to-newest overall.
+function allSeasonsOf(league) {
+  return [...(league.seasonHistory || [])].reverse().concat([league]);
+}
+// A player's lifetime record in this league — every match they've ever
+// played, across every archived season and the live one, not just
+// whatever's currently on the board. See allSeasonsOf.
+function playerMatchHistoryAllSeasons(league, playerId, ratingsData) {
+  return allSeasonsOf(league).flatMap((season) => playerMatchHistory(season, playerId, ratingsData));
+}
+// Same idea for Pair of the Week — a win from a season that's since ended
+// and been archived is still a real win, not something that should vanish
+// off a profile the moment the next season starts.
+function potwAwardsAllSeasons(league, playerId) {
+  return allSeasonsOf(league)
+    .flatMap((season) => {
+      const rounds = [...new Set(season.fixtures.map((f) => f.round))];
+      return rounds.flatMap((r) => potwTallyForRound(season, r).winners.map((w) => ({ ...w, round: r })));
+    })
+    .filter((w) => w.playerAId === playerId || w.playerBId === playerId);
+}
 // The schedule (date/venue/time) is keyed by this same string on
 // league.schedule — mirrors the client's stageKeyFor in app.js exactly.
 function stageKeyFor(f) {
@@ -792,9 +819,18 @@ function fixtureSortDate(league, f) {
 function allRatableFixtures(leagues) {
   const entries = [];
   leagues.forEach((league) => {
-    allFixturesOf(league)
-      .filter((f) => f.finalized && f.teamA && f.teamB)
-      .forEach((f) => entries.push({ league, f }));
+    // A player's rating should reflect every match they've ever played in
+    // this league, archived seasons included — see allSeasonsOf. Each
+    // snapshot is re-tagged with the real league id (it carries its own
+    // throwaway uid) so identityOf below still resolves a claimed player
+    // to the right rating instead of starting them over as unclaimed.
+    allSeasonsOf(league)
+      .map((season) => (season === league ? season : { ...season, id: league.id }))
+      .forEach((season) => {
+        allFixturesOf(season)
+          .filter((f) => f.finalized && f.teamA && f.teamB)
+          .forEach((f) => entries.push({ league: season, f }));
+      });
   });
   entries.sort((x, y) => {
     const dx = fixtureSortDate(x.league, x.f), dy = fixtureSortDate(y.league, y.f);
@@ -1285,6 +1321,9 @@ module.exports = {
   computeLeagueStats,
   restrictToGroup,
   allFixturesOf,
+  allSeasonsOf,
+  playerMatchHistoryAllSeasons,
+  potwAwardsAllSeasons,
   stageKeyFor,
   namesSimilar,
 };
