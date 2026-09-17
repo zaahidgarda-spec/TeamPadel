@@ -1770,14 +1770,39 @@ function playerSearchRowHtml(r, actionHtml) {
     ${actionHtml}
   </div>`;
 }
-// Bumped on every call so a slower, now-stale request (the previous
+// Typing more characters after a query that already came back under the
+// server's 30-result cap (i.e. a COMPLETE match set, not just the first 30
+// of more) can be refined by filtering that same set client-side instead of
+// paying another network round trip — on this hosting, that round trip is
+// several hundred ms even for a tiny response, which is what actually makes
+// search feel slow, not the 200ms debounce. A capped (possibly-partial) set
+// is never cached, since narrowing it further could hide a real match that
+// didn't fit in the first 30.
+function makePlayerSearchCache() {
+  let entry = null; // { query (lowercased), results }
+  return {
+    lookup(q) {
+      if (entry && q.startsWith(entry.query)) return entry.results.filter((r) => r.playerName.toLowerCase().includes(q));
+      return null;
+    },
+    store(q, results) { entry = results.length < 30 ? { query: q, results } : null; },
+    invalidate() { entry = null; },
+  };
+}
+const accountSearchCache = makePlayerSearchCache();
+// Bumped on every network fetch so a slower, now-stale request (the previous
 // keystroke's search, still in flight on a slow connection) can't land
 // after a newer one and flash outdated results over the current query.
 let accountSearchGen = 0;
-async function runAccountSearch(q) {
-  const gen = ++accountSearchGen;
-  const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
-  if (gen !== accountSearchGen) return;
+async function runAccountSearch(qRaw) {
+  const q = qRaw.trim().toLowerCase();
+  let results = accountSearchCache.lookup(q);
+  if (!results) {
+    const gen = ++accountSearchGen;
+    results = await api("/players/search?q=" + encodeURIComponent(qRaw)).catch(() => []);
+    if (gen !== accountSearchGen) return;
+    accountSearchCache.store(q, results);
+  }
   const c = el("account-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   // Already claimed isn't a dead end — the real owner of that name can
@@ -1791,7 +1816,8 @@ async function runAccountSearch(q) {
       const row = btn.closest(".player-search-row");
       try {
         await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
-        await runAccountSearch(q);
+        accountSearchCache.invalidate();
+        await runAccountSearch(qRaw);
         await renderAccountProfile();
       } catch (e) { alert(e.message); }
     };
@@ -1818,11 +1844,17 @@ el("player-search-input").addEventListener("input", () => {
   el("player-search-results").innerHTML = '<p class="empty">Searching…</p>';
   playerSearchTimer = setTimeout(() => runPlayerSearch(q), 200);
 });
+const playerSearchCache = makePlayerSearchCache();
 let playerSearchGen = 0;
-async function runPlayerSearch(q) {
-  const gen = ++playerSearchGen;
-  const results = await api("/players/search?q=" + encodeURIComponent(q)).catch(() => []);
-  if (gen !== playerSearchGen) return;
+async function runPlayerSearch(qRaw) {
+  const q = qRaw.trim().toLowerCase();
+  let results = playerSearchCache.lookup(q);
+  if (!results) {
+    const gen = ++playerSearchGen;
+    results = await api("/players/search?q=" + encodeURIComponent(qRaw)).catch(() => []);
+    if (gen !== playerSearchGen) return;
+    playerSearchCache.store(q, results);
+  }
   const c = el("player-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   c.innerHTML = results.map((r) => playerSearchRowHtml(r, '<button class="secondary view-player-btn" type="button">View profile</button>')).join("");
