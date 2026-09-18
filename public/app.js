@@ -5616,6 +5616,15 @@ function timeSlotPanel(f, teamA, teamB) {
         counterBtn.onclick = () => { wrap.innerHTML = ""; wrap.appendChild(title); wrap.appendChild(renderProposeUI(seedAtFromCells(proposal.assignments))); };
         row.appendChild(counterBtn);
       }
+      const rejectBtn = document.createElement("button");
+      rejectBtn.className = "danger"; rejectBtn.textContent = "Reject";
+      rejectBtn.onclick = async () => {
+        try {
+          await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/court-order/reject`, { method: "POST" });
+          await refreshLeague(); renderAll();
+        } catch (e) { alert(e.message); }
+      };
+      row.appendChild(rejectBtn);
       wrap.appendChild(row);
     }
     return wrap;

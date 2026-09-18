@@ -5128,6 +5128,28 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/confirm", (req, 
   res.json({ ok: true });
 });
 
+// Same responder as confirm (admin, or the captain who didn't propose it)
+// — just declines instead of applying it. The court schedule was never
+// touched while the proposal sat pending, so rejecting it is purely
+// clearing the proposal: whatever was there before (or nothing, if this
+// was the first order for the match) stands unchanged.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/court-order/reject", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  if (!f.courtOrderProposal) return res.status(400).json({ error: "There's no proposal to reject." });
+  const admin = isAdminSession(req, league.id);
+  const u = resolveLeagueSession(req, league.id);
+  const side = u && u.role === "captain" ? (u.teamId === f.teamA ? "A" : u.teamId === f.teamB ? "B" : null) : null;
+  if (!admin && (!side || side === f.courtOrderProposal.by)) return res.status(403).json({ error: "Only the other captain can reject this." });
+
+  const proposerTeamId = f.courtOrderProposal.by === "A" ? f.teamA : f.teamB;
+  notify(league, proposerTeamId, "timeslot", `Your proposed court/playing order for ${fixtureLabel(league, f)} was rejected — the previous order stays.`);
+  f.courtOrderProposal = null;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.post("/leagues/:leagueId/fixtures/:fixtureId/unlock", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);

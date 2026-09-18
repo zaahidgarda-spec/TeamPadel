@@ -774,6 +774,8 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .info-callout-success strong,.floodlit.urgent .note.info-callout-success{color:#6EE7A8;}
 .floodlit.urgent button.secondary{background:rgba(255,255,255,.05);border-color:rgba(96,150,255,.3);color:#8FB4FF;}
 .floodlit.urgent button.secondary:hover:not(:disabled){border-color:#7FA8FF;background:rgba(127,168,255,.12);color:#7FA8FF;}
+.floodlit.urgent button.danger{background:rgba(255,255,255,.05);border-color:rgba(226,67,47,.4);color:#FF9A8A;}
+.floodlit.urgent button.danger:hover:not(:disabled){border-color:#FF9A8A;background:rgba(226,67,47,.14);}
 .floodlit.urgent table.court-schedule-table th{color:#8FB4FF;border-bottom-color:rgba(96,150,255,.2);}
 .floodlit.urgent table.court-schedule-table tbody th{color:#C7D2E8;}
 .floodlit.urgent table.court-schedule-table td{border-bottom-color:rgba(255,255,255,.10);}
