@@ -9720,6 +9720,15 @@ function archivedFixtureCard(seasonId, f, teams) {
     const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
     scoreText.textContent = rubberScoreText(rubber) || "Not played";
     scores.appendChild(scoreText);
+    // A forfeit caught (or corrected) after the season's already archived
+    // is just as real as one caught during it — same tag/trigger pattern
+    // as the live Results tab, pointed at the archived-season route.
+    if (rubber.forfeited) {
+      const winnerTeam = rubber.forfeited === "A" ? teamA : teamB;
+      const tag = document.createElement("span"); tag.className = "tag"; tag.style.marginLeft = "6px";
+      tag.textContent = "Forfeit — " + (winnerTeam ? winnerTeam.name : "?") + " awarded the win";
+      scores.appendChild(tag);
+    }
     const editBtn = document.createElement("button"); editBtn.className = "secondary score-edit-btn";
     editBtn.textContent = "Edit score";
     editBtn.onclick = () => openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml, {
@@ -9728,6 +9737,31 @@ function archivedFixtureCard(seasonId, f, teams) {
       onSaved: () => openArchivedSeason(seasonId),
     });
     scores.appendChild(editBtn);
+    if (!isDecider && !rubber.forfeited) {
+      const forfeitBtn = document.createElement("button"); forfeitBtn.className = "secondary forfeit-btn"; forfeitBtn.style.marginLeft = "6px";
+      forfeitBtn.textContent = "Forfeit";
+      forfeitBtn.onclick = () => {
+        const picker = document.createElement("div"); picker.className = "forfeit-picker";
+        [["A", teamA], ["B", teamB]].forEach(([side, t]) => {
+          const btn = document.createElement("button"); btn.className = "secondary";
+          btn.textContent = t.name + " forfeits";
+          btn.onclick = async () => {
+            const winnerName = side === "A" ? teamB.name : teamA.name;
+            if (!confirm(`${t.name} forfeits to ${winnerName} — posts a 6-0, 6-0 walkover for the archived standings. Elo ratings won't be affected either way. Continue?`)) return;
+            try {
+              await api(`/leagues/${currentLeagueId}/season-history/${seasonId}/fixtures/${f.id}/rubbers/${idx}/forfeit`, { method: "POST", body: { winner: side === "A" ? "B" : "A" } });
+              openArchivedSeason(seasonId);
+            } catch (e) { alert(e.message); }
+          };
+          picker.appendChild(btn);
+        });
+        const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
+        cancelBtn.onclick = () => { picker.replaceWith(forfeitBtn); };
+        picker.appendChild(cancelBtn);
+        forfeitBtn.replaceWith(picker);
+      };
+      scores.appendChild(forfeitBtn);
+    }
     row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
     rubbersWrap.appendChild(row);
   });
@@ -10412,6 +10446,14 @@ async function loadPlayerHistoryTab(leagueId, playerId) {
   const trophyHtml = achievementGridHtml(data.allChampionships || [], data.allRunnerUps || [], data.allAwards || [], data.bestWinStreak, data.bagelCount || 0, data.allUnbeatenSeasons || [], data.rows.length > 0, inViboraLeague);
   el("player-modal-trophy-section").style.display = trophyHtml ? "block" : "none";
   el("player-modal-trophy-room").innerHTML = trophyHtml;
+  // Same poster anyone gets for their own Trophy Room on My Profile —
+  // available here too so a captain (or anyone) can generate one for a
+  // teammate, not just for themselves.
+  el("player-modal-trophy-poster-btn").onclick = () => openPosterModal("trophy", {
+    playerName: data.playerName,
+    championships: data.allChampionships || [], runnerUps: data.allRunnerUps || [], awards: data.allAwards || [],
+    winStreak: data.bestWinStreak, bagelCount: data.bagelCount || 0, unbeatenSeasons: data.allUnbeatenSeasons || [],
+  });
   const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);
   el("player-modal-stats").innerHTML = statsHtml;
   el("player-modal-stats").style.display = statsHtml ? "grid" : "none";

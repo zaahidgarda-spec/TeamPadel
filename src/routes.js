@@ -3333,8 +3333,47 @@ router.put("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/rubb
   if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
   if (req.body.sets) f.rubbers[idx].sets = req.body.sets;
   if (req.body.tb) f.rubbers[idx].tb = req.body.tb;
+  // A hand-entered score means this is a real, played result after all —
+  // same reasoning as the live PUT above, clears a previously-set
+  // forfeited flag so it goes back to counting for Elo.
+  if (f.rubbers[idx].forfeited) f.rubbers[idx].forfeited = null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// Same idea as POST .../fixtures/:fixtureId/rubbers/:idx/forfeit, just
+// scoped to an archived season's frozen fixtures instead of the live
+// league — a forfeit noticed or corrected after a season's already been
+// archived is exactly as real as one caught during the season itself.
+// Every archived fixture is already "finalized" by definition (that's
+// what makes it archived), so unlike the live route this never refuses
+// on that basis — there's no "unlock" step for a past season.
+router.post("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/rubbers/:idx/forfeit", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const snapshot = (league.seasonHistory || []).find((s) => s.id === req.params.seasonId);
+  if (!snapshot) return res.status(404).json({ error: "That season isn't archived here." });
+  const f = findArchivedFixture(snapshot, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Match not found in that season." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  const winner = req.body && req.body.winner;
+  if (winner !== "A" && winner !== "B") return res.status(400).json({ error: "Say which side gets the walkover." });
+
+  const rubber = f.rubbers[idx];
+  rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
+  rubber.tb = [null, null];
+  rubber.forfeited = winner;
+  rubber.startedAt = Date.now();
+  rubber.completedAt = rubber.startedAt;
+
+  const teamA = snapshot.teams.find((t) => t.id === f.teamA);
+  const teamB = snapshot.teams.find((t) => t.id === f.teamB);
+  const winnerName = winner === "A" ? (teamA ? teamA.name : "?") : (teamB ? teamB.name : "?");
+  const loserName = winner === "A" ? (teamB ? teamB.name : "?") : (teamA ? teamA.name : "?");
+  logAudit(league, req, f, "forfeit", { seedIdx: idx, winner, winnerName, loserName, season: snapshot.season, seasonLabel: snapshot.label });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, rubber });
 });
 
 // For the rare case where a whole match got attributed to the wrong two
