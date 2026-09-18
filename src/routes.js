@@ -1993,6 +1993,26 @@ router.post("/admin/push/broadcast", async (req, res) => {
   res.json({ ok: true, total: jobs.length, sent: jobs.length - errors.length, failed: errors.length });
 });
 
+// TEMPORARY — owner-only, read-only, no side effects. Added to answer a
+// one-time "how many devices are subscribed to push" question; remove
+// after use (see chat for context, dated 2026-09-18).
+router.get("/admin/push/stats-check-tmp", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const hiddenIds = new Set(store.getIndex().filter((e) => e.hidden).map((e) => e.id));
+  const byLeague = [];
+  let totalSubscriptions = 0, totalTeams = 0;
+  store.getIndex().filter((e) => !hiddenIds.has(e.id)).forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    const teamsWithPush = league.teams.filter((t) => (t.pushSubscriptions || []).length > 0);
+    const subs = league.teams.reduce((sum, t) => sum + (t.pushSubscriptions || []).length, 0);
+    if (subs > 0) byLeague.push({ leagueId: league.id, name: league.name, teamsSubscribed: teamsWithPush.length, deviceCount: subs });
+    totalSubscriptions += subs;
+    totalTeams += teamsWithPush.length;
+  });
+  res.json({ totalSubscriptions, totalTeamsWithAtLeastOneDevice: totalTeams, byLeague });
+});
+
 // Owner-only, not per-league admin: hiding a league affects site-wide
 // lists (search, login lookup, every player's "Your leagues"), not just
 // this one league's own management — same bar as creating/deleting a
