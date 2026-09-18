@@ -1034,12 +1034,16 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .sponsor-admin-row .link{flex:1;font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .timeslot-panel{background:var(--panel-2);}
 .timeslot-title{font-family:var(--font-display);font-size:14px;text-transform:uppercase;margin:0 0 10px;color:var(--accent);}
-.timeslot-order-table{border-collapse:separate;border-spacing:6px;width:100%;}
-.timeslot-order-table th{font-family:var(--font-display);text-transform:uppercase;font-size:10.5px;color:var(--text-dim);text-align:center;padding:2px 4px 6px;}
-.timeslot-order-table thead th:first-child{text-align:left;width:64px;}
-.timeslot-order-table tbody th{text-align:left;font-family:var(--font-display);font-size:12px;color:var(--text);}
-.timeslot-order-table td{padding:8px;vertical-align:middle;border-radius:var(--radius-sm);font-size:12px;}
-.timeslot-order-table select{width:100%;font-size:12px;padding:6px;}
+/* The panel is always shown inside the floodlit dark treatment now (same
+   look as the real admin Court schedule grid on Fixtures) — this overrides
+   the light-mode title above via the floodlit.urgent compound selector's
+   higher specificity, no matter which comes first in the file. */
+.floodlit.urgent .timeslot-title{color:#8FB4FF;border-bottom:1px solid rgba(96,150,255,.2);padding-bottom:12px;}
+/* This panel only ever has 1-2 courts of its own (one fixture's reserved
+   cells), unlike the full round's admin grid — so it shouldn't inherit
+   that grid's 640px min-width, which would force needless horizontal
+   scrolling on a card this narrow. */
+table.court-schedule-table.timeslot-grid-table{min-width:0;}
 .roster-head{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
 .roster-team{margin-bottom:14px;}
 .logo-label{font-size:12px;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}

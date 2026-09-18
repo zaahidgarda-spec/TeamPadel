@@ -44,6 +44,12 @@ let courtTapSelection = null;
 // right after a swap completes, then auto-reverts to the normal tip a
 // couple seconds later (see performCourtSwap / renderCourtScheduleGrid).
 let courtSwapNotice = null;
+// A short-lived "✓ confirmed" message shown in a fixture's own Court &
+// playing order panel right after that fixture's order is confirmed —
+// keyed by fixture id since several of these panels can be on screen at
+// once (the Fixtures tab shows one per match). Same idea as
+// courtSwapNotice above, just scoped to one fixture instead of the round.
+let courtOrderNotice = null;
 // Holds the exact payload /court-schedule/optimum-preview returned while
 // the preview modal is open — Optimise resends this unchanged rather than
 // recomputing, so what the admin reviewed is exactly what gets saved.
@@ -4610,8 +4616,8 @@ el("push-prompt-cta").onclick = async () => {
 // mid-visit the moment the "seen" call above resolves. First time this
 // account has ever had it shown, it goes right to the top of My Profile
 // where it can't be missed; every render after that (this visit AND every
-// future one, since the "seen" flag lives on the account) it sits in its
-// normal spot below the stats instead.
+// future one, since the "seen" flag lives on the account) it sits at the
+// very bottom of the dashboard instead, above the utility links.
 let showPushSectionAtTop = null;
 async function renderAccountPushSection() {
   const section = el("account-push-section");
@@ -4632,9 +4638,12 @@ async function renderAccountPushSection() {
     if (showPushSectionAtTop) api("/players/push-prompt-seen", { method: "POST" }).catch(() => {});
   }
   const topAnchor = el("account-push-top-anchor");
-  const statsEl = el("account-stats");
-  const anchor = showPushSectionAtTop ? topAnchor : statsEl;
-  if (anchor && anchor.nextElementSibling !== section) anchor.insertAdjacentElement("afterend", section);
+  const bottomAnchor = el("account-push-bottom-anchor");
+  if (showPushSectionAtTop) {
+    if (topAnchor && topAnchor.nextElementSibling !== section) topAnchor.insertAdjacentElement("afterend", section);
+  } else if (bottomAnchor && bottomAnchor.previousElementSibling !== section) {
+    bottomAnchor.insertAdjacentElement("beforebegin", section);
+  }
   section.style.display = "block";
   codeError.textContent = "";
   const captaincies = playerAccount.captaincies || [];
@@ -5387,7 +5396,7 @@ function selectionCard(f) {
 // ever rearranging seats already set aside for this one shared match.
 function timeSlotPanel(f, teamA, teamB) {
   const wrap = document.createElement("div");
-  wrap.className = "card timeslot-panel";
+  wrap.className = "card timeslot-panel floodlit urgent";
   wrap.style.marginTop = "12px";
 
   const title = document.createElement("h3");
@@ -5395,7 +5404,18 @@ function timeSlotPanel(f, teamA, teamB) {
   title.textContent = "Court & playing order";
   wrap.appendChild(title);
 
-  const seedLabel = (i) => "Seed " + (i + 1) + " — " + playerNamesForGold(teamA, f.selectionA.pairs[i]) + " vs " + playerNamesForGold(teamB, f.selectionB.pairs[i]);
+  if (courtOrderNotice && courtOrderNotice.fixtureId === f.id) {
+    const banner = document.createElement("div");
+    banner.className = "info-callout info-callout-success";
+    banner.style.marginBottom = "12px";
+    banner.innerHTML = `<strong>✓ ${escapeHtml(courtOrderNotice.text)}</strong>`;
+    wrap.appendChild(banner);
+  }
+
+  // Same pair-names format as the real Court schedule grid's cell label
+  // (courtScheduleOptions' shortLabel) — no "Seed N —" prefix, since the
+  // row header already says which match this is.
+  const shortSeedLabel = (i) => playerNamesForGold(teamA, f.selectionA.pairs[i]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[i]);
 
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   const savedGrid = Array.from({ length: slots }, (_, s) => Array.from({ length: courts }, (_, c) =>
@@ -5433,62 +5453,105 @@ function timeSlotPanel(f, teamA, teamB) {
     return { slot, court, seed: seedAt[key] };
   });
 
-  // Renders the courts-as-columns grid. `seedAt` maps "slot:court" -> seed.
-  // When `editable`, cells are selects wired to swap-on-pick (every spot
-  // always holds one of the 4 seeds, so picking a seed that's sitting
-  // elsewhere swaps the two rather than leaving a duplicate or a gap).
+  // Renders the courts-as-columns grid — same visual language as the real
+  // (admin) Court schedule grid on the Fixtures tab: colored frosted cells
+  // (this fixture's own color, from fixtureColor), team crests, drag to
+  // move, drop on another spot to swap. `seedAt` maps "slot:court" -> seed.
+  // When `editable`, dragging (mouse) and tap-to-swap (touch/mouse both)
+  // are wired up exactly like the admin grid, just scoped to this one
+  // fixture's own reserved cells and staged locally in `seedAt` until the
+  // Propose/Save button submits it — nothing hits the server mid-drag.
   function renderGrid(seedAt, editable) {
     const table = document.createElement("table");
-    table.className = "timeslot-order-table";
-    table.innerHTML = "<thead><tr><th></th>" + usedCourts.map((c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr></thead>";
+    table.className = "court-schedule-table timeslot-grid-table";
+    const thead = document.createElement("thead");
+    thead.innerHTML = "<tr><th></th>" + usedCourts.map((c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr>";
+    table.appendChild(thead);
     const tbody = document.createElement("tbody");
-    const selectsByKey = {};
-    function refreshOptions() {
-      Object.keys(selectsByKey).forEach((key) => {
-        const select = selectsByKey[key];
-        const current = seedAt[key];
-        select.innerHTML = [0, 1, 2, 3].map((i) => `<option value="${i}" ${i === current ? "selected" : ""}>${escapeHtml(seedLabel(i))}</option>`).join("");
+    table.appendChild(tbody);
+
+    let dragFrom = null;
+    let tapSelection = null;
+    const cellEls = {};
+    const clearSwapTargets = () => Object.values(cellEls).forEach((td) => td.classList.remove("cs-swap-target", "cs-selected"));
+    const swap = (keyA, keyB) => {
+      const a = seedAt[keyA], b = seedAt[keyB];
+      seedAt[keyA] = b; seedAt[keyB] = a;
+      renderRows();
+    };
+
+    function renderRows() {
+      tbody.innerHTML = "";
+      Object.keys(cellEls).forEach((k) => delete cellEls[k]);
+      usedSlots.forEach((s) => {
+        const tr = document.createElement("tr");
+        const th = document.createElement("th");
+        th.textContent = "Match " + (s + 1);
+        tr.appendChild(th);
+        const rowCount = ownedCells.filter((oc) => oc.slot === s).length;
+        usedCourts.forEach((c) => {
+          const key = s + ":" + c;
+          const td = document.createElement("td");
+          if (!(key in seedAt)) { td.textContent = "—"; tr.appendChild(td); return; }
+          cellEls[key] = td;
+          td.style.cssText = `border-radius:8px;background:${color.bg};`;
+          td.style.setProperty("--fx-glow", fixtureGlow(color));
+          td.style.setProperty("--fx-glass", fixtureGlass(color));
+          if (rowCount > 1) {
+            const badge = document.createElement("div");
+            badge.className = "cs-double-badge";
+            badge.textContent = "2 courts";
+            td.appendChild(badge);
+          }
+          const box = document.createElement("div");
+          box.className = "cs-cell-content";
+          box.innerHTML = `<div class="cs-cell-teams">${avatarHtml(teamA)}<span class="cs-vs">v</span>${avatarHtml(teamB)}</div><div class="cs-cell-label">${escapeHtml(shortSeedLabel(seedAt[key]))}</div>`;
+          if (editable) {
+            box.draggable = true;
+            box.title = "Drag to reorder — drop on another spot to swap";
+            box.ondragstart = (e) => {
+              dragFrom = key;
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", key);
+              td.classList.add("cs-dragging");
+            };
+            box.ondragend = () => td.classList.remove("cs-dragging");
+            td.classList.add("cs-tappable");
+            td.addEventListener("click", () => {
+              if (!tapSelection) {
+                tapSelection = key;
+                td.classList.add("cs-selected");
+                Object.keys(cellEls).forEach((k) => { if (k !== key) cellEls[k].classList.add("cs-swap-target"); });
+                return;
+              }
+              clearSwapTargets();
+              const from = tapSelection;
+              tapSelection = null;
+              if (from === key) return;
+              swap(from, key);
+            });
+            td.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("cs-drop-target"); };
+            td.ondragleave = () => td.classList.remove("cs-drop-target");
+            td.ondrop = (e) => {
+              e.preventDefault();
+              td.classList.remove("cs-drop-target");
+              const from = dragFrom;
+              dragFrom = null;
+              if (!from || from === key) return;
+              swap(from, key);
+            };
+          }
+          td.appendChild(box);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
       });
     }
-    usedSlots.forEach((s) => {
-      const tr = document.createElement("tr");
-      const th = document.createElement("th");
-      th.textContent = "Match " + (s + 1);
-      tr.appendChild(th);
-      const rowCount = ownedCells.filter((oc) => oc.slot === s).length;
-      usedCourts.forEach((c) => {
-        const key = s + ":" + c;
-        const td = document.createElement("td");
-        if (!(key in seedAt)) { td.textContent = "—"; tr.appendChild(td); return; }
-        td.style.cssText = `background:${color.bg};`;
-        if (rowCount > 1) {
-          const badge = document.createElement("div");
-          badge.className = "cs-double-badge";
-          badge.textContent = "2 courts";
-          td.appendChild(badge);
-        }
-        if (editable) {
-          const select = document.createElement("select");
-          selectsByKey[key] = select;
-          select.onchange = () => {
-            const newSeed = Number(select.value);
-            const oldSeed = seedAt[key];
-            const swapKey = Object.keys(seedAt).find((k) => k !== key && seedAt[k] === newSeed);
-            seedAt[key] = newSeed;
-            if (swapKey) seedAt[swapKey] = oldSeed;
-            refreshOptions();
-          };
-          td.appendChild(select);
-        } else {
-          td.appendChild(document.createTextNode(seedLabel(seedAt[key])));
-        }
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    if (editable) refreshOptions();
-    return table;
+    renderRows();
+    const scroll = document.createElement("div");
+    scroll.className = "court-schedule-scroll hscroll";
+    scroll.appendChild(table);
+    return scroll;
   }
 
   // Editable grid + a save/propose button. Admin applies straight away
@@ -5497,10 +5560,17 @@ function timeSlotPanel(f, teamA, teamB) {
   function renderProposeUI(initialSeedAt) {
     const box = document.createElement("div");
     const seedAt = Object.assign({}, initialSeedAt);
+    const hint = document.createElement("div");
+    hint.className = "info-callout";
+    hint.style.marginBottom = "12px";
+    hint.innerHTML = myRole === "admin"
+      ? "<strong>Drag a match</strong> to reorder it, or drop it on another court or slot to swap — saves immediately."
+      : "<strong>Drag a match</strong> to reorder it, or drop it on another court or slot to swap. Your opponent confirms it before it's locked in.";
+    box.appendChild(hint);
     box.appendChild(renderGrid(seedAt, true));
     const err = document.createElement("div"); err.className = "error";
     const btn = document.createElement("button");
-    btn.className = "primary"; btn.style.marginTop = "10px";
+    btn.className = "primary"; btn.style.cssText = "margin-top:14px;width:100%;";
     btn.textContent = myRole === "admin" ? "Save order" : "Propose this order";
     btn.onclick = async () => {
       const endpoint = myRole === "admin" ? "court-order" : "court-order/propose";
@@ -5529,8 +5599,15 @@ function timeSlotPanel(f, teamA, teamB) {
       const confirmBtn = document.createElement("button");
       confirmBtn.className = "primary"; confirmBtn.textContent = "Confirm this order";
       confirmBtn.onclick = async () => {
-        try { await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/court-order/confirm`, { method: "POST" }); await refreshLeague(); renderAll(); }
-        catch (e) { alert(e.message); }
+        try {
+          await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/court-order/confirm`, { method: "POST" });
+          courtOrderNotice = { fixtureId: f.id, text: "Order confirmed." };
+          await refreshLeague(); renderAll();
+          setTimeout(() => {
+            if (courtOrderNotice && courtOrderNotice.fixtureId === f.id) courtOrderNotice = null;
+            renderAll();
+          }, 2200);
+        } catch (e) { alert(e.message); }
       };
       row.appendChild(confirmBtn);
       if (myTeamSide) {
@@ -6713,6 +6790,11 @@ function renderFixtures() {
     }
     card.innerHTML = html;
     bindPlayerLinks(card);
+    // Same drag-and-drop court & playing order panel as Selection Room —
+    // shown here too now, so a captain doesn't have to leave Fixtures to
+    // rearrange or confirm it. Read-only for anyone who isn't on either
+    // side (timeSlotPanel already handles that gating itself).
+    if (league.format !== "pairs" && teamA && teamB && both) card.appendChild(timeSlotPanel(f, teamA, teamB));
     c.appendChild(card);
   });
 }

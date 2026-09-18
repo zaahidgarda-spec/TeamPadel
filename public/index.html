@@ -250,27 +250,6 @@
 
           <div class="pd-stats" id="account-stats"></div>
 
-          <section class="pd-section" id="account-push-section" style="display:none;">
-            <div class="pd-section-head"><h2>Push notifications</h2></div>
-            <div class="card" style="padding:14px 16px;">
-              <p class="note" id="account-push-note" style="margin-bottom:10px;">Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.</p>
-              <div id="account-push-teams" style="margin-bottom:10px;"></div>
-              <button class="secondary" id="account-push-btn"></button>
-              <div class="row" id="account-push-test-row" style="display:none;margin-top:8px;">
-                <label class="sr-only" for="account-push-test-message">Custom test message</label>
-                <input type="text" id="account-push-test-message" placeholder="Custom message (optional)" style="flex:1;min-width:160px;">
-                <button class="secondary" id="account-push-test-btn">Send test notification</button>
-              </div>
-              <div class="note" id="account-push-test-status" style="margin-top:6px;"></div>
-              <div id="account-push-code-row" style="display:none;" class="row">
-                <label class="sr-only" for="account-push-code">Team code</label>
-                <input type="text" id="account-push-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
-                <button class="primary" id="account-push-code-btn">Link my team</button>
-              </div>
-              <div class="note" id="account-push-code-error" style="margin-top:6px;"></div>
-            </div>
-          </section>
-
           <section class="pd-section">
             <div class="pd-section-head"><h2>Your leagues</h2></div>
             <div class="pd-leagues-glass" id="account-leagues-list"></div>
@@ -293,6 +272,29 @@
             <div class="pd-section-head"><h2>Recent form</h2></div>
             <div class="pd-card-list" id="account-form-list"></div>
           </section>
+
+          <section class="pd-section" id="account-push-section" style="display:none;">
+            <div class="pd-section-head"><h2>Push notifications</h2></div>
+            <div class="card" style="padding:14px 16px;">
+              <p class="note" id="account-push-note" style="margin-bottom:10px;">Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.</p>
+              <div id="account-push-teams" style="margin-bottom:10px;"></div>
+              <button class="secondary" id="account-push-btn"></button>
+              <div class="row" id="account-push-test-row" style="display:none;margin-top:8px;">
+                <label class="sr-only" for="account-push-test-message">Custom test message</label>
+                <input type="text" id="account-push-test-message" placeholder="Custom message (optional)" style="flex:1;min-width:160px;">
+                <button class="secondary" id="account-push-test-btn">Send test notification</button>
+              </div>
+              <div class="note" id="account-push-test-status" style="margin-top:6px;"></div>
+              <div id="account-push-code-row" style="display:none;" class="row">
+                <label class="sr-only" for="account-push-code">Team code</label>
+                <input type="text" id="account-push-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
+                <button class="primary" id="account-push-code-btn">Link my team</button>
+              </div>
+              <div class="note" id="account-push-code-error" style="margin-top:6px;"></div>
+            </div>
+          </section>
+
+          <div id="account-push-bottom-anchor"></div>
 
           <div class="pd-utility">
             <button class="pd-utility-link pd-utility-link-primary" id="toggle-claim-panel" type="button">+ Find my player record</button>
