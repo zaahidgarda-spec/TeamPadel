@@ -2766,6 +2766,12 @@ function renderAll() {
   el("group-selector-row").style.display = league.groups && league.groups.length > 0 && activeTabBtn && GROUP_SCOPED_TABS.includes(activeTabBtn.dataset.view) ? "flex" : "none";
   el("league-name").value = league.name;
   el("league-name").disabled = myRole !== "admin";
+  // An <input> with no explicit width renders at the browser's default
+  // (~20 characters) regardless of its actual value — which is what put a
+  // wide gap between a short name like "Killarney" and the switcher arrow
+  // sitting right after it. The size attribute (in characters, exactly
+  // what a plain input honors) keeps it hugging the real text instead.
+  el("league-name").size = Math.max(1, league.name.length);
   el("league-switcher").style.display = isOwner ? "block" : "none";
   const brand = leagueBrand(league.name);
   const brandHeader = document.querySelector("#view-league .site-header");
@@ -3271,20 +3277,28 @@ el("league-name").addEventListener("change", async (e) => {
 // every open rather than caching it, since it's a light call and the
 // owner may have just created/hidden a league.
 let leagueSwitcherLeagues = null;
+// Leagues the signed-in player account (the owner is very often also a
+// real captain/player, not just admin) actually plays or captains in —
+// pulled from the same profile endpoint My Profile's own "Your leagues"
+// list uses, so it means the same thing here. Empty when nobody's
+// signed in on that side, which just means nothing gets pinned to the top.
+let leagueSwitcherMineIds = new Set();
 function renderLeagueSwitcherList(filter) {
   const listEl = el("league-switcher-list");
   const q = (filter || "").trim().toLowerCase();
-  const items = (leagueSwitcherLeagues || [])
+  const all = (leagueSwitcherLeagues || [])
     .filter((l) => l.id !== currentLeagueId)
     .filter((l) => !q || l.name.toLowerCase().includes(q));
-  if (items.length === 0) {
+  if (all.length === 0) {
     listEl.innerHTML = '<div class="league-switcher-empty">No other leagues found.</div>';
     return;
   }
+  const mine = all.filter((l) => leagueSwitcherMineIds.has(l.id));
+  const rest = all.filter((l) => !leagueSwitcherMineIds.has(l.id));
   listEl.innerHTML = "";
-  items.forEach((l) => {
+  const appendItem = (l) => {
     const btn = document.createElement("button");
-    btn.type = "button"; btn.className = "league-switcher-item";
+    btn.type = "button"; btn.className = "league-switcher-item" + (leagueSwitcherMineIds.has(l.id) ? " mine" : "");
     btn.innerHTML = `<span>${escapeHtml(l.name)}</span>${l.hidden ? '<span class="tag">Hidden</span>' : ""}`;
     btn.onclick = async () => {
       el("league-switcher-panel").classList.remove("open");
@@ -3298,18 +3312,49 @@ function renderLeagueSwitcherList(filter) {
       if (activeTabKey && document.querySelector(`#tabs button[data-view="${activeTabKey}"]`)) switchTab(activeTabKey);
     };
     listEl.appendChild(btn);
-  });
+  };
+  if (mine.length) {
+    listEl.insertAdjacentHTML("beforeend", '<div class="league-switcher-divider">Your leagues</div>');
+    mine.forEach(appendItem);
+    listEl.insertAdjacentHTML("beforeend", '<div class="league-switcher-divider">All leagues</div>');
+  }
+  rest.forEach(appendItem);
+}
+// Keeps the panel on screen regardless of where the arrow lands — a short
+// league name (fixed above to sit right after the text now, instead of
+// way out past a wide default-width input) can put that arrow almost
+// anywhere along the header, so a fixed left:0/right:0 in CSS alone isn't
+// enough on a narrow phone. Measures the panel where CSS puts it first,
+// then nudges it back on screen only if it actually overflows either edge.
+function clampLeagueSwitcherPanel() {
+  const panel = el("league-switcher-panel");
+  panel.style.left = "0px";
+  const margin = 12;
+  const rect = panel.getBoundingClientRect();
+  let shift = 0;
+  if (rect.right > window.innerWidth - margin) shift = window.innerWidth - margin - rect.right;
+  if (rect.left + shift < margin) shift = margin - rect.left;
+  panel.style.left = shift + "px";
 }
 el("league-switcher-btn").onclick = async () => {
   const panel = el("league-switcher-panel");
   const opening = !panel.classList.contains("open");
   panel.classList.toggle("open", opening);
   if (!opening) return;
+  clampLeagueSwitcherPanel();
   el("league-switcher-search").value = "";
   el("league-switcher-list").innerHTML = '<div class="league-switcher-empty">Loading…</div>';
   try {
-    leagueSwitcherLeagues = await api("/admin/leagues");
+    const [leagues, profile] = await Promise.all([
+      api("/admin/leagues"),
+      api("/players/profile").catch(() => ({ cards: [] })),
+    ]);
+    leagueSwitcherLeagues = leagues;
+    const ids = new Set((profile.cards || []).map((c) => c.leagueId));
+    (playerAccount ? playerAccount.captaincies || [] : []).forEach((c) => ids.add(c.leagueId));
+    leagueSwitcherMineIds = ids;
     renderLeagueSwitcherList("");
+    clampLeagueSwitcherPanel();
   } catch (e) {
     el("league-switcher-list").innerHTML = `<div class="league-switcher-empty">${escapeHtml(e.message)}</div>`;
   }
