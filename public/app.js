@@ -7149,18 +7149,22 @@ function resultsCard(f) {
       editBtn.onclick = () => openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml);
       scores.appendChild(editBtn);
     }
+    row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
     // Admin-only, and only while there's still something to declare — once
     // finalized the server refuses anyway (unlock first), and an already-
     // forfeited rubber shows its tag above instead of the trigger again.
+    // Tucked in the row's own corner rather than sitting next to "Edit
+    // score" as an equally-weighted button — this is a rare, one-off
+    // correction, not a routine action every rubber needs.
     if (myRole === "admin" && !f.finalized && !rubber.forfeited && teamA && teamB) {
-      const forfeitBtn = document.createElement("button"); forfeitBtn.className = "secondary forfeit-btn"; forfeitBtn.style.marginLeft = "6px";
+      const forfeitBtn = document.createElement("button"); forfeitBtn.className = "forfeit-corner-btn";
       forfeitBtn.textContent = "Forfeit";
       forfeitBtn.onclick = () => {
-        // Replaces itself with one button per side rather than a native
+        // A small picker (one button per side) rather than a native
         // confirm() straight away — picking the wrong side of a two-option
         // browser dialog by mid-click is an easy, hard-to-undo mistake for
         // something that posts a real result.
-        const picker = document.createElement("div"); picker.className = "forfeit-picker";
+        const picker = document.createElement("div"); picker.className = "forfeit-picker"; picker.style.marginTop = "6px";
         [["A", teamA], ["B", teamB]].forEach(([side, t]) => {
           const btn = document.createElement("button"); btn.className = "secondary";
           btn.textContent = t.name + " forfeits";
@@ -7175,13 +7179,13 @@ function resultsCard(f) {
           picker.appendChild(btn);
         });
         const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
-        cancelBtn.onclick = () => { picker.replaceWith(forfeitBtn); };
+        cancelBtn.onclick = () => { picker.remove(); forfeitBtn.style.display = ""; };
         picker.appendChild(cancelBtn);
-        forfeitBtn.replaceWith(picker);
+        forfeitBtn.style.display = "none";
+        row.appendChild(picker);
       };
-      scores.appendChild(forfeitBtn);
+      row.appendChild(forfeitBtn);
     }
-    row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
     rubbersWrap.appendChild(row);
   });
   card.appendChild(rubbersWrap);
@@ -9737,11 +9741,14 @@ function archivedFixtureCard(seasonId, f, teams) {
       onSaved: () => openArchivedSeason(seasonId),
     });
     scores.appendChild(editBtn);
+    row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
+    // Tucked in the row's own corner, same as the live Results tab — rare
+    // enough not to sit next to "Edit score" as an equally-weighted button.
     if (!isDecider && !rubber.forfeited) {
-      const forfeitBtn = document.createElement("button"); forfeitBtn.className = "secondary forfeit-btn"; forfeitBtn.style.marginLeft = "6px";
+      const forfeitBtn = document.createElement("button"); forfeitBtn.className = "forfeit-corner-btn";
       forfeitBtn.textContent = "Forfeit";
       forfeitBtn.onclick = () => {
-        const picker = document.createElement("div"); picker.className = "forfeit-picker";
+        const picker = document.createElement("div"); picker.className = "forfeit-picker"; picker.style.marginTop = "6px";
         [["A", teamA], ["B", teamB]].forEach(([side, t]) => {
           const btn = document.createElement("button"); btn.className = "secondary";
           btn.textContent = t.name + " forfeits";
@@ -9756,13 +9763,13 @@ function archivedFixtureCard(seasonId, f, teams) {
           picker.appendChild(btn);
         });
         const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
-        cancelBtn.onclick = () => { picker.replaceWith(forfeitBtn); };
+        cancelBtn.onclick = () => { picker.remove(); forfeitBtn.style.display = ""; };
         picker.appendChild(cancelBtn);
-        forfeitBtn.replaceWith(picker);
+        forfeitBtn.style.display = "none";
+        row.appendChild(picker);
       };
-      scores.appendChild(forfeitBtn);
+      row.appendChild(forfeitBtn);
     }
-    row.appendChild(seedTag); row.appendChild(pairADisplay); row.appendChild(scores); row.appendChild(pairBDisplay);
     rubbersWrap.appendChild(row);
   });
   card.appendChild(rubbersWrap);
