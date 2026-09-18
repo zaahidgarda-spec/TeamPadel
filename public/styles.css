@@ -129,6 +129,19 @@ header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(-
 .auth-panel.open{display:block;}
 .auth-panel input{width:100%;}
 
+/* Owner-only quick jump between leagues, right next to the league name —
+   same dropdown idiom as .auth-panel above. */
+.league-switcher{position:relative;}
+.league-switcher-btn{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;padding:4px 7px;border-radius:var(--radius-sm);line-height:1;}
+.league-switcher-btn:hover{color:var(--accent);background:var(--panel-2);}
+.league-switcher-panel{display:none;position:absolute;top:calc(100% + 8px);left:0;width:280px;max-height:360px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px;box-shadow:var(--shadow-lg);z-index:30;}
+.league-switcher-panel.open{display:block;}
+.league-switcher-panel input{width:100%;margin-bottom:8px;}
+.league-switcher-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:transparent;border:none;padding:9px 8px;border-radius:var(--radius-sm);cursor:pointer;font-size:13px;color:var(--text);}
+.league-switcher-item:hover{background:var(--panel-2);}
+.league-switcher-item .tag{flex-shrink:0;}
+.league-switcher-empty{padding:12px 8px;font-size:12.5px;color:var(--text-dim);}
+
 nav.tabs{position:relative;display:flex;gap:4px;margin-bottom:20px;background:var(--panel);padding:4px;border-radius:var(--radius);width:fit-content;overflow-x:auto;max-width:100%;border:1px solid var(--line);box-shadow:var(--shadow-sm);}
 nav.tabs button{font-family:var(--font-display);text-transform:uppercase;letter-spacing:.06em;font-size:12.5px;background:transparent;border:none;color:var(--text-dim);padding:9px 14px;border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap;}
 nav.tabs button:hover{color:var(--text);}
@@ -1078,6 +1091,7 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
   .h1-sub{font-size:16px;padding-left:12px;}
   .header-right{width:100%;justify-content:flex-end;}
   .auth-panel{width:min(300px,calc(100vw - 28px));right:-8px;}
+  .league-switcher-panel{width:min(300px,calc(100vw - 28px));left:-8px;}
   nav.tabs{width:100%;}
   nav.tabs button{padding:10px 12px;font-size:11.5px;}
   .card{padding:16px;}

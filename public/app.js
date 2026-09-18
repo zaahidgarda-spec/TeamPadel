@@ -833,7 +833,10 @@ setInterval(async () => {
     // Predictions, ...) even though only this one is on screen, which was
     // wiping out anything mid-interaction here every 30 seconds — an open
     // Forfeit picker, a half-open menu, even just scroll position.
-    renderLiveCourtControl();
+    // And even scoped to just this grid, a full rebuild every 30s still
+    // visibly flashed the whole table on a perfectly quiet round — only
+    // do it when something in the schedule/scores actually changed.
+    if (liveCourtSnapshot() !== lastLiveCourtSnapshot) renderLiveCourtControl();
   }
 }, 30000);
 // Which of the 5 learned-duration buckets a closeness score falls into —
@@ -2763,6 +2766,7 @@ function renderAll() {
   el("group-selector-row").style.display = league.groups && league.groups.length > 0 && activeTabBtn && GROUP_SCOPED_TABS.includes(activeTabBtn.dataset.view) ? "flex" : "none";
   el("league-name").value = league.name;
   el("league-name").disabled = myRole !== "admin";
+  el("league-switcher").style.display = isOwner ? "block" : "none";
   const brand = leagueBrand(league.name);
   const brandHeader = document.querySelector("#view-league .site-header");
   brandHeader.classList.remove("league-theme-premier", "league-theme-business", "league-theme-vibora50");
@@ -3260,6 +3264,57 @@ el("league-name").addEventListener("change", async (e) => {
   try { await api(`/leagues/${currentLeagueId}/name`, { method: "PUT", body: { name: e.target.value } }); await refreshLeague(); }
   catch (err) { alert(err.message); }
 });
+
+// Owner-only "jump to another league" dropdown next to the league name —
+// so switching between leagues you manage doesn't mean going all the way
+// back to the hub and searching again every time. Re-fetches the list
+// every open rather than caching it, since it's a light call and the
+// owner may have just created/hidden a league.
+let leagueSwitcherLeagues = null;
+function renderLeagueSwitcherList(filter) {
+  const listEl = el("league-switcher-list");
+  const q = (filter || "").trim().toLowerCase();
+  const items = (leagueSwitcherLeagues || [])
+    .filter((l) => l.id !== currentLeagueId)
+    .filter((l) => !q || l.name.toLowerCase().includes(q));
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="league-switcher-empty">No other leagues found.</div>';
+    return;
+  }
+  listEl.innerHTML = "";
+  items.forEach((l) => {
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "league-switcher-item";
+    btn.innerHTML = `<span>${escapeHtml(l.name)}</span>${l.hidden ? '<span class="tag">Hidden</span>' : ""}`;
+    btn.onclick = async () => {
+      el("league-switcher-panel").classList.remove("open");
+      // Land on the same tab in the new league, not wherever openLeague
+      // defaults to — the whole point of switching mid-table/mid-fixtures
+      // is staying in that same context. Falls back to the default if the
+      // new league doesn't have that tab (e.g. a pairs league has no
+      // Selection room).
+      const activeTabKey = document.querySelector("#tabs button.active")?.dataset.view;
+      await openLeague(l.id);
+      if (activeTabKey && document.querySelector(`#tabs button[data-view="${activeTabKey}"]`)) switchTab(activeTabKey);
+    };
+    listEl.appendChild(btn);
+  });
+}
+el("league-switcher-btn").onclick = async () => {
+  const panel = el("league-switcher-panel");
+  const opening = !panel.classList.contains("open");
+  panel.classList.toggle("open", opening);
+  if (!opening) return;
+  el("league-switcher-search").value = "";
+  el("league-switcher-list").innerHTML = '<div class="league-switcher-empty">Loading…</div>';
+  try {
+    leagueSwitcherLeagues = await api("/admin/leagues");
+    renderLeagueSwitcherList("");
+  } catch (e) {
+    el("league-switcher-list").innerHTML = `<div class="league-switcher-empty">${escapeHtml(e.message)}</div>`;
+  }
+};
+el("league-switcher-search").addEventListener("input", (e) => renderLeagueSwitcherList(e.target.value));
 
 /* ---------- Admin tab ---------- */
 
@@ -6529,6 +6584,31 @@ function renderCourtScheduleGrid(fixtures) {
 // posted — it's optional). A match already started can never be dragged —
 // enforced here by simply never wiring drag/drop onto it, and enforced
 // again server-side (court-schedule/:round/assign now 400s that move).
+// What the 30s poll below compares against to decide whether Live Court
+// Control actually needs to rebuild — the grid tears down and redraws its
+// whole DOM on every render (drag handlers, predictions, court-load math
+// all get recomputed together), so re-running that on a timer regardless
+// of whether anything changed is what made the page visibly flash/reset
+// every 30 seconds even on a quiet round. Sets after a real render so the
+// baseline always reflects what's actually on screen, whoever triggered it.
+let lastLiveCourtSnapshot = null;
+function liveCourtSnapshot() {
+  if (!league || league.format === "pairs" || !viewingKey) return null;
+  const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
+  const courts = league.courtCount || 4, slots = league.slotCount || 3;
+  const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
+  const cells = [];
+  for (let s = 0; s < slots; s++) {
+    for (let c = 0; c < courts; c++) {
+      const cell = rawGrid[s] && rawGrid[s][c];
+      if (!cell) { cells.push(null); continue; }
+      const f = league.fixtures.find((x) => x.id === cell.fixtureId);
+      const rubber = f && f.rubbers[cell.seed];
+      cells.push(rubber ? [cell.fixtureId, cell.seed, rubber.startedAt || 0, rubber.completedAt || 0, JSON.stringify(rubber.sets)] : null);
+    }
+  }
+  return JSON.stringify({ round, cells, stats: league.courtDurationStats });
+}
 async function renderLiveCourtControl() {
   const card = el("live-court-card");
   if (!card) return;
@@ -6539,6 +6619,7 @@ async function renderLiveCourtControl() {
   }
   card.style.display = "block";
   renderRoundNav("round-nav-live-court");
+  lastLiveCourtSnapshot = liveCourtSnapshot();
 
   const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
   const fixtures = courtScheduleFixturesFor(round).filter((f) => f.selectionA.submitted && f.selectionB.submitted);
@@ -7450,6 +7531,17 @@ function loadImageAsync(src) {
     img.src = src;
   });
 }
+// Every poster's own branding footer — the real wordmark (logo.png, white
+// on transparent, same file the loading screen uses on its own black
+// background) instead of a typed-out "TEAM PADEL", centered a little
+// above the canvas's bottom edge. Every poster theme here is a dark
+// background, so the white mark always reads; no dark variant needed.
+async function drawPosterLogoFooter(ctx, W, H) {
+  const wordmark = await loadImageAsync("/images/logo.png");
+  if (!wordmark) return;
+  const logoH = 30, logoW = logoH * (wordmark.width / wordmark.height);
+  ctx.drawImage(wordmark, W / 2 - logoW / 2, H - 52, logoW, logoH);
+}
 function roundRectPath(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -7850,10 +7942,7 @@ async function generatePosterCanvas(mode, theme) {
     }
   }
 
-  ctx.fillStyle = "#64748B";
-  ctx.font = "500 22px Oswald, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("TEAM PADEL", W / 2, H - 34);
+  await drawPosterLogoFooter(ctx, W, H);
 
   return canvas;
 }
@@ -8073,10 +8162,7 @@ async function generateCourtSchedulePosterCanvas(theme) {
     }
   }
 
-  ctx.fillStyle = "#64748B";
-  ctx.font = "500 22px Oswald, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("TEAM PADEL", W / 2, H - 34);
+  await drawPosterLogoFooter(ctx, W, H);
 
   return canvas;
 }
@@ -8221,10 +8307,7 @@ async function generateTablePosterCanvas(theme) {
     }
   }
 
-  ctx.fillStyle = "#64748B";
-  ctx.font = "500 22px Oswald, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("TEAM PADEL", W / 2, H - 34);
+  await drawPosterLogoFooter(ctx, W, H);
 
   return canvas;
 }
@@ -8305,70 +8388,85 @@ function drawGiltFrame(ctx, x, y, w, h) {
   ctx.fill();
   return { x: ix, y: iy, w: iw, h: ih };
 }
-// One of the six frames — locked ones stay empty (dimmer well, no glyph),
-// same as the approved mockup, rather than a padlock icon.
+// One of the six frames — icon, category label, and (for an unlocked slot
+// with more than one) a count, all drawn inside the frame's own well, same
+// as the approved mockup. Locked ones stay dim with just the label, so it's
+// clear what's still missing rather than a mystery blank frame. Nothing
+// here is ever a date/season — this is a trophy CASE, not a timeline; when
+// something happened lives on the on-page achievement grid, not the poster.
 function drawTrophyFrameSlot(ctx, x, y, w, h, slot) {
   const well = drawGiltFrame(ctx, x, y, w, h);
-  const cx = well.x + well.w / 2, cy = well.y + well.h / 2;
-  if (!slot || !slot.unlocked) {
+  const cx = well.x + well.w / 2;
+  const dim = !slot || !slot.unlocked;
+  if (dim) {
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,.18)";
     roundRectPath(ctx, well.x, well.y, well.w, well.h, w * 0.02);
     ctx.fill();
     ctx.restore();
-    return;
   }
-  if (slot.glyph === "trophy") drawTrophyGlyph(ctx, cx, cy, well.h * 0.55, slot.color);
-  else if (slot.glyph === "star") drawStarGlyph(ctx, cx, cy, well.h * 0.42, slot.color);
-  else if (slot.glyph === "flame") drawFlameGlyph(ctx, cx, cy, well.h * 0.42, slot.color);
-  else if (slot.glyph === "ring") drawRingGlyph(ctx, cx, cy, well.h * 0.28, slot.color);
-  if (slot.badge) {
-    const bx = x + w - w * 0.09, by = y + h - w * 0.09, br = w * 0.075;
-    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
-    ctx.fillStyle = "#C9A24B"; ctx.fill();
-    ctx.fillStyle = "#2c2418";
-    ctx.font = "700 " + Math.round(br * 1.15) + "px Oswald, sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(String(slot.badge), bx, by + 1);
-    ctx.textBaseline = "alphabetic";
+  if (!slot) return;
+  const iconCy = well.y + well.h * 0.36;
+  if (!dim) {
+    if (slot.glyph === "trophy") drawTrophyGlyph(ctx, cx, iconCy, well.h * 0.4, slot.color);
+    else if (slot.glyph === "star") drawStarGlyph(ctx, cx, iconCy, well.h * 0.32, slot.color);
+    else if (slot.glyph === "flame") drawFlameGlyph(ctx, cx, iconCy, well.h * 0.32, slot.color);
+    else if (slot.glyph === "ring") drawRingGlyph(ctx, cx, iconCy, well.h * 0.19, slot.color);
   }
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.fillStyle = dim ? "rgba(201,162,75,.4)" : "#F3E6C8";
+  ctx.font = "600 " + Math.round(w * 0.076) + "px Oswald, sans-serif";
+  const lineCount = wrapCanvasText(ctx, slot.label.toUpperCase(), cx, well.y + well.h * 0.72, well.w * 0.92, w * 0.086);
+  const detailY = well.y + well.h * 0.72 + (lineCount - 1) * (w * 0.086) + w * 0.09;
+  if (!dim && slot.detail) {
+    ctx.fillStyle = "#C9A24B";
+    ctx.font = "400 " + Math.round(w * 0.06) + "px Inter, sans-serif";
+    ctx.fillText(slot.detail, cx, detailY);
+  } else if (dim) {
+    ctx.fillStyle = "rgba(243,230,200,.28)";
+    ctx.font = "400 " + Math.round(w * 0.06) + "px Inter, sans-serif";
+    ctx.fillText("Not yet", cx, detailY);
+  }
+  ctx.restore();
 }
 // Six fixed categories, same ones achievementGridHtml already tracks
 // (minus the per-league Premier/Business/Vibora champion special-cases,
 // folded into one generic "Champion" frame here to keep the poster
 // legible at a glance) — locked/unlocked exactly mirrors that grid.
+// `detail` is always a count, never a date — how many times, not when.
 function trophyPosterSlots(data) {
-  const mostRecentRunnerUp = data.runnerUps[0] || null;
   return [
-    { glyph: "trophy", color: "#D4AF37", unlocked: data.championships.length > 0, label: "Champion" },
-    { glyph: "star", color: "#8CA9E0", unlocked: data.awards.length > 0, badge: data.awards.length || null, label: "Pair of the Week" },
-    { glyph: "flame", color: "#E2432F", unlocked: !!(data.winStreak && data.winStreak.count >= WIN_STREAK_THRESHOLD), label: "Win Streak" },
-    { glyph: "trophy", color: "#B9C2CC", unlocked: !!mostRecentRunnerUp, label: "Runner-up" },
-    { glyph: "ring", color: "#8CA9E0", unlocked: data.bagelCount > 0, badge: data.bagelCount || null, label: "6-0 Sets" },
-    { glyph: "star", color: "#7BC67E", unlocked: data.unbeatenSeasons.length > 0, label: "Unbeaten Season" },
+    { glyph: "trophy", color: "#D4AF37", unlocked: data.championships.length > 0, label: "Champion", detail: data.championships.length > 1 ? "×" + data.championships.length : "" },
+    { glyph: "star", color: "#8CA9E0", unlocked: data.awards.length > 0, label: "Pair of the Week", detail: data.awards.length > 1 ? "×" + data.awards.length : "" },
+    { glyph: "flame", color: "#E2432F", unlocked: !!(data.winStreak && data.winStreak.count >= WIN_STREAK_THRESHOLD), label: "Win Streak", detail: data.winStreak ? data.winStreak.count + " wins" : "" },
+    { glyph: "trophy", color: "#B9C2CC", unlocked: data.runnerUps.length > 0, label: "Runner-up", detail: data.runnerUps.length > 1 ? "×" + data.runnerUps.length : "" },
+    { glyph: "ring", color: "#8CA9E0", unlocked: data.bagelCount > 0, label: "6-0 Sets", detail: data.bagelCount > 1 ? "×" + data.bagelCount : "" },
+    { glyph: "star", color: "#7BC67E", unlocked: data.unbeatenSeasons.length > 0, label: "Unbeaten Season", detail: data.unbeatenSeasons.length > 1 ? "×" + data.unbeatenSeasons.length : "" },
   ];
 }
 // The single most notable achievement, pulled out for the featured card
 // below the wall — a real championship beats a runner-up beats a Pair of
 // the Week win, matching how the on-page grid already leads with titles.
+// `sub` is always the league, never a season/year.
 function trophyPosterFeatured(data) {
   // Plain strings, not HTML — this text is drawn straight onto a canvas
   // with fillText, so it's never escapeHtml'd (that would draw literal
   // "&amp;" instead of "&" on the poster).
   if (data.championships.length) {
     const h = data.championships[0];
-    return { title: h.teamName ? h.teamName + " Champion" : "Champion", sub: "Season " + h.season, desc: `${data.playerName}'s team took the title in ${h.leagueName}.`, meta: "Season " + h.season, glyph: "trophy", color: "#D4AF37" };
+    return { title: h.teamName ? h.teamName + " Champion" : "Champion", sub: h.leagueName, desc: `${data.playerName}'s team took the title.`, glyph: "trophy", color: "#D4AF37" };
   }
   if (data.runnerUps.length) {
     const h = data.runnerUps[0];
-    return { title: h.teamName ? h.teamName + " Runner-up" : "Runner-up", sub: "Season " + h.season, desc: `${data.playerName}'s team finished runner-up in ${h.leagueName}.`, meta: "Season " + h.season, glyph: "trophy", color: "#B9C2CC" };
+    return { title: h.teamName ? h.teamName + " Runner-up" : "Runner-up", sub: h.leagueName, desc: `${data.playerName}'s team finished runner-up.`, glyph: "trophy", color: "#B9C2CC" };
   }
   if (data.awards.length) {
     const w = data.awards[0];
-    return { title: "Pair of the Week", sub: "Round " + w.round, desc: `${data.playerName} and ${w.partnerName || "partner"} took Pair of the Week in ${w.leagueName}.`, meta: "Round " + w.round, glyph: "star", color: "#8CA9E0" };
+    return { title: "Pair of the Week", sub: w.leagueName, desc: `${data.playerName} and ${w.partnerName || "partner"} took Pair of the Week.`, glyph: "star", color: "#8CA9E0" };
   }
   if (data.winStreak && data.winStreak.count >= WIN_STREAK_THRESHOLD) {
-    return { title: data.winStreak.count + "-Win Streak", sub: data.winStreak.leagueName, desc: `${data.playerName} hasn't lost in ${data.winStreak.count} straight matches in ${data.winStreak.leagueName}.`, meta: data.winStreak.leagueName, glyph: "flame", color: "#E2432F" };
+    return { title: data.winStreak.count + "-Win Streak", sub: data.winStreak.leagueName, desc: `${data.playerName} hasn't lost in ${data.winStreak.count} straight matches.`, glyph: "flame", color: "#E2432F" };
   }
   return null;
 }
@@ -8388,10 +8486,15 @@ async function generateTrophyPosterCanvas(data, theme) {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, W, H);
 
+  // The real wordmark (white-on-transparent, same file the loading screen
+  // uses on its own black background) in place of a typed-out "TEAM PADEL"
+  // — logo.png is 888×200, so this keeps its own aspect ratio.
+  const wordmark = await loadImageAsync("/images/logo.png");
+  if (wordmark) {
+    const logoW = 300, logoH = logoW * (wordmark.height / wordmark.width);
+    ctx.drawImage(wordmark, W / 2 - logoW / 2, 66, logoW, logoH);
+  }
   ctx.textAlign = "center";
-  ctx.fillStyle = "#C9A24B";
-  ctx.font = "500 26px Oswald, sans-serif";
-  ctx.fillText("T E A M   P A D E L", W / 2, 150);
   ctx.fillStyle = "#F3E6C8";
   ctx.font = "700 74px Oswald, sans-serif";
   ctx.fillText("TROPHY ROOM", W / 2, 232);
@@ -8453,11 +8556,6 @@ async function generateTrophyPosterCanvas(data, theme) {
     ctx.fillStyle = "#8a7a54";
     ctx.font = "500 17px Oswald, sans-serif";
     ctx.fillText("HIGHLIGHT", cardX + 34, cardTop + cardH - 28);
-    ctx.fillStyle = "#2c2418";
-    ctx.font = "600 21px Inter, sans-serif";
-    ctx.textAlign = "right";
-    ctx.fillText(featured.meta, cardX + cardW - 34, cardTop + cardH - 28);
-    ctx.textAlign = "left";
   } else {
     ctx.textAlign = "center";
     ctx.fillStyle = "#2c2418";
@@ -8471,10 +8569,7 @@ async function generateTrophyPosterCanvas(data, theme) {
   ctx.textAlign = "center";
   ctx.fillStyle = "#F3E6C8";
   ctx.font = "500 40px Oswald, sans-serif";
-  ctx.fillText(data.playerName, W / 2, H - 90);
-  ctx.fillStyle = "rgba(243,230,200,.55)";
-  ctx.font = "400 20px Inter, sans-serif";
-  ctx.fillText("POWERED BY ELO PADEL RATINGS", W / 2, H - 56);
+  ctx.fillText(data.playerName, W / 2, H - 70);
 
   return canvas;
 }

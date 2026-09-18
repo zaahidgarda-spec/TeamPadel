@@ -478,6 +478,14 @@
         <div class="brand-row">
           <a href="/" class="brand-link"><img id="league-brand-logo" src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
           <input id="league-name" class="h1 h1-sub" maxlength="60">
+          <div class="league-switcher" id="league-switcher" style="display:none;">
+            <button type="button" class="league-switcher-btn" id="league-switcher-btn" aria-label="Switch league">&#9662;</button>
+            <div class="league-switcher-panel" id="league-switcher-panel">
+              <label class="sr-only" for="league-switcher-search">Search leagues</label>
+              <input type="text" id="league-switcher-search" placeholder="Search leagues…">
+              <div id="league-switcher-list"></div>
+            </div>
+          </div>
         </div>
         <div class="header-right">
           <img id="team-logo-flag" class="team-logo-flag" style="display:none;" alt="Your team logo">
