@@ -2187,6 +2187,11 @@ function renderTrophyRoom(cards) {
   const html = achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed, inViboraLeague);
   section.style.display = html ? "block" : "none";
   container.innerHTML = html;
+  el("trophy-poster-row").style.display = html ? "flex" : "none";
+  el("generate-trophy-poster-btn").onclick = () => openPosterModal("trophy", {
+    playerName: playerAccount ? playerAccount.name : "Player",
+    championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons,
+  });
 }
 // A signed-in player's own "Tonight's matches" — everything happening
 // across the leagues they're actually in, not the site-wide carousel
@@ -7376,6 +7381,28 @@ function fitText(ctx, text, maxWidth, startSize, weight, family, floor) {
   while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) { out = out.slice(0, -1); }
   return out.length < text.length ? out + "…" : out;
 }
+// Plain word-wrap for canvas fillText — ctx.font must already be set
+// before calling. Draws up to 3 lines and hard-stops with an ellipsis on
+// the last one rather than overflowing into whatever's below it.
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  const maxLines = 3;
+  let line = "", lines = [];
+  words.forEach((word) => {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = word; }
+    else line = test;
+  });
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    let last = lines[maxLines - 1];
+    while (last.length > 1 && ctx.measureText(last + "…").width > maxWidth) last = last.slice(0, -1);
+    lines[maxLines - 1] = last + "…";
+  }
+  lines.forEach((l, i) => ctx.fillText(l, x, y + i * lineHeight));
+  return lines.length;
+}
 // Finds the single largest size that fits every string in the list, so a
 // poster's names all read at the same size instead of each row picking its
 // own — a short name next to a long one otherwise looks disproportionate.
@@ -8106,6 +8133,256 @@ async function generateTablePosterCanvas(theme) {
 
   return canvas;
 }
+
+/* ---------- Individual Trophy Room poster (My Profile) ----------
+   Same six achievement categories the on-page Trophy Room grid already
+   tracks (see achievementGridHtml), drawn as gilt-framed "photos" on a
+   museum wall, with the single most notable one pulled into a featured
+   card below — the mockup direction the site owner picked. Unlike the
+   league-admin posters above, this one's scoped to a claimed player
+   across every league they're in, not to currentLeagueId/league. */
+const TROPHY_GLYPH_PATHS = {
+  cup: "M6 2h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6V2z",
+  handleL: "M6 3H2a4 4 0 0 0 4 6",
+  handleR: "M18 3h4a4 4 0 0 1-4 6",
+  stem: "M10.5 11h3v6h-3z",
+  base: "M7 24h10l-1.5-4h-7z",
+  star: "M12 1l2.6 5.9 6.4.7-4.8 4.4 1.3 6.3L12 15.2l-5.5 3.1 1.3-6.3-4.8-4.4 6.4-.7L12 1z",
+  flame: "M12 2c3 3 5 6 5 9a5 5 0 0 1-10 0c0-1.4.7-2.7 1.6-3.8-.1 1 .3 1.8 1 2.2C9.3 7.8 10.6 5 12 2z",
+};
+function drawTrophyGlyph(ctx, cx, cy, size, fill) {
+  const s = size / 28;
+  ctx.save();
+  ctx.translate(cx - 12 * s, cy - 14 * s);
+  ctx.scale(s, s);
+  ctx.fillStyle = fill;
+  ctx.fill(new Path2D(TROPHY_GLYPH_PATHS.cup));
+  ctx.fill(new Path2D(TROPHY_GLYPH_PATHS.stem));
+  ctx.fill(new Path2D(TROPHY_GLYPH_PATHS.base));
+  ctx.strokeStyle = fill;
+  ctx.lineWidth = 1.4;
+  ctx.stroke(new Path2D(TROPHY_GLYPH_PATHS.handleL));
+  ctx.stroke(new Path2D(TROPHY_GLYPH_PATHS.handleR));
+  ctx.restore();
+}
+function drawStarGlyph(ctx, cx, cy, size, fill) {
+  const s = size / 24;
+  ctx.save();
+  ctx.translate(cx - 12 * s, cy - 12 * s);
+  ctx.scale(s, s);
+  ctx.fillStyle = fill;
+  ctx.fill(new Path2D(TROPHY_GLYPH_PATHS.star));
+  ctx.restore();
+}
+function drawFlameGlyph(ctx, cx, cy, size, fill) {
+  const s = size / 24;
+  ctx.save();
+  ctx.translate(cx - 12 * s, cy - 12 * s);
+  ctx.scale(s, s);
+  ctx.fillStyle = fill;
+  ctx.fill(new Path2D(TROPHY_GLYPH_PATHS.flame));
+  ctx.restore();
+}
+function drawRingGlyph(ctx, cx, cy, radius, stroke) {
+  ctx.save();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = Math.max(2, radius * 0.24);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+// A gilt picture frame at (x,y,w,h) — outer gold-gradient bevel, inner
+// sepia well the glyph draws into. Returns the well's own rect so the
+// caller can center a glyph or badge inside it.
+function drawGiltFrame(ctx, x, y, w, h) {
+  const bevel = ctx.createLinearGradient(x, y, x + w, y + h);
+  bevel.addColorStop(0, "#E7C877"); bevel.addColorStop(0.35, "#A9812F"); bevel.addColorStop(0.7, "#5F4413"); bevel.addColorStop(1, "#C9A24B");
+  ctx.fillStyle = bevel;
+  roundRectPath(ctx, x, y, w, h, w * 0.035);
+  ctx.fill();
+  const pad = w * 0.07;
+  const iw = w - pad * 2, ih = h - pad * 2, ix = x + pad, iy = y + pad;
+  const well = ctx.createRadialGradient(ix + iw / 2, iy + ih * 0.35, 4, ix + iw / 2, iy + ih * 0.35, w * 0.75);
+  well.addColorStop(0, "#7a6a4e"); well.addColorStop(0.55, "#4a3f2c"); well.addColorStop(1, "#2c2418");
+  ctx.fillStyle = well;
+  roundRectPath(ctx, ix, iy, iw, ih, w * 0.02);
+  ctx.fill();
+  return { x: ix, y: iy, w: iw, h: ih };
+}
+// One of the six frames — locked ones stay empty (dimmer well, no glyph),
+// same as the approved mockup, rather than a padlock icon.
+function drawTrophyFrameSlot(ctx, x, y, w, h, slot) {
+  const well = drawGiltFrame(ctx, x, y, w, h);
+  const cx = well.x + well.w / 2, cy = well.y + well.h / 2;
+  if (!slot || !slot.unlocked) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,.18)";
+    roundRectPath(ctx, well.x, well.y, well.w, well.h, w * 0.02);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (slot.glyph === "trophy") drawTrophyGlyph(ctx, cx, cy, well.h * 0.55, slot.color);
+  else if (slot.glyph === "star") drawStarGlyph(ctx, cx, cy, well.h * 0.42, slot.color);
+  else if (slot.glyph === "flame") drawFlameGlyph(ctx, cx, cy, well.h * 0.42, slot.color);
+  else if (slot.glyph === "ring") drawRingGlyph(ctx, cx, cy, well.h * 0.28, slot.color);
+  if (slot.badge) {
+    const bx = x + w - w * 0.09, by = y + h - w * 0.09, br = w * 0.075;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.fillStyle = "#C9A24B"; ctx.fill();
+    ctx.fillStyle = "#2c2418";
+    ctx.font = "700 " + Math.round(br * 1.15) + "px Oswald, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(slot.badge), bx, by + 1);
+    ctx.textBaseline = "alphabetic";
+  }
+}
+// Six fixed categories, same ones achievementGridHtml already tracks
+// (minus the per-league Premier/Business/Vibora champion special-cases,
+// folded into one generic "Champion" frame here to keep the poster
+// legible at a glance) — locked/unlocked exactly mirrors that grid.
+function trophyPosterSlots(data) {
+  const mostRecentRunnerUp = data.runnerUps[0] || null;
+  return [
+    { glyph: "trophy", color: "#D4AF37", unlocked: data.championships.length > 0, label: "Champion" },
+    { glyph: "star", color: "#8CA9E0", unlocked: data.awards.length > 0, badge: data.awards.length || null, label: "Pair of the Week" },
+    { glyph: "flame", color: "#E2432F", unlocked: !!(data.winStreak && data.winStreak.count >= WIN_STREAK_THRESHOLD), label: "Win Streak" },
+    { glyph: "trophy", color: "#B9C2CC", unlocked: !!mostRecentRunnerUp, label: "Runner-up" },
+    { glyph: "ring", color: "#8CA9E0", unlocked: data.bagelCount > 0, badge: data.bagelCount || null, label: "6-0 Sets" },
+    { glyph: "star", color: "#7BC67E", unlocked: data.unbeatenSeasons.length > 0, label: "Unbeaten Season" },
+  ];
+}
+// The single most notable achievement, pulled out for the featured card
+// below the wall — a real championship beats a runner-up beats a Pair of
+// the Week win, matching how the on-page grid already leads with titles.
+function trophyPosterFeatured(data) {
+  // Plain strings, not HTML — this text is drawn straight onto a canvas
+  // with fillText, so it's never escapeHtml'd (that would draw literal
+  // "&amp;" instead of "&" on the poster).
+  if (data.championships.length) {
+    const h = data.championships[0];
+    return { title: h.teamName ? h.teamName + " Champion" : "Champion", sub: "Season " + h.season, desc: `${data.playerName}'s team took the title in ${h.leagueName}.`, meta: "Season " + h.season, glyph: "trophy", color: "#D4AF37" };
+  }
+  if (data.runnerUps.length) {
+    const h = data.runnerUps[0];
+    return { title: h.teamName ? h.teamName + " Runner-up" : "Runner-up", sub: "Season " + h.season, desc: `${data.playerName}'s team finished runner-up in ${h.leagueName}.`, meta: "Season " + h.season, glyph: "trophy", color: "#B9C2CC" };
+  }
+  if (data.awards.length) {
+    const w = data.awards[0];
+    return { title: "Pair of the Week", sub: "Round " + w.round, desc: `${data.playerName} and ${w.partnerName || "partner"} took Pair of the Week in ${w.leagueName}.`, meta: "Round " + w.round, glyph: "star", color: "#8CA9E0" };
+  }
+  if (data.winStreak && data.winStreak.count >= WIN_STREAK_THRESHOLD) {
+    return { title: data.winStreak.count + "-Win Streak", sub: data.winStreak.leagueName, desc: `${data.playerName} hasn't lost in ${data.winStreak.count} straight matches in ${data.winStreak.leagueName}.`, meta: data.winStreak.leagueName, glyph: "flame", color: "#E2432F" };
+  }
+  return null;
+}
+async function generateTrophyPosterCanvas(data, theme) {
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const W = 1080, H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, W * 0.6, H);
+  bg.addColorStop(0, "#2b1d12"); bg.addColorStop(0.55, "#1c130c"); bg.addColorStop(1, "#130d08");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  const vignette = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.25, W / 2, H * 0.45, H * 0.72);
+  vignette.addColorStop(0, "rgba(0,0,0,0)"); vignette.addColorStop(1, "rgba(0,0,0,.55)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#C9A24B";
+  ctx.font = "500 26px Oswald, sans-serif";
+  ctx.fillText("T E A M   P A D E L", W / 2, 150);
+  ctx.fillStyle = "#F3E6C8";
+  ctx.font = "700 74px Oswald, sans-serif";
+  ctx.fillText("TROPHY ROOM", W / 2, 232);
+  ctx.strokeStyle = "#C9A24B";
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(W / 2 - 90, 264); ctx.lineTo(W / 2 + 90, 264); ctx.stroke();
+
+  const slots = trophyPosterSlots(data);
+  const gridTop = 320, gridGap = 24, cols = 3, rows = 2;
+  const gridW = W - 160;
+  const cellW = (gridW - gridGap * (cols - 1)) / cols;
+  const cellH = cellW * 1.15;
+  const gridLeft = (W - gridW) / 2;
+  slots.forEach((slot, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = gridLeft + col * (cellW + gridGap), y = gridTop + row * (cellH + gridGap);
+    drawTrophyFrameSlot(ctx, x, y, cellW, cellH, slot);
+  });
+
+  const featured = trophyPosterFeatured(data);
+  const cardTop = gridTop + rows * cellH + (rows - 1) * gridGap + 70;
+  const cardX = gridLeft, cardW = gridW, cardH = 360;
+  const cardGrad = ctx.createLinearGradient(cardX, cardTop, cardX, cardTop + cardH);
+  cardGrad.addColorStop(0, "#EFE6D2"); cardGrad.addColorStop(1, "#E3D5B4");
+  ctx.fillStyle = cardGrad;
+  roundRectPath(ctx, cardX, cardTop, cardW, cardH, 6);
+  ctx.fill();
+  // Folded-corner flourish, top-right.
+  ctx.fillStyle = "#C9BB98";
+  ctx.beginPath(); ctx.moveTo(cardX + cardW - 46, cardTop); ctx.lineTo(cardX + cardW, cardTop); ctx.lineTo(cardX + cardW, cardTop + 46); ctx.closePath(); ctx.fill();
+
+  if (featured) {
+    const photoSize = 128, photoX = cardX + 34, photoY = cardTop + 34;
+    const photoWell = ctx.createRadialGradient(photoX + photoSize / 2, photoY + photoSize * 0.35, 4, photoX + photoSize / 2, photoY + photoSize * 0.35, photoSize * 0.75);
+    photoWell.addColorStop(0, "#7a6a4e"); photoWell.addColorStop(0.55, "#4a3f2c"); photoWell.addColorStop(1, "#2c2418");
+    ctx.fillStyle = photoWell;
+    roundRectPath(ctx, photoX, photoY, photoSize, photoSize, 6);
+    ctx.fill();
+    if (featured.glyph === "trophy") drawTrophyGlyph(ctx, photoX + photoSize / 2, photoY + photoSize / 2, photoSize * 0.55, featured.color);
+    else if (featured.glyph === "star") drawStarGlyph(ctx, photoX + photoSize / 2, photoY + photoSize / 2, photoSize * 0.42, featured.color);
+    else if (featured.glyph === "flame") drawFlameGlyph(ctx, photoX + photoSize / 2, photoY + photoSize / 2, photoSize * 0.42, featured.color);
+
+    const textX = photoX + photoSize + 28;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#2c2418";
+    ctx.font = "600 34px Oswald, sans-serif";
+    ctx.fillText(featured.title.toUpperCase(), textX, photoY + 40);
+    ctx.fillStyle = "#6b5c3f";
+    ctx.font = "400 22px Inter, sans-serif";
+    ctx.fillText(featured.sub, textX, photoY + 74);
+
+    ctx.fillStyle = "#5a4d34";
+    ctx.font = "400 22px Inter, sans-serif";
+    wrapCanvasText(ctx, featured.desc, cardX + 34, photoY + photoSize + 40, cardW - 68, 30);
+
+    ctx.strokeStyle = "rgba(90,77,52,.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cardX + 34, cardTop + cardH - 60); ctx.lineTo(cardX + cardW - 34, cardTop + cardH - 60); ctx.stroke();
+    ctx.fillStyle = "#8a7a54";
+    ctx.font = "500 17px Oswald, sans-serif";
+    ctx.fillText("HIGHLIGHT", cardX + 34, cardTop + cardH - 28);
+    ctx.fillStyle = "#2c2418";
+    ctx.font = "600 21px Inter, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(featured.meta, cardX + cardW - 34, cardTop + cardH - 28);
+    ctx.textAlign = "left";
+  } else {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#2c2418";
+    ctx.font = "600 30px Oswald, sans-serif";
+    ctx.fillText("THE CASE IS STILL EMPTY", cardX + cardW / 2, cardTop + cardH / 2 - 10);
+    ctx.fillStyle = "#6b5c3f";
+    ctx.font = "400 22px Inter, sans-serif";
+    ctx.fillText("First title still to come.", cardX + cardW / 2, cardTop + cardH / 2 + 26);
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#F3E6C8";
+  ctx.font = "500 40px Oswald, sans-serif";
+  ctx.fillText(data.playerName, W / 2, H - 90);
+  ctx.fillStyle = "rgba(243,230,200,.55)";
+  ctx.font = "400 20px Inter, sans-serif";
+  ctx.fillText("POWERED BY ELO PADEL RATINGS", W / 2, H - 56);
+
+  return canvas;
+}
 /* ---------- Team kit (captain-managed) ---------- */
 
 // Which team's kit is on screen — implicit (their own) for a captain,
@@ -8817,14 +9094,17 @@ async function openKitSheetModal(team, order) {
   };
 }
 
-async function openPosterModal(mode) {
-  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster", predictions: "Predictions poster", playoffs: "Playoffs poster" };
+async function openPosterModal(mode, extraData) {
+  const titles = { results: "Results poster", "court-schedule": "Court schedule poster", table: "Table poster", fixtures: "Fixtures poster", predictions: "Predictions poster", playoffs: "Playoffs poster", trophy: "Trophy Room poster" };
   el("poster-modal-title").textContent = titles[mode] || "Fixtures poster";
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
   el("poster-modal-backdrop").classList.add("open");
   const theme = pickPosterTheme();
-  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas(theme) : mode === "table" ? await generateTablePosterCanvas(theme) : await generatePosterCanvas(mode, theme);
+  const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas(theme)
+    : mode === "table" ? await generateTablePosterCanvas(theme)
+    : mode === "trophy" ? await generateTrophyPosterCanvas(extraData, theme)
+    : await generatePosterCanvas(mode, theme);
   const dataUrl = canvas.toDataURL("image/png");
   el("poster-preview-img").src = dataUrl;
   el("poster-preview-img").style.display = "inline-block";
@@ -8832,7 +9112,12 @@ async function openPosterModal(mode) {
   el("poster-download-btn").onclick = () => {
     const a = document.createElement("a");
     a.href = dataUrl;
-    const safeName = (league.name || "poster").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    // Trophy mode isn't scoped to a league at all (a claimed player can
+    // span several) — named after the player instead of league.name,
+    // which may not even be the league they're currently looking at.
+    const safeName = mode === "trophy"
+      ? (extraData.playerName || "trophy-room").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
+      : (league.name || "poster").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     a.download = safeName + "-" + mode + ".png";
     document.body.appendChild(a);
     a.click();
