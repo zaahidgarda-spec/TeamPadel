@@ -2001,6 +2001,8 @@ async function renderAccountProfile() {
   renderAccountAvatar(cards);
   renderAccountNextMatch(cards);
   renderAccountLeaguesList(cards);
+  renderAccountTables(cards);
+  renderAccountFixtures(cards);
   await renderAccountStats(cards);
   renderAccountPushSection();
   renderTrophyRoom(cards);
@@ -2302,6 +2304,88 @@ function renderAccountLeaguesList(cards) {
       await refreshAccountStatus();
     };
   });
+}
+// A capped standings preview per claimed league — the top of the table,
+// plus your own row pinned below (with a divider) if you've dropped out of
+// that range, so you're never just missing from your own team's card. The
+// server already did the finalized-vs-live diffing (see /players/profile);
+// this just draws whatever it sent, reusing the same real .badge-live "Live
+// now" tag used elsewhere on the site for the "this isn't final yet" flag.
+function renderAccountTables(cards) {
+  const wrap = el("account-tables-section");
+  const withTables = cards.filter((c) => c.standings);
+  if (withTables.length === 0) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  const rowHtml = (r) => {
+    const moveHtml = r.move > 0 ? `<span class="pd-table-move up">▲${r.move > 1 ? r.move : ""}</span>`
+      : r.move < 0 ? `<span class="pd-table-move down">▼${-r.move > 1 ? -r.move : ""}</span>` : "";
+    return `<div class="pd-table-row${r.isMine ? " mine" : ""}">
+      <span class="pd-table-rank">${r.rank}</span>
+      ${avatarHtml({ logo: r.logo, name: r.name })}
+      <span class="pd-table-name">${escapeHtml(r.name)}</span>
+      ${r.isMine ? '<span class="pd-table-you">You</span>' : ""}
+      ${moveHtml}
+      <span class="pd-table-pts">${r.points}</span>
+    </div>`;
+  };
+  el("account-tables-scroll").innerHTML = withTables.map((card) => {
+    const s = card.standings;
+    const moreHtml = s.totalTeams > s.topRows.length
+      ? `<button type="button" class="pd-table-more" data-league="${card.leagueId}">Show full table (${s.totalTeams})</button>` : "";
+    const myRowHtml = s.myRow ? `<div class="pd-table-divider">${rowHtml(s.myRow)}</div>` : "";
+    const liveBadge = s.live ? '<span class="tag badge-live">Live</span>' : "";
+    const note = s.live ? '<div class="pd-table-note">Includes scores live on court or entered but not yet finalized.</div>' : "";
+    return `<div class="pd-table-card">
+      <div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>
+      ${s.topRows.map(rowHtml).join("")}
+      ${moreHtml}
+      ${myRowHtml}
+      ${note}
+    </div>`;
+  }).join("");
+  // Same "land on the same tab" idea as the league switcher — jumping to
+  // the real Table tab is the whole point of "show full table", not just
+  // dropping the captain onto whatever tab openLeague defaults to.
+  el("account-tables-scroll").querySelectorAll(".pd-table-more").forEach((btn) => {
+    btn.onclick = async () => { await openLeague(btn.dataset.league); switchTab("table"); };
+  });
+}
+// Your single soonest upcoming fixture in each claimed league — a compact
+// "match preview" card (crests either side of a VS pill, the same win%
+// bar Tonight's Matches already uses) rather than the plain text list an
+// earlier pass had, one per league so it scales the same way Your Tables
+// does.
+function renderAccountFixtures(cards) {
+  const wrap = el("account-fixtures-section");
+  const items = [];
+  cards.forEach((card) => {
+    if (!card.upcoming.length) return;
+    const soonest = card.upcoming.slice().sort((a, b) => {
+      if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
+      if (a.date) return -1;
+      if (b.date) return 1;
+      return 0;
+    })[0];
+    items.push(Object.assign({ leagueId: card.leagueId, leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo }, soonest));
+  });
+  if (items.length === 0) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+  el("account-fixtures-scroll").innerHTML = items.map((m) => {
+    const pct = m.prediction ? m.prediction.winPct : null;
+    const barHtml = pct != null ? `<div class="mc-predict-bar"><span class="a" style="width:${pct}%"></span><span class="b" style="width:${100 - pct}%"></span></div>
+      <div class="mc-predict-pcts"><span>${pct}%</span><span>${100 - pct}%</span></div>` : "";
+    const whenText = [m.date ? fmtDate(m.date) : "", m.time ? fmtTime(m.time) : ""].filter(Boolean).join(" · ") || "Date TBC";
+    return `<div class="pd-fixture-card">
+      <span class="league-tag">${escapeHtml(m.leagueName)}</span>
+      <div class="pd-fixture-sides">
+        <div class="pd-fixture-side">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
+        <span class="vs">vs</span>
+        <div class="pd-fixture-side">${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
+      </div>
+      ${barHtml}
+      <div class="pd-fixture-meta">${escapeHtml(whenText)}</div>
+    </div>`;
+  }).join("");
 }
 // The single soonest upcoming match across every claimed record — "your
 // next match," personalized, rather than the generic per-league carousel

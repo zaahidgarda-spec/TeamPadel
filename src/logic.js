@@ -208,13 +208,19 @@ function roundCountsToTable(league, round) {
   return !meta || meta.type !== "knockout";
 }
 
-function computeStandings(league) {
+// `includeFixture` defaults to "only what's actually finalized" — the real
+// table everywhere else on the site. My Profile's live table preview passes
+// a looser check (finalized OR has at least one decided rubber) to also
+// count a score that's live on court right now or was entered but not yet
+// finalized — same math, just a different idea of "counts yet".
+function computeStandings(league, includeFixture) {
+  const counts = includeFixture || ((f) => f.finalized);
   const isPairs = league.format === "pairs";
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
     let setsWon = 0, setsLost = 0;
     league.fixtures
-      .filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(league, f.round))
+      .filter((f) => counts(f) && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(league, f.round))
       .forEach((f) => {
         const isA = f.teamA === t.id;
         const { winsA, winsB } = fixtureScore(f);

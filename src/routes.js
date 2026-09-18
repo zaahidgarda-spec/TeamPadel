@@ -1726,11 +1726,41 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       })
       .filter(Boolean);
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
+    // A compact "your tables" preview — the top of the table (capped) plus
+    // your own row pinned below if you've dropped out of that range.
+    // Computed twice: the real (finalized-only) standings, and a looser
+    // "live" pass that also counts a score that's live on court right now
+    // or was entered but not yet finalized — reusing computeStandings'
+    // exact same math either way, just a different idea of "counts yet"
+    // (see its includeFixture param). Diffed against each other for the
+    // movement arrows. Skipped for a league that hasn't started, or has
+    // too few teams to meaningfully rank.
+    const TABLE_CAP = 6;
+    let standings = null;
+    if (leagueStatus(league) === "active" && league.teams.length > 1) {
+      const officialRows = logic.computeStandings(league);
+      const liveRows = logic.computeStandings(league, (f) => f.finalized || logic.fixtureScore(f).decided > 0);
+      const officialRankById = new Map(officialRows.map((r, i) => [r.id, i + 1]));
+      const ranked = liveRows.map((r, i) => {
+        const rank = i + 1;
+        const officialRank = officialRankById.get(r.id) || rank;
+        return { id: r.id, name: r.name, logo: r.logo || "", points: r.points, rank, move: officialRank - rank, isMine: r.id === team.id };
+      });
+      const topRows = ranked.slice(0, TABLE_CAP);
+      const myRow = ranked.find((r) => r.isMine);
+      standings = {
+        totalTeams: ranked.length,
+        live: ranked.some((r) => r.move !== 0),
+        topRows,
+        myRow: myRow && myRow.rank > TABLE_CAP ? myRow : null,
+      };
+    }
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
       upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
+      standings,
       results,
       awards,
       championships,
