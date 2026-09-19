@@ -871,6 +871,7 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .lc-cell.lc-upcoming.lc-pace-r.lc-pace-manual{background:linear-gradient(160deg,#D93A2B,#B22A1D);border:2px solid #FF9F92;color:#fff;}
 .floodlit.urgent .lc-cell.lc-upcoming.lc-pace-g.lc-pace-auto{background:rgba(30,158,92,.48);border:2px dashed #5EE3A0;color:#D7FBE8;}
 .floodlit.urgent .lc-cell.lc-upcoming.lc-pace-r.lc-pace-auto{background:rgba(217,58,43,.50);border:2px dashed #FF8C7C;color:#FFE0DB;}
+.floodlit.urgent .lc-cell.lc-upcoming.lc-pace-n{background:rgba(120,140,190,.22);border:2px dashed #8FA6D8;color:#DCE6FF;}
 .lc-cell.lc-upcoming[class*="lc-pace-"] .lc-pair-label,.lc-cell.lc-upcoming[class*="lc-pace-"] .lc-vs{color:inherit;opacity:.95;}
 .lc-cell.lc-upcoming[class*="lc-pace-"] .avatar,.lc-cell.lc-upcoming[class*="lc-pace-"] .avatar-fb{border-color:rgba(255,255,255,.55);}
 .lc-pace-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:10px;}

@@ -6978,6 +6978,7 @@ function liveCourtSnapshot() {
 // src/routes.js, so the card's own estimate and the server's court
 // balancing agree on what a match marked Long means.
 const PACE_QUICK_CLOSENESS = 10, PACE_LONG_CLOSENESS = 90;
+const PACE_WORD = { g: "Quick", r: "Long", n: "Average" };
 // The win-probability split behind every card, kept between renders so
 // changing one card's pace redraws instantly instead of waiting on a
 // fresh predictions request for a number that hasn't moved.
@@ -7052,6 +7053,32 @@ async function renderLiveCourtControl(opts) {
       if (state === "upcoming") courtLoadUpcoming[c] += estMins;
     }
   }
+  // What "quick" and "long" mean is relative to tonight, not an absolute
+  // line: a fixed cut-off (closeness 50, which is where the old amber
+  // "Close" tag started) sends nearly every match to "long" in a league
+  // where ratings are all close — in Zoolake every upcoming match scored
+  // 70+, so the whole board went red and told nobody anything. Instead the
+  // app's own guesses are ranked against each other: below the night's
+  // median = quick (green), above = long (red), and when there's no real
+  // spread — or nothing to compare against — no colour claim at all
+  // (neutral), rather than inventing one. A manual pace always wins.
+  const autoCloseness = [];
+  for (let s = 0; s < slots; s++) for (let c = 0; c < courts; c++) {
+    const ci = cellInfo[s][c];
+    if (ci && ci.state === "upcoming" && !ci.pace && ci.pred) autoCloseness.push(ci.predictedCloseness);
+  }
+  autoCloseness.sort((a, b) => a - b);
+  const mid = autoCloseness.length >> 1;
+  const medianCloseness = autoCloseness.length ? (autoCloseness.length % 2 ? autoCloseness[mid] : (autoCloseness[mid - 1] + autoCloseness[mid]) / 2) : 50;
+  const LIVE_PACE_MIN_SPREAD = 8;
+  const hasSpread = autoCloseness.length >= 2 && autoCloseness[autoCloseness.length - 1] - autoCloseness[0] >= LIVE_PACE_MIN_SPREAD;
+  for (let s = 0; s < slots; s++) for (let c = 0; c < courts; c++) {
+    const ci = cellInfo[s][c];
+    if (!ci || ci.state !== "upcoming") continue;
+    // `guess` is what the app alone would say; `tone` is what the card shows.
+    ci.guess = !ci.pred || !hasSpread ? "n" : ci.predictedCloseness < medianCloseness ? "g" : ci.predictedCloseness > medianCloseness ? "r" : "n";
+    ci.tone = ci.pace === "quick" ? "g" : ci.pace === "long" ? "r" : ci.guess;
+  }
   // A move suggestion only ever points at a court that's actually free in
   // this same time slot (no swap needed to act on it) and only when it's
   // meaningfully lighter — a 2-minute difference isn't worth interrupting
@@ -7091,21 +7118,21 @@ async function renderLiveCourtControl(opts) {
         continue;
       }
 
-      const { rubber, state, closeness, estMins, pace, predictedCloseness, pred } = cellInfo[s][c];
+      const { rubber, state, closeness, estMins, pace, predictedCloseness, pred, tone, guess } = cellInfo[s][c];
       const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
 
       const box = document.createElement("div");
       // Whole-card colour for a match still to play: green = quick, red =
       // close and so likely long. Bright/solid means an admin decided it;
       // dim/dashed is only the app's own guess.
-      const paceColour = closeness < 50 ? "g" : "r";
+      const paceColour = tone;
       box.className = "lc-cell lc-" + state + (state === "upcoming" ? ` lc-pace-${paceColour} lc-pace-${pace ? "manual" : "auto"}` : "");
       const color = fixtureColor(cell.fixtureId, fixtures);
       box.style.setProperty("--fx-glow", fixtureGlow(color));
 
       let inner = "";
       if (state === "upcoming") {
-        inner += `<div class="lc-pace-top"><div><div class="lc-pace-word">${paceColour === "g" ? "Quick" : "Long"}</div><div class="lc-pace-mins">~${estMins} min</div></div><span class="lc-pace-badge">${pace ? "Set by admin ✎" : "Auto"}</span></div>`;
+        inner += `<div class="lc-pace-top"><div><div class="lc-pace-word">${PACE_WORD[paceColour]}</div><div class="lc-pace-mins">~${estMins} min</div></div><span class="lc-pace-badge">${pace ? "Set by admin ✎" : "Auto"}</span></div>`;
       }
       inner += `<div class="lc-teams">${avatarHtml(opt.teamA)}<span class="lc-vs">v</span>${avatarHtml(opt.teamB)}</div>`;
       inner += `<div class="lc-pair-label">${escapeHtml(opt.shortLabel)}</div>`;
@@ -7113,14 +7140,15 @@ async function renderLiveCourtControl(opts) {
         // Why the app landed where it did — and, once an admin has
         // overruled it, what it would have said.
         const favPct = pred ? Math.max(pred.winPctA, pred.winPctB) : null;
-        const guess = predictedCloseness < 50 ? "Quick" : "Long";
-        const reason = favPct === null ? "No prediction yet" : `${predictedCloseness < 50 ? "Lopsided" : "Tight match"} — ${favPct}% favourite`;
-        inner += `<div class="lc-pace-why">${pace ? `App suggested ${guess} · ` : ""}${escapeHtml(reason)}</div>`;
+        const guessWord = PACE_WORD[guess];
+        const relative = guess === "g" ? "quicker than most tonight" : guess === "r" ? "longer than most tonight" : hasSpread ? "about average tonight" : "nothing separates tonight's matches";
+        const reason = favPct === null ? "No prediction yet" : `${favPct}% favourite · ${relative}`;
+        inner += `<div class="lc-pace-why">${pace ? `App suggested ${guessWord} · ` : ""}${escapeHtml(reason)}</div>`;
         const pos = pace === "quick" ? 0 : pace === "long" ? 2 : 1;
         const quickMins = estimateMinutesForCloseness(PACE_QUICK_CLOSENESS), longMins = estimateMinutesForCloseness(PACE_LONG_CLOSENESS);
         inner += `<div class="lc-pace-slider" role="group" aria-label="Match pace"><div class="lc-pace-thumb" style="transform:translateX(${pos * 100}%)"></div>
           <button type="button" class="qg${pos === 0 ? " on" : ""}" data-pace="quick">Quick<small>~${quickMins}m</small></button>
-          <button type="button"${pos === 1 ? ' class="on"' : ""} data-pace="auto">Auto<small>${guess}</small></button>
+          <button type="button"${pos === 1 ? ' class="on"' : ""} data-pace="auto">Auto<small>${guessWord}</small></button>
           <button type="button" class="lr${pos === 2 ? " on" : ""}" data-pace="long">Long<small>~${longMins}m</small></button></div>`;
         const target = suggestBetterCourt(s, c);
         if (target !== null) {
