@@ -7199,25 +7199,27 @@ function liveSides(t, full) {
   };
   return [side(t.opt && t.opt.teamA, t.f.selectionA), side(t.opt && t.opt.teamB, t.f.selectionB)];
 }
-function liveSideHtml(sd) {
-  return `<div class="lc-side">${sd.team ? avatarHtml(sd.team) : ""}<span class="lc-pl"><b>${escapeHtml(sd.players[0])}</b><b>${escapeHtml(sd.players[1])}</b></span></div>`;
-}
-function liveTileHtml(s, c) {
+function liveTileHtml(s, c, oneFixture) {
   const t = liveTileInfo(s, c);
   if (!t) return `<div class="lc-slot" data-s="${s}" data-c="${c}"><div class="lc-tile lc-empty">&mdash;</div></div>`;
   const { info } = t, sides = liveSides(t, false);
-  const teams = `<div class="lc-sides">${liveSideHtml(sides[0])}<span class="lc-v">v</span>${liveSideHtml(sides[1])}</div>`;
-  const label = `Match ${s + 1} &middot; Seed ${t.cell.seed + 1}`;
+  const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b><b>${escapeHtml(sd.players[1])}</b></div>`;
+  // The two teams' badges sit once in the court's header when the court
+  // hosts a single fixture; a court that mixes fixtures has no one pair of
+  // teams to name up there, so each tile carries its own little badges.
+  const mid = oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`;
+  const teams = `${lines(sides[0])}<div class="lc-vs">${mid}</div>${lines(sides[1])}`;
+  const label = `M${s + 1} &middot; S${t.cell.seed + 1}`;
   let foot;
   if (info.state === "live") {
-    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-right"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}"></span></span></div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}"></span></div>`;
   } else if (info.state === "done") {
-    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-tag">Finished &#10003; ${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-tag">&#10003; ${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
   } else {
     foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span>${info.pace ? '<span class="lc-tile-pen" title="Set by you">&#9998;</span>' : ""}</div>`;
   }
   const draggable = info.state === "upcoming" ? ' draggable="true" title="Drag to move to another court"' : "";
-  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}" data-open="1">${teams}${foot}</button></div>`;
+  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}" data-open="1"><div>${teams}</div>${foot}</button></div>`;
 }
 // Tap-to-move: pick a match up from its sheet, then tap wherever it should
 // go — an empty spot moves it, another upcoming match swaps with it. The
@@ -7270,8 +7272,22 @@ function renderLiveLanes(wrap) {
   let html = `<div class="lc-lane-cols" style="${cols}">${Array.from({ length: b.slots }, (_, s) => `<span>Match ${s + 1}</span>`).join("")}</div>`;
   for (let c = 0; c < b.courts; c++) {
     let toPlay = 0;
-    for (let s = 0; s < b.slots; s++) { const ci = b.cellInfo[s][c]; if (ci && ci.state === "upcoming") toPlay++; }
-    html += `<div class="lc-lane"><div class="lc-lane-h"><span>${escapeHtml(b.courtLabel(c))}</span><small>${toPlay ? toPlay + " to play" : "nothing left to play"}</small></div><div class="lc-lane-row" style="${cols}">${Array.from({ length: b.slots }, (_, s) => liveTileHtml(s, c)).join("")}</div></div>`;
+    const fixtureIds = new Set();
+    let firstTile = null;
+    for (let s = 0; s < b.slots; s++) {
+      const ci = b.cellInfo[s][c];
+      if (ci && ci.state === "upcoming") toPlay++;
+      const ti = liveTileInfo(s, c);
+      if (ti) { fixtureIds.add(ti.cell.fixtureId); if (!firstTile) firstTile = ti; }
+    }
+    const oneFixture = fixtureIds.size === 1;
+    let fx = "";
+    if (oneFixture && firstTile.opt) {
+      const ta = firstTile.opt.teamA, tb = firstTile.opt.teamB;
+      fx = `<span class="lc-fx">${avatarHtml(ta)}<span class="lc-fxn">${escapeHtml(ta.name)}</span><span class="lc-fxv">v</span>${avatarHtml(tb)}<span class="lc-fxn">${escapeHtml(tb.name)}</span></span>`;
+    } else if (fixtureIds.size > 1) fx = '<span class="lc-fx mixed">mixed fixtures</span>';
+    else fx = '<span class="lc-fx"></span>';
+    html += `<div class="lc-lane"><div class="lc-lane-h"><span class="lc-lane-name">${escapeHtml(b.courtLabel(c))}</span>${fx}<small>${toPlay ? toPlay + " to play" : "done"}</small></div><div class="lc-lane-row" style="${cols}">${Array.from({ length: b.slots }, (_, s) => liveTileHtml(s, c, oneFixture)).join("")}</div></div>`;
   }
   wrap.innerHTML = html;
   wrap.querySelectorAll(".lc-slot").forEach((slot) => {
