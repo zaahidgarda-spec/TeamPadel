@@ -292,9 +292,13 @@ function backfillRoundRecaps() {
 // something current, not a historical result.
 function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
-    const ra = a.round === undefined || a.round === null ? Infinity : a.round;
-    const rb = b.round === undefined || b.round === null ? Infinity : b.round;
-    if (ra !== rb) return rb - ra;
+    // Round-based ordering only makes sense between two posts that both
+    // actually belong to a round — a manually-typed admin post has none.
+    // Treating a missing round as an implicit "higher than any real round"
+    // (the old behavior, via `?? Infinity`) pinned that post above every
+    // round's recap forever, no matter how old it actually was. Anything
+    // without a round on either side just compares by when it was posted.
+    if (a.round != null && b.round != null && a.round !== b.round) return b.round - a.round;
     return b.createdAt - a.createdAt;
   });
 }
