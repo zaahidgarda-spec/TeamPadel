@@ -1198,6 +1198,20 @@ el("create-league-btn").onclick = async () => {
     await openLeague(id);
   } catch (e) { alert(e.message); }
 };
+// Admin shortcut to Live Court Control — pinned in the league's top bar so
+// it's one tap from any tab. Not offered for a pairs league (no court
+// schedule there), and lit red while any match is actually live.
+el("open-live-court").onclick = () => { switchTab("live-court"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+function updateLiveCourtJump() {
+  const btn = el("open-live-court");
+  const show = !!league && myRole === "admin" && league.format !== "pairs";
+  btn.style.display = show ? "inline-flex" : "none";
+  if (!show) return;
+  const fixtures = league.fixtures.concat(league.playoffs ? [].concat(league.playoffs.semis || [], league.playoffs.final || [], league.playoffs.matches || []) : []);
+  const live = fixtures.some((f) => f && !f.finalized && f.rubbers.some((r) => r.startedAt && !r.completedAt));
+  btn.classList.toggle("is-live", live);
+  btn.title = live ? "A match is live right now" : "Open Live Court Control";
+}
 el("back-to-hub").onclick = async () => { leaguesIndex = await api("/leagues").catch(() => leaguesIndex); showHub(); };
 
 /* ---------- "Interested in joining a league?" signup form ---------- */
@@ -3043,6 +3057,17 @@ function sizeLeagueNameInput() {
   input.style.width = Math.ceil(textWidth + box + 4) + "px";
 }
 
+// The width above is measured in whatever font the browser has at that
+// moment — before the web font (Oswald) finishes loading that's a
+// narrower fallback, which sized the box too small and clipped the name
+// (the exact "Killarney doesn't show in full" report, just on a cold first
+// load). Re-measure whenever a font finishes loading.
+if (document.fonts) {
+  const remeasureLeagueName = () => { if (typeof league !== "undefined" && league) sizeLeagueNameInput(); };
+  document.fonts.ready.then(remeasureLeagueName);
+  document.fonts.addEventListener("loadingdone", remeasureLeagueName);
+}
+
 function renderAll() {
   syncViewingKey();
   renderGroupSelector();
@@ -3060,6 +3085,7 @@ function renderAll() {
   // rendered text in a canvas and setting a pixel `width` instead keeps it
   // exact for any font.
   sizeLeagueNameInput();
+  updateLiveCourtJump();
   el("league-switcher").style.display = isOwner ? "block" : "none";
   const brand = leagueBrand(league.name);
   const brandHeader = document.querySelector("#view-league .site-header");
