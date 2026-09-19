@@ -856,17 +856,24 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .lc-viewtoggle button.on{background:#fff;color:#0A1020;}
 .lc-legend{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 12px;font-size:11px;color:#9FB0D4;}
 .lc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
-.lc-lane{margin-bottom:16px;}
-.lc-lane-h{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 2px 6px;font-family:var(--font-display);font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#F2F6FF;}
-.lc-lane-h .lc-lane-name{flex:none;}
-.lc-lane-h .lc-fx{display:flex;align-items:center;gap:6px;flex:1;min-width:0;justify-content:center;font-family:var(--font-body);text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;color:#C7D2E8;}
-.lc-lane-h .lc-fx .lc-fxn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-.lc-lane-h .lc-fx .avatar,.lc-lane-h .lc-fx .avatar-fb{width:24px;height:24px;font-size:10px;flex:none;}
-.lc-lane-h .lc-fx .lc-fxv{opacity:.6;font-weight:500;flex:none;}
-.lc-lane-h .lc-fx.mixed{opacity:.7;font-weight:500;font-style:normal;}
-.lc-lane-h small{font-family:var(--font-body);font-size:11px;color:#7C8CB0;text-transform:none;letter-spacing:0;}
-.lc-lane-cols,.lc-lane-row{display:grid;gap:6px;}
-.lc-lane-cols{margin:0 0 6px;} .lc-lane-cols span{font-family:var(--font-display);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#7C8CB0;text-align:center;}
+/* Courts across the top, Match 1, 2, 3 … running down — the way the old
+   grid read. Each court's header carries its fixture's badges and team
+   names (or says the court mixes fixtures). Scrolls sideways only if there
+   are too many courts to fit. */
+.lc-board-scroll{overflow-x:auto;margin:0 -4px;padding:0 4px 4px;}
+.lc-board{display:grid;grid-template-columns:24px repeat(var(--n),minmax(78px,1fr));gap:6px;align-items:stretch;}
+.lc-board.dense{grid-template-columns:20px repeat(var(--n),minmax(68px,1fr));gap:4px;}
+.lc-colh{text-align:center;padding:0 0 4px;min-width:0;}
+.lc-colh-n{font-family:var(--font-display);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:#F2F6FF;}
+.lc-colh small{display:block;font-size:9.5px;color:#7C8CB0;margin-top:2px;}
+.lc-fx{margin-top:4px;display:flex;flex-direction:column;gap:3px;align-items:center;}
+.lc-fx.mixed{font-size:9.5px;color:#9FB0D4;}
+.lc-fxt{display:flex;align-items:center;gap:4px;min-width:0;max-width:100%;}
+.lc-fxt .avatar,.lc-fxt .avatar-fb{width:18px;height:18px;font-size:8px;flex:none;}
+.lc-fxn{font-size:10px;font-weight:600;color:#C7D2E8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.lc-rowlbl{display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:11px;letter-spacing:.04em;color:#7C8CB0;}
+.lc-board.dense .lc-tile{padding:7px 5px 6px;} .lc-board.dense .lc-pp{font-size:10px;}
+.lc-board.dense .lc-fxn{font-size:9px;} .lc-board.dense .lc-fxt .avatar,.lc-board.dense .lc-fxt .avatar-fb{width:16px;height:16px;}
 .lc-slot{border-radius:12px;min-width:0;display:flex;} .lc-slot > .lc-tile{flex:1;}
 .lc-tile{position:relative;border-radius:12px;padding:9px 8px 7px;min-height:104px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;cursor:pointer;transition:transform .08s;text-align:left;width:100%;border:0;font-family:var(--font-body);}
 .lc-tile:active{transform:scale(.97);}
