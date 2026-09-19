@@ -1237,6 +1237,10 @@ function switchHubTab(name) {
   // A glance-at stat, not a live dashboard — refreshed on entering the tab
   // rather than polled continuously in the background.
   if (name === "admin" && isOwner) renderLiveCount();
+  // Warm the player index the moment this tab opens, not the moment
+  // someone starts typing — by the time they've typed anything it's
+  // often already in hand. loadPlayerIndex is a no-op if already loading.
+  if (name === "search" && playerAccount) loadPlayerIndex();
 }
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
   btn.onclick = () => switchHubTab(btn.dataset.hubview);
@@ -1715,7 +1719,7 @@ async function refreshAccountStatus() {
 function openClaimPanel() {
   const panel = el("claim-panel");
   panel.style.display = panel.style.display === "none" ? "block" : "none";
-  if (panel.style.display === "block") el("account-search-input").focus();
+  if (panel.style.display === "block") { el("account-search-input").focus(); loadPlayerIndex(); }
 }
 el("toggle-claim-panel").onclick = openClaimPanel;
 el("toggle-captain-panel").onclick = () => {
@@ -1790,17 +1794,15 @@ if (resetTokenInUrl) {
   el("account-reset-card").style.display = "block";
 }
 
-let accountSearchTimer = null;
 el("account-search-input").addEventListener("input", () => {
-  clearTimeout(accountSearchTimer);
   const q = el("account-search-input").value.trim();
   if (!q) { el("account-search-results").innerHTML = ""; return; }
-  // Immediate feedback the moment typing pauses, not just once the network
-  // round trip resolves — on a slow mobile connection that round trip alone
-  // can take longer than this whole debounce, and with nothing on screen in
-  // between it reads as the search having done nothing yet.
-  el("account-search-results").innerHTML = '<p class="empty">Searching…</p>';
-  accountSearchTimer = setTimeout(() => runAccountSearch(q), 200);
+  // No debounce needed any more — filtering the already-loaded index (see
+  // loadPlayerIndex) is a synchronous in-memory scan, not a network call,
+  // so there's nothing left to throttle. The one case this still awaits
+  // anything is the very first character typed before the index itself
+  // has finished its one-time fetch.
+  runAccountSearch(q);
 });
 // A real card — avatar, name, team/league — instead of a bare text row,
 // shared by both search surfaces (claim-search here, and the read-only
@@ -1814,39 +1816,33 @@ function playerSearchRowHtml(r, actionHtml) {
     ${actionHtml}
   </div>`;
 }
-// Typing more characters after a query that already came back under the
-// server's 30-result cap (i.e. a COMPLETE match set, not just the first 30
-// of more) can be refined by filtering that same set client-side instead of
-// paying another network round trip — on this hosting, that round trip is
-// several hundred ms even for a tiny response, which is what actually makes
-// search feel slow, not the 200ms debounce. A capped (possibly-partial) set
-// is never cached, since narrowing it further could hide a real match that
-// didn't fit in the first 30.
-function makePlayerSearchCache() {
-  let entry = null; // { query (lowercased), results }
-  return {
-    lookup(q) {
-      if (entry && q.startsWith(entry.query)) return entry.results.filter((r) => r.playerName.toLowerCase().includes(q));
-      return null;
-    },
-    store(q, results) { entry = results.length < 30 ? { query: q, results } : null; },
-    invalidate() { entry = null; },
-  };
+// The whole trimmed player list (see /players/search-index), fetched once
+// and reused for every keystroke on either search surface — this is what
+// actually fixed search feeling slow: the per-keystroke network round trip
+// itself (several hundred ms on this hosting, even for a tiny response),
+// not the name-matching, which is a trivial in-memory scan either way.
+// Loaded lazily on first use, and also warmed early (see openClaimPanel /
+// switchHubTab) so it's often already in hand by the time anyone types.
+let playerIndexPromise = null;
+function loadPlayerIndex() {
+  if (!playerIndexPromise) playerIndexPromise = api("/players/search-index").catch(() => []);
+  return playerIndexPromise;
 }
-const accountSearchCache = makePlayerSearchCache();
-// Bumped on every network fetch so a slower, now-stale request (the previous
-// keystroke's search, still in flight on a slow connection) can't land
-// after a newer one and flash outdated results over the current query.
-let accountSearchGen = 0;
-async function runAccountSearch(qRaw) {
+// Claiming a record only changes that one row's `claimed` flag — patching
+// it in place in the already-loaded index avoids throwing the whole thing
+// away and paying for a full re-fetch just to reflect one claim.
+async function markPlayerIndexClaimed(playerId) {
+  const all = await loadPlayerIndex();
+  const row = all.find((p) => p.playerId === playerId);
+  if (row) row.claimed = true;
+}
+function filterPlayerIndex(all, qRaw) {
   const q = qRaw.trim().toLowerCase();
-  let results = accountSearchCache.lookup(q);
-  if (!results) {
-    const gen = ++accountSearchGen;
-    results = await api("/players/search?q=" + encodeURIComponent(qRaw)).catch(() => []);
-    if (gen !== accountSearchGen) return;
-    accountSearchCache.store(q, results);
-  }
+  return q ? all.filter((p) => p.playerName.toLowerCase().includes(q)).slice(0, 30) : [];
+}
+async function runAccountSearch(qRaw) {
+  const all = await loadPlayerIndex();
+  const results = filterPlayerIndex(all, qRaw);
   const c = el("account-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   // Already claimed isn't a dead end — the real owner of that name can
@@ -1860,7 +1856,7 @@ async function runAccountSearch(qRaw) {
       const row = btn.closest(".player-search-row");
       try {
         await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
-        accountSearchCache.invalidate();
+        await markPlayerIndexClaimed(row.dataset.player);
         await runAccountSearch(qRaw);
         await renderAccountProfile();
       } catch (e) { alert(e.message); }
@@ -1880,25 +1876,14 @@ async function runAccountSearch(qRaw) {
 // Read-only lookup of anyone's record — no claim button, no "this is me".
 // Reuses the exact same /players/search endpoint and the tabbed
 // cross-league history modal, just without any write action attached.
-let playerSearchTimer = null;
 el("player-search-input").addEventListener("input", () => {
-  clearTimeout(playerSearchTimer);
   const q = el("player-search-input").value.trim();
   if (!q) { el("player-search-results").innerHTML = ""; return; }
-  el("player-search-results").innerHTML = '<p class="empty">Searching…</p>';
-  playerSearchTimer = setTimeout(() => runPlayerSearch(q), 200);
+  runPlayerSearch(q);
 });
-const playerSearchCache = makePlayerSearchCache();
-let playerSearchGen = 0;
 async function runPlayerSearch(qRaw) {
-  const q = qRaw.trim().toLowerCase();
-  let results = playerSearchCache.lookup(q);
-  if (!results) {
-    const gen = ++playerSearchGen;
-    results = await api("/players/search?q=" + encodeURIComponent(qRaw)).catch(() => []);
-    if (gen !== playerSearchGen) return;
-    playerSearchCache.store(q, results);
-  }
+  const all = await loadPlayerIndex();
+  const results = filterPlayerIndex(all, qRaw);
   const c = el("player-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   c.innerHTML = results.map((r) => playerSearchRowHtml(r, '<button class="secondary view-player-btn" type="button">View profile</button>')).join("");

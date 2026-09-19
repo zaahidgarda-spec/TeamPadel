@@ -171,12 +171,23 @@ function minifyAssetOrFallback(filename, loader) {
 }
 const minifiedAppJs = minifyAssetOrFallback("app.js", "js");
 const minifiedStylesCss = minifyAssetOrFallback("styles.css", "css");
+// A request carrying the version query string (?v=ASSET_VERSION, always
+// how index.html itself references these) is asking for THIS exact
+// deploy's bytes — that content can never change under that URL, since a
+// new deploy gets a new ASSET_VERSION and therefore a new URL. Safe to
+// cache for a year. A bare /app.js with no query (nothing on this site
+// links to it that way, but a stale bookmark or direct hit could) stays
+// no-cache, same as before, since there's no version pinned to trust.
+// This is what actually fixes "the installed app feels slow" — a
+// standalone PWA gets killed and cold-reloaded by iOS/Android far more
+// often than a browser tab ever is, and until now every one of those
+// reopens re-downloaded this whole ~114KB (gzipped) bundle from scratch.
 app.get("/app.js", (req, res) => {
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", req.query.v ? "public, max-age=31536000, immutable" : "no-cache");
   res.type("application/javascript").send(minifiedAppJs);
 });
 app.get("/styles.css", (req, res) => {
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", req.query.v ? "public, max-age=31536000, immutable" : "no-cache");
   res.type("text/css").send(minifiedStylesCss);
 });
 

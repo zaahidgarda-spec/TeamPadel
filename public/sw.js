@@ -68,6 +68,15 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
   if (event.request.method !== "GET") return;
 
+  // A versioned app.js/styles.css (?v=...) is pinned to one exact deploy's
+  // bytes — the server now sends it a year-long immutable Cache-Control,
+  // so letting this request fall through untouched (rather than the
+  // cache:"no-store" override below) lets the browser's own HTTP cache
+  // serve it instantly on a repeat load, no network round trip at all.
+  // index.html itself is NOT covered by this — it stays network-first
+  // below, so it always points at whichever version is actually current.
+  if ((url.pathname === "/app.js" || url.pathname === "/styles.css") && url.searchParams.has("v")) return;
+
   // Network-first: always try to fetch the latest version. The cache is
   // purely a fallback for when the network is unavailable (offline / flaky
   // connection), not a source of truth to prefer over it. The old

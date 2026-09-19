@@ -1363,6 +1363,19 @@ router.get("/players/search", requirePlayerUser, (req, res) => {
   const q = ((req.query.q || "") + "").trim().toLowerCase();
   res.json(q ? searchPlayersAcrossLeagues(q) : []);
 });
+// The whole trimmed player list (no logos, same shape searchPlayersAcrossLeagues
+// returns) in one response, fetched once by the client and filtered
+// in-browser after that — replaces a network round trip per keystroke
+// with a single upfront one. That round trip, not the name-matching
+// itself, is what actually made search feel slow (several hundred ms on
+// this hosting, per keystroke once debounced) — see loadPlayerIndex in
+// app.js. No `q`/cap here since the client owns the filtering now.
+router.get("/players/search-index", requirePlayerUser, (req, res) => {
+  res.json(allPlayersFlat().map((p) => ({
+    leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
+    playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
+  })));
+});
 
 // Links one player record to one user account — used both by a player
 // claiming themselves and by the owner combining records on someone's
