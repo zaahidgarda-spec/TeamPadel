@@ -1718,7 +1718,10 @@ async function refreshAccountStatus() {
   el("search-signed-in-card").style.display = playerAccount ? "block" : "none";
   el("news-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("news-signed-in-card").style.display = playerAccount ? "block" : "none";
-  if (playerAccount) renderAccountNews();
+  // Warmed the moment someone's known to be signed in — well before they
+  // open either search box — and dropped on sign-out so a shared device
+  // never keeps the list around for the next person.
+  if (playerAccount) { renderAccountNews(); loadPlayerIndex(); } else clearPlayerIndexCache();
   if (resetTokenInUrl) {
     switchHubTab("account");
     el("account-signed-out-card").style.display = "none";
@@ -1816,6 +1819,7 @@ if (resetTokenInUrl) {
 el("account-search-input").addEventListener("input", () => {
   const q = el("account-search-input").value.trim();
   if (!q) { el("account-search-results").innerHTML = ""; return; }
+  if (!playerIndexReady) el("account-search-results").innerHTML = '<p class="empty">Searching…</p>';
   // No debounce needed any more — filtering the already-loaded index (see
   // loadPlayerIndex) is a synchronous in-memory scan, not a network call,
   // so there's nothing left to throttle. The one case this still awaits
@@ -1843,8 +1847,42 @@ function playerSearchRowHtml(r, actionHtml) {
 // Loaded lazily on first use, and also warmed early (see openClaimPanel /
 // switchHubTab) so it's often already in hand by the time anyone types.
 let playerIndexPromise = null;
+let playerIndexReady = false;
+const PLAYER_INDEX_STORAGE_KEY = "padel-player-index-v1";
+function readPlayerIndexCache() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PLAYER_INDEX_STORAGE_KEY) || "null");
+    return stored && Array.isArray(stored.data) && stored.data.length ? stored.data : null;
+  } catch { return null; }
+}
+function writePlayerIndexCache(data) {
+  try { localStorage.setItem(PLAYER_INDEX_STORAGE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* storage full/private mode — just skip caching */ }
+}
+function clearPlayerIndexCache() {
+  playerIndexPromise = null; playerIndexReady = false;
+  try { localStorage.removeItem(PLAYER_INDEX_STORAGE_KEY); } catch { /* nothing to clear */ }
+}
+// Stale-while-revalidate: a copy from the last visit answers searches
+// instantly, while a fresh one is fetched behind it and swapped in. An
+// installed app loses everything in memory whenever the OS closes it, so
+// without this every reopen meant typing into a search box that had
+// nothing to search yet until a whole round trip finished. A failed fetch
+// never gets remembered as "no players" — the next call just tries again.
 function loadPlayerIndex() {
-  if (!playerIndexPromise) playerIndexPromise = api("/players/search-index").catch(() => []);
+  if (playerIndexPromise) return playerIndexPromise;
+  const fresh = api("/players/search-index").then((data) => {
+    writePlayerIndexCache(data);
+    playerIndexReady = true;
+    return data;
+  });
+  const cached = readPlayerIndexCache();
+  if (cached) {
+    playerIndexReady = true;
+    playerIndexPromise = Promise.resolve(cached);
+    fresh.then((data) => { playerIndexPromise = Promise.resolve(data); }).catch(() => {});
+  } else {
+    playerIndexPromise = fresh.catch(() => { playerIndexPromise = null; return []; });
+  }
   return playerIndexPromise;
 }
 // Claiming or unclaiming a record only changes that one row's `claimed`
@@ -1858,7 +1896,7 @@ function loadPlayerIndex() {
 async function markPlayerIndexClaimed(playerId, claimed) {
   const all = await loadPlayerIndex();
   const row = all.find((p) => p.playerId === playerId);
-  if (row) row.claimed = claimed;
+  if (row) { row.claimed = claimed; writePlayerIndexCache(all); }
 }
 function filterPlayerIndex(all, qRaw) {
   const q = qRaw.trim().toLowerCase();
@@ -1903,6 +1941,7 @@ async function runAccountSearch(qRaw) {
 el("player-search-input").addEventListener("input", () => {
   const q = el("player-search-input").value.trim();
   if (!q) { el("player-search-results").innerHTML = ""; return; }
+  if (!playerIndexReady) el("player-search-results").innerHTML = '<p class="empty">Searching…</p>';
   runPlayerSearch(q);
 });
 async function runPlayerSearch(qRaw) {
