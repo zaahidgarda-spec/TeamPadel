@@ -1657,9 +1657,50 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/claim-request", r
   res.json({ ok: true });
 });
 
+// A team's own next fixture, straight off the schedule — no lineup
+// submission required, unlike logic.findPlayerUpcoming (which is about a
+// specific player's pairing once selections are in). "Your Fixtures" on My
+// Profile needs the real next match the moment it's on the calendar, not
+// just once both captains have picked their pairs.
+function teamNextFixture(league, team) {
+  const upcoming = logic.allFixturesOf(league)
+    .filter((f) => !f.finalized && f.teamA && f.teamB && (f.teamA === team.id || f.teamB === team.id))
+    .map((f) => {
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
+      return {
+        fixtureId: f.id, label: fixtureLabel(league, f),
+        opponentTeamId: oppTeam ? oppTeam.id : null,
+        opponentTeam: oppTeam ? oppTeam.name : "TBD",
+        opponentLogo: oppTeam ? oppTeam.logo || "" : "",
+        date: sched.date || "", time: sched.time || "",
+      };
+    })
+    .sort((a, b) => {
+      if (a.date && b.date) return (a.date + a.time).localeCompare(b.date + b.time);
+      if (a.date) return -1;
+      if (b.date) return 1;
+      return 0;
+    });
+  return upcoming[0] || null;
+}
 router.get("/players/profile", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   const cards = [];
+  // Every team this account is attached to, whether claimed as a specific
+  // player or just captained — a captain who's never personally claimed a
+  // roster spot on their own team still needs that team's next fixture to
+  // show up here. Deduped by team so a claimed-and-captained team only
+  // contributes one fixture card.
+  const fixtureCards = [];
+  const fixtureTeamKeys = new Set();
+  const addFixtureTeam = (league, team) => {
+    const key = league.id + ":" + team.id;
+    if (fixtureTeamKeys.has(key)) return;
+    fixtureTeamKeys.add(key);
+    const next = teamNextFixture(league, team);
+    if (next) fixtureCards.push(Object.assign({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "" }, next));
+  };
   let changed = false;
   // Computed once for this whole request, not once per claimed card — every
   // card belonging to this account resolves to the SAME rating entry below
@@ -1796,10 +1837,22 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       isTeamOwner: (team.ownerIds || []).includes(player.id),
       liveNow,
     });
+    addFixtureTeam(league, team);
     return true;
   });
+  (user.captaincies || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    const team = league && league.teams.find((t) => t.id === c.teamId);
+    if (league && team) addFixtureTeam(league, team);
+  });
+  fixtureCards.sort((a, b) => {
+    if (a.date && b.date) return (a.date + a.time).localeCompare(b.date + b.time);
+    if (a.date) return -1;
+    if (b.date) return 1;
+    return 0;
+  });
   if (changed) store.saveUser(user.id, user);
-  res.json({ name: user.name, cards });
+  res.json({ name: user.name, cards, fixtureCards });
 });
 
 // News Room, aggregated across every league this account has a claimed

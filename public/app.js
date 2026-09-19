@@ -2074,11 +2074,11 @@ async function renderAccountPendingResults() {
   });
 }
 async function renderAccountProfile() {
-  const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
+  const { cards, fixtureCards } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [] }));
   renderAccountAvatar(cards);
   renderAccountNextMatch(cards);
   renderAccountTables(cards);
-  renderAccountFixtures(cards);
+  renderAccountFixtures(fixtureCards || []);
   const due = await api("/players/lineups-due").catch(() => []);
   renderAccountNeedsAttention(cards, due);
   renderAccountLineupsDue(due);
@@ -2400,7 +2400,7 @@ function renderAccountTables(cards) {
   const rowHtml = (r, qualifies) => {
     const moveHtml = r.move > 0 ? `<span class="pd-table-move up">▲${r.move > 1 ? r.move : ""}</span>`
       : r.move < 0 ? `<span class="pd-table-move down">▼${-r.move > 1 ? -r.move : ""}</span>` : "";
-    return `<div class="pd-table-row${r.isMine ? " mine" : ""}${qualifies ? " playoff-qualifies" : ""}">
+    return `<div class="pd-table-row${r.isMine ? " mine" : ""}${qualifies ? " playoff-qualifies" : ""}" data-team-id="${r.id}">
       <span class="pd-table-rank">${r.rank}</span>
       ${avatarHtml({ logo: r.logo, name: r.name })}
       <span class="pd-table-name">${escapeHtml(r.name)}</span>
@@ -2424,7 +2424,7 @@ function renderAccountTables(cards) {
     const myRowHtml = s.myRow ? `<div class="pd-table-divider">${rowHtml(s.myRow, false)}</div>` : "";
     const liveBadge = s.live ? '<span class="tag badge-live">Live</span>' : "";
     const note = s.live ? '<div class="pd-table-note">Includes scores live on court or entered but not yet finalized.</div>' : "";
-    return `<div class="pd-table-card">
+    return `<div class="pd-table-card" data-league="${card.leagueId}">
       <div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>
       ${topRowsHtml}
       ${moreHtml}
@@ -2436,41 +2436,50 @@ function renderAccountTables(cards) {
   // the real Table tab is the whole point of "show full table", not just
   // dropping the captain onto whatever tab openLeague defaults to.
   el("account-tables-scroll").querySelectorAll(".pd-table-more").forEach((btn) => {
-    btn.onclick = async () => { await openLeague(btn.dataset.league); switchTab("table"); };
+    btn.onclick = async (e) => { e.stopPropagation(); await openLeague(btn.dataset.league); switchTab("table"); };
+  });
+  // Tapping a team here opens the exact same roster popup its row on the
+  // real Table tab does (openTeamModal) — jumping into that league first
+  // if it isn't the one already loaded, since the modal reads off the
+  // live `league` global rather than taking one as an argument.
+  el("account-tables-scroll").querySelectorAll(".pd-table-row[data-team-id]").forEach((row) => {
+    row.onclick = async () => {
+      const leagueId = row.closest(".pd-table-card").dataset.league;
+      if (currentLeagueId !== leagueId) await openLeague(leagueId);
+      openTeamModal(row.dataset.teamId);
+    };
   });
 }
-// Your single soonest upcoming fixture in each claimed league — a compact
-// "match preview" card (crests either side of a VS pill, the same win%
-// bar Tonight's Matches already uses) rather than the plain text list an
-// earlier pass had, one per league so it scales the same way Your Tables
-// does.
-function renderAccountFixtures(cards) {
+// The real next fixture for every team this account touches — claimed or
+// just captained (see the fixtureCards field /players/profile builds off
+// teamNextFixture, straight from the schedule rather than gated on a
+// lineup being submitted) — one card per team so it scales the same way
+// Your Tables does.
+function renderAccountFixtures(fixtureCards) {
   const wrap = el("account-fixtures-section");
-  const items = [];
-  cards.forEach((card) => {
-    if (!card.upcoming.length) return;
-    const soonest = card.upcoming.slice().sort((a, b) => {
-      if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
-      if (a.date) return -1;
-      if (b.date) return 1;
-      return 0;
-    })[0];
-    items.push(Object.assign({ leagueId: card.leagueId, leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo }, soonest));
-  });
-  if (items.length === 0) { wrap.style.display = "none"; return; }
+  if (fixtureCards.length === 0) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
-  el("account-fixtures-scroll").innerHTML = items.map((m) => {
+  el("account-fixtures-scroll").innerHTML = fixtureCards.map((m) => {
     const whenText = [m.date ? fmtDate(m.date) : "", m.time ? fmtTime(m.time) : ""].filter(Boolean).join(" · ") || "Date TBC";
-    return `<div class="pd-fixture-card">
+    return `<div class="pd-fixture-card" data-league="${m.leagueId}">
       <span class="league-tag">${escapeHtml(m.leagueName)}</span>
       <div class="pd-fixture-sides">
-        <div class="pd-fixture-side">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
+        <div class="pd-fixture-side" data-team-id="${m.teamId}">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
         <span class="vs">vs</span>
-        <div class="pd-fixture-side">${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
+        <div class="pd-fixture-side"${m.opponentTeamId ? ` data-team-id="${m.opponentTeamId}"` : ""}>${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
       </div>
       <div class="pd-fixture-meta">${escapeHtml(whenText)}</div>
     </div>`;
   }).join("");
+  // Same team-roster popup as Your Tables — tap either crest to see that
+  // team, jumping into its league first if it isn't already loaded.
+  el("account-fixtures-scroll").querySelectorAll(".pd-fixture-side[data-team-id]").forEach((side) => {
+    side.onclick = async () => {
+      const leagueId = side.closest(".pd-fixture-card").dataset.league;
+      if (currentLeagueId !== leagueId) await openLeague(leagueId);
+      openTeamModal(side.dataset.teamId);
+    };
+  });
 }
 // The single soonest upcoming match across every claimed record — "your
 // next match," personalized, rather than the generic per-league carousel
