@@ -559,6 +559,13 @@ table.log tr.rank1 td{background:var(--accent-soft);}
 .team-roster-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);}
 .team-roster-row:last-child{border-bottom:none;}
 .rank-row.leader{background:linear-gradient(90deg,var(--accent-soft),var(--panel) 68%);border-color:var(--accent);}
+/* A semis_final league's top 4 qualify for the playoffs — picked out in
+   bold, with a dashed "cutoff" divider (label + line, not just a bare
+   dash, so it reads on its own without a legend) right after 4th place. */
+.rank-row.playoff-qualifies .rank-name{font-weight:700;}
+.rank-cutoff-divider{display:flex;align-items:center;gap:10px;margin:2px 2px;}
+.rank-cutoff-divider::before,.rank-cutoff-divider::after{content:"";flex:1;border-top:2px dashed var(--accent);}
+.rank-cutoff-divider span{font-family:var(--font-display);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);white-space:nowrap;}
 .rank-badge{position:relative;width:32px;height:32px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--text-dim);flex-shrink:0;}
 .rank-move{position:absolute;top:-6px;right:-8px;font-size:8.5px;font-weight:700;line-height:1;background:var(--panel);border-radius:999px;padding:1.5px 3px;box-shadow:0 1px 2px rgba(18,32,58,.15);}
 .rank-move.up{color:var(--success);}
@@ -960,6 +967,12 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-table-row .avatar,.pd-table-row .avatar-fb{width:18px;height:18px;font-size:8px;flex-shrink:0;}
 .pd-table-name{flex:1;font-size:11.5px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pd-table-row.mine .pd-table-name{font-weight:700;color:var(--accent);}
+/* Same semis_final "top 4 qualify" treatment as the real Table tab, scaled
+   down — bold name, a small labeled cutoff divider after 4th place. */
+.pd-table-row.playoff-qualifies .pd-table-name{font-weight:700;}
+.pd-table-cutoff{display:flex;align-items:center;gap:6px;margin:4px 0;}
+.pd-table-cutoff::before,.pd-table-cutoff::after{content:"";flex:1;border-top:1.5px dashed var(--accent);}
+.pd-table-cutoff span{font-family:var(--font-display);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);white-space:nowrap;}
 .pd-table-pts{font-family:var(--font-display);font-size:11.5px;font-weight:700;color:var(--text-dim);flex-shrink:0;}
 .pd-table-row.mine .pd-table-pts{color:var(--accent);}
 .pd-table-you{font-family:var(--font-display);font-size:9px;font-weight:700;color:var(--accent);background:rgba(37,99,235,.15);padding:2px 6px;border-radius:var(--radius-full);flex-shrink:0;}

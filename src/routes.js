@@ -1751,6 +1751,11 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       standings = {
         totalTeams: ranked.length,
         live: ranked.some((r) => r.move !== 0),
+        // The client draws the "top 4 qualify" cutoff off this — passed
+        // through as-is rather than a resolved boolean, since whether it
+        // actually applies also depends on team count, which the client
+        // already has via totalTeams.
+        playoffFormat: league.playoffFormat || "none",
         topRows,
         myRow: myRow && myRow.rank > TABLE_CAP ? myRow : null,
       };

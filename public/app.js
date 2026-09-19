@@ -2316,10 +2316,11 @@ function renderAccountTables(cards) {
   const withTables = cards.filter((c) => c.standings);
   if (withTables.length === 0) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
-  const rowHtml = (r) => {
+  const PLAYOFF_SPOTS = 4;
+  const rowHtml = (r, qualifies) => {
     const moveHtml = r.move > 0 ? `<span class="pd-table-move up">▲${r.move > 1 ? r.move : ""}</span>`
       : r.move < 0 ? `<span class="pd-table-move down">▼${-r.move > 1 ? -r.move : ""}</span>` : "";
-    return `<div class="pd-table-row${r.isMine ? " mine" : ""}">
+    return `<div class="pd-table-row${r.isMine ? " mine" : ""}${qualifies ? " playoff-qualifies" : ""}">
       <span class="pd-table-rank">${r.rank}</span>
       ${avatarHtml({ logo: r.logo, name: r.name })}
       <span class="pd-table-name">${escapeHtml(r.name)}</span>
@@ -2330,14 +2331,22 @@ function renderAccountTables(cards) {
   };
   el("account-tables-scroll").innerHTML = withTables.map((card) => {
     const s = card.standings;
+    // A semis_final league's top 4 qualify — same cutoff the real Table
+    // tab shows, just scaled down. Only worth drawing when there's an
+    // actual in/out split to show (more teams than spots).
+    const hasCutoff = s.playoffFormat === "semis_final" && s.totalTeams > PLAYOFF_SPOTS;
+    const topRowsHtml = s.topRows.map((r) => {
+      const row = rowHtml(r, hasCutoff && r.rank <= PLAYOFF_SPOTS);
+      return hasCutoff && r.rank === PLAYOFF_SPOTS ? row + '<div class="pd-table-cutoff"><span>Playoff cutoff</span></div>' : row;
+    }).join("");
     const moreHtml = s.totalTeams > s.topRows.length
       ? `<button type="button" class="pd-table-more" data-league="${card.leagueId}">Show full table (${s.totalTeams})</button>` : "";
-    const myRowHtml = s.myRow ? `<div class="pd-table-divider">${rowHtml(s.myRow)}</div>` : "";
+    const myRowHtml = s.myRow ? `<div class="pd-table-divider">${rowHtml(s.myRow, false)}</div>` : "";
     const liveBadge = s.live ? '<span class="tag badge-live">Live</span>' : "";
     const note = s.live ? '<div class="pd-table-note">Includes scores live on court or entered but not yet finalized.</div>' : "";
     return `<div class="pd-table-card">
       <div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>
-      ${s.topRows.map(rowHtml).join("")}
+      ${topRowsHtml}
       ${moreHtml}
       ${myRowHtml}
       ${note}
@@ -9760,7 +9769,7 @@ function renderTable() {
   const stWinnerId = superTieWinnerClient();
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams to see the table.</p>'; }
   else {
-    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs", stWinnerId, priorRankMapClient());
+    c.innerHTML = standingsRowsHtml(rows, league.format === "pairs", stWinnerId, priorRankMapClient(), league.playoffFormat);
     bindPlayerLinks(c);
     bindTeamRowLinks(c);
   }
@@ -9870,10 +9879,16 @@ function renderTable() {
 // history archive view (a read-only look at a past, no-longer-live season)
 // can show an identical-looking table from its own precomputed rows,
 // without duplicating the row-building logic.
-function standingsRowsHtml(rows, isPairs, superTieWinnerId, priorRankMap) {
+// `playoffFormat` is only ever passed for the live league's own table
+// (not an archived season's) — the top 4 mattering because semis are
+// about to be generated is a live-season idea, not a historical one.
+function standingsRowsHtml(rows, isPairs, superTieWinnerId, priorRankMap, playoffFormat) {
+  const PLAYOFF_SPOTS = 4;
+  const hasCutoff = playoffFormat === "semis_final" && rows.length > PLAYOFF_SPOTS;
   let html = '<div class="leaderboard">';
   rows.forEach((r, i) => {
     const isLeader = i === 0 && r.played > 0;
+    const qualifies = hasCutoff && i < PLAYOFF_SPOTS;
     // No completed round yet (priorRankMap null) or this exact team wasn't
     // ranked before it (e.g. added mid-season) both mean there's nothing
     // real to compare against — show no arrow rather than a fake "–".
@@ -9899,13 +9914,14 @@ function standingsRowsHtml(rows, isPairs, superTieWinnerId, priorRankMap) {
     // openTeamModal) — pairs format skips this, each player's own name is
     // already its own link right there in nameHtml.
     const teamAttr = isPairs ? "" : ` data-team-id="${r.id}"`;
-    html += `<div class="rank-row${isLeader ? " leader" : ""}${isPairs ? "" : " row-clickable"}"${teamAttr}>
+    html += `<div class="rank-row${isLeader ? " leader" : ""}${isPairs ? "" : " row-clickable"}${qualifies ? " playoff-qualifies" : ""}"${teamAttr}>
       <div class="rank-badge">${i + 1}${moveHtml}</div>
       <div class="rank-name">${avatarHtml(r)}<span>${nameHtml}</span>${stTag}</div>
       <div class="rank-stats">${stats.map((s) => `<div class="rank-stat"><span class="v">${s.v}</span><span class="l">${s.l}</span></div>`).join("")}</div>
       <div class="rank-pts"><span class="n">${r.points}</span><span class="l">Pts</span></div>
       <div class="rank-summary">${escapeHtml(summary)}</div>
     </div>`;
+    if (hasCutoff && i === PLAYOFF_SPOTS - 1) html += '<div class="rank-cutoff-divider"><span>Playoff cutoff</span></div>';
   });
   html += "</div>";
   return html;
