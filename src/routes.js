@@ -3832,12 +3832,27 @@ function generateSeasonCourtRotation(league) {
 // either side's line-up for this seed isn't in yet (nothing to predict).
 // Surfaced to admins on the court-balance/optimum-layout grids below so
 // "why is this court red" has a real number attached, not just a color.
+// What a manual pace stands in for — well inside bucket 0 / bucket 4 of the
+// learned-duration buckets (closenessBucket), so a Quick call gets the
+// lopsided-match time estimate and a Long call the dead-even one.
+const PACE_QUICK_CLOSENESS = 10, PACE_LONG_CLOSENESS = 90;
 function matchPrediction(league, f, seed, ratingsData, identityOf) {
   const pairA = f.selectionA.submitted && f.selectionA.pairs[seed];
   const pairB = f.selectionB.submitted && f.selectionB.pairs[seed];
   if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return null;
   const { winPctA, winPctB, provisional } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
-  return { winPctA, winPctB, provisional, closeness: 100 - Math.abs(winPctA - winPctB) };
+  const predictedCloseness = 100 - Math.abs(winPctA - winPctB);
+  // An admin's manual Quick/Long call on Live Court Control (rubber.pace)
+  // stands in for the model's guess everywhere the court balancing reads
+  // `closeness` — a match marked Long is treated as long, not just
+  // recoloured. `predictedCloseness` stays the model's own number, which is
+  // what the duration learning below has to keep using: it's learning how
+  // long matches the MODEL calls close actually run, so a human's override
+  // must never be folded into that.
+  const rubber = f.rubbers[seed];
+  const pace = rubber && rubber.pace;
+  const closeness = pace === "quick" ? PACE_QUICK_CLOSENESS : pace === "long" ? PACE_LONG_CLOSENESS : predictedCloseness;
+  return { winPctA, winPctB, provisional, closeness, predictedCloseness };
 }
 // Which of Live Court Control's 5 learned-duration buckets a closeness
 // score falls into (0 = lopsided/quick, 4 = dead even/long) — shared by
@@ -5084,6 +5099,26 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/start", require
   res.json({ ok: true, startedAt: f.rubbers[idx].startedAt });
 });
 
+// Live Court Control: an admin's manual call on how long a match will run —
+// "quick" (green) or "long" (red) — overriding the app's own guess from the
+// win-probability gap. null hands it back to the app. Only meaningful before
+// the match starts (once it's live the real clock takes over).
+router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/pace", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  const { pace } = req.body || {};
+  if (pace !== null && pace !== "quick" && pace !== "long") return res.status(400).json({ error: "Pace must be quick, long or null." });
+  const rubber = f.rubbers[idx];
+  if (rubber.startedAt) return res.status(400).json({ error: "This match has already started." });
+  if (pace) rubber.pace = pace; else delete rubber.pace;
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, pace: rubber.pace || null });
+});
+
 // Live Court Control: mark a rubber finished — deliberately independent of
 // posting a score (that stays the existing, optional PUT .../rubbers/:idx
 // above) and of finalizing the whole fixture (POST .../finalize below,
@@ -5107,7 +5142,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requ
     const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
     if (pred) {
       if (!league.courtDurationStats) league.courtDurationStats = {};
-      const bucket = closenessBucket(pred.closeness);
+      const bucket = closenessBucket(pred.predictedCloseness);
       const stat = league.courtDurationStats[bucket] || (league.courtDurationStats[bucket] = { count: 0, totalMinutes: 0 });
       stat.count += 1;
       stat.totalMinutes += (rubber.completedAt - rubber.startedAt) / 60000;
@@ -5135,7 +5170,8 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requ
       startedAt: rubber.startedAt,
       completedAt: rubber.completedAt,
       durationMinutes: (rubber.completedAt - rubber.startedAt) / 60000,
-      closeness: pred ? pred.closeness : null,
+      closeness: pred ? pred.predictedCloseness : null,
+      pace: rubber.pace || null,
       winPctA: pred ? pred.winPctA : null,
       winPctB: pred ? pred.winPctB : null,
       provisional: pred ? pred.provisional : null,

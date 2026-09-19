@@ -6943,12 +6943,20 @@ function liveCourtSnapshot() {
       if (!cell) { cells.push(null); continue; }
       const f = league.fixtures.find((x) => x.id === cell.fixtureId);
       const rubber = f && f.rubbers[cell.seed];
-      cells.push(rubber ? [cell.fixtureId, cell.seed, rubber.startedAt || 0, rubber.completedAt || 0, JSON.stringify(rubber.sets)] : null);
+      cells.push(rubber ? [cell.fixtureId, cell.seed, rubber.startedAt || 0, rubber.completedAt || 0, JSON.stringify(rubber.sets), rubber.pace || ""] : null);
     }
   }
   return JSON.stringify({ round, cells, stats: league.courtDurationStats });
 }
-async function renderLiveCourtControl() {
+// What a manual Quick/Long stands in for — mirrors PACE_*_CLOSENESS in
+// src/routes.js, so the card's own estimate and the server's court
+// balancing agree on what a match marked Long means.
+const PACE_QUICK_CLOSENESS = 10, PACE_LONG_CLOSENESS = 90;
+// The win-probability split behind every card, kept between renders so
+// changing one card's pace redraws instantly instead of waiting on a
+// fresh predictions request for a number that hasn't moved.
+let livePredictionsCache = { key: null, data: null };
+async function renderLiveCourtControl(opts) {
   const card = el("live-court-card");
   if (!card) return;
   if (league.format === "pairs" || !viewingKey) {
@@ -6978,7 +6986,13 @@ async function renderLiveCourtControl() {
   // Same predictions endpoint the Predictions tab already uses — no new
   // server work needed just to read each seed's win% split here too.
   const qs = viewingKey.stage === "regular" ? `?round=${viewingKey.round}` : `?stage=${viewingKey.key}`;
-  const predData = await api(`/leagues/${currentLeagueId}/predictions${qs}`).catch(() => ({ fixtures: [] }));
+  const predKey = currentLeagueId + qs;
+  let predData;
+  if (opts && opts.reusePredictions && livePredictionsCache.key === predKey) predData = livePredictionsCache.data;
+  else {
+    predData = await api(`/leagues/${currentLeagueId}/predictions${qs}`).catch(() => ({ fixtures: [] }));
+    livePredictionsCache = { key: predKey, data: predData };
+  }
   const predictionFor = (fixtureId, seedIdx) => {
     const pf = (predData.fixtures || []).find((x) => x.fixtureId === fixtureId);
     const s = pf && pf.seeds.find((x) => x.seed === seedIdx + 1);
@@ -7001,9 +7015,14 @@ async function renderLiveCourtControl() {
       const rubber = f.rubbers[cell.seed];
       const state = rubber.completedAt ? "done" : rubber.startedAt ? "live" : "upcoming";
       const pred = predictionFor(cell.fixtureId, cell.seed);
-      const closeness = pred ? 100 - Math.abs(pred.winPctA - pred.winPctB) : 50;
+      const predictedCloseness = pred ? 100 - Math.abs(pred.winPctA - pred.winPctB) : 50;
+      // An admin's manual Quick/Long (rubber.pace) stands in for the app's
+      // own guess — for the colour, the time estimate, and the court-load
+      // sums below alike, so a match marked Long counts as long everywhere.
+      const pace = rubber.pace || null;
+      const closeness = pace === "quick" ? PACE_QUICK_CLOSENESS : pace === "long" ? PACE_LONG_CLOSENESS : predictedCloseness;
       const estMins = estimateMinutesForCloseness(closeness);
-      cellInfo[s][c] = { f, rubber, state, closeness, estMins };
+      cellInfo[s][c] = { f, rubber, state, closeness, estMins, pace, predictedCloseness, pred };
       if (state === "upcoming") courtLoadUpcoming[c] += estMins;
     }
   }
@@ -7046,20 +7065,37 @@ async function renderLiveCourtControl() {
         continue;
       }
 
-      const { rubber, state, closeness, estMins } = cellInfo[s][c];
+      const { rubber, state, closeness, estMins, pace, predictedCloseness, pred } = cellInfo[s][c];
       const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
 
       const box = document.createElement("div");
-      box.className = "lc-cell lc-" + state;
+      // Whole-card colour for a match still to play: green = quick, red =
+      // close and so likely long. Bright/solid means an admin decided it;
+      // dim/dashed is only the app's own guess.
+      const paceColour = closeness < 50 ? "g" : "r";
+      box.className = "lc-cell lc-" + state + (state === "upcoming" ? ` lc-pace-${paceColour} lc-pace-${pace ? "manual" : "auto"}` : "");
       const color = fixtureColor(cell.fixtureId, fixtures);
       box.style.setProperty("--fx-glow", fixtureGlow(color));
 
-      let inner = `<div class="lc-teams">${avatarHtml(opt.teamA)}<span class="lc-vs">v</span>${avatarHtml(opt.teamB)}</div>`;
+      let inner = "";
+      if (state === "upcoming") {
+        inner += `<div class="lc-pace-top"><div><div class="lc-pace-word">${paceColour === "g" ? "Quick" : "Long"}</div><div class="lc-pace-mins">~${estMins} min</div></div><span class="lc-pace-badge">${pace ? "Set by admin ✎" : "Auto"}</span></div>`;
+      }
+      inner += `<div class="lc-teams">${avatarHtml(opt.teamA)}<span class="lc-vs">v</span>${avatarHtml(opt.teamB)}</div>`;
       inner += `<div class="lc-pair-label">${escapeHtml(opt.shortLabel)}</div>`;
       if (state === "upcoming") {
-        const favCls = closeness < 50 ? "lc-fav-quick" : "lc-fav-close";
-        const favLabel = closeness < 50 ? "Quick" : "Close";
-        inner += `<span class="lc-tag ${favCls}">${favLabel} &middot; ~${estMins} min</span>`;
+        // Why the app landed where it did — and, once an admin has
+        // overruled it, what it would have said.
+        const favPct = pred ? Math.max(pred.winPctA, pred.winPctB) : null;
+        const guess = predictedCloseness < 50 ? "Quick" : "Long";
+        const reason = favPct === null ? "No prediction yet" : `${predictedCloseness < 50 ? "Lopsided" : "Tight match"} — ${favPct}% favourite`;
+        inner += `<div class="lc-pace-why">${pace ? `App suggested ${guess} · ` : ""}${escapeHtml(reason)}</div>`;
+        const pos = pace === "quick" ? 0 : pace === "long" ? 2 : 1;
+        const quickMins = estimateMinutesForCloseness(PACE_QUICK_CLOSENESS), longMins = estimateMinutesForCloseness(PACE_LONG_CLOSENESS);
+        inner += `<div class="lc-pace-slider" role="group" aria-label="Match pace"><div class="lc-pace-thumb" style="transform:translateX(${pos * 100}%)"></div>
+          <button type="button" class="qg${pos === 0 ? " on" : ""}" data-pace="quick">Quick<small>~${quickMins}m</small></button>
+          <button type="button"${pos === 1 ? ' class="on"' : ""} data-pace="auto">Auto<small>${guess}</small></button>
+          <button type="button" class="lr${pos === 2 ? " on" : ""}" data-pace="long">Long<small>~${longMins}m</small></button></div>`;
         const target = suggestBetterCourt(s, c);
         if (target !== null) {
           inner += `<div class="lc-suggest"><span><b>${escapeHtml(courtLabel(target))}</b> is lighter tonight — would even out the load.</span><span class="lc-suggest-apply" data-move-to="${target}">Move</span></div>`;
@@ -7085,6 +7121,24 @@ async function renderLiveCourtControl() {
       }
       box.innerHTML = inner;
       if (state === "upcoming") {
+        box.querySelectorAll(".lc-pace-slider button").forEach((btn) => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            const next = btn.dataset.pace === "auto" ? null : btn.dataset.pace;
+            if ((rubber.pace || null) === next) return;
+            const previous = rubber.pace || null;
+            // Optimistic — the card has to change the instant it's tapped,
+            // not after a round trip; put back if the server refuses.
+            if (next) rubber.pace = next; else delete rubber.pace;
+            renderLiveCourtControl({ reusePredictions: true });
+            api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/pace`, { method: "POST", body: { pace: next } })
+              .catch(async (err) => {
+                if (previous) rubber.pace = previous; else delete rubber.pace;
+                renderLiveCourtControl({ reusePredictions: true });
+                alert(err.message);
+              });
+          };
+        });
         const applyBtn = box.querySelector(".lc-suggest-apply");
         if (applyBtn) {
           applyBtn.onclick = async (e) => {
