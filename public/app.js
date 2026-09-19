@@ -1828,13 +1828,18 @@ function loadPlayerIndex() {
   if (!playerIndexPromise) playerIndexPromise = api("/players/search-index").catch(() => []);
   return playerIndexPromise;
 }
-// Claiming a record only changes that one row's `claimed` flag — patching
-// it in place in the already-loaded index avoids throwing the whole thing
-// away and paying for a full re-fetch just to reflect one claim.
-async function markPlayerIndexClaimed(playerId) {
+// Claiming or unclaiming a record only changes that one row's `claimed`
+// flag — patching it in place in the already-loaded index avoids either
+// throwing the whole thing away or (the bug this replaced) leaving it
+// stale: unclaiming a record from Your Leagues never used to touch this
+// index at all, so a record you'd just freed up could still show up in
+// search as "already claimed" — offering "Request this record" for
+// something the server itself now says nobody holds — for the rest of
+// that page session.
+async function markPlayerIndexClaimed(playerId, claimed) {
   const all = await loadPlayerIndex();
   const row = all.find((p) => p.playerId === playerId);
-  if (row) row.claimed = true;
+  if (row) row.claimed = claimed;
 }
 function filterPlayerIndex(all, qRaw) {
   const q = qRaw.trim().toLowerCase();
@@ -1856,7 +1861,7 @@ async function runAccountSearch(qRaw) {
       const row = btn.closest(".player-search-row");
       try {
         await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
-        await markPlayerIndexClaimed(row.dataset.player);
+        await markPlayerIndexClaimed(row.dataset.player, true);
         await runAccountSearch(qRaw);
         await renderAccountProfile();
       } catch (e) { alert(e.message); }
@@ -2381,6 +2386,7 @@ function renderAccountLeaguesList(cards) {
       e.stopPropagation();
       const row = btn.closest(".account-league-row");
       await api(`/players/claims/${row.dataset.league}/${row.dataset.team}/${row.dataset.player}`, { method: "DELETE" });
+      await markPlayerIndexClaimed(row.dataset.player, false);
       await renderAccountProfile();
     };
   });
