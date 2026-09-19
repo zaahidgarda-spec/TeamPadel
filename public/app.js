@@ -1911,11 +1911,16 @@ async function runPlayerSearch(qRaw) {
   const c = el("player-search-results");
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
   c.innerHTML = results.map((r) => playerSearchRowHtml(r, '<button class="secondary view-player-btn" type="button">View profile</button>')).join("");
+  // Once a search has narrowed to a handful of people, whoever's next
+  // tapped is very likely one of them — start those profile requests now
+  // rather than after the tap. Kept to a few rows so a broad one-letter
+  // query never fires dozens of requests.
+  if (results.length <= 3) results.forEach((r) => prefetchPlayerProfile(r.leagueId, r.playerId));
   c.querySelectorAll(".view-player-btn").forEach((btn) => {
-    btn.onclick = () => {
-      const row = btn.closest(".player-search-row");
-      openPlayerHistory(row.dataset.league, row.dataset.player);
-    };
+    const row = btn.closest(".player-search-row");
+    const r = results.find((x) => x.playerId === row.dataset.player && x.leagueId === row.dataset.league);
+    btn.addEventListener("pointerdown", () => prefetchPlayerProfile(row.dataset.league, row.dataset.player));
+    btn.onclick = () => openPlayerHistory(row.dataset.league, row.dataset.player, r);
   });
 }
 // The photo on a claimed record only used to show up once you clicked into
@@ -10813,10 +10818,42 @@ function insightRowsHtml(records) {
 // same person without leaving the modal or navigating pages. Each tab
 // re-fetches from scratch (the route returns everything self-contained),
 // so this never depends on some other league being loaded globally.
-async function openPlayerHistory(leagueId, playerId) {
+// A profile is one full server round trip (~0.4s+ on this hosting, before
+// a phone's own latency) — the one thing "Search players" pays that the
+// claim search doesn't, since search itself is local now. Starting that
+// request early (as soon as a search narrows to a few rows, or on the
+// first touch of View profile) means it's often already back by the time
+// the modal opens. Only ever consumed by openPlayerHistory's first load —
+// anything that reloads a profile after an edit goes around this and
+// refetches, so a cached copy can never mask a change someone just made.
+const playerProfilePrefetch = new Map();
+const PLAYER_PROFILE_PREFETCH_TTL_MS = 60000;
+function fetchPlayerProfilePair(leagueId, playerId) {
+  return Promise.all([
+    api(`/leagues/${leagueId}/players/${playerId}/history`).catch(() => null),
+    playerAccount ? api(`/leagues/${leagueId}/players/${playerId}/head-to-head`).catch(() => ({ eligible: false })) : Promise.resolve({ eligible: false }),
+  ]);
+}
+function prefetchPlayerProfile(leagueId, playerId) {
+  const key = leagueId + ":" + playerId;
+  const hit = playerProfilePrefetch.get(key);
+  if (hit && Date.now() - hit.at < PLAYER_PROFILE_PREFETCH_TTL_MS) return;
+  playerProfilePrefetch.set(key, { at: Date.now(), promise: fetchPlayerProfilePair(leagueId, playerId) });
+}
+function takePrefetchedPlayerProfile(leagueId, playerId) {
+  const key = leagueId + ":" + playerId;
+  const hit = playerProfilePrefetch.get(key);
+  playerProfilePrefetch.delete(key);
+  return hit && Date.now() - hit.at < PLAYER_PROFILE_PREFETCH_TTL_MS ? hit.promise : null;
+}
+// `hint` is whatever the caller already knows (a search row has the name,
+// team and league) — shown the instant the modal opens instead of a blank
+// "Loading…" while the real data is still on its way.
+async function openPlayerHistory(leagueId, playerId, hint) {
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-stats").innerHTML = "";
-  el("player-modal-topbar-label").textContent = "";
+  el("player-modal-name").textContent = hint ? hint.playerName : "";
+  el("player-modal-topbar-label").textContent = hint ? `${hint.teamName} · ${hint.leagueName}` : "";
   el("player-modal-photo-slot").innerHTML = "";
   el("player-modal-team-badge").innerHTML = "";
   el("player-modal-tags").innerHTML = "";
@@ -10826,7 +10863,7 @@ async function openPlayerHistory(leagueId, playerId) {
   el("player-modal-trophy-section").style.display = "none";
   el("player-modal-trophy-room").innerHTML = "";
   el("player-modal-backdrop").classList.add("open");
-  await loadPlayerHistoryTab(leagueId, playerId);
+  await loadPlayerHistoryTab(leagueId, playerId, takePrefetchedPlayerProfile(leagueId, playerId));
 }
 // Falls back to the player's own team crest (not just initials) when they
 // haven't set a real photo yet — a placeholder that's actually theirs,
@@ -10836,14 +10873,12 @@ function playerPhotoHtml(photo, name, teamLogo) {
   if (teamLogo) return `<img class="p-photo p-photo-team-fallback" src="${teamLogo}" alt="">`;
   return `<div class="p-photo-fallback">${escapeHtml(playerInitials(name))}</div>`;
 }
-async function loadPlayerHistoryTab(leagueId, playerId) {
+async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
   // Only worth asking for if someone's actually signed in — a guest has no
-  // claimed record to be "you" in "head-to-head vs you" at all, so skip
-  // the request rather than firing it just to get back {eligible:false}.
-  const [data, h2h] = await Promise.all([
-    api(`/leagues/${leagueId}/players/${playerId}/history`).catch(() => null),
-    playerAccount ? api(`/leagues/${leagueId}/players/${playerId}/head-to-head`).catch(() => ({ eligible: false })) : Promise.resolve({ eligible: false }),
-  ]);
+  // claimed record to be "you" in "head-to-head vs you" at all, so
+  // fetchPlayerProfilePair skips that request rather than firing it just to
+  // get back {eligible:false}.
+  const [data, h2h] = await (prefetched || fetchPlayerProfilePair(leagueId, playerId));
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
   el("player-modal-topbar-label").textContent = `${data.teamName} · ${data.leagueName}`;
