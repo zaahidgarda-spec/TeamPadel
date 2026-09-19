@@ -7150,6 +7150,7 @@ async function renderLiveCourtControl(opts) {
   // tap can act on exactly what this render showed.
   liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread };
   wrap.innerHTML = "";
+  updateLiveMoveBar();
   if (liveCourtView === "timeline") renderLiveTimeline(wrap); else renderLiveLanes(wrap);
   // Keep an open sheet in step with the board it belongs to (or close it if
   // its match has gone from this round).
@@ -7180,21 +7181,88 @@ function liveNames(t) {
   const a = t.opt && t.opt.teamA ? t.opt.teamA.name : "TBD", bb = t.opt && t.opt.teamB ? t.opt.teamB.name : "TBD";
   return { a, b: bb };
 }
+// "Ryan Naidoo" -> "R. Naidoo": the players a court is actually waiting on,
+// short enough for a tile. A one-word name is left as it is.
+function shortPlayerName(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts[0] || "TBD";
+  return parts[0][0].toUpperCase() + ". " + parts.slice(1).join(" ");
+}
+// Both sides of a match: the team (for its badge) and the two players who
+// are actually playing this seed.
+function liveSides(t, full) {
+  const side = (team, sel) => {
+    const pair = (sel && sel.pairs && sel.pairs[t.cell.seed]) || [];
+    const players = pair.map((id) => playerById(team, id)).filter(Boolean).map((p) => (full ? p.name : shortPlayerName(p.name)));
+    while (players.length < 2) players.push("TBD");
+    return { team, players };
+  };
+  return [side(t.opt && t.opt.teamA, t.f.selectionA), side(t.opt && t.opt.teamB, t.f.selectionB)];
+}
+function liveSideHtml(sd) {
+  return `<div class="lc-side">${sd.team ? avatarHtml(sd.team) : ""}<span class="lc-pl"><b>${escapeHtml(sd.players[0])}</b><b>${escapeHtml(sd.players[1])}</b></span></div>`;
+}
 function liveTileHtml(s, c) {
   const t = liveTileInfo(s, c);
   if (!t) return `<div class="lc-slot" data-s="${s}" data-c="${c}"><div class="lc-tile lc-empty">&mdash;</div></div>`;
-  const { info } = t, n = liveNames(t);
-  const names = `<div class="lc-tile-nm">${escapeHtml(n.a)} v ${escapeHtml(n.b)}<span>Seed ${t.cell.seed + 1}</span></div>`;
+  const { info } = t, sides = liveSides(t, false);
+  const teams = `<div class="lc-sides">${liveSideHtml(sides[0])}<span class="lc-v">v</span>${liveSideHtml(sides[1])}</div>`;
+  const label = `Match ${s + 1} &middot; Seed ${t.cell.seed + 1}`;
   let foot;
   if (info.state === "live") {
-    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}"></span></div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-right"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}"></span></span></div>`;
   } else if (info.state === "done") {
-    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">Finished &#10003;</span><span class="lc-tile-tag">${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-tag">Finished &#10003; ${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
   } else {
-    foot = `<div class="lc-tile-ft"><span class="lc-tile-mn">~${info.estMins}m</span>${info.pace ? '<span class="lc-tile-pen">&#9998;</span>' : ""}</div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span>${info.pace ? '<span class="lc-tile-pen" title="Set by you">&#9998;</span>' : ""}</div>`;
   }
   const draggable = info.state === "upcoming" ? ' draggable="true" title="Drag to move to another court"' : "";
-  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}" data-open="1">${names}${foot}</button></div>`;
+  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}" data-open="1">${teams}${foot}</button></div>`;
+}
+// Tap-to-move: pick a match up from its sheet, then tap wherever it should
+// go — an empty spot moves it, another upcoming match swaps with it. The
+// same move drag-and-drop makes, for a phone where dragging doesn't work.
+let liveMoveFrom = null;
+function liveMoveTargetOk(s, c) {
+  if (!liveMoveFrom || (liveMoveFrom.s === s && liveMoveFrom.c === c)) return false;
+  const t = liveTileInfo(s, c);
+  return !t || t.info.state === "upcoming";
+}
+function updateLiveMoveBar() {
+  const bar = el("lc-movebar");
+  const src = liveMoveFrom ? liveTileInfo(liveMoveFrom.s, liveMoveFrom.c) : null;
+  if (!src || src.info.state !== "upcoming") { liveMoveFrom = null; bar.style.display = "none"; return; }
+  const n = liveNames(src);
+  el("lc-movebar-txt").innerHTML = `Tap where to move <b>${escapeHtml(n.a)} v ${escapeHtml(n.b)}</b> &mdash; an empty spot moves it, another match swaps places.`;
+  bar.style.display = "flex";
+}
+function cancelLiveMove() {
+  if (!liveMoveFrom) return;
+  liveMoveFrom = null;
+  renderLiveCourtControl({ reusePredictions: true });
+}
+function startLiveMove(s, c) {
+  liveMoveFrom = { s, c };
+  closeLiveSheet();
+  renderLiveCourtControl({ reusePredictions: true });
+  el("live-court-card").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+function handleLiveTileTap(s, c) {
+  if (!liveMoveFrom) { openLiveSheet(s, c); return; }
+  if (liveMoveFrom.s === s && liveMoveFrom.c === c) { cancelLiveMove(); return; }
+  if (!liveMoveTargetOk(s, c)) return;
+  const from = liveMoveFrom, src = liveTileInfo(from.s, from.c), dst = liveTileInfo(s, c);
+  liveMoveFrom = null;
+  performCourtSwap(liveBoard.round,
+    { slot: from.s, court: from.c, fixtureId: src.cell.fixtureId, seed: src.cell.seed },
+    { slot: s, court: c, fixtureId: dst ? dst.cell.fixtureId : null, seed: dst ? dst.cell.seed : null });
+}
+function markLiveMoveTargets(root) {
+  root.querySelectorAll("[data-s][data-c]").forEach((n) => {
+    const s = Number(n.dataset.s), c = Number(n.dataset.c);
+    n.classList.toggle("lc-move-src", !!liveMoveFrom && liveMoveFrom.s === s && liveMoveFrom.c === c);
+    n.classList.toggle("lc-move-target", liveMoveTargetOk(s, c));
+  });
 }
 function renderLiveLanes(wrap) {
   const b = liveBoard;
@@ -7203,15 +7271,15 @@ function renderLiveLanes(wrap) {
   for (let c = 0; c < b.courts; c++) {
     let toPlay = 0;
     for (let s = 0; s < b.slots; s++) { const ci = b.cellInfo[s][c]; if (ci && ci.state === "upcoming") toPlay++; }
-    const sub = toPlay ? `${toPlay} to play &middot; ~${b.courtLoadUpcoming[c]} min` : "nothing left to play";
-    html += `<div class="lc-lane"><div class="lc-lane-h"><span>${escapeHtml(b.courtLabel(c))}</span><small>${sub}</small></div><div class="lc-lane-row" style="${cols}">${Array.from({ length: b.slots }, (_, s) => liveTileHtml(s, c)).join("")}</div></div>`;
+    html += `<div class="lc-lane"><div class="lc-lane-h"><span>${escapeHtml(b.courtLabel(c))}</span><small>${toPlay ? toPlay + " to play" : "nothing left to play"}</small></div><div class="lc-lane-row" style="${cols}">${Array.from({ length: b.slots }, (_, s) => liveTileHtml(s, c)).join("")}</div></div>`;
   }
   wrap.innerHTML = html;
   wrap.querySelectorAll(".lc-slot").forEach((slot) => {
     const s = Number(slot.dataset.s), c = Number(slot.dataset.c);
     const t = liveTileInfo(s, c);
-    const btn = slot.querySelector("[data-open]");
-    if (btn) btn.onclick = () => openLiveSheet(s, c);
+    // One tap does the right thing for the moment: open the sheet, or —
+    // while a match is picked up to move — drop it here.
+    slot.onclick = () => handleLiveTileTap(s, c);
     // Drag and drop still works on a desktop — only ever for a match that
     // hasn't started, on either end of the move.
     if (t && t.info.state === "upcoming") {
@@ -7232,6 +7300,7 @@ function renderLiveLanes(wrap) {
       };
     }
   });
+  markLiveMoveTargets(wrap);
 }
 // Courts as rows, time across: a match's bar is as long as its estimate and
 // coloured like its tile, so which court finishes last — and roughly when —
@@ -7270,7 +7339,7 @@ function renderLiveTimeline(wrap) {
   const axis = `<div class="lc-tl-ax"><span class="now" style="left:${pct(now)}%">NOW ${escapeHtml(clockTimeOnly(now))}</span>${ticks.filter((m) => Math.abs(pct(m) - pct(now)) > 9).map((m) => `<span style="left:${pct(m)}%">${escapeHtml(clockTimeOnly(m))}</span>`).join("")}</div>`;
   const body = rows.map((r) => `<div class="lc-tl-row"><div class="lc-tl-c">${escapeHtml(b.courtLabel(r.c))}</div><div class="lc-tl-track"><div class="lc-tl-now" style="left:${pct(now)}%"></div>${r.bars.map((x) => {
     const n = liveNames(x.t);
-    const sub = x.info.state === "live" ? "LIVE" : x.info.state === "done" ? "&#10003;" : "~" + x.info.estMins + "m" + (x.info.pace ? " &#9998;" : "");
+    const sub = x.info.state === "live" ? "LIVE" : x.info.state === "done" ? "&#10003;" : (x.info.pace ? "&#9998;" : "");
     // Short codes — a bar can be narrow on a phone; the full names are on hover
     // and in the sheet a tap opens.
     const code = (name) => escapeHtml(name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase());
@@ -7285,7 +7354,8 @@ function renderLiveTimeline(wrap) {
     summary = `<div class="lc-tl-fin">Last court to finish: <b>${escapeHtml(b.courtLabel(last.c))}</b> at about <b>${escapeHtml(clockTimeOnly(last.end))}</b>.${gap >= 25 ? `<br>Courts finish about ${gap} min apart — Re-balance could even that out.` : ""}</div>`;
   } else summary = '<div class="lc-tl-fin">Nothing left to play this round.</div>';
   wrap.innerHTML = `<div class="lc-tl">${axis}${body}${summary}</div>`;
-  wrap.querySelectorAll(".lc-tl-bar").forEach((btn) => { btn.onclick = () => openLiveSheet(Number(btn.dataset.s), Number(btn.dataset.c)); });
+  wrap.querySelectorAll(".lc-tl-bar").forEach((btn) => { btn.onclick = () => handleLiveTileTap(Number(btn.dataset.s), Number(btn.dataset.c)); });
+  markLiveMoveTargets(wrap);
 }
 function closeLiveSheet() {
   liveSheetCell = null;
@@ -7300,15 +7370,21 @@ function showLiveSheet(html) {
   el("lc-sheet-bd").classList.add("open");
 }
 el("lc-sheet-bd").onclick = closeLiveSheet;
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && el("lc-sheet").style.display === "block") closeLiveSheet(); });
+el("lc-movebar-cancel").onclick = cancelLiveMove;
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (el("lc-sheet").style.display === "block") closeLiveSheet(); else cancelLiveMove();
+});
 function renderLiveSheet() {
   const { s, c } = liveSheetCell || {};
   const t = liveSheetCell ? liveTileInfo(s, c) : null;
   if (!t) { closeLiveSheet(); return; }
-  const b = liveBoard, { info, f, cell } = t, n = liveNames(t);
+  const b = liveBoard, { info, f, cell } = t, n = liveNames(t), sides = liveSides(t, true);
   const swatch = info.state === "upcoming" ? { g: "#1E9E5C", r: "#D93A2B", n: "#5B6E9C" }[info.tone] : "#243360";
-  const status = info.state === "live" ? "Live" : info.state === "done" ? "Finished" : `~${info.estMins} min`;
-  let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(n.a)} v ${escapeHtml(n.b)}</b><span>Seed ${cell.seed + 1} &middot; ${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>`;
+  const status = info.state === "live" ? "Live" : info.state === "done" ? "Finished" : "To play";
+  const sideHtml = (sd) => `<div class="lc-sh-side">${sd.team ? avatarHtml(sd.team) : ""}<div><b>${escapeHtml(sd.team ? sd.team.name : "TBD")}</b><span>${escapeHtml(sd.players[0])} &amp; ${escapeHtml(sd.players[1])}</span></div></div>`;
+  let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1}</b><span>Seed ${cell.seed + 1} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>
+    <div class="lc-sh-sides">${sideHtml(sides[0])}<span class="lc-v">v</span>${sideHtml(sides[1])}</div>`;
   if (info.state === "upcoming") {
     const pos = info.pace || "auto";
     html += `<div class="lb">Pace</div><div class="lc-pace">
@@ -7320,20 +7396,9 @@ function renderLiveSheet() {
     html += `<div class="why">${info.pace ? `App suggested ${escapeHtml(PACE_WORD[info.guess])} &middot; ` : ""}${escapeHtml(favPct === null ? "No prediction yet" : `${favPct}% favourite · ${relative}`)}</div>`;
     const better = b.suggestBetterCourt(s, c);
     if (better !== null) html += `<div class="nudge"><span><b>${escapeHtml(b.courtLabel(better))}</b> is lighter tonight — would even out the load.</span><button type="button" data-moveto="${better}">Move</button></div>`;
-    html += `<div class="row2"><button type="button" class="p" data-start>Start</button><button type="button" data-x>Close</button></div>`;
-    if (b.courts > 1) {
-      html += '<div class="lb">Move to another court</div><div class="lc-move">';
-      for (let c2 = 0; c2 < b.courts; c2++) {
-        if (c2 === c) continue;
-        const o = liveTileInfo(s, c2);
-        if (!o) html += `<button type="button" data-moveto="${c2}">${escapeHtml(b.courtLabel(c2))}<small>free</small></button>`;
-        else if (o.info.state === "upcoming") { const on = liveNames(o); html += `<button type="button" data-moveto="${c2}">${escapeHtml(b.courtLabel(c2))}<small>swap with ${escapeHtml(on.a)} v ${escapeHtml(on.b)}</small></button>`; }
-        else html += `<button type="button" disabled>${escapeHtml(b.courtLabel(c2))}<small>in play</small></button>`;
-      }
-      html += "</div>";
-    }
+    html += `<div class="row2"><button type="button" class="p" data-start>Start</button><button type="button" data-startmove>Move / swap</button></div>`;
   } else {
-    html += `<div class="row2"><button type="button" class="p" data-score>${info.state === "live" ? "Score" : "Score"}</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-x>Close</button>'}</div>`;
+    html += `<div class="row2"><button type="button" class="p" data-score>Score</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-x>Close</button>'}</div>`;
   }
   showLiveSheet(html);
   const sheet = el("lc-sheet");
@@ -7368,6 +7433,8 @@ function renderLiveSheet() {
       closeLiveSheet(); await refreshLeague(); renderAll();
     } catch (e) { alert(e.message); }
   };
+  const moveBtn = sheet.querySelector("[data-startmove]");
+  if (moveBtn) moveBtn.onclick = () => startLiveMove(s, c);
   sheet.querySelectorAll("[data-moveto]").forEach((btn) => {
     btn.onclick = () => {
       const c2 = Number(btn.dataset.moveto), o = liveTileInfo(s, c2);

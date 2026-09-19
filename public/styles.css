@@ -862,23 +862,36 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .lc-lane-cols,.lc-lane-row{display:grid;gap:8px;}
 .lc-lane-cols{margin:0 0 6px;} .lc-lane-cols span{font-family:var(--font-display);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#7C8CB0;text-align:center;}
 .lc-slot{border-radius:12px;min-width:0;}
-.lc-tile{position:relative;border-radius:12px;padding:10px 9px;min-height:92px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;cursor:pointer;transition:transform .08s;text-align:left;width:100%;border:0;font-family:var(--font-body);}
+.lc-tile{position:relative;border-radius:12px;padding:11px 10px 9px;min-height:96px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;cursor:pointer;transition:transform .08s;text-align:left;width:100%;border:0;font-family:var(--font-body);}
 .lc-tile:active{transform:scale(.97);}
-.lc-tile .lc-tile-nm{font-size:11.5px;line-height:1.25;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
-.lc-tile .lc-tile-nm span{display:block;font-weight:500;opacity:.8;font-size:10px;margin-top:2px;}
-.lc-tile .lc-tile-ft{display:flex;justify-content:space-between;align-items:center;margin-top:8px;}
-.lc-tile .lc-tile-mn{font-family:var(--font-display);font-weight:600;font-size:17px;letter-spacing:.02em;}
-.lc-tile .lc-tile-pen{font-size:11px;opacity:.9;}
+.lc-sides{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:6px;align-items:center;}
+.lc-side{display:flex;align-items:center;gap:6px;min-width:0;}
+.lc-side .avatar,.lc-side .avatar-fb{width:30px;height:30px;font-size:12px;flex:none;border:2px solid rgba(255,255,255,.55);}
+.lc-pl{min-width:0;display:block;font-size:11.5px;line-height:1.3;font-weight:600;} .lc-pl b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lc-v{font-size:10px;opacity:.7;text-transform:uppercase;}
+.lc-tile .lc-tile-ft{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:9px;padding-top:7px;border-top:1px solid rgba(255,255,255,.18);}
+.lc-tile .lc-tile-mn{font-family:var(--font-display);font-weight:600;font-size:15px;letter-spacing:.02em;}
+.lc-tile .lc-tile-right{display:inline-flex;align-items:center;gap:8px;}
+.lc-tile .lc-tile-pen{font-size:13px;opacity:.95;}
 .lc-tile.lc-g{background:#1E9E5C;} .lc-tile.lc-r{background:#D93A2B;} .lc-tile.lc-n{background:#5B6E9C;}
 .lc-tile.lc-live{background:#0F1B38;box-shadow:inset 0 0 0 2px #E2432F;}
 .lc-tile.lc-done{background:#18223F;color:#7C8CB0;}
 .lc-tile.lc-empty{background:none;border:1.5px dashed rgba(255,255,255,.14);color:#4E5D82;align-items:center;justify-content:center;cursor:default;}
 .lc-livebadge{display:inline-flex;align-items:center;gap:4px;background:#E2432F;color:#fff;font-family:var(--font-display);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;}
 .lc-livebadge i{width:5px;height:5px;background:#fff;border-radius:50%;animation:league-live-pulse 1.4s ease-in-out infinite;}
-.lc-tile-tag{font-family:var(--font-display);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;}
+.lc-tile-tag{font-family:var(--font-display);font-size:10px;letter-spacing:.05em;text-transform:uppercase;opacity:.9;}
 .lc-slot[draggable="true"]{cursor:grab;} .lc-slot.lc-dragging{opacity:.35;}
 .lc-slot.lc-drop-target{outline:2px dashed #7FA8FF;outline-offset:2px;}
 
+.lc-move-src .lc-tile{box-shadow:0 0 0 3px #fff;} .lc-move-src{opacity:.95;}
+.lc-move-target .lc-tile{outline:2px dashed #7FA8FF;outline-offset:2px;} .lc-move-target{cursor:pointer;}
+.lc-movebar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#2563EB;color:#fff;font-size:12.5px;line-height:1.4;position:sticky;top:64px;z-index:5;}
+.lc-movebar b{font-weight:700;} .lc-movebar button{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:8px;padding:7px 12px;font-family:var(--font-display);font-size:11px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:0;flex:none;}
+@media (max-width:640px){
+  .lc-lane-cols{display:none;}
+  .lc-lane-row{grid-template-columns:1fr !important;gap:7px;}
+  .lc-tile{min-height:0;}
+}
 /* Timeline: courts as rows, time across, a bar as long as the estimate. */
 .lc-tl-ax{position:relative;height:16px;margin:0 0 4px 62px;font-size:10px;color:#7C8CB0;}
 .lc-tl-ax span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;}
@@ -906,6 +919,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .lc-sheet .why{font-size:11.5px;color:#9FB0D4;margin-top:10px;line-height:1.45;}
 .lc-sheet .nudge{margin-top:10px;background:rgba(23,138,76,.16);border-radius:10px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#6EE7A8;}
 .lc-sheet .nudge button{background:var(--success);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-family:var(--font-display);font-size:11px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:0;}
+.lc-sh-sides{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;margin-top:12px;padding:11px 12px;background:#0E1730;border-radius:12px;}
+.lc-sh-side{display:flex;align-items:center;gap:8px;min-width:0;} .lc-sh-side .avatar,.lc-sh-side .avatar-fb{width:34px;height:34px;flex:none;}
+.lc-sh-side b{display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} .lc-sh-side span{display:block;font-size:11px;color:#9FB0D4;line-height:1.3;}
+.lc-sh-sides .lc-v{color:#7C8CB0;}
 .lc-pace{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
 .lc-pace button{padding:14px 4px;border-radius:11px;border:2px solid #2C3B66;background:#0E1730;color:#B7C5EA;font-family:var(--font-display);font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;min-height:0;}
 .lc-pace button i{width:12px;height:12px;border-radius:4px;flex:none;}
@@ -913,10 +930,6 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .lc-sheet .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
 .lc-sheet .row2 button{padding:14px 6px;border-radius:11px;border:none;font-family:var(--font-display);font-size:13px;letter-spacing:.05em;text-transform:uppercase;font-weight:600;cursor:pointer;background:#1B2745;color:#EAF0FF;min-height:0;}
 .lc-sheet .row2 button.p{background:#2563EB;color:#fff;}
-.lc-move{display:flex;flex-direction:column;gap:6px;}
-.lc-move button{display:flex;justify-content:space-between;align-items:center;padding:12px 13px;border-radius:11px;border:1.5px solid #2C3B66;background:#0E1730;color:#EAF0FF;font-family:var(--font-body);font-size:13px;cursor:pointer;min-height:0;text-align:left;}
-.lc-move button small{color:#9FB0D4;font-size:11px;}
-.lc-move button:disabled{opacity:.4;cursor:default;}
 
 /* Admin-only bar across the top of every screen — the way into the
    control room from anywhere, not just from inside a league. */
