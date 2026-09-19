@@ -1949,33 +1949,39 @@ function formatDurationShort(ms) {
   if (hours > 0) return `${hours}h`;
   return `${mins}m`;
 }
+// Shared by both renderAccountLineupsDue and renderAccountNeedsAttention —
+// a lineup item counts as "overdue" the same way in either place, so the
+// deadline math lives in one spot rather than two copies drifting apart.
+function lineupDeadlineInfo(d) {
+  const deadlineMs = d.kickoffMs ? d.kickoffMs - LINEUP_DEADLINE_LEAD_MS : null;
+  const msUntilDeadline = deadlineMs !== null ? deadlineMs - Date.now() : null;
+  return { deadlineMs, msUntilDeadline, overdue: msUntilDeadline !== null && msUntilDeadline < 0 };
+}
 // Every not-yet-submitted line-up across every league this account
 // captains — same cross-league "surface it on the homepage" treatment as
 // "What you owe" gets for outstanding fees. Same in-league reminder this
 // pairs with (see checkLineupReminders server-side) but visible any
-// time, not just once a kickoff is within 36 hours.
-async function renderAccountLineupsDue() {
-  const due = await api("/players/lineups-due").catch(() => []);
-  el("account-lineups-section").style.display = due.length ? "block" : "none";
-  if (!due.length) return;
+// time, not just once a kickoff is within 36 hours. An item that's gone
+// overdue moves up into "Needs attention" instead (see
+// renderAccountNeedsAttention) rather than showing in both places.
+function renderAccountLineupsDue(due) {
+  const notOverdue = due.filter((d) => !lineupDeadlineInfo(d).overdue);
+  el("account-lineups-section").style.display = notOverdue.length ? "block" : "none";
+  if (!notOverdue.length) return;
   const list = el("account-lineups-list");
-  const now = Date.now();
-  list.innerHTML = due.map((d) => {
+  list.innerHTML = notOverdue.map((d) => {
     const meta = `${escapeHtml(d.teamName)} · <span class="league-name">${escapeHtml(d.leagueName)}</span>`;
-    const deadlineMs = d.kickoffMs ? d.kickoffMs - LINEUP_DEADLINE_LEAD_MS : null;
-    const msUntilDeadline = deadlineMs !== null ? deadlineMs - now : null;
+    const { deadlineMs, msUntilDeadline } = lineupDeadlineInfo(d);
     let badge = "", bar = "", sub;
     if (deadlineMs !== null && msUntilDeadline <= LINEUP_DUE_BAR_WINDOW_MS) {
-      const overdue = msUntilDeadline < 0;
-      const pct = overdue ? 100 : Math.max(2, Math.min(100, ((LINEUP_DUE_BAR_WINDOW_MS - msUntilDeadline) / LINEUP_DUE_BAR_WINDOW_MS) * 100));
-      const timeLabel = overdue ? `Overdue ${formatDurationShort(msUntilDeadline)}` : `${formatDurationShort(msUntilDeadline)} left`;
+      const pct = Math.max(2, Math.min(100, ((LINEUP_DUE_BAR_WINDOW_MS - msUntilDeadline) / LINEUP_DUE_BAR_WINDOW_MS) * 100));
       // "10h left" on its own could read as time until the match itself —
       // this pill is about the line-up selection deadline, 24h earlier, so
       // every duration/date here says so explicitly rather than leaving it
       // to be inferred.
-      badge = `<span class="lineup-due-timeleft${overdue ? " overdue" : ""}">${escapeHtml(timeLabel)}</span><span class="lineup-due-bar-label">For selection</span>`;
-      bar = `<div class="lineup-due-track"><div class="lineup-due-fill${overdue ? " overdue" : ""}" style="width:${pct}%;"></div></div>`;
-      sub = (overdue ? "Selection was due " : "Selection due ") + fmtDateTime(deadlineMs);
+      badge = `<span class="lineup-due-timeleft">${escapeHtml(formatDurationShort(msUntilDeadline) + " left")}</span><span class="lineup-due-bar-label">For selection</span>`;
+      bar = `<div class="lineup-due-track"><div class="lineup-due-fill" style="width:${pct}%;"></div></div>`;
+      sub = "Selection due " + fmtDateTime(deadlineMs);
     } else if (deadlineMs !== null) {
       sub = "Selection due " + fmtDateTime(deadlineMs);
     } else {
@@ -1996,13 +2002,87 @@ async function renderAccountLineupsDue() {
     row.onclick = () => openLeague(row.dataset.league);
   });
 }
+// The urgent stuff a captain shouldn't have to scroll past Trophy Room to
+// find: a match of theirs that's live on court right now (from each card's
+// liveNow, set server-side in /players/profile), and any line-up that's
+// gone past its selection deadline (the same /players/lineups-due list
+// renderAccountLineupsDue reads, filtered to just the overdue ones —
+// reusing lineupDeadlineInfo so "overdue" means the same thing in both
+// places). Sits above Lineups Due; hidden entirely when there's nothing
+// in either bucket.
+function renderAccountNeedsAttention(cards, due) {
+  const live = cards.filter((c) => c.liveNow);
+  const overdue = due.filter((d) => lineupDeadlineInfo(d).overdue);
+  const section = el("account-attention-section");
+  if (!live.length && !overdue.length) { section.style.display = "none"; return; }
+  section.style.display = "block";
+  const liveHtml = live.map((c) => `
+    <div class="lineup-due-pill" data-league="${c.leagueId}">
+      <div class="lineup-due-top">
+        <div class="lineup-due-name"><strong>${escapeHtml(c.teamName)} vs ${avatarHtml({ logo: c.liveNow.opponentLogo, name: c.liveNow.opponentName })}${escapeHtml(c.liveNow.opponentName)}</strong><span class="lineup-due-meta">${escapeHtml(c.liveNow.label)} · <span class="league-name">${escapeHtml(c.leagueName)}</span></span></div>
+        <div class="lineup-due-right"><span class="tag badge-live">Live</span></div>
+      </div>
+      <div class="lineup-due-sub">${escapeHtml(c.liveNow.score || "In progress")} · Match ${c.liveNow.seed}</div>
+    </div>`).join("");
+  const overdueHtml = overdue.map((d) => {
+    const { deadlineMs, msUntilDeadline } = lineupDeadlineInfo(d);
+    return `
+    <div class="lineup-due-pill" data-league="${d.leagueId}">
+      <div class="lineup-due-top">
+        <div class="lineup-due-name"><strong>${escapeHtml(d.label)} vs ${avatarHtml({ logo: d.opponentLogo, name: d.opponentName })}${escapeHtml(d.opponentName)}</strong><span class="lineup-due-meta">${escapeHtml(d.teamName)} · <span class="league-name">${escapeHtml(d.leagueName)}</span></span></div>
+        <div class="lineup-due-right"><span class="lineup-due-timeleft overdue">${escapeHtml("Overdue " + formatDurationShort(msUntilDeadline))}</span></div>
+      </div>
+      <div class="lineup-due-track"><div class="lineup-due-fill overdue" style="width:100%;"></div></div>
+      <div class="lineup-due-sub">${escapeHtml("Selection was due " + fmtDateTime(deadlineMs))}</div>
+      <div class="lineup-due-cta">Go to Selection Room<span class="lineup-due-chev">&#8250;</span></div>
+    </div>`;
+  }).join("");
+  const list = el("account-attention-list");
+  list.innerHTML = liveHtml + overdueHtml;
+  list.querySelectorAll(".lineup-due-pill").forEach((row) => {
+    row.onclick = () => openLeague(row.dataset.league);
+  });
+}
+// A captain's cross-league "score needed" list — every fixture one of
+// their teams has actually started playing but hasn't been finalized yet
+// (see /players/pending-results). Tapping a row jumps into that league
+// (switching if it isn't the one already open) and opens the exact same
+// score modal the Results tab's own opponent cards use, so nothing about
+// entering a score itself is duplicated here.
+async function renderAccountPendingResults() {
+  const items = await api("/players/pending-results").catch(() => []);
+  const section = el("account-results-section");
+  if (!items.length) { section.style.display = "none"; return; }
+  section.style.display = "block";
+  el("account-results-list").innerHTML = items.map((r) => {
+    const when = r.date ? (relativeDayLabel(r.date) || fmtDate(r.date)) : "Date unknown";
+    return `<div class="opponent-card" style="width:100%;cursor:pointer;" data-league="${r.leagueId}" data-fixture="${r.fixtureId}">
+      ${avatarHtml({ logo: r.opponentLogo, name: r.opponentName })}
+      <div>
+        <div>${escapeHtml(r.teamName)} vs ${escapeHtml(r.opponentName)}</div>
+        <div class="note" style="font-weight:400;">${escapeHtml(r.leagueName)} · ${escapeHtml(r.label)} · played ${escapeHtml(when)}, no score yet</div>
+      </div>
+    </div>`;
+  }).join("");
+  el("account-results-list").querySelectorAll(".opponent-card").forEach((row) => {
+    row.onclick = async () => {
+      const leagueId = row.dataset.league, fixtureId = row.dataset.fixture;
+      if (currentLeagueId !== leagueId) await openLeague(leagueId);
+      const f = league.fixtures.find((x) => x.id === fixtureId) || (league.playoffs && [league.playoffs.semis && league.playoffs.semis[0], league.playoffs.semis && league.playoffs.semis[1], league.playoffs.final, ...(league.playoffs.matches || [])].filter(Boolean).find((x) => x.id === fixtureId));
+      if (f) openScoreModalFor(f);
+    };
+  });
+}
 async function renderAccountProfile() {
   const { cards } = await api("/players/profile").catch(() => ({ cards: [] }));
   renderAccountAvatar(cards);
   renderAccountNextMatch(cards);
-  renderAccountLeaguesList(cards);
   renderAccountTables(cards);
   renderAccountFixtures(cards);
+  const due = await api("/players/lineups-due").catch(() => []);
+  renderAccountNeedsAttention(cards, due);
+  renderAccountLineupsDue(due);
+  renderAccountLeaguesList(cards);
   await renderAccountStats(cards);
   renderAccountPushSection();
   renderTrophyRoom(cards);
@@ -2011,7 +2091,7 @@ async function renderAccountProfile() {
   // call, not just the one at login — folded in here rather than making
   // every caller remember to refresh both.
   renderAccountTonightMatches();
-  renderAccountLineupsDue();
+  renderAccountPendingResults();
   const c = el("account-form-list");
   if (cards.length === 0) { c.innerHTML = '<p class="empty">Claim a player record below to see your matches, results, and awards here.</p>'; return; }
   // One combined view across every claimed record — Sandton and Killarney
@@ -2380,9 +2460,6 @@ function renderAccountFixtures(cards) {
   if (items.length === 0) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
   el("account-fixtures-scroll").innerHTML = items.map((m) => {
-    const pct = m.prediction ? m.prediction.winPct : null;
-    const barHtml = pct != null ? `<div class="mc-predict-bar"><span class="a" style="width:${pct}%"></span><span class="b" style="width:${100 - pct}%"></span></div>
-      <div class="mc-predict-pcts"><span>${pct}%</span><span>${100 - pct}%</span></div>` : "";
     const whenText = [m.date ? fmtDate(m.date) : "", m.time ? fmtTime(m.time) : ""].filter(Boolean).join(" · ") || "Date TBC";
     return `<div class="pd-fixture-card">
       <span class="league-tag">${escapeHtml(m.leagueName)}</span>
@@ -2391,7 +2468,6 @@ function renderAccountFixtures(cards) {
         <span class="vs">vs</span>
         <div class="pd-fixture-side">${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
       </div>
-      ${barHtml}
       <div class="pd-fixture-meta">${escapeHtml(whenText)}</div>
     </div>`;
   }).join("");

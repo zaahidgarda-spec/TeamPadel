@@ -1760,6 +1760,23 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
         myRow: myRow && myRow.rank > TABLE_CAP ? myRow : null,
       };
     }
+    // This team's own match, right now, if one's actually on court — a
+    // rubber with a start time and no finish yet. Checked across every
+    // fixture (not just upcoming ones), since nothing marks a fixture
+    // "live" ahead of time.
+    let liveNow = null;
+    for (const f of logic.allFixturesOf(league)) {
+      if (f.finalized || (f.teamA !== team.id && f.teamB !== team.id)) continue;
+      const liveIdx = f.rubbers.findIndex((r) => r.startedAt && !r.completedAt);
+      if (liveIdx === -1) continue;
+      const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
+      liveNow = {
+        fixtureId: f.id, label: fixtureLabel(league, f), seed: liveIdx + 1,
+        opponentName: oppTeam ? oppTeam.name : "TBD", opponentLogo: oppTeam ? oppTeam.logo || "" : "",
+        score: logic.rubberScoreText(f.rubbers[liveIdx]) || "",
+      };
+      break;
+    }
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
@@ -1777,6 +1794,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
       isTeamOwner: (team.ownerIds || []).includes(player.id),
+      liveNow,
     });
     return true;
   });
@@ -4307,6 +4325,43 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
     if (b.date) return 1;
     return 0;
   });
+  res.json(out);
+});
+
+// Every fixture a captained team has actually started playing (something's
+// been entered or its kickoff has passed) but hasn't been finalized yet —
+// the cross-league equivalent of the "tap an opponent to enter a score"
+// list already on each league's own Results tab, surfaced on My Profile so
+// a captain doesn't have to go hunting for the right league first.
+router.get("/players/pending-results", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const out = [];
+  const now = Date.now();
+  (user.captaincies || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    if (!league) return;
+    const team = league.teams.find((t) => t.id === c.teamId);
+    if (!team) return;
+    logic.allFixturesOf(league).forEach((f) => {
+      if (f.finalized || !f.teamA || !f.teamB) return;
+      if (f.teamA !== team.id && f.teamB !== team.id) return;
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const kickoffMs = kickoffMsOf(sched.date, sched.time);
+      const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);
+      if (!started) return;
+      const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
+      out.push({
+        leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
+        fixtureId: f.id, label: fixtureLabel(league, f),
+        opponentName: oppTeam ? oppTeam.name : "TBD",
+        opponentLogo: oppTeam ? oppTeam.logo || "" : "",
+        date: sched.date || "", time: sched.time || "",
+      });
+    });
+  });
+  // Most recently played first — a fixture from last week waiting on a
+  // score is more urgent than one from an hour ago.
+  out.sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
   res.json(out);
 });
 
