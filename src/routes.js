@@ -2116,6 +2116,30 @@ router.post("/admin/push/broadcast", async (req, res) => {
   res.json({ ok: true, total: jobs.length, sent: jobs.length - errors.length, failed: errors.length });
 });
 
+// Owner-only, read-only — powers the admin bar's "Control room" button on
+// every screen: how many matches are live right now in each league that
+// runs a court schedule, so the button can show a live count and take the
+// owner straight to the one league that's playing (or list them when
+// several are). Pairs leagues have no court board and never appear.
+router.get("/admin/control-room", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const leagues = [];
+  let totalLive = 0;
+  store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league || league.format === "pairs" || leagueStatus(league) !== "active") return;
+    let live = 0;
+    logic.allFixturesOf(league).forEach((f) => {
+      if (f.finalized) return;
+      f.rubbers.forEach((r) => { if (r.startedAt && !r.completedAt) live++; });
+    });
+    totalLive += live;
+    leagues.push({ id: league.id, name: league.name, liveCount: live });
+  });
+  leagues.sort((a, b) => b.liveCount - a.liveCount || a.name.localeCompare(b.name));
+  res.json({ totalLive, leagues });
+});
+
 // Owner-only, read-only — powers the "Push notifications" stat card on the
 // Admin tab (see renderPushStatsCard).
 router.get("/admin/push/stats", (req, res) => {

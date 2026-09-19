@@ -843,91 +843,98 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .hscroll{background:transparent;}
 
 /* ---------- Live Court Control ---------- */
-/* Same table shell as Court Schedule (table.court-schedule-table, already
-   styled dark by the floodlit.urgent rules above) but each td holds one of
-   these instead of the plain cs-cell-content — a state (upcoming/live/done)
-   matters more here than which fixture a cell belongs to, so state gets the
-   dominant color and the fixture's own color is just a thin top accent. */
-.live-court-table td{vertical-align:top;padding:4px;}
-.lc-cell{position:relative;min-width:150px;border-radius:10px;padding:10px 10px 8px;text-align:left;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.14);border-top:3px solid var(--fx-glow,rgba(255,255,255,.3));}
-.lc-empty{min-width:60px;text-align:center;color:#4E5D82;padding:14px 0;border:1px dashed rgba(255,255,255,.1);border-radius:10px;}
-.lc-teams{display:flex;align-items:center;justify-content:center;gap:10px;}
-/* Bumped up from the site's usual 28px avatar — these are the first thing
-   meant to catch your eye walking past a court, not a small identity tag
-   next to a name. */
-/* Extra class in the selector (not just element specificity) so this beats
-   table.court-schedule-table's own 18px avatar rule (styles.css ~line 449)
-   — the two tables share a base class, so a plain .lc-teams .avatar rule
-   quietly lost that fight and rendered smaller than the default, not bigger. */
-.live-court-table .lc-teams .avatar,.live-court-table .lc-teams .avatar-fb{width:44px;height:44px;font-size:16px;border-width:2px;}
-.lc-vs{font-size:9px;color:#7C8CB0;text-transform:uppercase;}
-.lc-pair-label{font-size:11px;color:#C7D2E8;text-align:center;margin-top:6px;line-height:1.3;}
-.lc-tag{display:flex;align-items:center;justify-content:center;gap:5px;font-family:var(--font-display);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:3px 7px;border-radius:999px;margin:7px auto 0;width:fit-content;}
-/* Whole-card pace colour for a match still to play — green = quick, red =
-   close and so likely long. Bright + solid edge = an admin set it; dim +
-   dashed edge = only the app's own guess. The word and the minutes are on
-   the card too, so it never relies on colour alone. */
-.floodlit.urgent .lc-cell.lc-upcoming.lc-pace-g.lc-pace-manual{background:linear-gradient(160deg,#1E9E5C,#158049);border:2px solid #7CF0B4;color:#fff;}
-.floodlit.urgent .lc-cell.lc-upcoming.lc-pace-r.lc-pace-manual{background:linear-gradient(160deg,#D93A2B,#B22A1D);border:2px solid #FF9F92;color:#fff;}
-.floodlit.urgent .lc-cell.lc-upcoming.lc-pace-g.lc-pace-auto{background:rgba(30,158,92,.48);border:2px dashed #5EE3A0;color:#D7FBE8;}
-.floodlit.urgent .lc-cell.lc-upcoming.lc-pace-r.lc-pace-auto{background:rgba(217,58,43,.50);border:2px dashed #FF8C7C;color:#FFE0DB;}
-.floodlit.urgent .lc-cell.lc-upcoming.lc-pace-n{background:rgba(120,140,190,.22);border:2px dashed #8FA6D8;color:#DCE6FF;}
-.lc-cell.lc-upcoming[class*="lc-pace-"] .lc-pair-label,.lc-cell.lc-upcoming[class*="lc-pace-"] .lc-vs{color:inherit;opacity:.95;}
-.lc-cell.lc-upcoming[class*="lc-pace-"] .avatar,.lc-cell.lc-upcoming[class*="lc-pace-"] .avatar-fb{border-color:rgba(255,255,255,.55);}
-.lc-pace-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:10px;}
-.lc-pace-word{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1;letter-spacing:.03em;text-transform:uppercase;}
-.lc-pace-mins{font-family:var(--font-display);font-size:14px;letter-spacing:.04em;margin-top:4px;}
-.lc-pace-badge{font-family:var(--font-display);font-size:9px;letter-spacing:.07em;text-transform:uppercase;padding:3px 7px;border-radius:6px;white-space:nowrap;background:rgba(0,0,0,.28);}
-.lc-pace-auto .lc-pace-badge{background:rgba(255,255,255,.12);border:1px dashed rgba(255,255,255,.5);}
-.lc-pace-why{font-size:9.5px;text-align:center;margin-top:5px;line-height:1.35;opacity:.9;}
-.lc-pace-slider{position:relative;display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:10px;background:rgba(0,0,0,.3);border-radius:12px;padding:4px;height:48px;}
-.lc-pace-thumb{position:absolute;top:4px;bottom:4px;left:4px;width:calc(33.333% - 2.67px);border-radius:9px;background:#fff;transition:transform .2s cubic-bezier(.3,.8,.3,1);box-shadow:0 3px 10px rgba(0,0,0,.35);}
-.lc-pace-slider button{position:relative;z-index:1;background:none;border:none;color:rgba(255,255,255,.88);font-family:var(--font-display);font-weight:600;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;padding:0;flex:none;min-height:0;}
-.lc-pace-slider button small{display:block;font-family:var(--font-body);font-size:8.5px;text-transform:none;letter-spacing:0;font-weight:500;opacity:.8;}
-.lc-pace-slider button.on{color:#111;}
-.lc-pace-slider button.on.qg{color:#158049;} .lc-pace-slider button.on.lr{color:#B22A1D;}
-.floodlit.urgent .lc-cell.lc-upcoming[class*="lc-pace-"] .lc-actions button{background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.4);color:#fff;font-weight:600;}
-.lc-tag-live{background:var(--clay);color:#fff;}
-.lc-dot{width:5px;height:5px;border-radius:50%;background:#fff;animation:league-live-pulse 1.4s ease-in-out infinite;}
-.lc-tag-done{background:rgba(110,231,168,.16);color:#6EE7A8;}
-.lc-score{text-align:center;font-family:var(--font-display);font-size:17px;color:#F2F6FF;margin-top:8px;font-variant-numeric:tabular-nums;}
-/* The elapsed/status/finish-time strip that replaced the old progress bar —
-   one number an admin actually wants (a clock time) instead of a bar they'd
-   have to interpret. */
-.lc-strip{display:flex;background:rgba(255,255,255,.05);border-radius:8px;overflow:hidden;margin-top:9px;}
-.lc-strip > div{flex:1;padding:6px 4px;text-align:center;min-width:0;}
-.lc-strip > div + div{border-left:1px solid rgba(255,255,255,.1);}
-.lc-strip-lbl{font-family:var(--font-display);font-size:7.5px;letter-spacing:.05em;text-transform:uppercase;color:#7C8CB0;}
-.lc-strip-val{font-family:var(--font-display);font-size:12.5px;color:#fff;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap;}
-.lc-strip-live{color:#FF9A8A;}
-.lc-strip-done{color:#6EE7A8;}
-/* The one-line "a lighter court exists" nudge on an upcoming card — reuses
-   the success-green treatment of a finished tag since it's good news
-   (a free improvement), not a warning. */
-.lc-suggest{margin-top:7px;background:rgba(23,138,76,.14);border-radius:8px;padding:7px 8px;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:9.5px;color:#6EE7A8;text-align:left;line-height:1.3;}
-.lc-suggest-apply{font-family:var(--font-display);font-size:8.5px;text-transform:uppercase;background:var(--success);color:#fff;padding:4px 7px;border-radius:6px;white-space:nowrap;cursor:pointer;flex-shrink:0;}
-.lc-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+/* Court lanes: one row per court, that court's matches side by side as
+   tiles. The whole tile's colour is the state — green quicker, red longer,
+   blue-grey even, ringed dark = live, dim = finished — so there's no
+   word to read, just a small minutes figure. Tap a tile for the action
+   sheet. */
+.lc-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
 .lc-toolbar-note{font-size:11.5px;color:#9FB0D4;}
 .floodlit.urgent .lc-toolbar .secondary{background:rgba(127,168,255,.14);border-color:rgba(127,168,255,.45);color:#CFE0FF;font-weight:600;}
+.lc-viewtoggle{display:inline-flex;background:rgba(255,255,255,.07);border-radius:10px;padding:3px;gap:2px;}
+.lc-viewtoggle button{background:none;border:none;color:#9FB0D4;font-family:var(--font-display);font-size:12px;letter-spacing:.05em;text-transform:uppercase;padding:7px 13px;border-radius:8px;cursor:pointer;min-height:0;}
+.lc-viewtoggle button.on{background:#fff;color:#0A1020;}
+.lc-legend{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 12px;font-size:11px;color:#9FB0D4;}
+.lc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+.lc-lane{margin-bottom:16px;}
+.lc-lane-h{display:flex;justify-content:space-between;align-items:baseline;margin:0 2px 6px;font-family:var(--font-display);font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#F2F6FF;}
+.lc-lane-h small{font-family:var(--font-body);font-size:11px;color:#7C8CB0;text-transform:none;letter-spacing:0;}
+.lc-lane-cols,.lc-lane-row{display:grid;gap:8px;}
+.lc-lane-cols{margin:0 0 6px;} .lc-lane-cols span{font-family:var(--font-display);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#7C8CB0;text-align:center;}
+.lc-slot{border-radius:12px;min-width:0;}
+.lc-tile{position:relative;border-radius:12px;padding:10px 9px;min-height:92px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;cursor:pointer;transition:transform .08s;text-align:left;width:100%;border:0;font-family:var(--font-body);}
+.lc-tile:active{transform:scale(.97);}
+.lc-tile .lc-tile-nm{font-size:11.5px;line-height:1.25;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
+.lc-tile .lc-tile-nm span{display:block;font-weight:500;opacity:.8;font-size:10px;margin-top:2px;}
+.lc-tile .lc-tile-ft{display:flex;justify-content:space-between;align-items:center;margin-top:8px;}
+.lc-tile .lc-tile-mn{font-family:var(--font-display);font-weight:600;font-size:17px;letter-spacing:.02em;}
+.lc-tile .lc-tile-pen{font-size:11px;opacity:.9;}
+.lc-tile.lc-g{background:#1E9E5C;} .lc-tile.lc-r{background:#D93A2B;} .lc-tile.lc-n{background:#5B6E9C;}
+.lc-tile.lc-live{background:#0F1B38;box-shadow:inset 0 0 0 2px #E2432F;}
+.lc-tile.lc-done{background:#18223F;color:#7C8CB0;}
+.lc-tile.lc-empty{background:none;border:1.5px dashed rgba(255,255,255,.14);color:#4E5D82;align-items:center;justify-content:center;cursor:default;}
+.lc-livebadge{display:inline-flex;align-items:center;gap:4px;background:#E2432F;color:#fff;font-family:var(--font-display);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;}
+.lc-livebadge i{width:5px;height:5px;background:#fff;border-radius:50%;animation:league-live-pulse 1.4s ease-in-out infinite;}
+.lc-tile-tag{font-family:var(--font-display);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;}
+.lc-slot[draggable="true"]{cursor:grab;} .lc-slot.lc-dragging{opacity:.35;}
+.lc-slot.lc-drop-target{outline:2px dashed #7FA8FF;outline-offset:2px;}
+
+/* Timeline: courts as rows, time across, a bar as long as the estimate. */
+.lc-tl-ax{position:relative;height:16px;margin:0 0 4px 62px;font-size:10px;color:#7C8CB0;}
+.lc-tl-ax span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;}
+.lc-tl-ax span.now{color:#FF6B5A;font-family:var(--font-display);letter-spacing:.06em;font-weight:600;}
+.lc-tl-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+.lc-tl-c{width:54px;flex:none;font-family:var(--font-display);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:#B7C5EA;line-height:1.2;}
+.lc-tl-track{position:relative;flex:1;height:58px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 25%);border-radius:8px;}
+.lc-tl-bar{position:absolute;top:4px;bottom:4px;min-height:0;padding:0 8px;overflow:hidden;justify-content:center;border-radius:8px;}
+.lc-tl-bar .a{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lc-tl-bar .b{font-size:10px;opacity:.85;font-family:var(--font-display);}
+.lc-tl-now{position:absolute;top:-4px;bottom:-4px;width:2px;background:#E2432F;z-index:2;}
+.lc-tl-fin{margin-top:14px;background:#101A36;border-radius:12px;padding:11px 13px;font-size:12px;color:#B7C5EA;line-height:1.55;}
+.lc-tl-fin b{color:#fff;font-family:var(--font-display);font-size:15px;}
+
+/* Action sheet for a tapped tile */
+.lc-sheet-bd{position:fixed;inset:0;background:rgba(6,11,24,.55);z-index:120;display:none;}
+.lc-sheet-bd.open{display:block;}
+.lc-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;background:#121B33;border:1px solid #2C3B66;border-bottom:0;border-radius:22px 22px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));z-index:121;color:#EAF0FF;box-shadow:0 -14px 34px rgba(0,0,0,.5);max-height:86vh;overflow-y:auto;}
+.lc-sheet .grab{width:38px;height:4px;border-radius:9px;background:#3A4A78;margin:0 auto 12px;}
+.lc-sheet .st{display:flex;align-items:center;gap:10px;}
+.lc-sheet .sw{width:14px;height:44px;border-radius:5px;flex:none;}
+.lc-sheet .stt{flex:1;min-width:0;} .lc-sheet .stt b{font-size:15px;display:block;} .lc-sheet .stt span{font-size:11.5px;color:#9FB0D4;}
+.lc-sheet .x{background:#1B2745;border:none;color:#B7C5EA;width:32px;height:32px;border-radius:50%;font-size:16px;cursor:pointer;min-height:0;padding:0;}
+.lc-sheet .lb{font-family:var(--font-display);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:#7C8CB0;margin:14px 0 6px;}
+.lc-sheet .why{font-size:11.5px;color:#9FB0D4;margin-top:10px;line-height:1.45;}
+.lc-sheet .nudge{margin-top:10px;background:rgba(23,138,76,.16);border-radius:10px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#6EE7A8;}
+.lc-sheet .nudge button{background:var(--success);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-family:var(--font-display);font-size:11px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:0;}
+.lc-pace{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
+.lc-pace button{padding:14px 4px;border-radius:11px;border:2px solid #2C3B66;background:#0E1730;color:#B7C5EA;font-family:var(--font-display);font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;min-height:0;}
+.lc-pace button i{width:12px;height:12px;border-radius:4px;flex:none;}
+.lc-pace button.on{background:#fff;color:#0A1020;border-color:#fff;}
+.lc-sheet .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
+.lc-sheet .row2 button{padding:14px 6px;border-radius:11px;border:none;font-family:var(--font-display);font-size:13px;letter-spacing:.05em;text-transform:uppercase;font-weight:600;cursor:pointer;background:#1B2745;color:#EAF0FF;min-height:0;}
+.lc-sheet .row2 button.p{background:#2563EB;color:#fff;}
+.lc-move{display:flex;flex-direction:column;gap:6px;}
+.lc-move button{display:flex;justify-content:space-between;align-items:center;padding:12px 13px;border-radius:11px;border:1.5px solid #2C3B66;background:#0E1730;color:#EAF0FF;font-family:var(--font-body);font-size:13px;cursor:pointer;min-height:0;text-align:left;}
+.lc-move button small{color:#9FB0D4;font-size:11px;}
+.lc-move button:disabled{opacity:.4;cursor:default;}
+
+/* Admin-only bar across the top of every screen — the way into the
+   control room from anywhere, not just from inside a league. */
+.admin-bar{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;gap:10px;padding:8px max(20px,calc((100vw - 1040px) / 2 + 20px));background:#060B18;border-bottom:1px solid #1B2745;}
+html.has-admin-bar .wrap{padding-top:76px;}
+.admin-bar .ab-tag{font-family:var(--font-display);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7C8CB0;}
+.admin-bar .ab-sp{flex:1;}
+.admin-bar .ab-btn{display:inline-flex;align-items:center;gap:8px;background:#1B2745;border:1px solid #2C3B66;color:#fff;border-radius:var(--radius-full);padding:8px 14px;font-family:var(--font-display);font-size:12.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:0;}
+.admin-bar .ab-btn:hover{background:#25355F;}
+.admin-bar .ab-dot{width:8px;height:8px;border-radius:50%;background:#6B7A99;}
+.admin-bar .ab-btn.is-live .ab-dot{background:#E2432F;animation:league-live-pulse 1.4s ease-in-out infinite;}
+.admin-bar .ab-n{background:#E2432F;color:#fff;border-radius:999px;padding:0 7px;font-size:11px;line-height:17px;}
+.cr-pick{display:flex;flex-direction:column;gap:7px;margin-top:6px;}
+.cr-pick button{display:flex;justify-content:space-between;align-items:center;padding:14px;border-radius:12px;border:1.5px solid #2C3B66;background:#0E1730;color:#EAF0FF;font-family:var(--font-body);font-size:14px;font-weight:600;cursor:pointer;min-height:0;text-align:left;}
+.cr-pick button.hot{border-color:#E2432F;}
+.cr-pick button small{color:#9FB0D4;font-weight:500;font-size:11.5px;}
 .opt-fixed{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-top:2px;}
 .opt-moves{margin:8px 0 0;padding-left:18px;font-size:12.5px;line-height:1.7;}
-.league-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
-/* Admin-only shortcut to Live Court Control, up top so it's one tap from
-   anywhere in the league instead of a scroll along the tab strip. Pulses
-   red when a match is actually live. */
-.lc-jump{display:inline-flex;align-items:center;gap:8px;background:var(--text);color:#fff;border:none;border-radius:var(--radius-full);padding:9px 16px;font-family:var(--font-display);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;box-shadow:0 6px 16px rgba(18,32,58,.25);}
-.lc-jump:hover{background:var(--accent);}
-.lc-jump-dot{width:8px;height:8px;border-radius:50%;background:#6B7A99;}
-.lc-jump.is-live .lc-jump-dot{background:var(--clay);animation:league-live-pulse 1.4s ease-in-out infinite;}
-.lc-actions{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;}
-.lc-actions button{flex:1;font-size:10.5px;padding:6px 4px;white-space:nowrap;}
-.lc-cell[draggable]{cursor:grab;}
-.lc-cell[draggable]:active{cursor:grabbing;}
-.live-court-table td.cs-dragging .lc-cell{opacity:.35;}
-.live-court-table td.cs-drop-target{outline:2px dashed #7FA8FF;outline-offset:-3px;border-radius:10px;background:rgba(127,168,255,.12);}
-.floodlit.urgent .lc-cell.lc-live{border-color:var(--clay);}
-.floodlit.urgent .lc-cell.lc-done{border-color:rgba(110,231,168,.4);opacity:.9;}
-.floodlit.urgent .lc-cell.lc-upcoming{border-style:dashed;}
 
 /* ---------- My Profile: player dashboard ---------- */
 .pd-card{padding-top:22px;}

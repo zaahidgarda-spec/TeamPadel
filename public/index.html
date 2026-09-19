@@ -34,6 +34,10 @@
 </head>
 <body class="role-guest">
 <div class="wrap">
+  <div class="admin-bar" id="admin-bar" style="display:none;">
+    <span class="ab-tag">Admin</span><span class="ab-sp"></span>
+    <button type="button" class="ab-btn" id="admin-bar-btn"><span class="ab-dot"></span>Control room<span class="ab-n" id="admin-bar-n" style="display:none;"></span></button>
+  </div>
   <div id="install-banner" class="install-banner" style="display:none;">
     <svg class="install-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
     <div class="install-text">
@@ -501,10 +505,7 @@
     </section>
 
     <section id="view-league">
-      <div class="league-topbar">
-        <button class="secondary" id="back-to-hub">&larr; All leagues</button>
-        <button type="button" class="lc-jump" id="open-live-court" style="display:none;"><span class="lc-jump-dot" id="open-live-court-dot"></span>Control room</button>
-      </div>
+      <button class="secondary" id="back-to-hub" style="margin-bottom:10px;">&larr; All leagues</button>
       <header class="site-header">
         <div class="brand-row">
           <a href="/" class="brand-link"><img id="league-brand-logo" src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
@@ -834,9 +835,11 @@
         <div id="round-nav-live-court"></div>
         <div class="card floodlit urgent" id="live-court-card" style="display:none;">
           <div class="lc-toolbar">
+            <div class="lc-viewtoggle" role="group" aria-label="View"><button type="button" id="lc-view-board" class="on">Board</button><button type="button" id="lc-view-timeline">Timeline</button></div>
             <button type="button" class="secondary" id="lc-rebalance-btn">Re-balance remaining matches</button>
             <span class="lc-toolbar-note" id="lc-rebalance-note"></span>
           </div>
+          <div class="lc-legend"><span><i style="background:#1E9E5C"></i>Quicker</span><span><i style="background:#D93A2B"></i>Longer</span><span><i style="background:#5B6E9C"></i>Even</span><span><i style="background:#0F1B38;box-shadow:inset 0 0 0 1.5px #E2432F"></i>Live</span><span><i style="background:#18223F"></i>Finished</span></div>
           <div id="live-court-grid"></div>
         </div>
       </section>
@@ -1287,6 +1290,8 @@
 
   </div>
 </div>
+<div class="lc-sheet-bd" id="lc-sheet-bd"></div>
+<div class="lc-sheet" id="lc-sheet" style="display:none;" role="dialog" aria-modal="true"></div>
 <script src="/app.js"></script>
 </body>
 </html>

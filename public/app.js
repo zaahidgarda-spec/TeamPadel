@@ -699,6 +699,7 @@ function showHub() {
   el("view-hub").style.display = "block";
   el("view-league").style.display = "none";
   document.body.className = "role-guest";
+  updateAdminBar();
   trackPageView("/", "Team Padel — Leagues");
   refreshOwnerStatus();
   refreshAccountStatus();
@@ -836,7 +837,7 @@ setInterval(async () => {
     // And even scoped to just this grid, a full rebuild every 30s still
     // visibly flashed the whole table on a perfectly quiet round — only
     // do it when something in the schedule/scores actually changed.
-    if (liveCourtSnapshot() !== lastLiveCourtSnapshot) renderLiveCourtControl();
+    if (liveCourtSnapshot() !== lastLiveCourtSnapshot || (liveCourtView === "timeline" && Math.floor(Date.now() / 60000) !== liveTimelineMinute)) renderLiveCourtControl();
   }
 }, 30000);
 // Which of the 5 learned-duration buckets a closeness score falls into —
@@ -1198,20 +1199,64 @@ el("create-league-btn").onclick = async () => {
     await openLeague(id);
   } catch (e) { alert(e.message); }
 };
-// Admin shortcut to Live Court Control — pinned in the league's top bar so
-// it's one tap from any tab. Not offered for a pairs league (no court
-// schedule there), and lit red while any match is actually live.
-el("open-live-court").onclick = () => { switchTab("live-court"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-function updateLiveCourtJump() {
-  const btn = el("open-live-court");
-  const show = !!league && myRole === "admin" && league.format !== "pairs";
-  btn.style.display = show ? "inline-flex" : "none";
-  if (!show) return;
+// Admin bar — a slim strip across the top of EVERY screen (hub, My Profile,
+// search, inside a league) with one "Control room" button: the way into
+// Live Court Control from anywhere. Shown to the site owner everywhere and
+// to a league's admin while inside that league. The dot lights red — with a
+// count — while matches are live. The owner's count comes from
+// /admin/control-room (polled while the page is open); a league admin's is
+// read straight off the league already loaded.
+let adminBarLive = 0;
+function inLeagueView() { return el("view-league").style.display === "block" && !!league; }
+function currentLeagueLiveCount() {
+  if (!league) return 0;
   const fixtures = league.fixtures.concat(league.playoffs ? [].concat(league.playoffs.semis || [], league.playoffs.final || [], league.playoffs.matches || []) : []);
-  const live = fixtures.some((f) => f && !f.finalized && f.rubbers.some((r) => r.startedAt && !r.completedAt));
-  btn.classList.toggle("is-live", live);
-  btn.title = live ? "A match is live right now" : "Open Live Court Control";
+  let n = 0;
+  fixtures.forEach((f) => { if (f && !f.finalized) f.rubbers.forEach((r) => { if (r.startedAt && !r.completedAt) n++; }); });
+  return n;
 }
+function updateAdminBar() {
+  const inLeague = inLeagueView();
+  const leagueAdmin = inLeague && myRole === "admin" && league.format !== "pairs";
+  const show = isOwner || leagueAdmin;
+  el("admin-bar").style.display = show ? "flex" : "none";
+  document.documentElement.classList.toggle("has-admin-bar", show);
+  if (!show) return;
+  const n = inLeague && !isOwner ? currentLeagueLiveCount() : Math.max(adminBarLive, inLeague ? currentLeagueLiveCount() : 0);
+  el("admin-bar-btn").classList.toggle("is-live", n > 0);
+  const badge = el("admin-bar-n");
+  badge.style.display = n > 0 ? "" : "none";
+  badge.textContent = n;
+}
+async function pollAdminBar() {
+  if (!isOwner || document.hidden) return;
+  const data = await api("/admin/control-room").catch(() => null);
+  if (data) { adminBarLive = data.totalLive; updateAdminBar(); }
+}
+setInterval(pollAdminBar, 30000);
+async function goToControlRoom(leagueId) {
+  closeLiveSheet();
+  if (currentLeagueId !== leagueId || !inLeagueView()) await openLeague(leagueId);
+  switchTab("live-court");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+el("admin-bar-btn").onclick = async () => {
+  // Already inside a league you run: its control room is right here.
+  if (inLeagueView() && myRole === "admin" && league.format !== "pairs") { switchTab("live-court"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  if (!isOwner) return;
+  const data = await api("/admin/control-room").catch(() => null);
+  if (!data || data.leagues.length === 0) { alert("No league is running a court schedule yet."); return; }
+  adminBarLive = data.totalLive; updateAdminBar();
+  const live = data.leagues.filter((l) => l.liveCount > 0);
+  // One league playing (or only one that could) — straight there; several —
+  // pick, with the ones that have a match on court right now first.
+  if (live.length === 1) return goToControlRoom(live[0].id);
+  if (data.leagues.length === 1) return goToControlRoom(data.leagues[0].id);
+  showLiveSheet(`<div class="grab"></div><div class="st"><div class="stt"><b>Control room</b><span>Which league?</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>
+    <div class="cr-pick">${data.leagues.map((l) => `<button type="button" class="${l.liveCount ? "hot" : ""}" data-league="${l.id}">${escapeHtml(l.name)}<small>${l.liveCount ? l.liveCount + " live now" : "nothing live"}</small></button>`).join("")}</div>`);
+  el("lc-sheet").querySelectorAll("[data-x]").forEach((x) => { x.onclick = closeLiveSheet; });
+  el("lc-sheet").querySelectorAll("[data-league]").forEach((btn) => { btn.onclick = () => goToControlRoom(btn.dataset.league); });
+};
 el("back-to-hub").onclick = async () => { leaguesIndex = await api("/leagues").catch(() => leaguesIndex); showHub(); };
 
 /* ---------- "Interested in joining a league?" signup form ---------- */
@@ -1367,6 +1412,8 @@ async function refreshOwnerStatus() {
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
   el("live-count-card").style.display = isOwner ? "block" : "none";
+  updateAdminBar();
+  pollAdminBar();
   // Not a login entry point anymore (that's the unified box on My Profile)
   // — with nothing to show a guest, the tab itself only makes sense once
   // there's actually something behind it.
@@ -3087,7 +3134,7 @@ function renderAll() {
   // rendered text in a canvas and setting a pixel `width` instead keeps it
   // exact for any font.
   sizeLeagueNameInput();
-  updateLiveCourtJump();
+  updateAdminBar();
   el("league-switcher").style.display = isOwner ? "block" : "none";
   const brand = leagueBrand(league.name);
   const brandHeader = document.querySelector("#view-league .site-header");
@@ -7099,196 +7146,261 @@ async function renderLiveCourtControl(opts) {
 
   const courtNames = league.courtNames || [];
   const courtLabel = (c) => courtNames[c] || ("Court " + (c + 1));
-  const scroll = document.createElement("div");
-  scroll.className = "court-schedule-scroll hscroll";
-  const table = document.createElement("table");
-  table.className = "court-schedule-table live-court-table";
-  const thead = document.createElement("thead");
-  thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr>";
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
-
-  for (let s = 0; s < slots; s++) {
-    const tr = document.createElement("tr");
-    const th = document.createElement("th"); th.textContent = "Match " + (s + 1); tr.appendChild(th);
-    for (let c = 0; c < courts; c++) {
-      const cell = grid[s] && grid[s][c];
-      const td = document.createElement("td");
-      const f = cell ? fixtures.find((x) => x.id === cell.fixtureId) : null;
-      if (!cell || !f) {
-        td.innerHTML = '<div class="lc-cell lc-empty">&mdash;</div>';
-        tr.appendChild(td);
-        continue;
-      }
-
-      const { rubber, state, closeness, estMins, pace, predictedCloseness, pred, tone, guess } = cellInfo[s][c];
-      const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
-
-      const box = document.createElement("div");
-      // Whole-card colour for a match still to play: green = quick, red =
-      // close and so likely long. Bright/solid means an admin decided it;
-      // dim/dashed is only the app's own guess.
-      const paceColour = tone;
-      box.className = "lc-cell lc-" + state + (state === "upcoming" ? ` lc-pace-${paceColour} lc-pace-${pace ? "manual" : "auto"}` : "");
-      const color = fixtureColor(cell.fixtureId, fixtures);
-      box.style.setProperty("--fx-glow", fixtureGlow(color));
-
-      let inner = "";
-      if (state === "upcoming") {
-        inner += `<div class="lc-pace-top"><div><div class="lc-pace-word">${PACE_WORD[paceColour]}</div><div class="lc-pace-mins">~${estMins} min</div></div><span class="lc-pace-badge">${pace ? "Set by admin ✎" : "Auto"}</span></div>`;
-      }
-      inner += `<div class="lc-teams">${avatarHtml(opt.teamA)}<span class="lc-vs">v</span>${avatarHtml(opt.teamB)}</div>`;
-      inner += `<div class="lc-pair-label">${escapeHtml(opt.shortLabel)}</div>`;
-      if (state === "upcoming") {
-        // Why the app landed where it did — and, once an admin has
-        // overruled it, what it would have said.
-        const favPct = pred ? Math.max(pred.winPctA, pred.winPctB) : null;
-        const guessWord = PACE_WORD[guess];
-        const relative = guess === "g" ? "quicker than most tonight" : guess === "r" ? "longer than most tonight" : hasSpread ? "about average tonight" : "nothing separates tonight's matches";
-        const reason = favPct === null ? "No prediction yet" : `${favPct}% favourite · ${relative}`;
-        inner += `<div class="lc-pace-why">${pace ? `App suggested ${guessWord} · ` : ""}${escapeHtml(reason)}</div>`;
-        const pos = pace === "quick" ? 0 : pace === "long" ? 2 : 1;
-        const quickMins = estimateMinutesForCloseness(PACE_QUICK_CLOSENESS), longMins = estimateMinutesForCloseness(PACE_LONG_CLOSENESS);
-        inner += `<div class="lc-pace-slider" role="group" aria-label="Match pace"><div class="lc-pace-thumb" style="transform:translateX(${pos * 100}%)"></div>
-          <button type="button" class="qg${pos === 0 ? " on" : ""}" data-pace="quick">Quick<small>~${quickMins}m</small></button>
-          <button type="button"${pos === 1 ? ' class="on"' : ""} data-pace="auto">Auto<small>${guessWord}</small></button>
-          <button type="button" class="lr${pos === 2 ? " on" : ""}" data-pace="long">Long<small>~${longMins}m</small></button></div>`;
-        const target = suggestBetterCourt(s, c);
-        if (target !== null) {
-          inner += `<div class="lc-suggest"><span><b>${escapeHtml(courtLabel(target))}</b> is lighter tonight — would even out the load.</span><span class="lc-suggest-apply" data-move-to="${target}">Move</span></div>`;
-        }
-      } else {
-        inner += state === "live"
-          ? '<span class="lc-tag lc-tag-live"><span class="lc-dot"></span>Live</span>'
-          : '<span class="lc-tag lc-tag-done">Finished</span>';
-        inner += `<div class="lc-score">${escapeHtml(rubberScoreText(rubber) || "No score posted")}</div>`;
-        const completedAttr = rubber.completedAt ? ` data-completed="${rubber.completedAt}"` : "";
-        const finishLabel = state === "live" ? "Est. finish" : "Finished at";
-        const finishMs = state === "live" ? rubber.startedAt + estMins * 60000 : rubber.completedAt;
-        // A real match running longer than its estimate (common enough)
-        // would otherwise show a finish time already in the past — this
-        // only ever looks right for the few minutes after a refresh
-        // happens to land before the estimate's passed.
-        const finishOverdue = state === "live" && finishMs < Date.now();
-        inner += `<div class="lc-strip">
-          <div><div class="lc-strip-lbl">Elapsed</div><div class="lc-strip-val lc-timer" data-started="${rubber.startedAt}"${completedAttr}></div></div>
-          <div><div class="lc-strip-lbl">Status</div><div class="lc-strip-val${state === "live" ? " lc-strip-live" : " lc-strip-done"}">${state === "live" ? "Live" : "Finished"}</div></div>
-          <div><div class="lc-strip-lbl">${finishLabel}</div><div class="lc-strip-val">${finishOverdue ? "Any time now" : escapeHtml(clockTimeOnly(finishMs))}</div></div>
-        </div>`;
-      }
-      box.innerHTML = inner;
-      if (state === "upcoming") {
-        box.querySelectorAll(".lc-pace-slider button").forEach((btn) => {
-          btn.onclick = (e) => {
-            e.stopPropagation();
-            const next = btn.dataset.pace === "auto" ? null : btn.dataset.pace;
-            if ((rubber.pace || null) === next) return;
-            const previous = rubber.pace || null;
-            // Optimistic — the card has to change the instant it's tapped,
-            // not after a round trip; put back if the server refuses.
-            if (next) rubber.pace = next; else delete rubber.pace;
-            renderLiveCourtControl({ reusePredictions: true });
-            api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/pace`, { method: "POST", body: { pace: next } })
-              .catch(async (err) => {
-                if (previous) rubber.pace = previous; else delete rubber.pace;
-                renderLiveCourtControl({ reusePredictions: true });
-                alert(err.message);
-              });
-          };
-        });
-        const applyBtn = box.querySelector(".lc-suggest-apply");
-        if (applyBtn) {
-          applyBtn.onclick = async (e) => {
-            e.stopPropagation();
-            const targetCourt = Number(applyBtn.dataset.moveTo);
-            try {
-              // The suggestion only ever points at a court this render saw
-              // as empty — tell the server that's what's expected so a
-              // near-simultaneous move by someone else (courtside, more
-              // than one person can easily be working the board at once)
-              // gets rejected instead of silently overwritten.
-              await api(`/leagues/${currentLeagueId}/court-schedule/${round}/assign`, { method: "POST", body: { slot: s, court: targetCourt, fixtureId: cell.fixtureId, seed: cell.seed, expectedTargetFixtureId: null } });
-              await refreshLeague(); renderAll();
-            } catch (err) {
-              alert(err.message);
-              // Someone else already claimed that court — show what's
-              // actually there now instead of leaving a stale suggestion.
-              await refreshLeague(); renderAll();
-            }
-          };
-        }
-      }
-
-      const actions = document.createElement("div");
-      actions.className = "lc-actions";
-      if (state === "upcoming") {
-        const startBtn = document.createElement("button");
-        startBtn.className = "secondary"; startBtn.textContent = "Start";
-        startBtn.onclick = async () => {
-          try {
-            await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/start`, { method: "POST" });
-            await refreshLeague(); renderAll();
-          } catch (e) { alert(e.message); }
-        };
-        actions.appendChild(startBtn);
-      } else {
-        const pairAHtml = pairNamesGoldHtml(opt.teamA, f.selectionA.pairs[cell.seed], f.selectionA);
-        const pairBHtml = pairNamesGoldHtml(opt.teamB, f.selectionB.pairs[cell.seed], f.selectionB);
-        const scoreBtn = document.createElement("button");
-        scoreBtn.className = "secondary"; scoreBtn.textContent = "Current score";
-        scoreBtn.onclick = () => openScoreModal(f, cell.seed, rubber, opt.teamA, opt.teamB, false, pairAHtml, pairBHtml, {
-          skipFinalize: true,
-          onSaved: async () => { await refreshLeague(); renderAll(); },
-        });
-        actions.appendChild(scoreBtn);
-        if (state === "live") {
-          const completeBtn = document.createElement("button");
-          completeBtn.className = "secondary"; completeBtn.textContent = "Mark complete";
-          completeBtn.onclick = async () => {
-            try {
-              await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/complete`, { method: "POST" });
-              await refreshLeague(); renderAll();
-            } catch (e) { alert(e.message); }
-          };
-          actions.appendChild(completeBtn);
-        }
-      }
-      box.appendChild(actions);
-      td.appendChild(box);
-
-      // Drag/drop only ever wired up for an upcoming match — never for one
-      // that's already started, on either end of the move.
-      if (state === "upcoming") {
-        box.draggable = true;
-        box.title = "Drag to move to another court";
-        box.ondragstart = (e) => {
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", JSON.stringify({ slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed }));
-          td.classList.add("cs-dragging");
-        };
-        box.ondragend = () => td.classList.remove("cs-dragging");
-      }
-      if (state !== "live" && state !== "done") {
-        td.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; td.classList.add("cs-drop-target"); };
-        td.ondragleave = () => td.classList.remove("cs-drop-target");
-        td.ondrop = (e) => {
-          e.preventDefault();
-          td.classList.remove("cs-drop-target");
-          let dragged;
-          try { dragged = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
-          if (!dragged) return;
-          performCourtSwap(round, dragged, { slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed });
-        };
-      }
-
-      tr.appendChild(td);
-    }
-    tbody.appendChild(tr);
-  }
-  table.appendChild(tbody);
-  scroll.appendChild(table);
-  wrap.appendChild(scroll);
+  // Everything the tiles, the timeline and the action sheet need, kept so a
+  // tap can act on exactly what this render showed.
+  liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread };
+  wrap.innerHTML = "";
+  if (liveCourtView === "timeline") renderLiveTimeline(wrap); else renderLiveLanes(wrap);
+  // Keep an open sheet in step with the board it belongs to (or close it if
+  // its match has gone from this round).
+  if (liveSheetCell) renderLiveSheet();
 }
+
+/* ---------- Live Court Control: board, timeline, action sheet ---------- */
+
+let liveBoard = null;
+let liveSheetCell = null;
+let liveTimelineMinute = 0;
+let liveCourtView = "board";
+try { if (localStorage.getItem("padel-live-court-view") === "timeline") liveCourtView = "timeline"; } catch { /* storage unavailable — default to the board */ }
+
+function liveTileInfo(s, c) {
+  const b = liveBoard;
+  const cell = b && b.grid[s] && b.grid[s][c];
+  if (!cell) return null;
+  const f = b.fixtures.find((x) => x.id === cell.fixtureId);
+  const info = b.cellInfo[s][c];
+  if (!f || !info) return null;
+  return { cell, f, info, opt: b.options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) };
+}
+function liveTileClass(info) {
+  return info.state === "live" ? "lc-live" : info.state === "done" ? "lc-done" : "lc-" + info.tone;
+}
+function liveNames(t) {
+  const a = t.opt && t.opt.teamA ? t.opt.teamA.name : "TBD", bb = t.opt && t.opt.teamB ? t.opt.teamB.name : "TBD";
+  return { a, b: bb };
+}
+function liveTileHtml(s, c) {
+  const t = liveTileInfo(s, c);
+  if (!t) return `<div class="lc-slot" data-s="${s}" data-c="${c}"><div class="lc-tile lc-empty">&mdash;</div></div>`;
+  const { info } = t, n = liveNames(t);
+  const names = `<div class="lc-tile-nm">${escapeHtml(n.a)} v ${escapeHtml(n.b)}<span>Seed ${t.cell.seed + 1}</span></div>`;
+  let foot;
+  if (info.state === "live") {
+    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}"></span></div>`;
+  } else if (info.state === "done") {
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">Finished &#10003;</span><span class="lc-tile-tag">${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
+  } else {
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-mn">~${info.estMins}m</span>${info.pace ? '<span class="lc-tile-pen">&#9998;</span>' : ""}</div>`;
+  }
+  const draggable = info.state === "upcoming" ? ' draggable="true" title="Drag to move to another court"' : "";
+  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}" data-open="1">${names}${foot}</button></div>`;
+}
+function renderLiveLanes(wrap) {
+  const b = liveBoard;
+  const cols = `grid-template-columns:repeat(${b.slots},minmax(0,1fr))`;
+  let html = `<div class="lc-lane-cols" style="${cols}">${Array.from({ length: b.slots }, (_, s) => `<span>Match ${s + 1}</span>`).join("")}</div>`;
+  for (let c = 0; c < b.courts; c++) {
+    let toPlay = 0;
+    for (let s = 0; s < b.slots; s++) { const ci = b.cellInfo[s][c]; if (ci && ci.state === "upcoming") toPlay++; }
+    const sub = toPlay ? `${toPlay} to play &middot; ~${b.courtLoadUpcoming[c]} min` : "nothing left to play";
+    html += `<div class="lc-lane"><div class="lc-lane-h"><span>${escapeHtml(b.courtLabel(c))}</span><small>${sub}</small></div><div class="lc-lane-row" style="${cols}">${Array.from({ length: b.slots }, (_, s) => liveTileHtml(s, c)).join("")}</div></div>`;
+  }
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".lc-slot").forEach((slot) => {
+    const s = Number(slot.dataset.s), c = Number(slot.dataset.c);
+    const t = liveTileInfo(s, c);
+    const btn = slot.querySelector("[data-open]");
+    if (btn) btn.onclick = () => openLiveSheet(s, c);
+    // Drag and drop still works on a desktop — only ever for a match that
+    // hasn't started, on either end of the move.
+    if (t && t.info.state === "upcoming") {
+      slot.ondragstart = (e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", JSON.stringify({ slot: s, court: c, fixtureId: t.cell.fixtureId, seed: t.cell.seed }));
+        slot.classList.add("lc-dragging");
+      };
+      slot.ondragend = () => slot.classList.remove("lc-dragging");
+    }
+    if (!t || t.info.state === "upcoming") {
+      slot.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; slot.classList.add("lc-drop-target"); };
+      slot.ondragleave = () => slot.classList.remove("lc-drop-target");
+      slot.ondrop = (e) => {
+        e.preventDefault(); slot.classList.remove("lc-drop-target");
+        let dragged; try { dragged = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
+        if (dragged) performCourtSwap(b.round, dragged, { slot: s, court: c, fixtureId: t ? t.cell.fixtureId : null, seed: t ? t.cell.seed : null });
+      };
+    }
+  });
+}
+// Courts as rows, time across: a match's bar is as long as its estimate and
+// coloured like its tile, so which court finishes last — and roughly when —
+// reads at a glance. Built from real clock times: started/finished matches
+// use their actual start and end, a live one runs to its estimate (or a few
+// minutes past now if it's already overrunning), and each court's upcoming
+// matches queue one after another from there.
+function renderLiveTimeline(wrap) {
+  const b = liveBoard, MIN = 60000, now = Date.now();
+  liveTimelineMinute = Math.floor(now / MIN);
+  const rows = [];
+  let t0 = now - 6 * MIN;
+  for (let c = 0; c < b.courts; c++) {
+    let cursor = now;
+    const bars = [];
+    for (let s = 0; s < b.slots; s++) {
+      const t = liveTileInfo(s, c);
+      if (!t) continue;
+      const { info } = t;
+      let start, end;
+      if (info.state === "done") { start = info.rubber.startedAt; end = info.rubber.completedAt; }
+      else if (info.state === "live") { start = info.rubber.startedAt; end = Math.max(start + info.estMins * MIN, now + 4 * MIN); }
+      else { start = Math.max(cursor, now); end = start + info.estMins * MIN; }
+      cursor = Math.max(cursor, end);
+      t0 = Math.min(t0, start - 2 * MIN);
+      bars.push({ s, c, t, info, start, end });
+    }
+    rows.push({ c, bars, end: cursor });
+  }
+  const tMax = Math.max(now + 30 * MIN, ...rows.map((r) => r.end)) + 6 * MIN;
+  const span = tMax - t0;
+  const pct = (ms) => ((ms - t0) / span) * 100;
+  const step = span > 3.2 * 60 * MIN ? 60 * MIN : 30 * MIN;
+  const ticks = [];
+  for (let m = Math.ceil(t0 / step) * step; m < tMax; m += step) ticks.push(m);
+  const axis = `<div class="lc-tl-ax"><span class="now" style="left:${pct(now)}%">NOW ${escapeHtml(clockTimeOnly(now))}</span>${ticks.filter((m) => Math.abs(pct(m) - pct(now)) > 9).map((m) => `<span style="left:${pct(m)}%">${escapeHtml(clockTimeOnly(m))}</span>`).join("")}</div>`;
+  const body = rows.map((r) => `<div class="lc-tl-row"><div class="lc-tl-c">${escapeHtml(b.courtLabel(r.c))}</div><div class="lc-tl-track"><div class="lc-tl-now" style="left:${pct(now)}%"></div>${r.bars.map((x) => {
+    const n = liveNames(x.t);
+    const sub = x.info.state === "live" ? "LIVE" : x.info.state === "done" ? "&#10003;" : "~" + x.info.estMins + "m" + (x.info.pace ? " &#9998;" : "");
+    // Short codes — a bar can be narrow on a phone; the full names are on hover
+    // and in the sheet a tap opens.
+    const code = (name) => escapeHtml(name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase());
+    return `<button type="button" class="lc-tile lc-tl-bar ${liveTileClass(x.info)}" data-s="${x.s}" data-c="${x.c}" title="${escapeHtml(n.a)} v ${escapeHtml(n.b)}" style="left:${pct(x.start)}%;width:${Math.max(3, ((x.end - x.start) / span) * 100 - 0.6)}%"><span class="a">${code(n.a)}&middot;${code(n.b)}</span><span class="b">${sub}</span></button>`;
+  }).join("")}</div></div>`).join("");
+  const playing = rows.filter((r) => r.bars.some((x) => x.info.state !== "done"));
+  let summary = "";
+  if (playing.length) {
+    const last = playing.reduce((a, r) => (r.end > a.end ? r : a), playing[0]);
+    const first = playing.reduce((a, r) => (r.end < a.end ? r : a), playing[0]);
+    const gap = Math.round((last.end - first.end) / MIN);
+    summary = `<div class="lc-tl-fin">Last court to finish: <b>${escapeHtml(b.courtLabel(last.c))}</b> at about <b>${escapeHtml(clockTimeOnly(last.end))}</b>.${gap >= 25 ? `<br>Courts finish about ${gap} min apart — Re-balance could even that out.` : ""}</div>`;
+  } else summary = '<div class="lc-tl-fin">Nothing left to play this round.</div>';
+  wrap.innerHTML = `<div class="lc-tl">${axis}${body}${summary}</div>`;
+  wrap.querySelectorAll(".lc-tl-bar").forEach((btn) => { btn.onclick = () => openLiveSheet(Number(btn.dataset.s), Number(btn.dataset.c)); });
+}
+function closeLiveSheet() {
+  liveSheetCell = null;
+  el("lc-sheet").style.display = "none";
+  el("lc-sheet-bd").classList.remove("open");
+}
+function openLiveSheet(s, c) { liveSheetCell = { s, c }; renderLiveSheet(); }
+function showLiveSheet(html) {
+  const sheet = el("lc-sheet");
+  sheet.innerHTML = html;
+  sheet.style.display = "block";
+  el("lc-sheet-bd").classList.add("open");
+}
+el("lc-sheet-bd").onclick = closeLiveSheet;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && el("lc-sheet").style.display === "block") closeLiveSheet(); });
+function renderLiveSheet() {
+  const { s, c } = liveSheetCell || {};
+  const t = liveSheetCell ? liveTileInfo(s, c) : null;
+  if (!t) { closeLiveSheet(); return; }
+  const b = liveBoard, { info, f, cell } = t, n = liveNames(t);
+  const swatch = info.state === "upcoming" ? { g: "#1E9E5C", r: "#D93A2B", n: "#5B6E9C" }[info.tone] : "#243360";
+  const status = info.state === "live" ? "Live" : info.state === "done" ? "Finished" : `~${info.estMins} min`;
+  let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(n.a)} v ${escapeHtml(n.b)}</b><span>Seed ${cell.seed + 1} &middot; ${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>`;
+  if (info.state === "upcoming") {
+    const pos = info.pace || "auto";
+    html += `<div class="lb">Pace</div><div class="lc-pace">
+      <button type="button" class="${pos === "quick" ? "on" : ""}" data-pace="quick"><i style="background:#1E9E5C"></i>Quicker</button>
+      <button type="button" class="${pos === "auto" ? "on" : ""}" data-pace="auto">Auto</button>
+      <button type="button" class="${pos === "long" ? "on" : ""}" data-pace="long"><i style="background:#D93A2B"></i>Longer</button></div>`;
+    const favPct = info.pred ? Math.max(info.pred.winPctA, info.pred.winPctB) : null;
+    const relative = info.guess === "g" ? "quicker than most tonight" : info.guess === "r" ? "longer than most tonight" : b.hasSpread ? "about average tonight" : "nothing separates tonight's matches";
+    html += `<div class="why">${info.pace ? `App suggested ${escapeHtml(PACE_WORD[info.guess])} &middot; ` : ""}${escapeHtml(favPct === null ? "No prediction yet" : `${favPct}% favourite · ${relative}`)}</div>`;
+    const better = b.suggestBetterCourt(s, c);
+    if (better !== null) html += `<div class="nudge"><span><b>${escapeHtml(b.courtLabel(better))}</b> is lighter tonight — would even out the load.</span><button type="button" data-moveto="${better}">Move</button></div>`;
+    html += `<div class="row2"><button type="button" class="p" data-start>Start</button><button type="button" data-x>Close</button></div>`;
+    if (b.courts > 1) {
+      html += '<div class="lb">Move to another court</div><div class="lc-move">';
+      for (let c2 = 0; c2 < b.courts; c2++) {
+        if (c2 === c) continue;
+        const o = liveTileInfo(s, c2);
+        if (!o) html += `<button type="button" data-moveto="${c2}">${escapeHtml(b.courtLabel(c2))}<small>free</small></button>`;
+        else if (o.info.state === "upcoming") { const on = liveNames(o); html += `<button type="button" data-moveto="${c2}">${escapeHtml(b.courtLabel(c2))}<small>swap with ${escapeHtml(on.a)} v ${escapeHtml(on.b)}</small></button>`; }
+        else html += `<button type="button" disabled>${escapeHtml(b.courtLabel(c2))}<small>in play</small></button>`;
+      }
+      html += "</div>";
+    }
+  } else {
+    html += `<div class="row2"><button type="button" class="p" data-score>${info.state === "live" ? "Score" : "Score"}</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-x>Close</button>'}</div>`;
+  }
+  showLiveSheet(html);
+  const sheet = el("lc-sheet");
+  sheet.querySelectorAll("[data-x]").forEach((x) => { x.onclick = closeLiveSheet; });
+  sheet.querySelectorAll("[data-pace]").forEach((btn) => {
+    btn.onclick = () => {
+      const next = btn.dataset.pace === "auto" ? null : btn.dataset.pace;
+      // The board's own copy of the match can be older than the league now
+      // in memory (the 30s refresh swaps the league without redrawing an
+      // unchanged board), and the redraw below reads the league — so change
+      // the match as it is there, or the tap would seem to do nothing.
+      const current = courtScheduleFixturesFor(b.round).find((x) => x.id === f.id);
+      const rubber = current ? current.rubbers[cell.seed] : info.rubber;
+      if ((rubber.pace || null) === next) return;
+      const previous = rubber.pace || null;
+      // Optimistic — the tile has to change the instant it's tapped, not
+      // after a round trip; put back if the server refuses.
+      if (next) rubber.pace = next; else delete rubber.pace;
+      renderLiveCourtControl({ reusePredictions: true });
+      api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/pace`, { method: "POST", body: { pace: next } })
+        .catch((err) => {
+          if (previous) rubber.pace = previous; else delete rubber.pace;
+          renderLiveCourtControl({ reusePredictions: true });
+          alert(err.message);
+        });
+    };
+  });
+  const startBtn = sheet.querySelector("[data-start]");
+  if (startBtn) startBtn.onclick = async () => {
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/start`, { method: "POST" });
+      closeLiveSheet(); await refreshLeague(); renderAll();
+    } catch (e) { alert(e.message); }
+  };
+  sheet.querySelectorAll("[data-moveto]").forEach((btn) => {
+    btn.onclick = () => {
+      const c2 = Number(btn.dataset.moveto), o = liveTileInfo(s, c2);
+      closeLiveSheet();
+      performCourtSwap(b.round, { slot: s, court: c, fixtureId: cell.fixtureId, seed: cell.seed }, { slot: s, court: c2, fixtureId: o ? o.cell.fixtureId : null, seed: o ? o.cell.seed : null });
+    };
+  });
+  const scoreBtn = sheet.querySelector("[data-score]");
+  if (scoreBtn) scoreBtn.onclick = () => {
+    closeLiveSheet();
+    const pairAHtml = pairNamesGoldHtml(t.opt.teamA, f.selectionA.pairs[cell.seed], f.selectionA);
+    const pairBHtml = pairNamesGoldHtml(t.opt.teamB, f.selectionB.pairs[cell.seed], f.selectionB);
+    openScoreModal(f, cell.seed, info.rubber, t.opt.teamA, t.opt.teamB, false, pairAHtml, pairBHtml, { skipFinalize: true, onSaved: async () => { await refreshLeague(); renderAll(); } });
+  };
+  const completeBtn = sheet.querySelector("[data-complete]");
+  if (completeBtn) completeBtn.onclick = async () => {
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/complete`, { method: "POST" });
+      closeLiveSheet(); await refreshLeague(); renderAll();
+    } catch (e) { alert(e.message); }
+  };
+}
+function setLiveCourtView(view) {
+  liveCourtView = view;
+  try { localStorage.setItem("padel-live-court-view", view); } catch { /* storage unavailable — just don't remember it */ }
+  el("lc-view-board").classList.toggle("on", view === "board");
+  el("lc-view-timeline").classList.toggle("on", view === "timeline");
+  if (league) renderLiveCourtControl({ reusePredictions: true });
+}
+el("lc-view-board").onclick = () => setLiveCourtView("board");
+el("lc-view-timeline").onclick = () => setLiveCourtView("timeline");
+el("lc-view-board").classList.toggle("on", liveCourtView === "board");
+el("lc-view-timeline").classList.toggle("on", liveCourtView === "timeline");
 function renderFixtures() {
   el("fixtures-signup-banner").style.display = (!playerAccount && !fixturesBannerDismissed) ? "flex" : "none";
   renderRoundNav("round-nav-fixtures");
