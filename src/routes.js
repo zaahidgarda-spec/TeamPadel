@@ -3861,6 +3861,84 @@ function matchPrediction(league, f, seed, ratingsData, identityOf) {
 function closenessBucket(closeness) {
   return Math.min(4, Math.max(0, Math.floor(closeness / 20)));
 }
+// A match that's already on court (or finished) is fixed to its court and
+// slot — Live Court Control refuses to drag one, and nothing that rewrites
+// the court grid may either. Both the season-wide optimiser and the
+// mid-night re-balance below treat these as immovable.
+function roundHasStartedMatch(league, round) {
+  return fixturesForRoundKey(league, round).some((f) => f.rubbers.some((r) => r.startedAt));
+}
+// Re-balances ONE round without disturbing what's under way: every started
+// or finished match stays exactly where it is, and only the still-upcoming
+// ones can change court — never slot, since the slot decides who plays
+// when (double-ups, rest between seeds), which is planning, not balancing.
+// Load is each court's predicted minutes across its upcoming matches only,
+// the same measure Live Court Control's "a lighter court exists" nudge uses,
+// and each match's closeness already reflects an admin's manual Quick/Long.
+// A team league with a dedicated court per fixture (4+ slots) moves whole
+// fixtures, not single seeds, so a fixture never splits across courts; one
+// with any seed already started stays put entirely. Nothing is proposed
+// unless it actually narrows the gap between the busiest and lightest court.
+function rebalanceRoundGrid(league, round, ratingsData, identityOf) {
+  const slots = league.slotCount || 3, courts = league.courtCount || 4;
+  const fixtures = fixturesForRoundKey(league, round);
+  const current = getCourtGrid(league, round);
+  const dedicated = slots >= 4;
+  const predictionOf = (f, seed) => matchPrediction(league, f, seed, ratingsData, identityOf) || { closeness: 50 };
+  const grid = emptyCourtGrid(slots, courts);
+  const units = new Map();
+  current.forEach((row, sl) => row.forEach((cell, c) => {
+    if (!cell) return;
+    const f = fixtures.find((x) => x.id === cell.fixtureId);
+    const started = !!(f && f.rubbers[cell.seed] && f.rubbers[cell.seed].startedAt);
+    const fixtureStarted = !!(f && f.rubbers.some((r) => r.startedAt));
+    if (!f || f.finalized || started || (dedicated && fixtureStarted)) {
+      grid[sl][c] = { fixtureId: cell.fixtureId, seed: cell.seed, pinned: true };
+      return;
+    }
+    const key = dedicated ? f.id : f.id + ":" + cell.seed;
+    if (!units.has(key)) units.set(key, { cells: [], load: 0, fromCourt: c });
+    const u = units.get(key);
+    const pred = predictionOf(f, cell.seed);
+    u.cells.push({ slot: sl, court: c, fixtureId: cell.fixtureId, seed: cell.seed, pred });
+    u.load += pred.closeness;
+  }));
+  const list = [...units.values()];
+  const currentLoad = Array(courts).fill(0);
+  list.forEach((u) => u.cells.forEach((cl) => { currentLoad[cl.court] += cl.pred.closeness; }));
+  const spread = (arr) => Math.max(...arr) - Math.min(...arr);
+
+  const courtLoad = Array(courts).fill(0);
+  const placed = [];
+  list.slice().sort((a, b) => b.load - a.load || (a.cells[0].fixtureId + a.cells[0].seed).localeCompare(b.cells[0].fixtureId + b.cells[0].seed)).forEach((u) => {
+    let best = -1;
+    for (let c = 0; c < courts; c++) {
+      if (!u.cells.every((cl) => !grid[cl.slot][c])) continue;
+      if (best === -1 || courtLoad[c] < courtLoad[best] || (courtLoad[c] === courtLoad[best] && c === u.fromCourt)) best = c;
+    }
+    u.cells.forEach((cl) => {
+      let court = best;
+      // No single court free across every seed of a fixture (a hand-edited
+      // grid) — keep each seed where it is, or the first free court in its
+      // slot, rather than dropping a match off the board.
+      if (court === -1) {
+        court = grid[cl.slot][cl.court] ? grid[cl.slot].findIndex((x) => !x) : cl.court;
+        if (court === -1) court = cl.court;
+      }
+      grid[cl.slot][court] = { fixtureId: cl.fixtureId, seed: cl.seed, ...cl.pred };
+      courtLoad[court] += cl.pred.closeness;
+      placed.push({ ...cl, to: court });
+    });
+  });
+  const moves = placed.filter((p) => p.to !== p.court).map((p) => ({ fixtureId: p.fixtureId, seed: p.seed, slot: p.slot, from: p.court, to: p.to }));
+  if (!moves.length || spread(courtLoad) >= spread(currentLoad)) {
+    // Not an improvement — hand back the schedule exactly as it stands.
+    const unchanged = emptyCourtGrid(slots, courts);
+    current.forEach((row, sl) => row.forEach((cell, c) => { if (cell) unchanged[sl][c] = { fixtureId: cell.fixtureId, seed: cell.seed }; }));
+    return { grid: unchanged, courtLoad: currentLoad, currentLoad, moves: [] };
+  }
+  return { grid, courtLoad, currentLoad, moves };
+}
 function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   const roundKeys = courtScheduleRoundKeys(league);
@@ -3881,6 +3959,21 @@ function computeOptimumCourtSchedule(league, ratingsData, identityOf) {
         const f = fixtures.find((x) => x.id === cell.fixtureId);
         if (f) { teamTally(f.teamA)[s]++; teamTally(f.teamB)[s]++; }
       }));
+      return;
+    }
+
+    // A round already under way can't be re-planned from scratch — that
+    // would move matches that are live or finished. Only its still-upcoming
+    // matches get re-balanced, and the fairness tally still counts every
+    // placement so later rounds plan around it.
+    if (roundHasStartedMatch(league, round)) {
+      const r = rebalanceRoundGrid(league, round, ratingsData, identityOf);
+      r.grid.forEach((row, sl) => row.forEach((cell) => {
+        if (!cell) return;
+        const f = fixtures.find((x) => x.id === cell.fixtureId);
+        if (f) { teamTally(f.teamA)[sl]++; teamTally(f.teamB)[sl]++; }
+      }));
+      rounds[round] = { grid: r.grid, courtLoad: r.courtLoad };
       return;
     }
 
@@ -4670,6 +4763,21 @@ router.post("/leagues/:leagueId/court-schedule/optimum-preview", requireAdmin, (
   res.json({ rounds: computeOptimumCourtSchedule(league, ratingsData, identityOf) });
 });
 
+// Live Court Control's "Re-balance remaining matches" — step 1 for ONE round:
+// proposes a court re-shuffle of only what hasn't started (see
+// rebalanceRoundGrid), saving nothing. The admin reviews it, then it goes
+// through optimum-apply below like any other layout.
+router.post("/leagues/:leagueId/court-schedule/:round/rebalance-preview", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const roundParam = req.params.round;
+  const isPlayoffKey = ["semis", "final", "positions"].includes(roundParam);
+  const round = isPlayoffKey ? roundParam : Number(roundParam);
+  if (!isPlayoffKey && !Number.isInteger(round)) return res.status(400).json({ error: "Invalid round." });
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  res.json({ round, ...rebalanceRoundGrid(league, round, ratingsData, identityOf) });
+});
+
 // Read-only: how balanced the CURRENT court schedule already is, same
 // per-court predicted-load numbers as the optimum preview but computed
 // from what's actually saved rather than a hypothetical new layout —
@@ -4694,6 +4802,7 @@ router.post("/leagues/:leagueId/court-schedule/optimum-apply", requireAdmin, (re
   if (!rounds || typeof rounds !== "object") return res.status(400).json({ error: "Missing layout." });
   const slots = league.slotCount || 3, courts = league.courtCount || 4;
   if (!league.courtSchedule) league.courtSchedule = {};
+  const skipped = [];
   Object.keys(rounds).forEach((roundKey) => {
     // Every object key arrives as a string over JSON regardless of what it
     // was server-side — a regular round goes back to its real number, a
@@ -4716,10 +4825,23 @@ router.post("/leagues/:leagueId/court-schedule/optimum-apply", requireAdmin, (re
         grid[s][c] = { fixtureId: cell.fixtureId, seed: Number(cell.seed) };
       }
     }
+    // A preview can go stale while its modal is open — a match may have
+    // started since. Anything already under way must still sit exactly
+    // where it is; if the incoming layout moved or dropped one, skip this
+    // round entirely (and say so) rather than move a live match.
+    const currentGrid = getCourtGrid(league, round);
+    const movedStarted = currentGrid.some((row, sl) => row.some((cell, c) => {
+      if (!cell) return false;
+      const f = fixturesById[cell.fixtureId];
+      if (!f || !f.rubbers[cell.seed] || !f.rubbers[cell.seed].startedAt) return false;
+      const now = grid[sl] && grid[sl][c];
+      return !now || now.fixtureId !== cell.fixtureId || now.seed !== cell.seed;
+    }));
+    if (movedStarted) { skipped.push(roundKey); return; }
     league.courtSchedule[round] = grid;
   });
   store.saveLeague(league.id, league);
-  res.json({ ok: true });
+  res.json({ ok: true, skipped });
 });
 
 // Admin-added extra round, beyond the auto-generated round robin. "table"

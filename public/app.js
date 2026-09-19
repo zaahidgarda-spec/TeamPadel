@@ -6993,6 +6993,7 @@ async function renderLiveCourtControl(opts) {
   }
   card.style.display = "block";
   renderRoundNav("round-nav-live-court");
+  el("lc-rebalance-note").textContent = "";
   lastLiveCourtSnapshot = liveCourtSnapshot();
 
   const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
@@ -9820,7 +9821,8 @@ function renderCourtBalanceGrids(rounds) {
         const predictHtml = cell.winPctA != null
           ? `<div class="cs-cell-predict"${cell.provisional ? ' title="Early prediction — not everyone has a settled rating yet"' : ""}><span class="${cell.winPctA >= cell.winPctB ? "fav" : ""}">${cell.winPctA}%</span> – <span class="${cell.winPctB >= cell.winPctA ? "fav" : ""}">${cell.winPctB}%</span></div>`
           : "";
-        return `<td style="border-radius:8px;background:${color.bg};"><div class="cs-cell-content"><div class="cs-cell-label">${escapeHtml(opt ? opt.shortLabel : "Seed " + (cell.seed + 1))}</div>${predictHtml}</div></td>`;
+        const fixedHtml = cell.pinned ? '<div class="opt-fixed">Fixed — stays put</div>' : "";
+        return `<td style="border-radius:8px;background:${color.bg};"><div class="cs-cell-content"><div class="cs-cell-label">${escapeHtml(opt ? opt.shortLabel : "Seed " + (cell.seed + 1))}</div>${predictHtml}${fixedHtml}</div></td>`;
       }).join("");
       return `<tr><th>Match ${s + 1}</th>${cells}</tr>`;
     }).join("");
@@ -9846,6 +9848,36 @@ function renderCourtBalanceGrids(rounds) {
     </div>`;
   }).join("");
 }
+// Live Court Control's "Re-balance remaining matches" — the same preview
+// modal as Generate optimum layout, but for just the round on screen, and
+// with everything already live or finished held exactly where it is (see
+// rebalanceRoundGrid server-side). Says so plainly when courts are already
+// as even as they can get, instead of showing an empty modal.
+el("lc-rebalance-btn").onclick = async () => {
+  if (!viewingKey) return;
+  const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
+  const note = el("lc-rebalance-note");
+  note.textContent = "";
+  try {
+    const data = await api(`/leagues/${currentLeagueId}/court-schedule/${round}/rebalance-preview`, { method: "POST" });
+    if (!data.moves.length) { note.textContent = "Courts are already as even as they can be — nothing to move."; return; }
+    optimumLayoutProposal = { [round]: { grid: data.grid, courtLoad: data.courtLoad } };
+    const options = courtScheduleOptions(courtScheduleFixturesFor(round));
+    const courtNames = league.courtNames || [];
+    const courtLabel = (c) => courtNames[c] || ("Court " + (c + 1));
+    const lines = data.moves.map((m) => {
+      const o = options.find((x) => x.fixtureId === m.fixtureId && x.seed === m.seed);
+      return `<li><b>${escapeHtml(o ? o.shortLabel : "Seed " + (m.seed + 1))}</b> (Match ${m.slot + 1}): ${escapeHtml(courtLabel(m.from))} → ${escapeHtml(courtLabel(m.to))}</li>`;
+    }).join("");
+    el("optimum-layout-modal-title").textContent = "Re-balance remaining matches";
+    el("optimum-layout-modal-note").innerHTML = `Only matches that haven't started move, and only to another court in the same time slot — anything live or finished stays exactly where it is. Predicted load per court, before: ${data.currentLoad.join(" · ")} → after: ${data.courtLoad.join(" · ")}.<ol class="opt-moves">${lines}</ol>`;
+    el("optimum-layout-apply-btn").style.display = "";
+    el("optimum-layout-apply-btn").textContent = "Apply";
+    el("optimum-layout-cancel-btn").textContent = "Cancel";
+    renderCourtBalanceGrids(optimumLayoutProposal);
+    el("optimum-layout-modal-backdrop").classList.add("open");
+  } catch (e) { alert(e.message); }
+};
 el("generate-optimum-layout-btn").onclick = async () => {
   try {
     const data = await api(`/leagues/${currentLeagueId}/court-schedule/optimum-preview`, { method: "POST" });
@@ -9856,6 +9888,7 @@ el("generate-optimum-layout-btn").onclick = async () => {
       ? "Which slot each match's extra rubber lands in is unchanged from Auto-fill's own season-fair rotation — only which court each match plays on has moved, to keep a round's closest (most likely to run long) matches spread across different courts instead of stacked on one."
       : "Nothing to preview — every round is already finalized.";
     el("optimum-layout-apply-btn").style.display = has ? "" : "none";
+    el("optimum-layout-apply-btn").textContent = "Optimise";
     el("optimum-layout-cancel-btn").textContent = "Cancel";
     renderCourtBalanceGrids(data.rounds);
     el("optimum-layout-modal-backdrop").classList.add("open");
@@ -9887,10 +9920,11 @@ el("optimum-layout-modal-backdrop").addEventListener("click", (e) => { if (e.tar
 el("optimum-layout-apply-btn").onclick = async () => {
   if (!optimumLayoutProposal) { el("optimum-layout-modal-backdrop").classList.remove("open"); return; }
   try {
-    await api(`/leagues/${currentLeagueId}/court-schedule/optimum-apply`, { method: "POST", body: { rounds: optimumLayoutProposal } });
+    const res = await api(`/leagues/${currentLeagueId}/court-schedule/optimum-apply`, { method: "POST", body: { rounds: optimumLayoutProposal } });
     optimumLayoutProposal = null;
     el("optimum-layout-modal-backdrop").classList.remove("open");
     await refreshLeague(); renderAll();
+    if (res && res.skipped && res.skipped.length) alert("A match started while you were looking at this — that round was left exactly as it is. Re-balance again to see what's still possible.");
   } catch (e) { alert(e.message); }
 };
 
