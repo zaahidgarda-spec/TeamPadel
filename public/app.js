@@ -11396,3 +11396,17 @@ if ("serviceWorker" in navigator) {
     localStorage.setItem(dismissKey, "true");
   });
 })();
+
+// The hub's one-line explainer ("Browse active leagues...") only earns its
+// space the first time someone lands here — a returning visitor already
+// knows what this page does, so it's hidden for them from then on rather
+// than sitting above the real content on every single visit.
+(function () {
+  const tagline = document.querySelector(".hub-tagline");
+  if (!tagline) return;
+  const seenKey = "padel-hub-tagline-seen";
+  try {
+    if (localStorage.getItem(seenKey)) { tagline.style.display = "none"; return; }
+    localStorage.setItem(seenKey, "true");
+  } catch (e) { /* private mode, storage full, etc. — leave it showing */ }
+})();
