@@ -2045,31 +2045,57 @@ function renderAccountNeedsAttention(cards, due) {
 }
 // A captain's cross-league "score needed" list — every fixture one of
 // their teams has actually started playing but hasn't been finalized yet
-// (see /players/pending-results). Tapping a row jumps into that league
-// (switching if it isn't the one already open) and opens the exact same
-// score modal the Results tab's own opponent cards use, so nothing about
-// entering a score itself is duplicated here.
+// (see /players/pending-results, which already breaks each fixture into
+// its own rubbers with real pair names). A swipeable card per fixture,
+// each rubber its own mini tile — the same breakdown resultsCard shows on
+// the real Results tab, just laid out for a narrow card. Tapping a tile's
+// button jumps into that league first (if it isn't already loaded) and
+// opens the exact same per-rubber score modal, so score entry itself is
+// never duplicated here.
 async function renderAccountPendingResults() {
   const items = await api("/players/pending-results").catch(() => []);
   const section = el("account-results-section");
   if (!items.length) { section.style.display = "none"; return; }
   section.style.display = "block";
-  el("account-results-list").innerHTML = items.map((r) => {
-    const when = r.date ? (relativeDayLabel(r.date) || fmtDate(r.date)) : "Date unknown";
-    return `<div class="opponent-card" style="width:100%;cursor:pointer;" data-league="${r.leagueId}" data-fixture="${r.fixtureId}">
-      ${avatarHtml({ logo: r.opponentLogo, name: r.opponentName })}
-      <div>
-        <div>${escapeHtml(r.teamName)} vs ${escapeHtml(r.opponentName)}</div>
-        <div class="note" style="font-weight:400;">${escapeHtml(r.leagueName)} · ${escapeHtml(r.label)} · played ${escapeHtml(when)}, no score yet</div>
+  el("account-results-scroll").innerHTML = items.map((r) => {
+    const total = r.rubbers.length;
+    const decided = r.rubbers.filter((rb) => rb.scoreText).length;
+    const statusText = !r.lineupsSubmitted ? "Lineups pending"
+      : total <= 1 ? (decided > 0 ? "In progress" : "Pending")
+      : `${decided}/${total}`;
+    const tilesHtml = !r.lineupsSubmitted
+      ? '<div class="pr-lineups-pending">Waiting for both captains to submit their line-up.</div>'
+      : r.rubbers.map((rb) => {
+          const seedLabel = rb.isDecider ? "Decider" : total === 1 ? "Match" : "Seed " + rb.seed;
+          const scoreChip = rb.scoreText ? `<span class="pr-score-chip">${escapeHtml(rb.scoreText)}</span>` : '<span class="pr-score-chip pending">Not played</span>';
+          const nameLine = (name, won) => `<div${won ? ' class="won"' : ""}>${escapeHtml(name)}</div>`;
+          const btnLabel = rb.scoreText ? "Edit" : "Enter score";
+          return `<div class="pr-tile" data-league="${r.leagueId}" data-fixture="${r.fixtureId}">
+            <div class="pr-tile-head"><span class="pr-seed-badge">${escapeHtml(seedLabel)}</span>${scoreChip}</div>
+            <div class="pr-names">${nameLine(rb.pairA, rb.wonSide === "A")}${nameLine(rb.pairB, rb.wonSide === "B")}</div>
+            <button type="button" class="pr-btn" data-seed="${rb.seed - 1}">${btnLabel}</button>
+          </div>`;
+        }).join("");
+    return `<div class="pr-card">
+      <div class="pr-card-head">
+        <div class="pr-card-title">${avatarHtml({ logo: r.teamLogo, name: r.teamName })}<span class="name">${escapeHtml(r.teamName)}</span><span class="vs">vs</span><span class="name">${escapeHtml(r.opponentName)}</span>${avatarHtml({ logo: r.opponentLogo, name: r.opponentName })}</div>
       </div>
+      <div class="note" style="margin-bottom:9px;">${escapeHtml(r.leagueName)} · ${escapeHtml(r.label)} · ${escapeHtml(statusText)}</div>
+      ${tilesHtml}
     </div>`;
   }).join("");
-  el("account-results-list").querySelectorAll(".opponent-card").forEach((row) => {
-    row.onclick = async () => {
-      const leagueId = row.dataset.league, fixtureId = row.dataset.fixture;
+  el("account-results-scroll").querySelectorAll(".pr-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const tile = btn.closest(".pr-tile");
+      const leagueId = tile.dataset.league, fixtureId = tile.dataset.fixture, idx = Number(btn.dataset.seed);
       if (currentLeagueId !== leagueId) await openLeague(leagueId);
       const f = league.fixtures.find((x) => x.id === fixtureId) || (league.playoffs && [league.playoffs.semis && league.playoffs.semis[0], league.playoffs.semis && league.playoffs.semis[1], league.playoffs.final, ...(league.playoffs.matches || [])].filter(Boolean).find((x) => x.id === fixtureId));
-      if (f) openScoreModalFor(f);
+      if (!f) return;
+      const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+      const isDecider = idx === 4;
+      const pairAHtml = isDecider ? escapeHtml(teamA.name) : pairNamesGoldHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
+      const pairBHtml = isDecider ? escapeHtml(teamB.name) : pairNamesGoldHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
+      openScoreModal(f, idx, f.rubbers[idx], teamA, teamB, isDecider, pairAHtml, pairBHtml);
     };
   });
 }

@@ -4381,11 +4381,24 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
   res.json(out);
 });
 
+// Plain-text "A & B" for one rubber's pair — the server-side equivalent of
+// the client's pairNamesGoldHtml, minus the gold-sub styling this has no
+// use for. A missing pair (lineup not submitted, or a slot skipped) reads
+// as "TBD" rather than blank, since this feeds a list meant to stand on
+// its own without the fixture's full context alongside it.
+function pairNamesText(team, pair) {
+  if (!team || !pair) return "TBD";
+  const names = pair.map((pid) => (team.players.find((p) => p.id === pid) || {}).name).filter(Boolean);
+  return names.length ? names.join(" & ") : "TBD";
+}
 // Every fixture a captained team has actually started playing (something's
 // been entered or its kickoff has passed) but hasn't been finalized yet —
 // the cross-league equivalent of the "tap an opponent to enter a score"
 // list already on each league's own Results tab, surfaced on My Profile so
-// a captain doesn't have to go hunting for the right league first.
+// a captain doesn't have to go hunting for the right league first. Each
+// fixture carries its own rubbers (real pair names, per-seed score) so the
+// client can show the same per-rubber breakdown resultsCard does, without
+// a second round-trip once the captain taps in.
 router.get("/players/pending-results", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   const out = [];
@@ -4403,12 +4416,36 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
       const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);
       if (!started) return;
       const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
+      const teamA = league.teams.find((t) => t.id === f.teamA);
+      const teamB = league.teams.find((t) => t.id === f.teamB);
+      const lineupsSubmitted = !!(f.selectionA.submitted && f.selectionB.submitted);
+      const { winsA, winsB } = logic.fixtureScore(f);
+      // Same decider-visibility rule resultsCard uses client-side — only
+      // shown once the regulation rubbers have actually tied.
+      const rubbers = lineupsSubmitted
+        ? f.rubbers
+            .map((rubber, idx) => ({ rubber, idx }))
+            .filter(({ idx }) => idx !== 4 || winsA === winsB)
+            .map(({ rubber, idx }) => {
+              const winner = logic.rubberWinner(rubber);
+              return {
+                seed: idx + 1, isDecider: idx === 4,
+                pairA: idx === 4 ? teamA.name : pairNamesText(teamA, f.selectionA.pairs[idx]),
+                pairB: idx === 4 ? teamB.name : pairNamesText(teamB, f.selectionB.pairs[idx]),
+                scoreText: logic.rubberScoreText(rubber) || null,
+                wonSide: winner,
+              };
+            })
+        : [];
       out.push({
-        leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name,
+        leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
         fixtureId: f.id, label: fixtureLabel(league, f),
+        opponentTeamId: oppTeam ? oppTeam.id : null,
         opponentName: oppTeam ? oppTeam.name : "TBD",
         opponentLogo: oppTeam ? oppTeam.logo || "" : "",
         date: sched.date || "", time: sched.time || "",
+        lineupsSubmitted, score: { a: winsA, b: winsB },
+        rubbers,
       });
     });
   });

@@ -984,9 +984,27 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .pd-table-divider{border-top:1px dashed var(--line);margin-top:6px;padding-top:6px;}
 .pd-table-note{font-size:9.5px;color:var(--text-faint);margin-top:10px;padding-top:9px;border-top:1px solid var(--panel-2);line-height:1.4;}
 
-.account-results-list .opponent-card{margin-bottom:8px;}
-.account-results-list .opponent-card:last-child{margin-bottom:0;}
-.account-results-list .opponent-card .note{margin-top:2px;}
+/* Enter Results — a swipeable carousel of real fixture cards (see
+   renderAccountPendingResults), each rubber broken into its own shaded
+   mini tile so a captain sees exactly what resultsCard shows on the real
+   Results tab (real pair names, per-seed score) without leaving My Profile
+   first. */
+.pr-card{flex:0 0 auto;width:250px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px;box-shadow:var(--shadow-sm);}
+.pr-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px;}
+.pr-card-title{font-family:var(--font-display);font-size:12.5px;display:flex;align-items:center;gap:6px;min-width:0;}
+.pr-card-title .avatar,.pr-card-title .avatar-fb{width:18px;height:18px;font-size:8px;flex-shrink:0;}
+.pr-card-title .vs{color:var(--text-faint);font-size:10px;font-family:var(--font-body);flex-shrink:0;}
+.pr-card-title span.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pr-tile{background:var(--panel-2);border-radius:var(--radius-sm);padding:10px 11px;margin-bottom:7px;}
+.pr-tile:last-child{margin-bottom:0;}
+.pr-tile-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.pr-seed-badge{font-family:var(--font-display);font-size:8.5px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em;}
+.pr-score-chip{font-family:var(--font-display);font-size:9px;font-weight:700;color:var(--success);background:var(--success-soft);padding:2px 7px;border-radius:var(--radius-full);}
+.pr-score-chip.pending{color:var(--text-faint);background:transparent;padding:2px 0;}
+.pr-names{font-size:10px;line-height:1.6;}
+.pr-names .won{font-weight:700;color:var(--success);}
+.pr-btn{width:100%;margin-top:7px;padding:6px;font-size:9.5px;font-weight:700;font-family:var(--font-body);border-radius:var(--radius-sm);border:none;background:var(--panel);color:var(--accent);cursor:pointer;box-shadow:var(--shadow-sm);}
+.pr-lineups-pending{font-size:10.5px;color:var(--text-faint);padding:6px 0;}
 
 /* Your Fixtures — crests either side of a VS pill, plus a win% bar reusing
    the same .mc-predict-bar idiom already used elsewhere on this page. */
