@@ -1830,17 +1830,7 @@ if (resetTokenInUrl) {
   el("account-reset-card").style.display = "block";
 }
 
-el("account-search-input").addEventListener("input", () => {
-  const q = el("account-search-input").value.trim();
-  if (!q) { el("account-search-results").innerHTML = ""; return; }
-  if (!playerIndexReady) el("account-search-results").innerHTML = '<p class="empty">Searching…</p>';
-  // No debounce needed any more — filtering the already-loaded index (see
-  // loadPlayerIndex) is a synchronous in-memory scan, not a network call,
-  // so there's nothing left to throttle. The one case this still awaits
-  // anything is the very first character typed before the index itself
-  // has finished its one-time fetch.
-  runAccountSearch(q);
-});
+
 // A real card — avatar, name, team/league — instead of a bare text row,
 // shared by both search surfaces (claim-search here, and the read-only
 // "Search players" tab below) so a result reads as a person's profile,
@@ -1916,66 +1906,78 @@ function filterPlayerIndex(all, qRaw) {
   const q = qRaw.trim().toLowerCase();
   return q ? all.filter((p) => p.playerName.toLowerCase().includes(q)).slice(0, 30) : [];
 }
-async function runAccountSearch(qRaw) {
+// ONE search path for every place a player is looked up — claiming a
+// record and the Search players tab both go through here: same index, same
+// filter, same row card, same instant in-memory filtering while typing.
+// They differ only in what the button on each row does (`actionFor` draws
+// it, `wire` hooks it up). The Search tab used to run its own copy that
+// also started downloading profiles for a narrowed-down list mid-typing —
+// the one thing claim search never did, and the one thing that made it
+// feel slow.
+async function runPlayerLookup(resultsId, qRaw, actionFor, wire) {
   const all = await loadPlayerIndex();
   const results = filterPlayerIndex(all, qRaw);
-  const c = el("account-search-results");
+  const c = el(resultsId);
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
-  // Already claimed isn't a dead end — the real owner of that name can
-  // still ask for it, which hands the league's admin a request to decide
-  // rather than just refusing outright.
-  c.innerHTML = results.map((r) => playerSearchRowHtml(r,
-    r.claimed ? '<button class="secondary claim-request-btn" type="button">Request this record</button>' : '<button class="secondary claim-btn" type="button">This is me</button>'
-  )).join("");
-  c.querySelectorAll(".claim-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      const row = btn.closest(".player-search-row");
-      try {
-        await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
-        await markPlayerIndexClaimed(row.dataset.player, true);
-        await runAccountSearch(qRaw);
-        await renderAccountProfile();
-      } catch (e) { alert(e.message); }
-    };
-  });
-  c.querySelectorAll(".claim-request-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      const row = btn.closest(".player-search-row");
-      try {
-        await api("/players/claim-requests", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
-        btn.replaceWith(Object.assign(document.createElement("span"), { className: "tag", textContent: "Request sent — pending admin review" }));
-      } catch (e) { alert(e.message); }
-    };
+  c.innerHTML = results.map((r) => playerSearchRowHtml(r, actionFor(r))).join("");
+  wire(c, results);
+}
+function bindPlayerLookupInput(inputId, resultsId, run) {
+  el(inputId).addEventListener("input", () => {
+    const q = el(inputId).value.trim();
+    if (!q) { el(resultsId).innerHTML = ""; return; }
+    if (!playerIndexReady) el(resultsId).innerHTML = '<p class="empty">Searching…</p>';
+    run(q);
   });
 }
+function runAccountSearch(qRaw) {
+  return runPlayerLookup("account-search-results", qRaw,
+    // Already claimed isn't a dead end — the real owner of that name can
+    // still ask for it, which hands the league's admin a request to decide
+    // rather than just refusing outright.
+    (r) => r.claimed ? '<button class="secondary claim-request-btn" type="button">Request this record</button>' : '<button class="secondary claim-btn" type="button">This is me</button>',
+    (c) => {
+      c.querySelectorAll(".claim-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const row = btn.closest(".player-search-row");
+          try {
+            await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
+            await markPlayerIndexClaimed(row.dataset.player, true);
+            await runAccountSearch(qRaw);
+            await renderAccountProfile();
+          } catch (e) { alert(e.message); }
+        };
+      });
+      c.querySelectorAll(".claim-request-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const row = btn.closest(".player-search-row");
+          try {
+            await api("/players/claim-requests", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
+            btn.replaceWith(Object.assign(document.createElement("span"), { className: "tag", textContent: "Request sent — pending admin review" }));
+          } catch (e) { alert(e.message); }
+        };
+      });
+    });
+}
+bindPlayerLookupInput("account-search-input", "account-search-results", runAccountSearch);
 
-// Read-only lookup of anyone's record — no claim button, no "this is me".
-// Reuses the exact same /players/search endpoint and the tabbed
-// cross-league history modal, just without any write action attached.
-el("player-search-input").addEventListener("input", () => {
-  const q = el("player-search-input").value.trim();
-  if (!q) { el("player-search-results").innerHTML = ""; return; }
-  if (!playerIndexReady) el("player-search-results").innerHTML = '<p class="empty">Searching…</p>';
-  runPlayerSearch(q);
-});
-async function runPlayerSearch(qRaw) {
-  const all = await loadPlayerIndex();
-  const results = filterPlayerIndex(all, qRaw);
-  const c = el("player-search-results");
-  if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
-  c.innerHTML = results.map((r) => playerSearchRowHtml(r, '<button class="secondary view-player-btn" type="button">View profile</button>')).join("");
-  // Once a search has narrowed to a handful of people, whoever's next
-  // tapped is very likely one of them — start those profile requests now
-  // rather than after the tap. Kept to a few rows so a broad one-letter
-  // query never fires dozens of requests.
-  if (results.length <= 3) results.forEach((r) => prefetchPlayerProfile(r.leagueId, r.playerId));
-  c.querySelectorAll(".view-player-btn").forEach((btn) => {
-    const row = btn.closest(".player-search-row");
-    const r = results.find((x) => x.playerId === row.dataset.player && x.leagueId === row.dataset.league);
-    btn.addEventListener("pointerdown", () => prefetchPlayerProfile(row.dataset.league, row.dataset.player));
-    btn.onclick = () => openPlayerHistory(row.dataset.league, row.dataset.player, r);
-  });
+// Read-only lookup of anyone's record — the same lookup as claiming (see
+// runPlayerLookup), just with a "View profile" button instead of a claim.
+// A profile is only fetched when one is actually tapped — the first touch
+// starts the request, so it's often back by the time the modal opens.
+function runPlayerSearch(qRaw) {
+  return runPlayerLookup("player-search-results", qRaw,
+    () => '<button class="secondary view-player-btn" type="button">View profile</button>',
+    (c, results) => {
+      c.querySelectorAll(".view-player-btn").forEach((btn) => {
+        const row = btn.closest(".player-search-row");
+        const r = results.find((x) => x.playerId === row.dataset.player && x.leagueId === row.dataset.league);
+        btn.addEventListener("pointerdown", () => prefetchPlayerProfile(row.dataset.league, row.dataset.player));
+        btn.onclick = () => openPlayerHistory(row.dataset.league, row.dataset.player, r);
+      });
+    });
 }
+bindPlayerLookupInput("player-search-input", "player-search-results", runPlayerSearch);
 // The photo on a claimed record only used to show up once you clicked into
 // that player's own profile popup — nowhere on My Profile itself. Shows
 // the first claimed record that has one set (an account can hold several,
