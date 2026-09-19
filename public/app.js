@@ -2937,6 +2937,32 @@ function renderRoundNav(containerId) {
 
 /* ---------- Master render ---------- */
 
+// Measures #league-name's own current value at its own computed font
+// (including the uppercase transform and letter-spacing the .h1 class
+// applies — a canvas measures raw characters, not CSS text-transform, so
+// the text fed in has to already be upper-cased to match what's drawn) and
+// sets an exact pixel width, so the switcher arrow sits right after the
+// real name instead of guessing from character count.
+let leagueNameMeasureCanvas = null;
+function sizeLeagueNameInput() {
+  const input = el("league-name");
+  const cs = getComputedStyle(input);
+  if (!leagueNameMeasureCanvas) leagueNameMeasureCanvas = document.createElement("canvas");
+  const ctx = leagueNameMeasureCanvas.getContext("2d");
+  ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const text = cs.textTransform === "uppercase" ? input.value.toUpperCase() : input.value;
+  let textWidth = ctx.measureText(text).width;
+  const letterSpacing = parseFloat(cs.letterSpacing);
+  if (!isNaN(letterSpacing) && letterSpacing) textWidth += letterSpacing * text.length;
+  const box = ["paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"]
+    .reduce((sum, prop) => sum + (parseFloat(cs[prop]) || 0), 0);
+  // border-box sizing (global *{box-sizing:border-box}) means `width` has
+  // to include that padding/border itself, or it re-squeezes the text by
+  // exactly the amount it's meant to leave room for — a small extra buffer
+  // covers the caret and canvas/DOM sub-pixel rounding.
+  input.style.width = Math.ceil(textWidth + box + 4) + "px";
+}
+
 function renderAll() {
   syncViewingKey();
   renderGroupSelector();
@@ -2947,9 +2973,13 @@ function renderAll() {
   // An <input> with no explicit width renders at the browser's default
   // (~20 characters) regardless of its actual value — which is what put a
   // wide gap between a short name like "Killarney" and the switcher arrow
-  // sitting right after it. The size attribute (in characters, exactly
-  // what a plain input honors) keeps it hugging the real text instead.
-  el("league-name").size = Math.max(1, league.name.length);
+  // sitting right after it. A character-count `size` attribute was tried
+  // first, but this is a bold, uppercase, letter-spaced display font where
+  // real glyph widths run wider than the browser's plain-average guess —
+  // it under-sized the box and clipped the name. Measuring the actual
+  // rendered text in a canvas and setting a pixel `width` instead keeps it
+  // exact for any font.
+  sizeLeagueNameInput();
   el("league-switcher").style.display = isOwner ? "block" : "none";
   const brand = leagueBrand(league.name);
   const brandHeader = document.querySelector("#view-league .site-header");
@@ -3445,7 +3475,7 @@ function renderPendingScoreBanner() {
 }
 el("league-name").addEventListener("change", async (e) => {
   if (myRole !== "admin") return;
-  try { await api(`/leagues/${currentLeagueId}/name`, { method: "PUT", body: { name: e.target.value } }); await refreshLeague(); }
+  try { await api(`/leagues/${currentLeagueId}/name`, { method: "PUT", body: { name: e.target.value } }); await refreshLeague(); sizeLeagueNameInput(); }
   catch (err) { alert(err.message); }
 });
 
@@ -3464,8 +3494,14 @@ let leagueSwitcherMineIds = new Set();
 function renderLeagueSwitcherList(filter) {
   const listEl = el("league-switcher-list");
   const q = (filter || "").trim().toLowerCase();
+  // A hidden league (data imported purely to feed ratings, not a real
+  // league to manage here) never surfaces in any list on this site — same
+  // rule /players/profile applies to claims, just enforced here too since
+  // this list comes from /admin/leagues, which deliberately includes
+  // hidden ones for the owner's actual hide/unhide tooling elsewhere.
   const all = (leagueSwitcherLeagues || [])
     .filter((l) => l.id !== currentLeagueId)
+    .filter((l) => !l.hidden)
     .filter((l) => !q || l.name.toLowerCase().includes(q));
   if (all.length === 0) {
     listEl.innerHTML = '<div class="league-switcher-empty">No other leagues found.</div>';
@@ -3477,7 +3513,7 @@ function renderLeagueSwitcherList(filter) {
   const appendItem = (l) => {
     const btn = document.createElement("button");
     btn.type = "button"; btn.className = "league-switcher-item" + (leagueSwitcherMineIds.has(l.id) ? " mine" : "");
-    btn.innerHTML = `<span>${escapeHtml(l.name)}</span>${l.hidden ? '<span class="tag">Hidden</span>' : ""}`;
+    btn.innerHTML = `<span>${escapeHtml(l.name)}</span>`;
     btn.onclick = async () => {
       el("league-switcher-panel").classList.remove("open");
       // Land on the same tab in the new league, not wherever openLeague
