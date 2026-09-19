@@ -1365,7 +1365,7 @@ async function refreshOwnerStatus() {
   const paymentsTabBtn = el("hub-payments-tab-btn");
   paymentsTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushBroadcastCard(); }
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushStatsCard(); renderPushBroadcastCard(); }
   renderHub();
 }
 // "Select a league from a menu, then find a player or team and send them
@@ -1402,6 +1402,25 @@ async function renderLiveCount() {
 // a real, currently-running league (e.g. a second city's) that just isn't
 // ready to advertise site-wide yet. See visibleIndexEntries server-side
 // for the full distinction.
+// Owner-only — how push adoption is actually going, at a glance: total
+// devices subscribed, how many teams have at least one, and which leagues
+// those are in. Refetched each time the Admin tab is entered, same as
+// renderLiveCount, rather than kept live.
+async function renderPushStatsCard() {
+  const card = el("push-stats-card");
+  card.style.display = "block";
+  const data = await api("/admin/push/stats").catch(() => null);
+  if (!data) { el("push-stats-devices").textContent = "—"; el("push-stats-teams").textContent = "—"; return; }
+  el("push-stats-devices").textContent = data.totalSubscriptions;
+  el("push-stats-teams").textContent = data.totalTeamsWithAtLeastOneDevice;
+  const byLeague = (data.byLeague || []).slice().sort((a, b) => b.deviceCount - a.deviceCount);
+  el("push-stats-by-league").innerHTML = byLeague.length
+    ? byLeague.map((l) => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
+        <span>${escapeHtml(l.name)}</span>
+        <span class="note">${l.teamsSubscribed} team${l.teamsSubscribed === 1 ? "" : "s"} · ${l.deviceCount} device${l.deviceCount === 1 ? "" : "s"}</span>
+      </div>`).join("")
+    : '<p class="empty">No devices subscribed yet.</p>';
+}
 // Owner-only real push broadcast — reuses the same /admin/leagues list the
 // visibility manager below already fetches, filtered to non-hidden leagues
 // only (same boundary the server enforces again either way).

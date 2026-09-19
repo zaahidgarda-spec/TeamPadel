@@ -2116,10 +2116,9 @@ router.post("/admin/push/broadcast", async (req, res) => {
   res.json({ ok: true, total: jobs.length, sent: jobs.length - errors.length, failed: errors.length });
 });
 
-// TEMPORARY — owner-only, read-only, no side effects. Added to answer a
-// one-time "how many devices are subscribed to push" question; remove
-// after use (see chat for context, dated 2026-09-18).
-router.get("/admin/push/stats-check-tmp", (req, res) => {
+// Owner-only, read-only — powers the "Push notifications" stat card on the
+// Admin tab (see renderPushStatsCard).
+router.get("/admin/push/stats", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
   const hiddenIds = new Set(store.getIndex().filter((e) => e.hidden).map((e) => e.id));
   const byLeague = [];
