@@ -123,7 +123,10 @@ function buildNotificationEmail({ leagueName, leagueId, type, message, teamName 
 function explainSendFailure(result) {
   const code = (result && result.code) || "";
   const why = String((result && result.reason) || "");
-  if (code === "BREVO_AUTH") return "The email service refused the API key. Check BREVO_API_KEY on the server — it may be mistyped or deleted.";
+  if (code === "BREVO_AUTH") {
+    const detail = /ip/i.test(why) ? " Brevo says the server's address isn't on its allowed list — in Brevo, open Security → Authorised IPs and turn the restriction off." : why ? " Brevo says: " + why.slice(0, 160) : "";
+    return "The email service refused the API key." + detail + " Also check BREVO_API_KEY on the server: it must be the API key (starts xkeysib-), pasted whole, with no spaces.";
+  }
   if (code === "BREVO_SENDER" || code === "BREVO_NO_SENDER") return "The email service doesn't accept that sender address yet. Verify it in Brevo (Senders) and check EMAIL_FROM matches it exactly.";
   if (code === "EAUTH" || /535|Invalid login|Username and Password/i.test(why)) return "Gmail refused the login. The Gmail app password saved on the server is wrong or has been revoked — make a new one and update it.";
   if (["ETIMEDOUT", "ECONNECTION", "ESOCKET", "ECONNREFUSED", "EDNS", "ENOTFOUND"].includes(code) || /timeout|timed out|ECONN|getaddrinfo/i.test(why)) return process.env.BREVO_API_KEY ? "The server couldn't reach the email service just now. Nothing was sent — try again in a minute." : "The server couldn't reach Gmail — the hosting may be blocking outgoing email. Nothing was sent.";
