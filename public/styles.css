@@ -1927,3 +1927,11 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .al-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
 .al-actions button{width:100%;}
 .al-actions .al-danger{color:#B42318;border:1px solid #F3C6C1;background:#FFF6F5;border-radius:var(--radius,10px);font-weight:600;}
+
+/* Admin > Player accounts groups */
+.pa-group{border-top:1px solid var(--line);padding:10px 0;}
+.pa-group:first-of-type{border-top:none;}
+.pa-group>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:14px;}
+.pa-group>summary::-webkit-details-marker{display:none;}
+.pa-group>summary::before{content:"›";display:inline-block;transition:transform .15s;color:var(--text-dim,#64748B);}
+.pa-group[open]>summary::before{transform:rotate(90deg);}

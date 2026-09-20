@@ -90,14 +90,33 @@ async function getActivePlayerUserIds() {
 // PRESENCE_TTL_SECONDS — no separate cleanup pass needed, Redis expires
 // the key on its own.
 const PRESENCE_TTL_SECONDS = 90;
-async function touchPresence(visitorId) {
-  if (!useRedis || !visitorId) return;
-  await redis.set("presence:" + visitorId, Date.now(), { ex: PRESENCE_TTL_SECONDS }).catch((e) => console.error("Failed to touch presence:", e.message));
+// Each ping also carries who it is when a player account is signed in, so
+// the Admin page can list the people online right now by name (guests stay
+// anonymous — just counted). Without Redis (local runs) the same thing is
+// kept in memory.
+const localPresence = new Map(); // visitorId -> { t, userId }
+async function touchPresence(visitorId, userId) {
+  if (!visitorId) return;
+  if (!useRedis) { localPresence.set(visitorId, { t: Date.now(), userId: userId || null }); return; }
+  await redis.set("presence:" + visitorId, { t: Date.now(), userId: userId || null }, { ex: PRESENCE_TTL_SECONDS }).catch((e) => console.error("Failed to touch presence:", e.message));
+}
+function livePresence() {
+  const cutoff = Date.now() - PRESENCE_TTL_SECONDS * 1000;
+  for (const [id, v] of localPresence) if (v.t < cutoff) localPresence.delete(id);
+  return [...localPresence.values()];
 }
 async function getLiveVisitorCount() {
-  if (!useRedis) return 0;
+  if (!useRedis) return livePresence().length;
   const keys = await redis.keys("presence:*");
   return keys.length;
+}
+// Account ids of the signed-in players who pinged in the last 90 seconds.
+async function getOnlinePlayerUserIds() {
+  if (!useRedis) return [...new Set(livePresence().map((v) => v.userId).filter(Boolean))];
+  const keys = await redis.keys("presence:*");
+  if (!keys.length) return [];
+  const values = await Promise.all(keys.map((k) => redis.get(k).catch(() => null)));
+  return [...new Set(values.map((v) => v && typeof v === "object" ? v.userId : null).filter(Boolean))];
 }
 
 // Must be awaited before the server starts accepting requests: it pulls
@@ -285,6 +304,7 @@ module.exports = {
   getActivePlayerUserIds,
   touchPresence,
   getLiveVisitorCount,
+  getOnlinePlayerUserIds,
   getSignups,
   saveSignups,
   getHomepageExtras,

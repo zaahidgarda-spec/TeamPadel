@@ -1458,6 +1458,9 @@ el("payments-league-select").onchange = async () => {
 async function renderLiveCount() {
   const data = await api("/admin/live-count").catch(() => null);
   el("live-count-num").textContent = data ? data.count : "—";
+  // Who, by name — from the same account list the Player accounts card uses.
+  const accounts = await api("/admin/players/accounts").catch(() => null);
+  if (accounts) renderOnlineNames(accounts);
 }
 // The owner's full list of every league — including hidden/incognito
 // ones, which drop out of every other list on the site the moment they're
@@ -1759,24 +1762,47 @@ el("combine-submit-btn").onclick = async () => {
     renderCombineSuggestions();
   } catch (e) { el("combine-error").textContent = e.message; }
 };
+// The owner's list of every player account, grouped so it's readable at a
+// glance: who's on the site right now (also shown under the live count),
+// real sign-ups, records combined by an admin that are still waiting for the
+// person to sign up with that email, and test addresses tucked away.
+let playerAccountsCache = [];
+function accountRowHtml(a) {
+  const joined = a.createdAt ? new Date(a.createdAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : "";
+  const via = a.providers && a.providers.length ? a.providers.map((p) => p === "google" ? "Google" : p === "facebook" ? "Facebook" : p).join(" · ") : "";
+  const meta = [via ? "via " + via : "", a.signedUp && joined ? "joined " + joined : ""].filter(Boolean).join(" · ");
+  return `<div class="notif-row">
+    <div style="flex:1;min-width:0;">
+      <strong>${escapeHtml(a.name)}</strong> <span class="note">${escapeHtml(a.email)}</span>
+      ${a.online ? '<span class="badge done" style="margin-left:6px;" title="On the site in the last 90 seconds">Online</span>' : ""}
+      ${meta ? `<div class="note">${escapeHtml(meta)}</div>` : ""}
+      ${!a.signedUp ? '<div class="note">Waiting for them to sign up with this email — their linked records are already here.</div>' : ""}
+      ${a.claims.length ? `<div class="combine-claim-list">${a.claims.map((cl) => `
+        <div class="combine-claim-row" data-user="${a.id}" data-league="${cl.leagueId}" data-team="${cl.teamId}" data-player="${cl.playerId}">
+          <span class="note">${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>
+          <button class="link combine-unlink-btn" type="button" title="Undo this link">Undo</button>
+        </div>
+      `).join("")}</div>` : '<div class="note">No linked records</div>'}
+    </div>
+  </div>`;
+}
 async function renderCombineAccounts() {
   const accounts = await api("/admin/players/accounts").catch(() => []);
+  playerAccountsCache = accounts;
   const c = el("combine-accounts-list");
+  el("player-accounts-card").style.display = "block";
+  renderOnlineNames(accounts);
   if (accounts.length === 0) { c.innerHTML = '<p class="empty">No player accounts yet.</p>'; return; }
-  c.innerHTML = accounts.map((a) => `
-    <div class="notif-row">
-      <div style="flex:1;">
-        <strong>${escapeHtml(a.name)}</strong> <span class="note">${escapeHtml(a.email)}</span>
-        ${a.online ? '<span class="badge done" style="margin-left:6px;" title="Has a live session right now">Online</span>' : ""}
-        ${a.claims.length ? `<div class="combine-claim-list">${a.claims.map((cl) => `
-          <div class="combine-claim-row" data-user="${a.id}" data-league="${cl.leagueId}" data-team="${cl.teamId}" data-player="${cl.playerId}">
-            <span class="note">${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>
-            <button class="link combine-unlink-btn" type="button" title="Undo this link">Undo</button>
-          </div>
-        `).join("")}</div>` : '<div class="note">No linked records</div>'}
-      </div>
-    </div>
-  `).join("");
+  const byNewest = (x, y) => (y.createdAt || 0) - (x.createdAt || 0);
+  const real = accounts.filter((a) => !a.test && a.signedUp).sort(byNewest);
+  const combined = accounts.filter((a) => !a.test && !a.signedUp).sort((x, y) => x.name.localeCompare(y.name));
+  const test = accounts.filter((a) => a.test).sort(byNewest);
+  const group = (title, hint, list, open) => list.length
+    ? `<details class="pa-group"${open ? " open" : ""}><summary><strong>${title}</strong> <span class="tag">${list.length}</span></summary>${hint ? `<p class="note" style="margin:6px 0 8px;">${hint}</p>` : ""}${list.map(accountRowHtml).join("")}</details>` : "";
+  c.innerHTML =
+    group("Real sign-ups", "People who created their own account (email, Google or Facebook), newest first.", real, true)
+    + group("Combined by an admin", "Made by combining someone's records under their email. They haven't signed up yet — when they do, with this email, they land on these records.", combined, true)
+    + group("Test accounts", "Placeholder or test addresses — kept, but out of the way and left out of the export.", test, false);
   c.querySelectorAll(".combine-unlink-btn").forEach((btn) => {
     btn.onclick = async () => {
       const row = btn.closest(".combine-claim-row");
@@ -1785,6 +1811,15 @@ async function renderCombineAccounts() {
       renderCombineAccounts();
     };
   });
+}
+// Names of the signed-in players on the site right now, under the live count.
+function renderOnlineNames(accounts) {
+  const box = el("live-count-names");
+  if (!box) return;
+  const online = accounts.filter((a) => a.online);
+  box.innerHTML = online.length
+    ? `<div class="note" style="margin-bottom:6px;">Signed-in players online now (${online.length})</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${online.map((a) => `<span class="tag" title="${escapeHtml(a.email)}">${escapeHtml(a.name)}</span>`).join("")}</div>`
+    : '<div class="note">No signed-in players online right now — anyone counted above is a guest.</div>';
 }
 // A field's own value, not a team/league contact address (that's
 // team.notifyEmail elsewhere) — the real email each person signed up
@@ -1798,11 +1833,12 @@ el("export-accounts-btn").onclick = async () => {
   const original = btn.textContent;
   btn.disabled = true; btn.textContent = "Exporting…";
   try {
-    const accounts = await api("/admin/players/accounts");
-    const header = ["Name", "Email", "Leagues", "Records"];
+    const accounts = (await api("/admin/players/accounts")).filter((a) => !a.test);
+    const header = ["Name", "Email", "Status", "Leagues", "Records"];
     const rows = accounts.map((a) => [
       a.name,
       a.email,
+      a.signedUp ? "Signed up" : "Combined by admin (not signed up yet)",
       a.claims.map((c) => c.leagueName).filter((v, i, arr) => arr.indexOf(v) === i).join("; "),
       String(a.claims.length),
     ]);

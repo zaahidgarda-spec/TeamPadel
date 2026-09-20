@@ -847,7 +847,7 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
 router.post("/presence/ping", async (req, res) => {
   const visitorId = ((req.body && req.body.visitorId) || "").slice(0, 100);
   if (!/^[a-zA-Z0-9-]{8,100}$/.test(visitorId)) return res.status(400).json({ error: "Invalid visitor id." });
-  await store.touchPresence(visitorId);
+  await store.touchPresence(visitorId, req.session.playerUser && req.session.playerUser.id);
   res.json({ ok: true });
 });
 router.get("/admin/live-count", async (req, res) => {
@@ -1741,9 +1741,17 @@ router.post("/admin/players/combine", async (req, res) => {
 });
 // A simple read-back of every player account and what it's linked to —
 // so combining someone isn't a write-only black box for the admin.
+// A placeholder/test address rather than a real person's — kept in the list
+// (never deleted) but shown apart from the real ones.
+function looksLikeTestEmail(email) {
+  const e = String(email || "").toLowerCase();
+  const [local = "", domain = ""] = e.split("@");
+  return /(^|\.)(example\.(com|org|net)|invalid|test|example|localhost|mailinator\.com)$/.test(domain)
+    || /^(test|trophytest|fake|demo|dummy)([._+\-\d]|$)/.test(local) || /(^|[._-])test\d*$/.test(local);
+}
 router.get("/admin/players/accounts", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
-  const activeIds = new Set(await store.getActivePlayerUserIds());
+  const onlineIds = new Set(await store.getOnlinePlayerUserIds());
   // An index entry with no matching user record (the account write never
   // landed, or landed and was later deleted without cleaning up the
   // index) shouldn't crash the whole list — skip it instead.
@@ -1759,7 +1767,19 @@ router.get("/admin/players/accounts", async (req, res) => {
         return { leagueId: c.leagueId, teamId: c.teamId, playerId: c.playerId, leagueName: league.name, teamName: team.name, playerName: player.name };
       })
       .filter(Boolean);
-    return { id: user.id, name: user.name, email: user.email, claims, online: activeIds.has(user.id) };
+    return {
+      id: user.id, name: user.name, email: user.email, claims,
+      // Actually on the site right now (pinged in the last 90 seconds) —
+      // not just holding a login session, which lasts two weeks.
+      online: onlineIds.has(user.id),
+      // No password and no Google/Facebook sign-in: an account an admin made
+      // by combining records, waiting for that person to sign up with the
+      // same email (see /players/signup).
+      signedUp: !!user.passwordHash,
+      providers: Object.keys(user.providers || {}),
+      createdAt: user.createdAt || null,
+      test: looksLikeTestEmail(user.email),
+    };
   }).filter(Boolean);
   res.json(accounts);
 });

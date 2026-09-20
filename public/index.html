@@ -420,6 +420,7 @@
         <div class="card" id="live-count-card" style="display:none;">
           <h2 class="section-title">On the app right now</h2>
           <div class="stat-tile"><div class="stat-num" id="live-count-num">—</div><div class="stat-lbl">Active in the last 90 seconds — guests included, not just logged-in accounts</div></div>
+          <div id="live-count-names" style="margin-top:12px;"></div>
         </div>
         <div class="card" id="create-league-card" style="display:none;">
           <h2 class="section-title">Create a league<button class="secondary" id="owner-logout-btn">Log out</button></h2>
@@ -499,10 +500,10 @@
             </div>
             <div class="error" id="combine-error"></div>
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px;">
-            <p class="modal-subhead" style="margin:0;padding-top:0;border-top:none;">Existing player accounts</p>
-            <button class="secondary" id="export-accounts-btn" type="button">Export CSV</button>
-          </div>
+        </div>
+        <div class="card" id="player-accounts-card" style="display:none;">
+          <h2 class="section-title">Player accounts<button class="secondary" id="export-accounts-btn" type="button">Export CSV</button></h2>
+          <p class="note" style="margin-bottom:12px;">Everyone with an account, grouped: who's on the site now, real sign-ups, records you combined that are waiting for the person to sign up, and test addresses kept out of the way.</p>
           <div id="combine-accounts-list"></div>
         </div>
         <div class="card" id="hub-claim-requests-card" style="display:none;">
