@@ -864,15 +864,13 @@ function estimateMinutesForCloseness(closeness) {
 // render. Reads plain data-* attributes rather than closing over any
 // render-time state, so it keeps working across re-renders with no
 // cleanup to worry about.
+function elapsedClock(started, completed) {
+  const totalSecs = Math.max(0, Math.floor(((completed || Date.now()) - started) / 1000));
+  return `${String(Math.floor(totalSecs / 60)).padStart(2, "0")}:${String(totalSecs % 60).padStart(2, "0")}`;
+}
 setInterval(() => {
   document.querySelectorAll(".lc-timer[data-started]").forEach((node) => {
-    const started = Number(node.dataset.started);
-    const completed = node.dataset.completed ? Number(node.dataset.completed) : null;
-    const end = completed || Date.now();
-    const totalSecs = Math.max(0, Math.floor((end - started) / 1000));
-    const mm = String(Math.floor(totalSecs / 60)).padStart(2, "0");
-    const ss = String(totalSecs % 60).padStart(2, "0");
-    node.textContent = `${mm}:${ss}`;
+    node.textContent = elapsedClock(Number(node.dataset.started), node.dataset.completed ? Number(node.dataset.completed) : null);
   });
 }, 1000);
 function leagueCardHtml(l) {
@@ -7031,7 +7029,8 @@ const PACE_WORD = { g: "Quick", r: "Long", n: "Average" };
 // The win-probability split behind every card, kept between renders so
 // changing one card's pace redraws instantly instead of waiting on a
 // fresh predictions request for a number that hasn't moved.
-let livePredictionsCache = { key: null, data: null };
+let livePredictionsCache = { key: null, data: null, at: 0 };
+let liveRenderSeq = 0;
 async function renderLiveCourtControl(opts) {
   const card = el("live-court-card");
   if (!card) return;
@@ -7048,8 +7047,9 @@ async function renderLiveCourtControl(opts) {
   const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
   const fixtures = courtScheduleFixturesFor(round).filter((f) => f.selectionA.submitted && f.selectionB.submitted);
   const wrap = el("live-court-grid");
-  wrap.innerHTML = "";
+  const seq = ++liveRenderSeq;
   if (fixtures.length === 0) {
+    delete wrap.dataset.sig;
     wrap.innerHTML = '<p class="empty">No revealed match-ups this round yet — check back once both sides have submitted in Selection Room.</p>';
     return;
   }
@@ -7065,10 +7065,27 @@ async function renderLiveCourtControl(opts) {
   const qs = viewingKey.stage === "regular" ? `?round=${viewingKey.round}` : `?stage=${viewingKey.key}`;
   const predKey = currentLeagueId + qs;
   let predData;
-  if (opts && opts.reusePredictions && livePredictionsCache.key === predKey) predData = livePredictionsCache.data;
-  else {
+  const cache = livePredictionsCache.key === predKey ? livePredictionsCache : null;
+  if (cache) {
+    // Predictions barely move during a night, so draw from what's already in
+    // hand instead of waiting on the server — waiting is what used to blank
+    // the whole board for a second (longer on a phone) after every tap, so
+    // it looked like the page kept refreshing. They're topped up quietly in
+    // the background, and the board only redraws if they actually changed.
+    predData = cache.data;
+    if (!cache.refreshing && Date.now() - cache.at > 45000) {
+      cache.refreshing = true;
+      api(`/leagues/${currentLeagueId}/predictions${qs}`).then((fresh) => {
+        const changed = JSON.stringify(fresh) !== JSON.stringify(cache.data);
+        livePredictionsCache = { key: predKey, data: fresh, at: Date.now() };
+        if (changed) renderLiveCourtControl();
+      }).catch(() => { cache.refreshing = false; cache.at = Date.now(); });
+    }
+  } else {
     predData = await api(`/leagues/${currentLeagueId}/predictions${qs}`).catch(() => ({ fixtures: [] }));
-    livePredictionsCache = { key: predKey, data: predData };
+    livePredictionsCache = { key: predKey, data: predData, at: Date.now() };
+    // A newer redraw started while this one was waiting — let it win.
+    if (seq !== liveRenderSeq) return;
   }
   const predictionFor = (fixtureId, seedIdx) => {
     const pf = (predData.fixtures || []).find((x) => x.fixtureId === fixtureId);
@@ -7149,7 +7166,6 @@ async function renderLiveCourtControl(opts) {
   // Everything the tiles, the timeline and the action sheet need, kept so a
   // tap can act on exactly what this render showed.
   liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread };
-  wrap.innerHTML = "";
   updateLiveMoveBar();
   if (liveCourtView === "timeline") renderLiveTimeline(wrap); else renderLiveLanes(wrap);
   // Keep an open sheet in step with the board it belongs to (or close it if
@@ -7212,7 +7228,7 @@ function liveTileHtml(s, c, oneFixture) {
   const label = `Seed ${t.cell.seed + 1}`;
   let foot;
   if (info.state === "live") {
-    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}"></span></div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}">${elapsedClock(info.rubber.startedAt)}</span></div>`;
   } else if (info.state === "done") {
     foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-tag">&#10003; ${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
   } else {
@@ -7266,6 +7282,12 @@ function markLiveMoveTargets(root) {
     n.classList.toggle("lc-move-target", liveMoveTargetOk(s, c));
   });
 }
+// What the board would look like, minus the ticking clocks and plus whether
+// a match is picked up to move — two renders with the same signature are
+// visually identical, so the second doesn't need to touch the DOM.
+function liveBoardSignature(view, html) {
+  return view + "|" + (liveMoveFrom ? liveMoveFrom.s + "," + liveMoveFrom.c : "-") + "|" + html.replace(/(class="lc-tile-mn lc-timer" data-started="\d+">)[^<]*/g, "$1");
+}
 function renderLiveLanes(wrap) {
   const b = liveBoard;
   // Courts across the top, Match 1, 2, 3 … down the side. A court's header
@@ -7297,6 +7319,11 @@ function renderLiveLanes(wrap) {
     for (let c = 0; c < b.courts; c++) html += liveTileHtml(s, c, courtsInfo[c].oneFixture);
   }
   html += "</div></div>";
+  // Nothing visible changed (the per-second clocks aside) — leave the
+  // screen alone rather than rebuilding it, so a quiet refresh is invisible.
+  const sig = liveBoardSignature("board", html);
+  if (wrap.dataset.sig === sig && wrap.firstElementChild) { markLiveMoveTargets(wrap); return; }
+  wrap.dataset.sig = sig;
   wrap.innerHTML = html;
   wrap.querySelectorAll(".lc-slot").forEach((slot) => {
     const s = Number(slot.dataset.s), c = Number(slot.dataset.c);
@@ -7377,7 +7404,11 @@ function renderLiveTimeline(wrap) {
     const gap = Math.round((last.end - first.end) / MIN);
     summary = `<div class="lc-tl-fin">Last court to finish: <b>${escapeHtml(b.courtLabel(last.c))}</b> at about <b>${escapeHtml(clockTimeOnly(last.end))}</b>.${gap >= 25 ? `<br>Courts finish about ${gap} min apart — Re-balance could even that out.` : ""}</div>`;
   } else summary = '<div class="lc-tl-fin">Nothing left to play this round.</div>';
-  wrap.innerHTML = `<div class="lc-tl">${axis}${body}${summary}</div>`;
+  const tlHtml = `<div class="lc-tl">${axis}${body}${summary}</div>`;
+  const tlSig = liveBoardSignature("timeline", tlHtml);
+  if (wrap.dataset.sig === tlSig && wrap.firstElementChild) { markLiveMoveTargets(wrap); return; }
+  wrap.dataset.sig = tlSig;
+  wrap.innerHTML = tlHtml;
   wrap.querySelectorAll(".lc-tl-bar").forEach((btn) => { btn.onclick = () => handleLiveTileTap(Number(btn.dataset.s), Number(btn.dataset.c)); });
   markLiveMoveTargets(wrap);
 }
