@@ -4585,6 +4585,10 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
               };
             })
         : [];
+      // Nothing left to enter — every match already has a settled result,
+      // it's only waiting to be finalized — so it isn't "due" any more and
+      // shouldn't sit at the top of the profile.
+      if (lineupsSubmitted && rubbers.length && rubbers.every((r) => r.wonSide)) return;
       out.push({
         leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
         fixtureId: f.id, label: fixtureLabel(league, f),
@@ -5179,6 +5183,13 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
     if (f.rubbers[idx].forfeited) f.rubbers[idx].forfeited = null;
     logAudit(league, req, f, "score_edit", { seedIdx: idx, before, after, wasFinalized: f.finalized });
   }
+  // A score that settles the match means it's over — so it's finished on
+  // Live Court Control too, whoever entered it (a captain from their
+  // profile, the Results tab, or an admin). Without this a captain could
+  // post the result and the court would still show the match as live or
+  // waiting to start until someone remembered to tap Mark complete. A
+  // half-entered score (no winner yet) leaves it alone.
+  if (!f.rubbers[idx].completedAt && logic.rubberWinner(f.rubbers[idx])) completeRubberNow(league, f, idx);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -5265,14 +5276,69 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/pace", requireA
   res.json({ ok: true, pace: rubber.pace || null });
 });
 
-// Live Court Control: mark a rubber finished — deliberately independent of
-// posting a score (that stays the existing, optional PUT .../rubbers/:idx
-// above) and of finalizing the whole fixture (POST .../finalize below,
-// which requires every rubber to carry a real score). The first time a
-// rubber completes, its actual elapsed time is folded into
-// league.courtDurationStats — see closenessBucket above — so the live
-// board's "quick vs close" time estimate keeps learning from real nights
-// instead of staying a fixed guess.
+// Marks one rubber finished — the single place that does it, whether an
+// admin taps "Mark complete" on Live Court Control or a score comes in that
+// settles the match (see the score PUT above). A match that really was
+// started courtside has its actual elapsed time folded into
+// league.courtDurationStats and the raw courtMatchLog, exactly as before. A
+// match that was scored without ever being started (a captain entering the
+// result afterwards) is just marked done at that moment — it has no real
+// duration, so it's deliberately kept out of the timing data rather than
+// teaching the estimates a bogus zero. Returns true only if this call
+// actually completed it.
+function completeRubberNow(league, f, idx) {
+  const rubber = f.rubbers[idx];
+  if (rubber.completedAt) return false;
+  const wasStarted = !!rubber.startedAt;
+  rubber.completedAt = Date.now();
+  if (!wasStarted) { rubber.startedAt = rubber.completedAt; return true; }
+  const { ratingsData, identityOf } = loadGlobalRatings();
+  const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
+  if (pred) {
+    if (!league.courtDurationStats) league.courtDurationStats = {};
+    const bucket = closenessBucket(pred.predictedCloseness);
+    const stat = league.courtDurationStats[bucket] || (league.courtDurationStats[bucket] = { count: 0, totalMinutes: 0 });
+    stat.count += 1;
+    stat.totalMinutes += (rubber.completedAt - rubber.startedAt) / 60000;
+  }
+  // A raw, per-match record alongside the courtDurationStats aggregate —
+  // the aggregate can always be recomputed from this, but not the other
+  // way around, so this is where any future "what actually predicts a
+  // long match" analysis (by pairing, by court, by time of night, ...)
+  // would read from. Not surfaced in any UI yet — purely collection for
+  // now, per an explicit "gather more than just duration" ask.
+  const where = findCourtScheduleCell(league, f.id, idx);
+  if (!league.courtMatchLog) league.courtMatchLog = [];
+  league.courtMatchLog.push({
+    fixtureId: f.id,
+    round: f.round,
+    stage: f.stage,
+    seed: idx,
+    teamAId: f.teamA,
+    teamBId: f.teamB,
+    pairAIds: (f.selectionA.pairs[idx] || []).slice(),
+    pairBIds: (f.selectionB.pairs[idx] || []).slice(),
+    court: where ? where.court : null,
+    courtName: where ? ((league.courtNames || [])[where.court] || null) : null,
+    slot: where ? where.slot : null,
+    startedAt: rubber.startedAt,
+    completedAt: rubber.completedAt,
+    durationMinutes: (rubber.completedAt - rubber.startedAt) / 60000,
+    closeness: pred ? pred.predictedCloseness : null,
+    pace: rubber.pace || null,
+    winPctA: pred ? pred.winPctA : null,
+    winPctB: pred ? pred.winPctB : null,
+    provisional: pred ? pred.provisional : null,
+    sets: rubber.sets.map((set) => set.slice()),
+    tb: rubber.tb.slice(),
+  });
+  return true;
+}
+
+// Live Court Control's "Mark complete": finishes a match that's under way.
+// Separate from finalizing the whole fixture (POST .../finalize below, which
+// requires every rubber to carry a real score); a score that settles the
+// match completes it on its own too (see the score PUT above).
 router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
@@ -5282,49 +5348,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requ
   if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
   const rubber = f.rubbers[idx];
   if (!rubber.startedAt) return res.status(400).json({ error: "This match hasn't been started yet." });
-  if (!rubber.completedAt) {
-    rubber.completedAt = Date.now();
-    const { ratingsData, identityOf } = loadGlobalRatings();
-    const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
-    if (pred) {
-      if (!league.courtDurationStats) league.courtDurationStats = {};
-      const bucket = closenessBucket(pred.predictedCloseness);
-      const stat = league.courtDurationStats[bucket] || (league.courtDurationStats[bucket] = { count: 0, totalMinutes: 0 });
-      stat.count += 1;
-      stat.totalMinutes += (rubber.completedAt - rubber.startedAt) / 60000;
-    }
-    // A raw, per-match record alongside the courtDurationStats aggregate —
-    // the aggregate can always be recomputed from this, but not the other
-    // way around, so this is where any future "what actually predicts a
-    // long match" analysis (by pairing, by court, by time of night, ...)
-    // would read from. Not surfaced in any UI yet — purely collection for
-    // now, per an explicit "gather more than just duration" ask.
-    const where = findCourtScheduleCell(league, f.id, idx);
-    if (!league.courtMatchLog) league.courtMatchLog = [];
-    league.courtMatchLog.push({
-      fixtureId: f.id,
-      round: f.round,
-      stage: f.stage,
-      seed: idx,
-      teamAId: f.teamA,
-      teamBId: f.teamB,
-      pairAIds: (f.selectionA.pairs[idx] || []).slice(),
-      pairBIds: (f.selectionB.pairs[idx] || []).slice(),
-      court: where ? where.court : null,
-      courtName: where ? ((league.courtNames || [])[where.court] || null) : null,
-      slot: where ? where.slot : null,
-      startedAt: rubber.startedAt,
-      completedAt: rubber.completedAt,
-      durationMinutes: (rubber.completedAt - rubber.startedAt) / 60000,
-      closeness: pred ? pred.predictedCloseness : null,
-      pace: rubber.pace || null,
-      winPctA: pred ? pred.winPctA : null,
-      winPctB: pred ? pred.winPctB : null,
-      provisional: pred ? pred.provisional : null,
-      sets: rubber.sets.map((set) => set.slice()),
-      tb: rubber.tb.slice(),
-    });
-  }
+  completeRubberNow(league, f, idx);
   store.saveLeague(league.id, league);
   res.json({ ok: true, completedAt: rubber.completedAt });
 });
