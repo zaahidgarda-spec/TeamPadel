@@ -298,10 +298,20 @@
           </section>
 
           <section class="pd-section" id="account-push-section" style="display:none;">
-            <div class="pd-section-head"><h2>Push notifications</h2></div>
+            <div class="pd-section-head"><h2>Notifications</h2></div>
             <div class="card" style="padding:14px 16px;">
               <p class="note" id="account-push-note" style="margin-bottom:10px;">Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.</p>
               <div id="account-push-teams" style="margin-bottom:10px;"></div>
+              <div id="account-email-row" style="display:none;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line, #E3E9F4);">
+                <label style="display:flex;align-items:flex-start;gap:8px;font-weight:600;cursor:pointer;">
+                  <input type="checkbox" id="account-email-toggle" style="margin-top:3px;">
+                  <span>Email me these too<span class="note" id="account-email-addr" style="display:block;font-weight:400;margin:2px 0 0;"></span></span>
+                </label>
+                <div class="row" style="margin-top:8px;align-items:center;">
+                  <button class="secondary" id="account-email-test-btn">Send test email</button>
+                  <span class="note" id="account-email-status"></span>
+                </div>
+              </div>
               <button class="secondary" id="account-push-btn"></button>
               <div class="row" id="account-push-test-row" style="display:none;margin-top:8px;">
                 <label class="sr-only" for="account-push-test-message">Custom test message</label>

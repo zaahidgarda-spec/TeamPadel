@@ -5086,6 +5086,38 @@ el("push-prompt-cta").onclick = async () => {
 // future one, since the "seen" flag lives on the account) it sits at the
 // very bottom of the dashboard instead, above the utility links.
 let showPushSectionAtTop = null;
+// Emails go to the account's own address automatically for every team the
+// account captains; this row is just the off switch and a way to see one.
+function renderAccountEmailRow() {
+  const row = el("account-email-row");
+  const toggle = el("account-email-toggle");
+  const testBtn = el("account-email-test-btn");
+  const status = el("account-email-status");
+  row.style.display = "block";
+  el("account-email-addr").textContent = "Sent to " + playerAccount.email + " — line-ups, court times, forfeits and news for your teams.";
+  toggle.checked = playerAccount.emailNotifications !== false;
+  status.textContent = "";
+  toggle.onchange = async () => {
+    const want = toggle.checked;
+    toggle.disabled = true;
+    try {
+      const r = await api("/players/email-notifications", { method: "PUT", body: { enabled: want } });
+      playerAccount.emailNotifications = r.emailNotifications;
+      status.textContent = want ? "Emails on." : "Emails off.";
+    } catch (e) { toggle.checked = !want; status.textContent = e.message; }
+    toggle.disabled = false;
+  };
+  testBtn.onclick = async () => {
+    testBtn.disabled = true;
+    status.textContent = "Sending…";
+    try {
+      const r = await api("/players/email-test", { method: "POST" });
+      status.textContent = "Sent to " + r.to + " — check your inbox (and spam, the first time).";
+    } catch (e) { status.textContent = e.message; }
+    testBtn.disabled = false;
+  };
+}
+
 async function renderAccountPushSection() {
   const section = el("account-push-section");
   const teamsEl = el("account-push-teams");
@@ -5124,12 +5156,14 @@ async function renderAccountPushSection() {
   // and back.
   if (!captaincies.length) {
     teamsEl.innerHTML = "";
+    el("account-email-row").style.display = "none";
     note.textContent = "Manage a team? Enter your team code below to link it here, then turn on notifications for it.";
     btn.style.display = "none";
     codeRow.style.display = "flex";
     return;
   }
   codeRow.style.display = "none";
+  renderAccountEmailRow();
   teamsEl.innerHTML = captaincies.map((c) => `<span class="tag">${escapeHtml(c.teamName)} · ${escapeHtml(c.leagueName)}</span>`).join(" ");
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     note.textContent = "Not supported on this browser.";

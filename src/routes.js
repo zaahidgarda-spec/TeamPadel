@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
-const { sendMail } = require("./mailer");
+const { sendMail, isConfigured: mailConfigured, buildNotificationEmail } = require("./mailer");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
 
@@ -122,6 +122,42 @@ function fixtureLabel(league, f) {
   const meta = league.roundMeta && league.roundMeta[f.round];
   return (meta && meta.label) || "Round " + f.round;
 }
+// Everyone who should get a team's notifications by email: the address the
+// team itself registered (if any) plus the account email of every signed-up
+// captain of that team — so a captain hears about their team without having
+// to type an address in anywhere — minus anyone who switched emails off in
+// My Profile. Lowercased and de-duplicated so nobody gets it twice.
+function emailRecipientsForTeam(league, team) {
+  const out = new Map();
+  const optedOut = new Set();
+  const add = (addr) => { const a = String(addr || "").trim(); if (a.includes("@")) out.set(a.toLowerCase(), a); };
+  add(team.notifyEmail);
+  store.getUsersIndex().forEach(({ id }) => {
+    const user = store.getUser(id);
+    if (!user || !user.email) return;
+    // The off switch covers the address itself, not just the account
+    // route — signing in as captain also files the account email as the
+    // team's notifyEmail, and that must stop too.
+    if (user.emailNotifications === false) { optedOut.add(user.email.trim().toLowerCase()); return; }
+    if ((user.captaincies || []).some((c) => c.leagueId === league.id && c.teamId === team.id)) add(user.email);
+  });
+  return [...out.entries()].filter(([key]) => !optedOut.has(key)).map(([, addr]) => addr);
+}
+// Fire-and-forget, deferred a tick so looking up recipients never slows the
+// request that triggered the notification, and a mail failure can never
+// break it.
+function emailTeamNotification(league, team, type, message) {
+  setImmediate(() => {
+    try {
+      const to = emailRecipientsForTeam(league, team);
+      if (!to.length) return;
+      const mail = buildNotificationEmail({ leagueName: league.name, leagueId: league.id, type, message, teamName: team.name });
+      to.forEach((addr) => sendMail({ to: addr, ...mail }).catch(() => {}));
+    } catch (e) {
+      console.error("Notification email failed:", e.message);
+    }
+  });
+}
 // `extra` is optional structured data a notification can carry alongside
 // its message — e.g. { round } so the frontend can jump straight to the
 // relevant page on click instead of the reader having to go find it.
@@ -129,9 +165,7 @@ function notify(league, teamId, type, message, extra) {
   if (!league.notifications) league.notifications = [];
   league.notifications.push({ id: logic.uid(), teamId, type, message, read: false, createdAt: Date.now(), ...extra });
   const team = league.teams.find((t) => t.id === teamId);
-  if (team && team.notifyEmail) {
-    sendMail({ to: team.notifyEmail, subject: league.name + ": " + type, text: message }).catch(() => {});
-  }
+  if (team) emailTeamNotification(league, team, type, message);
   // Fire-and-forget, same as the email above — every existing call site
   // (selection reveal, substitution, round complete, timeslot proposals,
   // lineup reminders, ...) starts reaching a subscribed device for free,
@@ -1250,7 +1284,39 @@ router.get("/players/me", (req, res) => {
     user.captaincies = captaincies.map((c) => ({ leagueId: c.leagueId, teamId: c.teamId }));
     store.saveUser(user.id, user);
   }
-  res.json({ id: user.id, name: user.name, email: user.email, captaincies, hasSeenPushPrompt: !!user.hasSeenPushPrompt });
+  res.json({ id: user.id, name: user.name, email: user.email, captaincies, hasSeenPushPrompt: !!user.hasSeenPushPrompt, emailNotifications: user.emailNotifications !== false, emailAvailable: mailConfigured() });
+});
+
+// Account-level switch for the emails in emailRecipientsForTeam — on unless
+// explicitly turned off.
+router.put("/players/email-notifications", (req, res) => {
+  const pu = req.session.playerUser;
+  const user = pu && store.getUser(pu.id);
+  if (!user) return res.status(401).json({ error: "Not logged in." });
+  user.emailNotifications = !!(req.body && req.body.enabled);
+  store.saveUser(user.id, user);
+  res.json({ ok: true, emailNotifications: user.emailNotifications });
+});
+// Sends one real notification-style email to the account's own address, so
+// a captain can see exactly what they'll get (and that it isn't in spam).
+router.post("/players/email-test", loginLimiter, async (req, res) => {
+  const pu = req.session.playerUser;
+  const user = pu && store.getUser(pu.id);
+  if (!user) return res.status(401).json({ error: "Not logged in." });
+  if (!mailConfigured()) return res.status(503).json({ error: "Email isn't set up on this server yet, so nothing could be sent." });
+  const c = (user.captaincies || [])[0];
+  const league = c && store.getLeague(c.leagueId);
+  const team = league && league.teams.find((t) => t.id === c.teamId);
+  const mail = buildNotificationEmail({
+    leagueName: league ? league.name : "Team Padel",
+    leagueId: league ? league.id : null,
+    type: "test",
+    message: "This is a test. When something happens with your team — line-ups, court times, forfeits — it will land here.",
+    teamName: team ? team.name : null,
+  });
+  const result = await sendMail({ to: user.email, ...mail });
+  if (!result.sent) return res.status(502).json({ error: "The email couldn't be sent. Try again in a minute." });
+  res.json({ ok: true, to: user.email });
 });
 
 // One-time flag: the Push notifications section shows at the very top of
