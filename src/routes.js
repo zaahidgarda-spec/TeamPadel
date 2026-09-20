@@ -417,20 +417,31 @@ function defaultKit() {
 // Strip anything a given viewer shouldn't see: password hashes always,
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
+// Payment details on a team or player record (see sanitize).
+const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken"];
 function sanitize(league, req) {
   const user = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
   const teamId = user ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
-    const { code, notifyEmail, kit, pushSubscriptions, ...rest } = t;
+    const { code, notifyEmail, kit, pushSubscriptions, payLinkToken: _teamPayToken, ...restAll } = t;
     const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
+    // Who has paid, how, and when is between the league admin and that
+    // team's own captain — not something to hand to anyone who opens the
+    // league (the tabs hide it, but the data would still be readable). The
+    // pay-link token never ships here at all, for anyone: it's fetched
+    // through the dedicated pay-link route only.
+    const rest = viewerIsThisTeam ? restAll : Object.fromEntries(Object.entries(restAll).filter(([k]) => !PAYMENT_FIELDS.includes(k)));
     // A pay-link token stands in for auth on its own public route — never
     // ships in the general league payload, only ever handed out via the
     // dedicated pay-link fetch route to someone already allowed to see it.
     // claimRequest names who's contesting a record — only this league's
     // own admin has any business seeing that.
-    const players = rest.players.map(({ payLinkToken, claimRequest, ...p }) => (isAdmin ? { ...p, claimRequest } : p));
+    const players = rest.players.map(({ payLinkToken, claimRequest, ...p }) => {
+      const visible = viewerIsThisTeam ? p : Object.fromEntries(Object.entries(p).filter(([k]) => !PAYMENT_FIELDS.includes(k)));
+      return isAdmin ? { ...visible, claimRequest } : visible;
+    });
     return {
       ...rest, players,
       code: viewerIsThisTeam ? code : undefined,
