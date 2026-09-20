@@ -8131,20 +8131,64 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     // a draw — an explicit choice instead of just quietly leaving it blank.
     if (thirdSet) html += `<div class="row" style="margin-top:12px;"><button type="button" class="secondary" id="score-draw-btn">Call it a draw — skip the 3rd set</button></div>`;
     body.innerHTML = html;
+    // Entry order follows how a score is actually said out loud: a set's
+    // two numbers together (A then B), then the next set, then the
+    // tie-break — the reverse of how the grid happens to be laid out (a row
+    // per team). Once a cell is filled the cursor moves to the next one in
+    // that order, and after the last one it lands on Save.
+    function focusNextCell(fromKind, fromSet, fromSide) {
+      const order = [];
+      const sets = [...new Set([...body.querySelectorAll(".score-cell-input[data-set]")].map((i) => Number(i.dataset.set)))].sort((a, b) => a - b);
+      sets.forEach((si) => [0, 1].forEach((sd) => { const c = body.querySelector(`.score-cell-input[data-set="${si}"][data-side="${sd}"]`); if (c) order.push({ key: `s${si}-${sd}`, node: c }); }));
+      [0, 1].forEach((sd) => { const c = body.querySelector(`.score-cell-input[data-tb="${sd}"]`); if (c) order.push({ key: `t-${sd}`, node: c }); });
+      const at = order.findIndex((o) => o.key === (fromKind === "set" ? `s${fromSet}-${fromSide}` : `t-${fromSide}`));
+      const next = order[at + 1];
+      if (next) { next.node.focus(); next.node.select(); } else el("score-modal-save").focus();
+    }
     body.querySelectorAll(".score-cell-input[data-set]").forEach((inp) => {
+      inp.maxLength = 1;
+      inp.onfocus = () => inp.select();
       inp.onchange = () => {
         const si = Number(inp.dataset.set), side = Number(inp.dataset.side);
         const v = inp.value.trim();
         state.sets[si][side] = v === "" ? null : Math.max(0, Math.min(7, parseInt(v, 10) || 0));
         render();
       };
+      // A set is one digit (0-7), so the moment a digit lands it's complete.
+      inp.oninput = () => {
+        const digits = inp.value.replace(/\D/g, "");
+        if (!digits) return;
+        const si = Number(inp.dataset.set), side = Number(inp.dataset.side);
+        state.sets[si][side] = Math.min(7, parseInt(digits.slice(-1), 10));
+        inp.onchange = null;
+        render();
+        focusNextCell("set", si, side);
+      };
     });
     body.querySelectorAll(".score-cell-input[data-tb]").forEach((inp) => {
+      inp.maxLength = 2;
+      inp.onfocus = () => inp.select();
       inp.onchange = () => {
         const side = Number(inp.dataset.tb);
         const v = inp.value.trim();
         state.tb[side] = v === "" ? 0 : Math.max(0, parseInt(v, 10) || 0);
         render();
+      };
+      // A super tie-break runs to 10+ (first to 10, win by 2), so one digit
+      // isn't always finished. Move on once two digits are in — or once a
+      // single digit can only be the losing score (the other side already
+      // has 10 or more).
+      inp.oninput = () => {
+        const digits = inp.value.replace(/\D/g, "");
+        if (!digits) return;
+        const side = Number(inp.dataset.tb);
+        const n = parseInt(digits, 10);
+        state.tb[side] = n;
+        const done = digits.length >= 2 || state.tb[1 - side] >= 10;
+        if (!done) return;
+        inp.onchange = null;
+        render();
+        focusNextCell("tb", 0, side);
       };
     });
     const drawBtn = document.getElementById("score-draw-btn");
@@ -8173,6 +8217,10 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   }
   render();
   el("score-modal-backdrop").classList.add("open");
+  // Land the cursor in the first empty box so scores can be typed straight
+  // away — one digit per box, no tapping around.
+  const firstEmpty = [...el("score-modal-body").querySelectorAll(".score-cell-input[data-set]")].sort((a, b) => Number(a.dataset.set) - Number(b.dataset.set) || Number(a.dataset.side) - Number(b.dataset.side)).find((i) => i.value === "");
+  if (firstEmpty) firstEmpty.focus();
   el("score-modal-clear").onclick = () => { state.sets = state.sets.map(() => [null, null]); state.tb = [0, 0]; render(); };
   el("score-modal-save").onclick = saveScore;
 }
