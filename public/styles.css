@@ -1906,3 +1906,24 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .pd-claim-hero #account-search-input{font-size:16px;padding:13px 14px;border:1.5px solid #B9C9EA;background:#fff;}
 /* On the signed-out My Profile tab the log-in form comes first and the pitch sits below it */
 .account-hero.account-hero-below{margin:26px 0 0;}
+
+/* Your leagues: logo strip + the open league's actions */
+.al-strip{position:relative;display:flex;gap:10px;overflow-x:auto;padding:4px 2px 10px;scrollbar-width:none;}
+.al-strip::-webkit-scrollbar{display:none;}
+.al-chip{flex:none;width:78px;text-align:center;background:none;border:none;padding:0;cursor:pointer;color:var(--text);font:inherit;min-height:0;}
+.al-ring{display:flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:50%;margin:0 auto 5px;background:#fff;border:2px solid transparent;transition:border-color .15s,box-shadow .15s;}
+.al-chip:hover .al-ring{border-color:rgba(37,99,235,.35);}
+.al-chip.on .al-ring{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.15);}
+.al-chip b{display:block;font-size:11.5px;font-weight:600;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.al-chip span:last-child{display:block;font-size:10px;color:var(--text-dim,#64748B);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.al-crest{border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;flex:none;}
+.al-ring.al-add{border:2px dashed #C5D3EE;background:transparent;color:var(--accent);font-size:26px;line-height:1;}
+.al-detail{position:relative;text-align:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px 14px;margin-top:2px;}
+.al-detail .al-crest{margin-bottom:6px;}
+.al-detail-name{font-family:var(--font-display);font-size:18px;letter-spacing:.04em;text-transform:uppercase;}
+.al-detail-team{font-size:12.5px;color:var(--text-dim,#64748B);margin:2px 0 8px;}
+.al-role{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#EEF2F9;color:#475569;}
+.al-role.cap{background:#0B1424;color:#fff;}
+.al-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+.al-actions button{width:100%;}
+.al-actions .al-danger{color:#B42318;border:1px solid #F3C6C1;background:#FFF6F5;border-radius:var(--radius,10px);font-weight:600;}

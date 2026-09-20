@@ -2594,71 +2594,84 @@ function mostCommonCardSeed(card) {
   seeds.forEach((s) => { counts[s] = (counts[s] || 0) + 1; });
   return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
 }
+// "Your leagues" on My Profile: a strip of team logos, one per league you're
+// in (a claimed record and/or a team you captain). Tap a logo for that league's
+// actions — open it, unlink your record, or step down as captain — and the
+// + at the end adds another (find your record, or enter a team code). Only
+// one thing is open at a time; a second tap on the same logo closes it.
+let accountLeagueSel = null; // "leagueId:teamId" of the open logo, "add", or null
 function renderAccountLeaguesList(cards) {
   const seen = new Set();
   const uniq = cards.filter((c) => (seen.has(c.leagueId) ? false : (seen.add(c.leagueId), true)));
   const captaincies = playerAccount.captaincies || [];
   // A captaincy with no claimed player record in that league has no card to
-  // attach to — give it its own row so it's still visible (and removable).
+  // attach to — it still gets its own logo so it stays visible (and removable).
   const extraCaptaincies = captaincies.filter((cap) => !cards.some((card) => card.leagueId === cap.leagueId && card.teamId === cap.teamId));
+  const c = el("account-leagues-list");
   if (uniq.length === 0 && extraCaptaincies.length === 0) {
-    el("account-leagues-list").innerHTML = '<button type="button" class="account-leagues-empty" id="account-leagues-empty-cta">No leagues yet — tap to find your player record</button>';
+    c.innerHTML = '<button type="button" class="account-leagues-empty" id="account-leagues-empty-cta">No leagues yet — tap to find your player record</button>';
     el("account-leagues-empty-cta").onclick = openClaimPanel;
     return;
   }
-  const c = el("account-leagues-list");
-  const crestHtml = (logo, name) => logo
-    ? `<img class="account-league-crest" style="width:40px;height:40px;object-fit:cover;" src="${logo}" alt="">`
-    : `<span class="account-league-crest avatar-fb" style="width:40px;height:40px;font-size:15px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
-  const cardRows = uniq.map((card) => {
-    const seed = mostCommonCardSeed(card);
-    const isCaptain = captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId);
-    // "Captain controls" sits below the row's own info, on its own line —
-    // deliberately not next to the name/tag, which is the row's main tap
-    // target — so removing captaincy takes a second, separate tap plus the
-    // confirm below, not a stray brush against the row you meant to open.
-    const captainTag = isCaptain ? '<span class="account-league-captain-tag">Captain</span>' : "";
-    const captainControls = isCaptain ? '<button class="link account-remove-captaincy-btn" type="button">Captain controls</button>' : "";
-    return `<div class="account-league-row${isCaptain ? " is-captain" : ""}" data-league="${card.leagueId}" data-team="${card.teamId}" data-player="${card.playerId}" data-league-name="${escapeHtml(card.leagueName)}" data-team-name="${escapeHtml(card.teamName)}">
-      ${crestHtml(card.teamLogo, card.teamName)}
-      <div class="account-league-text">
-        <div class="account-league-name">${escapeHtml(card.leagueName)}${captainTag}</div>
-        <div class="account-league-team">${escapeHtml(card.teamName)}${seed ? " · Seed " + escapeHtml(seed) : ""}</div>
-        ${captainControls}
-      </div>
-      <button class="account-league-remove account-unclaim-btn" type="button" title="Remove this player record" aria-label="Remove this player record">&times;</button>
-    </div>`;
+  const items = uniq.map((card) => ({
+    key: card.leagueId + ":" + card.teamId, leagueId: card.leagueId, teamId: card.teamId, leagueName: card.leagueName,
+    teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, seed: mostCommonCardSeed(card),
+    isCaptain: captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId),
+  })).concat(extraCaptaincies.map((cap) => ({
+    key: cap.leagueId + ":" + cap.teamId, leagueId: cap.leagueId, teamId: cap.teamId, leagueName: cap.leagueName,
+    teamName: cap.teamName, teamLogo: cap.teamLogo, playerId: null, seed: null, isCaptain: true,
+  })));
+  if (accountLeagueSel && accountLeagueSel !== "add" && !items.some((i) => i.key === accountLeagueSel)) accountLeagueSel = null;
+  const crestHtml = (logo, name, size) => logo
+    ? `<img class="al-crest" style="width:${size}px;height:${size}px;" src="${logo}" alt="">`
+    : `<span class="al-crest avatar-fb" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
+  const chips = items.map((i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
+      <span class="al-ring">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}</span></button>`).join("")
+    + `<button type="button" class="al-chip${accountLeagueSel === "add" ? " on" : ""}" data-key="add" aria-label="Add a league"><span class="al-ring al-add">+</span><b>Add</b><span>league</span></button>`;
+  let detail = "";
+  const sel = items.find((i) => i.key === accountLeagueSel);
+  if (sel) {
+    const role = sel.isCaptain ? '<span class="al-role cap">Captain</span>' : '<span class="al-role">Player</span>';
+    detail = `<div class="al-detail">${crestHtml(sel.teamLogo, sel.teamName, 64)}
+      <div class="al-detail-name">${escapeHtml(sel.leagueName)}</div>
+      <div class="al-detail-team">${escapeHtml(sel.teamName)}${sel.seed ? " · Seed " + escapeHtml(sel.seed) : ""}</div>${role}
+      <div class="al-actions">
+        <button type="button" class="primary" data-act="open">Open ${escapeHtml(sel.leagueName)}</button>
+        ${sel.playerId ? '<button type="button" class="al-danger" data-act="unlink">Unlink my record</button>' : ""}
+        ${sel.isCaptain ? '<button type="button" class="al-danger" data-act="stepdown">Stop being captain</button>' : ""}
+      </div></div>`;
+  } else if (accountLeagueSel === "add") {
+    detail = `<div class="al-detail"><div class="al-detail-name">Add a league</div>
+      <div class="al-detail-team">Link another player record, or a team you captain.</div>
+      <div class="al-actions">
+        <button type="button" class="primary" data-act="find">Find my player record</button>
+        <button type="button" class="secondary" data-act="code">Enter a team code (captain)</button>
+      </div></div>`;
+  }
+  c.innerHTML = `<div class="al-strip">${chips}</div>${detail}`;
+  c.querySelectorAll(".al-chip").forEach((chip) => {
+    chip.onclick = () => { accountLeagueSel = accountLeagueSel === chip.dataset.key ? null : chip.dataset.key; renderAccountLeaguesList(cards); };
   });
-  const captaincyRows = extraCaptaincies.map((cap) => `<div class="account-league-row is-captain" data-league="${cap.leagueId}" data-team="${cap.teamId}" data-league-name="${escapeHtml(cap.leagueName)}" data-team-name="${escapeHtml(cap.teamName)}">
-      ${crestHtml(cap.teamLogo, cap.teamName)}
-      <div class="account-league-text">
-        <div class="account-league-name">${escapeHtml(cap.leagueName)}<span class="account-league-captain-tag">Captain</span></div>
-        <div class="account-league-team">${escapeHtml(cap.teamName)}</div>
-        <button class="link account-remove-captaincy-btn" type="button">Captain controls</button>
-      </div>
-    </div>`);
-  c.innerHTML = `<div class="account-leagues-grid">${cardRows.concat(captaincyRows).join("")}</div>`;
-  c.querySelectorAll(".account-league-row").forEach((row) => {
-    row.onclick = (e) => { if (!e.target.classList.contains("account-unclaim-btn") && !e.target.classList.contains("account-remove-captaincy-btn")) openLeague(row.dataset.league); };
-  });
-  c.querySelectorAll(".account-unclaim-btn").forEach((btn) => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      const row = btn.closest(".account-league-row");
-      await api(`/players/claims/${row.dataset.league}/${row.dataset.team}/${row.dataset.player}`, { method: "DELETE" });
-      await markPlayerIndexClaimed(row.dataset.player, false);
-      await renderAccountProfile();
-    };
-  });
-  c.querySelectorAll(".account-remove-captaincy-btn").forEach((btn) => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      const row = btn.closest(".account-league-row");
-      if (!confirm(`Stop managing ${row.dataset.teamName} (${row.dataset.leagueName}) as captain? You can regain captaincy any time with the team code.`)) return;
-      await api("/captain-logout", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team } });
-      // captaincies live on playerAccount, not the cards this list was built
-      // from — re-fetch it too, or the tag/link would still show as captain.
-      await refreshAccountStatus();
+  const showPanel = (id, focusId) => { const panel = el(id); panel.style.display = "block"; el(focusId).focus(); panel.scrollIntoView({ behavior: "smooth", block: "center" }); if (id === "claim-panel") loadPlayerIndex(); };
+  c.querySelectorAll("[data-act]").forEach((btn) => {
+    btn.onclick = async () => {
+      const act = btn.dataset.act;
+      if (act === "open") return openLeague(sel.leagueId);
+      if (act === "find") return showPanel("claim-panel", "account-search-input");
+      if (act === "code") return showPanel("captain-panel", "account-captain-code");
+      if (act === "unlink") {
+        await api(`/players/claims/${sel.leagueId}/${sel.teamId}/${sel.playerId}`, { method: "DELETE" });
+        await markPlayerIndexClaimed(sel.playerId, false);
+        accountLeagueSel = null;
+        await renderAccountProfile();
+      } else if (act === "stepdown") {
+        if (!confirm(`Stop managing ${sel.teamName} (${sel.leagueName}) as captain? You can regain captaincy any time with the team code.`)) return;
+        await api("/captain-logout", { method: "POST", body: { leagueId: sel.leagueId, teamId: sel.teamId } });
+        accountLeagueSel = null;
+        // captaincies live on playerAccount, not the cards this list was built
+        // from — re-fetch it too, or the tag would still show as captain.
+        await refreshAccountStatus();
+      }
     };
   });
 }
