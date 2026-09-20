@@ -23,7 +23,38 @@ function getTransporter() {
 // True when this server can actually send — lets the app say "email isn't
 // set up here" instead of pretending a test went out.
 function isConfigured() {
-  return !!process.env.EMAIL_DRY_RUN || !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  return !!process.env.EMAIL_DRY_RUN || !!process.env.BREVO_API_KEY || !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+}
+
+// Sending through Brevo's web API (plain HTTPS, like any other request the
+// server makes) instead of an SMTP connection. Some hosts — this one, it
+// turned out — don't let a server open outgoing mail connections at all, so
+// Gmail-over-SMTP can never work there whatever the password. Used whenever
+// BREVO_API_KEY is set; the sender is EMAIL_FROM, or GMAIL_USER if that's
+// all that's set, and must be a sender verified in the Brevo account.
+async function sendViaBrevo({ to, subject, text, html }) {
+  const from = process.env.EMAIL_FROM || process.env.GMAIL_USER;
+  if (!from) return { sent: false, code: "BREVO_NO_SENDER", reason: "no sender address set" };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": process.env.BREVO_API_KEY, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ sender: { name: "Team Padel", email: from }, to: [{ email: to }], subject, textContent: text, ...(html ? { htmlContent: html } : {}) }),
+      signal: controller.signal,
+    });
+    if (res.ok) return { sent: true };
+    let detail = "";
+    try { detail = ((await res.json()) || {}).message || ""; } catch { /* no body */ }
+    console.error("Email send failed (Brevo):", res.status, detail);
+    return { sent: false, code: res.status === 401 ? "BREVO_AUTH" : /sender/i.test(detail) ? "BREVO_SENDER" : "BREVO_" + res.status, reason: detail || "HTTP " + res.status };
+  } catch (e) {
+    console.error("Email send failed (Brevo):", e.message);
+    return { sent: false, code: "ETIMEDOUT", reason: e.message };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function sendMail({ to, subject, text, html }) {
@@ -33,6 +64,7 @@ async function sendMail({ to, subject, text, html }) {
     console.log(`[email dry-run] to=${to} subject=${JSON.stringify(subject)}`);
     return { sent: true, dryRun: true };
   }
+  if (process.env.BREVO_API_KEY) return sendViaBrevo({ to, subject, text, html });
   const t = getTransporter();
   if (!t) {
     console.log("Email not sent (GMAIL_USER/GMAIL_APP_PASSWORD not set) — would have gone to " + to);
@@ -91,8 +123,10 @@ function buildNotificationEmail({ leagueName, leagueId, type, message, teamName 
 function explainSendFailure(result) {
   const code = (result && result.code) || "";
   const why = String((result && result.reason) || "");
+  if (code === "BREVO_AUTH") return "The email service refused the API key. Check BREVO_API_KEY on the server — it may be mistyped or deleted.";
+  if (code === "BREVO_SENDER" || code === "BREVO_NO_SENDER") return "The email service doesn't accept that sender address yet. Verify it in Brevo (Senders) and check EMAIL_FROM matches it exactly.";
   if (code === "EAUTH" || /535|Invalid login|Username and Password/i.test(why)) return "Gmail refused the login. The Gmail app password saved on the server is wrong or has been revoked — make a new one and update it.";
-  if (["ETIMEDOUT", "ECONNECTION", "ESOCKET", "ECONNREFUSED", "EDNS", "ENOTFOUND"].includes(code) || /timeout|timed out|ECONN|getaddrinfo/i.test(why)) return "The server couldn't reach Gmail — the hosting may be blocking outgoing email. Nothing was sent.";
+  if (["ETIMEDOUT", "ECONNECTION", "ESOCKET", "ECONNREFUSED", "EDNS", "ENOTFOUND"].includes(code) || /timeout|timed out|ECONN|getaddrinfo/i.test(why)) return process.env.BREVO_API_KEY ? "The server couldn't reach the email service just now. Nothing was sent — try again in a minute." : "The server couldn't reach Gmail — the hosting may be blocking outgoing email. Nothing was sent.";
   return "The email couldn't be sent (" + (code || why.slice(0, 80) || "unknown reason") + ").";
 }
 
