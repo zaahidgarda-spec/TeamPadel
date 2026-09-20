@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
-const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, explainSendFailure } = require("./mailer");
+const { sendMail, isConfigured: mailConfigured, buildNotificationEmail } = require("./mailer");
 const oauth = require("./oauth");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
@@ -1386,33 +1386,6 @@ router.put("/players/email-notifications", (req, res) => {
   user.emailNotifications = !!(req.body && req.body.enabled);
   store.saveUser(user.id, user);
   res.json({ ok: true, emailNotifications: user.emailNotifications });
-});
-// Sends one real notification-style email to the account's own address, so
-// a captain can see exactly what they'll get (and that it isn't in spam).
-router.post("/players/email-test", loginLimiter, async (req, res) => {
-  const pu = req.session.playerUser;
-  const user = pu && store.getUser(pu.id);
-  if (!user) return res.status(401).json({ error: "Not logged in." });
-  // 400-range on purpose for both failures below: a hosting gateway may
-  // replace a 502/503 body with its own generic page, hiding the reason.
-  if (!mailConfigured()) return res.status(400).json({ error: "Email isn't set up on this server yet, so nothing could be sent." });
-  const c = (user.captaincies || [])[0];
-  const league = c && store.getLeague(c.leagueId);
-  const team = league && league.teams.find((t) => t.id === c.teamId);
-  const mail = buildNotificationEmail({
-    leagueName: league ? league.name : "Team Padel",
-    leagueId: league ? league.id : null,
-    type: "test",
-    message: "This is a test. When something happens with your team — line-ups, court times, forfeits — it will land here.",
-    teamName: team ? team.name : null,
-  });
-  // Never let this hang past a few seconds, whatever the mail server does.
-  const result = await Promise.race([
-    sendMail({ to: user.email, ...mail }),
-    new Promise((resolve) => setTimeout(() => resolve({ sent: false, code: "ETIMEDOUT", reason: "timed out" }), 20000)),
-  ]);
-  if (!result.sent) return res.status(400).json({ error: explainSendFailure(result) });
-  res.json({ ok: true, to: user.email });
 });
 
 // One-time flag: the Push notifications section shows at the very top of

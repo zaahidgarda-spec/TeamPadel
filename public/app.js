@@ -5223,11 +5223,10 @@ el("push-prompt-cta").onclick = async () => {
 // very bottom of the dashboard instead, above the utility links.
 let showPushSectionAtTop = null;
 // Emails go to the account's own address automatically for every team the
-// account captains; this row is just the off switch and a way to see one.
+// account captains; this row is just the off switch.
 function renderAccountEmailRow() {
   const row = el("account-email-row");
   const toggle = el("account-email-toggle");
-  const testBtn = el("account-email-test-btn");
   const status = el("account-email-status");
   row.style.display = "block";
   el("account-email-addr").textContent = "Sent to " + playerAccount.email + " — line-ups, court times, forfeits and news for your teams.";
@@ -5243,15 +5242,6 @@ function renderAccountEmailRow() {
     } catch (e) { toggle.checked = !want; status.textContent = e.message; }
     toggle.disabled = false;
   };
-  testBtn.onclick = async () => {
-    testBtn.disabled = true;
-    status.textContent = "Sending…";
-    try {
-      const r = await api("/players/email-test", { method: "POST" });
-      status.textContent = "Sent to " + r.to + " — check your inbox (and spam, the first time).";
-    } catch (e) { status.textContent = e.message; }
-    testBtn.disabled = false;
-  };
 }
 
 async function renderAccountPushSection() {
@@ -5261,12 +5251,6 @@ async function renderAccountPushSection() {
   const btn = el("account-push-btn");
   const codeRow = el("account-push-code-row");
   const codeError = el("account-push-code-error");
-  const testRow = el("account-push-test-row");
-  const testBtn = el("account-push-test-btn");
-  const testMessage = el("account-push-test-message");
-  const testStatus = el("account-push-test-status");
-  testRow.style.display = "none";
-  testStatus.textContent = "";
   if (!playerAccount) { section.style.display = "none"; showPushSectionAtTop = null; return; }
   if (showPushSectionAtTop === null) {
     showPushSectionAtTop = !playerAccount.hasSeenPushPrompt;
@@ -5325,18 +5309,6 @@ async function renderAccountPushSection() {
       } catch (e) { alert(e.message); }
       btn.disabled = false;
       renderAccountPushSection();
-    };
-    testRow.style.display = "flex";
-    testBtn.onclick = async () => {
-      testBtn.disabled = true;
-      testStatus.textContent = "Sending…";
-      try {
-        // Any one of the linked teams works — this is testing the device's
-        // own subscription, not any particular team's data.
-        await sendTestPush(captaincies[0].leagueId, captaincies[0].teamId, existing.endpoint, testMessage.value);
-        testStatus.textContent = "Sent — should arrive any moment.";
-      } catch (e) { testStatus.textContent = e.message; }
-      testBtn.disabled = false;
     };
   } else {
     note.textContent = "Get notified on this device for every team you captain — line-ups, results, and more — even with the app closed.";
