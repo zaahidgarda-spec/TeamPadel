@@ -799,7 +799,7 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
       const rubber = f.rubbers[i];
       const winner = rubber ? logic.rubberWinner(rubber) : null;
       // No point predicting a seed that's already been played.
-      const prediction = winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+      const prediction = winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf, seedContext(league, f, i));
       if (!byLeague.has(league.id)) byLeague.set(league.id, []);
       byLeague.get(league.id).push({
         leagueId: league.id,
@@ -950,8 +950,14 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
         // a seed is played.
         let prediction;
         if (winner) {
+          // What the same model said before this match (stored as the
+          // ratings were replayed); plain Elo from the pre-match ratings for
+          // a pairs league, which has no seeds to blend.
+          const stored = ratingsData.predictions && ratingsData.predictions.get(`${f.id}:${i}`);
           const parts = [pairA[0], pairA[1], pairB[0], pairB[1]].map((id) => ratingsData.deltas.get(`${f.id}:${i}:${id}`));
-          if (parts.every(Boolean)) {
+          if (stored != null) {
+            prediction = { winPctA: stored, winPctB: 100 - stored, provisional: false };
+          } else if (parts.every(Boolean)) {
             const ratingA = (parts[0].ratingBefore + parts[1].ratingBefore) / 2;
             const ratingB = (parts[2].ratingBefore + parts[3].ratingBefore) / 2;
             const winPctA = Math.round(logic.expectedScore(ratingA, ratingB) * 100);
@@ -960,7 +966,7 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
             prediction = null;
           }
         } else {
-          prediction = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+          prediction = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf, seedContext(league, f, i));
         }
         seeds.push({
           seed: i + 1,
@@ -4009,11 +4015,17 @@ function generateSeasonCourtRotation(league) {
 // learned-duration buckets (closenessBucket), so a Quick call gets the
 // lopsided-match time estimate and a Long call the dead-even one.
 const PACE_QUICK_CLOSENESS = 10, PACE_LONG_CLOSENESS = 90;
+// The extra information the Elo + seeding blend needs for one seed of one
+// fixture (see logic.blendedStrength): which seed it is, and which two teams.
+// A pairs league has no seeds, so it gets none and stays on plain Elo.
+function seedContext(league, f, seedIndex) {
+  return league.format === "pairs" ? null : { seed: seedIndex + 1, teamA: f.teamA, teamB: f.teamB };
+}
 function matchPrediction(league, f, seed, ratingsData, identityOf) {
   const pairA = f.selectionA.submitted && f.selectionA.pairs[seed];
   const pairB = f.selectionB.submitted && f.selectionB.pairs[seed];
   if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return null;
-  const { winPctA, winPctB, provisional } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf);
+  const { winPctA, winPctB, provisional } = logic.predictSeed(league, pairA, pairB, ratingsData, identityOf, seedContext(league, f, seed));
   const predictedCloseness = 100 - Math.abs(winPctA - winPctB);
   // An admin's manual Quick/Long call on Live Court Control (rubber.pace)
   // stands in for the model's guess everywhere the court balancing reads
@@ -5868,30 +5880,22 @@ router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCap
   if (!team) return res.status(404).json({ error: "Team not found." });
   if (league.tieringEnabled) return res.status(400).json({ error: "This league seeds by gold tier, not by rating." });
   const { ratingsData, identityOf } = loadGlobalRatings();
-  // How much weight a player's own seed history carries against today's
-  // pure rating rank, once blended below — ramps up to
-  // SEED_HISTORY_MAX_WEIGHT once they've played SEED_HISTORY_STABILIZE_
-  // MATCHES seeds in this league, so a captain can't game the suggestion:
-  // parking a strong pair at a soft seed for one easy win doesn't send
-  // next week's suggestion straight back to Seed 1 for them, and sending
-  // a weak pair up to Seed 1 to dodge tougher opposition further down
-  // doesn't stick either — an established pattern resists both. A
-  // player with no seed history yet (new, or this is their first game)
-  // is suggested on rating alone, same as before.
-  // Kept deliberately low (was 0.6 — historical seed alone could swing more
-  // than half the suggestion) — where someone has HISTORICALLY played isn't
-  // reliable evidence of strength on its own: Seed 1 faces the toughest
-  // opposition every week, so a genuinely strong pair parked there can carry
-  // a worse record than a weaker pair cleaning up at Seed 4. Rating already
-  // accounts for opponent strength (that's what Elo is for), so it stays
-  // the dominant signal; seed history now only nudges, mainly to resist the
-  // week-to-week gaming described above.
-  const SEED_HISTORY_STABILIZE_MATCHES = 6;
-  const SEED_HISTORY_MAX_WEIGHT = 0.2;
+  // Who goes at which seed is ranked by the same Elo + seeding blend the
+  // predictions use (logic.blendedStrength): a player's rating pulled toward
+  // where their captain has actually been playing them, trusting the rating
+  // more the more games sit behind it. Someone who has played five Seed 1
+  // games is a Seed 1 player — they are losing because Seed 1 faces every
+  // team's strongest pair, so a poor record there must not walk them down to
+  // Seed 4 (and a weak pair cleaning up at Seed 4 shouldn't leapfrog them).
+  // Checked against the line-ups captains actually chose, this ordering
+  // matched about twice as well as rating alone (0.52 vs 0.26 rank
+  // correlation, and 0.31 for the old 20%-weight rule). A player with no
+  // seed history yet is ranked on rating alone, as before.
+  const teamMean = logic.teamMeanRating(league, team.id, ratingsData.players, identityOf);
   const players = team.players.map((p) => {
     const stat = ratingsData.players.get(identityOf(league.id, p.id));
-    const seedRows = logic.playerMatchHistory(league, p.id, ratingsData);
-    const avgSeedPlayed = seedRows.length ? seedRows.reduce((sum, r) => sum + r.seed, 0) / seedRows.length : null;
+    const seedsPlayed = stat ? stat.seedN || 0 : 0;
+    const avgSeedPlayed = seedsPlayed ? stat.seedSum / seedsPlayed : null;
     return {
       playerId: p.id,
       playerName: p.name,
@@ -5899,19 +5903,13 @@ router.get("/leagues/:leagueId/teams/:teamId/suggested-seeds", requireAdminOrCap
       played: stat ? stat.played : 0,
       provisional: !stat || stat.played < logic.ELO_PROVISIONAL_GAMES,
       avgSeedPlayed,
-      seedsPlayed: seedRows.length,
+      seedsPlayed,
+      // No seed history -> the fallback seed is never used for the ranking
+      // (null keeps this on rating alone).
+      strength: logic.blendedStrength(stat, teamMean, null),
     };
   });
-  // Rating alone gives every player a rank (1 = strongest) — the same
-  // scale a seed number already uses, which is what makes blending the
-  // two directly possible below.
-  const byRating = players.slice().sort((a, b) => b.rating - a.rating || b.played - a.played);
-  players.forEach((p) => { p.ratingRank = byRating.indexOf(p) + 1; });
-  players.forEach((p) => {
-    const historyWeight = p.avgSeedPlayed == null ? 0 : Math.min(p.seedsPlayed / SEED_HISTORY_STABILIZE_MATCHES, 1) * SEED_HISTORY_MAX_WEIGHT;
-    p.blendedRank = p.avgSeedPlayed == null ? p.ratingRank : p.ratingRank * (1 - historyWeight) + p.avgSeedPlayed * historyWeight;
-  });
-  players.sort((a, b) => a.blendedRank - b.blendedRank || b.rating - a.rating);
+  players.sort((a, b) => b.strength - a.strength || b.rating - a.rating);
   // A seed IS a pairing, not a single name — the suggestion has to say who
   // partners with whom, not just list the roster strongest to weakest.
   // Pairing the ranked list off in adjacent twos (1st with 2nd, 3rd with
@@ -5985,7 +5983,10 @@ router.get("/leagues/:leagueId/admin/ratings-preview", requireAdmin, (req, res) 
       if (parts.some((x) => !x)) return;
       const ratingA = (parts[0].ratingBefore + parts[1].ratingBefore) / 2;
       const ratingB = (parts[2].ratingBefore + parts[3].ratingBefore) / 2;
-      const winPctA = Math.round(logic.expectedScore(ratingA, ratingB) * 100);
+      // Same model as the live predictions: the blended figure stored before
+      // the match where there is one, plain Elo otherwise (a pairs league).
+      const storedPct = ratingsData.predictions && ratingsData.predictions.get(`${f.id}:${i}`);
+      const winPctA = storedPct != null ? storedPct : Math.round(logic.expectedScore(ratingA, ratingB) * 100);
       const favoriteSide = winPctA >= 50 ? "A" : "B";
       recapAll.push({
         leagueId: league.id,

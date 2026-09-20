@@ -761,10 +761,8 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
           const sched = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
           let prediction = null;
           if (partnerId && oppPair[0] && oppPair[1]) {
-            const myRating = (ratingOf(playerId) + ratingOf(partnerId)) / 2;
-            const oppRating = (ratingOf(oppPair[0]) + ratingOf(oppPair[1])) / 2;
-            const winPct = Math.round((1 / (1 + Math.pow(10, (oppRating - myRating) / ELO_SCALE))) * 100);
-            prediction = { winPct, provisional: [playerId, partnerId, oppPair[0], oppPair[1]].some(provisionalOf) };
+            const pred = predictSeed(league, [playerId, partnerId], oppPair, ratingsData, identityOf, league.format === "pairs" ? null : { seed: idx + 1, teamA: team.id, teamB: oppTeam.id });
+            prediction = { winPct: pred.winPctA, provisional: pred.provisional };
           }
           rows.push({
             label: stageLabel(league, f),
@@ -809,6 +807,46 @@ const ELO_SCALE = 400;
 const ELO_K_PROVISIONAL = 40;
 const ELO_K_ESTABLISHED = 20;
 const ELO_PROVISIONAL_GAMES = 5;
+
+// ---------- Predictions: Elo blended with seeding ----------
+// Elo alone is too timid this early: almost every match still involves a
+// player with fewer than 5 games, so ratings barely spread and predictions
+// sit at 50-55% even when the favourite wins three times in four. What a
+// captain does is real evidence too: the seed a player is put at is their
+// captain's own ranking of them, and a player who keeps turning out at Seed
+// 1 is a Seed 1 player even when they lose — they lose because Seed 1 faces
+// everyone's best pair, not because they're weak. So a player's strength is
+// their Elo pulled toward what their seed history says, trusting Elo more
+// the more games sit behind it:
+//   weight on Elo = games / (games + SEED_BLEND_K)
+//   seed-implied  = team's average rating + (2.5 - average seed) * SEED_PRIOR_STEP
+// A player with no seed history yet is taken at the seed they're playing.
+// Both numbers were fitted against every finished match on record, oldest
+// to newest, predicting each match only from what came before it: on those
+// matches the blend beat plain Elo on every league held back from the
+// fitting, and its stated percentages matched how often favourites really
+// won (plain Elo said 55-60% for favourites that won 73%).
+const SEED_BLEND_K = 12;
+const SEED_PRIOR_STEP = 160;
+// stat is a players-map entry (or undefined for someone with no results);
+// teamMean is the average Elo of that player's team; fallbackSeed is the
+// 1-based seed they're being put at right now.
+function blendedStrength(stat, teamMean, fallbackSeed) {
+  const elo = stat ? stat.rating : ELO_BASE;
+  const n = stat ? stat.played : 0;
+  const avgSeed = stat && stat.seedN ? stat.seedSum / stat.seedN : fallbackSeed;
+  if (!avgSeed) return elo;
+  const w = n / (n + SEED_BLEND_K);
+  return w * elo + (1 - w) * (teamMean + (2.5 - avgSeed) * SEED_PRIOR_STEP);
+}
+// Average Elo across a team's roster (people who haven't played count as
+// the base rating) — where the seed-implied strength is centred.
+function teamMeanRating(league, teamId, players, identityOf) {
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team || !team.players.length) return ELO_BASE;
+  const sum = team.players.reduce((acc, p) => { const st = players.get(identityOf(league.id, p.id)); return acc + (st ? st.rating : ELO_BASE); }, 0);
+  return sum / team.players.length;
+}
 // Playoff fixtures are all created with round:0 (see makeKnockoutFixture)
 // since they don't belong to the round-robin's round numbering — sorting
 // by round alone would process a final before the regular season that
@@ -872,9 +910,13 @@ function computeGlobalRatings(leagues, identityOf) {
   // keyed by the raw per-league player id (not the shared identity), so a
   // single league's own lookups (playerMatchHistory) don't need identityOf.
   const deltas = new Map();
+  // `${fixtureId}:${seedIndex}` -> win % for side A the blended model gave
+  // BEFORE that match was played — so a finished match can show what was
+  // predicted at the time, on the same model as upcoming ones.
+  const predictions = new Map();
 
   function entryFor(id) {
-    if (!players.has(id)) players.set(id, { rating: ELO_BASE, played: 0, wins: 0, losses: 0, draws: 0, form: [] });
+    if (!players.has(id)) players.set(id, { rating: ELO_BASE, played: 0, wins: 0, losses: 0, draws: 0, form: [], seedSum: 0, seedN: 0 });
     return players.get(id);
   }
 
@@ -903,6 +945,15 @@ function computeGlobalRatings(leagues, identityOf) {
       const ratingB = (pb1.rating + pb2.rating) / 2;
       const expectedA = expectedScore(ratingA, ratingB);
       const actualA = winner === "A" ? 1 : winner === "B" ? 0 : 0.5;
+      // Seeds only mean something in a team league (in a pairs league every
+      // match is "index 0").
+      const seeded = league.format !== "pairs";
+      if (seeded) {
+        const mA = teamMeanRating(league, f.teamA, players, identityOf), mB = teamMeanRating(league, f.teamB, players, identityOf);
+        const sA = (blendedStrength(players.get(identityOf(league.id, a1)), mA, i + 1) + blendedStrength(players.get(identityOf(league.id, a2)), mA, i + 1)) / 2;
+        const sB = (blendedStrength(players.get(identityOf(league.id, b1)), mB, i + 1) + blendedStrength(players.get(identityOf(league.id, b2)), mB, i + 1)) / 2;
+        predictions.set(`${f.id}:${i}`, Math.round(expectedScore(sA, sB) * 100));
+      }
 
       const applySide = (p1, p2, rawId1, rawId2, actual, expected) => {
         [[p1, rawId1], [p2, rawId2]].forEach(([p, rawId]) => {
@@ -911,6 +962,7 @@ function computeGlobalRatings(leagues, identityOf) {
           const ratingBefore = p.rating;
           p.rating += delta;
           p.played++;
+          if (seeded) { p.seedSum += i + 1; p.seedN++; }
           if (actual === 1) { p.wins++; p.form.push("W"); }
           else if (actual === 0) { p.losses++; p.form.push("L"); }
           else { p.draws++; p.form.push("D"); }
@@ -928,7 +980,7 @@ function computeGlobalRatings(leagues, identityOf) {
     });
   });
 
-  return { players, deltas };
+  return { players, deltas, predictions };
 }
 // Sorted leaderboard for display — every one of this league's own roster
 // who's actually played a finalized match, ranked by their rating highest
@@ -967,13 +1019,23 @@ function leagueRankings(league, ratingsData, identityOf) {
 // (as of every finalized result so far, across every league) ratings —
 // same expectation formula the rating engine itself uses, just not
 // followed by an actual update.
-function predictSeed(league, pairA, pairB, ratingsData, identityOf) {
+// `ctx` = { seed (1-based), teamA, teamB } switches on the Elo + seeding
+// blend (see blendedStrength); without it — a pairs league, where there are
+// no seeds — it's plain Elo, as before.
+function predictSeed(league, pairA, pairB, ratingsData, identityOf, ctx) {
   const { players } = ratingsData;
-  const ratingOf = (id) => { const s = players.get(identityOf(league.id, id)); return s ? s.rating : ELO_BASE; };
-  const provisionalOf = (id) => { const s = players.get(identityOf(league.id, id)); return !s || s.played < ELO_PROVISIONAL_GAMES; };
+  const statOf = (id) => players.get(identityOf(league.id, id));
+  const ratingOf = (id) => { const s = statOf(id); return s ? s.rating : ELO_BASE; };
+  const provisionalOf = (id) => { const s = statOf(id); return !s || s.played < ELO_PROVISIONAL_GAMES; };
   const ratingA = (ratingOf(pairA[0]) + ratingOf(pairA[1])) / 2;
   const ratingB = (ratingOf(pairB[0]) + ratingOf(pairB[1])) / 2;
-  const winPctA = Math.round(expectedScore(ratingA, ratingB) * 100);
+  let strengthA = ratingA, strengthB = ratingB;
+  if (ctx && ctx.seed && ctx.teamA && ctx.teamB) {
+    const mA = teamMeanRating(league, ctx.teamA, players, identityOf), mB = teamMeanRating(league, ctx.teamB, players, identityOf);
+    strengthA = (blendedStrength(statOf(pairA[0]), mA, ctx.seed) + blendedStrength(statOf(pairA[1]), mA, ctx.seed)) / 2;
+    strengthB = (blendedStrength(statOf(pairB[0]), mB, ctx.seed) + blendedStrength(statOf(pairB[1]), mB, ctx.seed)) / 2;
+  }
+  const winPctA = Math.round(expectedScore(strengthA, strengthB) * 100);
   return {
     winPctA,
     winPctB: 100 - winPctA,
@@ -1325,6 +1387,10 @@ module.exports = {
   leagueRankings,
   predictSeed,
   expectedScore,
+  blendedStrength,
+  teamMeanRating,
+  SEED_BLEND_K,
+  SEED_PRIOR_STEP,
   allRatableFixtures,
   ELO_BASE,
   ELO_PROVISIONAL_GAMES,
