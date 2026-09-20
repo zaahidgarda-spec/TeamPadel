@@ -4,12 +4,18 @@ let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return null;
+  // Short timeouts: on a host that blocks outgoing mail connections the
+  // default (minutes) leaves the request hanging until the gateway gives up
+  // with a generic error, instead of us reporting what actually happened.
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,
     },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
   return transporter;
 }
@@ -36,8 +42,8 @@ async function sendMail({ to, subject, text, html }) {
     await t.sendMail({ from: `"Team Padel" <${process.env.GMAIL_USER}>`, to, subject, text, html });
     return { sent: true };
   } catch (e) {
-    console.error("Email send failed:", e.message);
-    return { sent: false, reason: e.message };
+    console.error("Email send failed:", e.code || "", e.message);
+    return { sent: false, reason: e.message, code: e.code || "" };
   }
 }
 
@@ -80,4 +86,14 @@ function buildNotificationEmail({ leagueName, leagueId, type, message, teamName 
   return { subject, text, html };
 }
 
-module.exports = { sendMail, isConfigured, buildNotificationEmail };
+// A plain-English reason for a failed send, for the person who pressed
+// "Send test email" — so the fix is obvious from the screen.
+function explainSendFailure(result) {
+  const code = (result && result.code) || "";
+  const why = String((result && result.reason) || "");
+  if (code === "EAUTH" || /535|Invalid login|Username and Password/i.test(why)) return "Gmail refused the login. The Gmail app password saved on the server is wrong or has been revoked — make a new one and update it.";
+  if (["ETIMEDOUT", "ECONNECTION", "ESOCKET", "ECONNREFUSED", "EDNS", "ENOTFOUND"].includes(code) || /timeout|timed out|ECONN|getaddrinfo/i.test(why)) return "The server couldn't reach Gmail — the hosting may be blocking outgoing email. Nothing was sent.";
+  return "The email couldn't be sent (" + (code || why.slice(0, 80) || "unknown reason") + ").";
+}
+
+module.exports = { sendMail, isConfigured, buildNotificationEmail, explainSendFailure };
