@@ -247,6 +247,7 @@
             <button class="secondary" id="account-logout-btn">Log out</button>
           </div>
 
+          <div id="account-claim-top-anchor"></div>
           <div id="account-push-top-anchor"></div>
 
           <section class="pd-section" id="account-results-section" style="display:none;">
@@ -340,18 +341,23 @@
 
           <div id="account-push-bottom-anchor"></div>
 
-          <div class="pd-utility">
+          <div class="pd-utility" id="account-utility-row">
             <button class="pd-utility-link pd-utility-link-primary" id="toggle-claim-panel" type="button">+ Find my player record</button>
             <button class="pd-utility-link" id="toggle-captain-panel" type="button">+ Enter a team code (captain)</button>
             <button class="pd-utility-link" id="toggle-admin-panel" type="button">+ Admin login</button>
           </div>
           <div id="claim-panel" style="display:none;margin-top:16px;">
-            <p class="note" style="margin-bottom:10px;">Search across every league — matches you're selected in, results, and awards will show up on your dashboard above.</p>
+            <div class="pd-claim-head">
+              <h2>Find your player record</h2>
+              <p>Link your name to see your matches, results and rating — across every league you play in.</p>
+            </div>
+            <p class="note pd-claim-note" style="margin-bottom:10px;">Search across every league — matches you're selected in, results, and awards will show up on your dashboard above.</p>
             <div class="row">
               <label class="sr-only" for="account-search-input">Search for your name</label>
               <input type="text" id="account-search-input" placeholder="Search for your name…" style="flex:1;min-width:160px;">
             </div>
             <div id="account-search-results"></div>
+            <p class="note pd-claim-foot">Can't see your name? Your captain may not have added you to the team yet.</p>
           </div>
           <div id="captain-panel" style="display:none;margin-top:16px;">
             <p class="note" style="margin-bottom:10px;">Enter your team code to manage that team's line-ups and scores.</p>

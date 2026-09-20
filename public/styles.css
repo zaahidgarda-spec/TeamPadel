@@ -1894,3 +1894,13 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .social-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;color:#12203A;font-weight:600;font-size:14px;text-decoration:none;min-height:44px;}
 .social-btn:hover{background:#F3F7FF;}
 .social-btn svg{width:18px;height:18px;flex:none;}
+
+/* Find your player record: front and centre for an account with no linked record yet */
+.pd-claim-head,.pd-claim-foot{display:none;}
+#claim-panel.pd-claim-hero{margin:14px 0 18px;padding:18px 16px 16px;border-radius:16px;border:2px solid var(--accent);background:linear-gradient(180deg,#F3F7FF,#FFFFFF);box-shadow:0 8px 24px rgba(37,99,235,.12);}
+.pd-claim-hero .pd-claim-head{display:block;margin-bottom:12px;}
+.pd-claim-hero .pd-claim-head h2{font-family:var(--font-display);font-size:19px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 4px;color:var(--ink,#12203A);}
+.pd-claim-hero .pd-claim-head p{margin:0;font-size:13.5px;line-height:1.45;color:var(--muted,#475569);}
+.pd-claim-hero .pd-claim-note{display:none;}
+.pd-claim-hero .pd-claim-foot{display:block;margin:12px 0 0;}
+.pd-claim-hero #account-search-input{font-size:16px;padding:13px 14px;border:1.5px solid #B9C9EA;background:#fff;}

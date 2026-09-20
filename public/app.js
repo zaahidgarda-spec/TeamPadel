@@ -1818,6 +1818,30 @@ async function refreshAccountStatus() {
     switchHubTab("account");
   }
 }
+// An account with nothing linked yet (no claimed record, no team) has one
+// job on this page — find its own record — so the search moves to the top,
+// open, with a heading, instead of hiding behind a small link at the bottom.
+// As soon as something is linked it goes back to being that link.
+function positionClaimPanel(prominent) {
+  const panel = el("claim-panel");
+  const isHero = panel.classList.contains("pd-claim-hero");
+  if (prominent) {
+    if (!isHero) {
+      el("account-claim-top-anchor").insertAdjacentElement("afterend", panel);
+      panel.classList.add("pd-claim-hero");
+      panel.style.display = "block";
+      panel.style.marginTop = "";
+      el("toggle-claim-panel").style.display = "none";
+      loadPlayerIndex();
+    }
+  } else if (isHero) {
+    el("account-utility-row").insertAdjacentElement("afterend", panel);
+    panel.classList.remove("pd-claim-hero");
+    panel.style.display = "none";
+    panel.style.marginTop = "16px";
+    el("toggle-claim-panel").style.display = "";
+  }
+}
 function openClaimPanel() {
   const panel = el("claim-panel");
   panel.style.display = panel.style.display === "none" ? "block" : "none";
@@ -2325,6 +2349,7 @@ async function renderAccountPendingResults() {
 async function renderAccountProfile() {
   const { cards, fixtureCards } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [] }));
   accountAroundData = { cards: cards || [], fixtureCards: fixtureCards || [] };
+  positionClaimPanel(!(cards || []).length && !((playerAccount && playerAccount.captaincies) || []).length);
   renderPlayerAround();
   renderAccountAvatar(cards);
   renderAccountNextMatch(cards);
@@ -2344,7 +2369,7 @@ async function renderAccountProfile() {
   renderAccountTonightMatches();
   renderAccountPendingResults();
   const c = el("account-form-list");
-  if (cards.length === 0) { c.innerHTML = '<p class="empty">Claim a player record below to see your matches, results, and awards here.</p>'; return; }
+  if (cards.length === 0) { c.innerHTML = '<p class="empty">Find your player record to see your matches, results, and awards here.</p>'; return; }
   // One combined view across every claimed record — Sandton and Killarney
   // results show up together as one person's history, not walled off into
   // separate per-league boxes. Each row still names its own league, so
