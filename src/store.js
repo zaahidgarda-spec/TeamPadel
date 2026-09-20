@@ -119,6 +119,7 @@ async function init() {
   }
   cache.set("interest-signups", (await redis.get("interest-signups")) || []);
   cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
+  cache.set("prediction-accuracy", (await redis.get("prediction-accuracy")) || { latest: null, history: [] });
 }
 
 // Lets the server wait for any in-flight writes before exiting on
@@ -249,8 +250,25 @@ function saveHomepageExtras(extras) {
   writeJsonFile("homepage-extras", extras);
 }
 
+// The latest prediction-accuracy report plus one small point per day for the
+// trend (see accuracy.js).
+function getPredictionAccuracy() {
+  if (useRedis) return cache.get("prediction-accuracy") || { latest: null, history: [] };
+  return readJsonFile("prediction-accuracy", { latest: null, history: [] });
+}
+function savePredictionAccuracy(data) {
+  if (useRedis) {
+    cache.set("prediction-accuracy", data);
+    persist("prediction-accuracy", data);
+    return;
+  }
+  writeJsonFile("prediction-accuracy", data);
+}
+
 module.exports = {
   init,
+  getPredictionAccuracy,
+  savePredictionAccuracy,
   flush,
   getIndex,
   saveIndex,

@@ -1433,7 +1433,7 @@ async function refreshOwnerStatus() {
   const paymentsTabBtn = el("hub-payments-tab-btn");
   paymentsTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushStatsCard(); renderPushBroadcastCard(); }
+  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
 // "Select a league from a menu, then find a player or team and send them
@@ -1489,6 +1489,60 @@ async function renderPushStatsCard() {
       </div>`).join("")
     : '<p class="empty">No devices subscribed yet.</p>';
 }
+// Owner-only: how good the match predictions are, from the background check
+// the server runs by itself (src/accuracy.js). Plain-English on purpose — the
+// point is knowing how much to trust a prediction, and when there are enough
+// matches to trust the model's settings.
+let predictionAccuracyPoll = null;
+async function renderPredictionAccuracyCard() {
+  const card = el("prediction-accuracy-card");
+  card.style.display = "block";
+  const body = el("prediction-accuracy-body");
+  const data = await api("/admin/prediction-accuracy").catch(() => null);
+  const btn = el("prediction-accuracy-refresh");
+  if (!data) { body.innerHTML = '<p class="empty">Couldn\'t load this just now.</p>'; return; }
+  const r = data.latest;
+  btn.disabled = !!data.running;
+  btn.textContent = data.running ? "Checking…" : "Check now";
+  if (data.running && !predictionAccuracyPoll) {
+    predictionAccuracyPoll = setInterval(async () => {
+      const d = await api("/admin/prediction-accuracy").catch(() => null);
+      if (!d || !d.running) { clearInterval(predictionAccuracyPoll); predictionAccuracyPoll = null; renderPredictionAccuracyCard(); }
+    }, 3000);
+  }
+  if (!r) { body.innerHTML = '<p class="empty">The first check runs a minute or so after the site starts. Try "Check now".</p>'; el("prediction-accuracy-updated").textContent = ""; return; }
+  el("prediction-accuracy-updated").textContent = "Updated " + new Date(r.generatedAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  if (r.tooFew) { body.innerHTML = `<p class="empty">Only ${r.n} finished matches so far — it needs ${r.minMatches} before this means anything.</p>`; return; }
+  const pc = (x) => Math.round(x * 100);
+  const bandRows = (r.bands || []).map((b) => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span>Favourite given about ${b.said}%</span><span class="note">won ${b.won}% (±${b.margin}) · ${b.n} matches</span></div>`).join("");
+  const settled = r.topSettings && r.topSettings[0] && r.topSettings[0].share >= 40;
+  const settingsText = settled
+    ? `The best settings look settled (${r.topSettings[0].share}% of re-runs agree): trust in rating ${r.topSettings[0].k}, ${r.topSettings[0].step} points per seed. The app uses ${r.current.k} and ${r.current.step} — worth revisiting.`
+    : `Not enough matches yet to pin the two settings down — the best combination keeps changing between re-runs, so the app's ${r.current.k} and ${r.current.step} stay as they are.`;
+  const trend = (data.history || []).slice(-6).map((h) => `<div class="row" style="justify-content:space-between;padding:4px 0;border-top:1px solid var(--line);"><span class="note">${escapeHtml(h.date)}</span><span class="note">${h.n} matches · ${pc(h.hit)}% right (${pc(h.hitLo)}–${pc(h.hitHi)}%)</span></div>`).join("");
+  body.innerHTML = `
+    <div class="pd-stats" style="margin-bottom:12px;">
+      <div class="stat-tile"><div class="stat-num">${pc(r.blend.hit)}%</div><div class="stat-lbl">Matches called right</div><div class="note">likely ${pc(r.blend.hitLo)}–${pc(r.blend.hitHi)}% · a coin flip gets 50%</div></div>
+      <div class="stat-tile"><div class="stat-num">${r.improvement.betterShare}%</div><div class="stat-lbl">Better than rating alone</div><div class="note">rating alone: ${pc(r.plain.hit)}% right</div></div>
+    </div>
+    <p class="note" style="margin-bottom:8px;">Based on ${r.n} finished matches over ${r.nights} match nights. The more matches, the narrower the range.</p>
+    <div class="account-sub" style="font-weight:600;margin:10px 0 4px;">When a percentage is shown, how often it's right</div>
+    ${bandRows || '<p class="empty">Not enough matches to break this down yet.</p>'}
+    <div class="account-sub" style="font-weight:600;margin:14px 0 4px;">The settings</div>
+    <p class="note" style="margin:0;">${escapeHtml(settingsText)}</p>
+    ${trend ? `<div class="account-sub" style="font-weight:600;margin:14px 0 4px;">How it's moved</div>${trend}` : ""}`;
+}
+el("prediction-accuracy-refresh").onclick = async () => {
+  el("prediction-accuracy-refresh").disabled = true;
+  await api("/admin/prediction-accuracy/refresh", { method: "POST" }).catch(() => {});
+  renderPredictionAccuracyCard();
+  if (!predictionAccuracyPoll) {
+    predictionAccuracyPoll = setInterval(async () => {
+      const d = await api("/admin/prediction-accuracy").catch(() => null);
+      if (!d || !d.running) { clearInterval(predictionAccuracyPoll); predictionAccuracyPoll = null; renderPredictionAccuracyCard(); }
+    }, 3000);
+  }
+};
 // Owner-only real push broadcast — reuses the same /admin/leagues list the
 // visibility manager below already fetches, filtered to non-hidden leagues
 // only (same boundary the server enforces again either way).

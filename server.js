@@ -313,6 +313,8 @@ store
     routes.checkLineupReminders();
     const LINEUP_CHECK_MS = 15 * 60 * 1000;
     setInterval(routes.checkLineupReminders, LINEUP_CHECK_MS).unref();
+    // Keeps checking how accurate the match predictions are, on its own.
+    require("./src/accuracy").start(store);
     app.listen(PORT, () => {
       console.log("Padel league app running on http://localhost:" + PORT);
     });

@@ -5,6 +5,7 @@ const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail, isConfigured: mailConfigured, buildNotificationEmail } = require("./mailer");
 const oauth = require("./oauth");
+const accuracy = require("./accuracy");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
 
@@ -2297,6 +2298,20 @@ router.get("/admin/control-room", (req, res) => {
 
 // Owner-only, read-only — powers the "Push notifications" stat card on the
 // Admin tab (see renderPushStatsCard).
+// How good the match predictions are, and how much to trust that — kept up
+// to date by a background job (accuracy.js); this just reads the last result.
+router.get("/admin/prediction-accuracy", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const saved = store.getPredictionAccuracy();
+  res.json({ latest: saved.latest, history: saved.history.slice(-12), running: accuracy.isRunning() });
+});
+// "Check now" — starts a fresh check in the background and returns straight
+// away; the card polls until it lands.
+router.post("/admin/prediction-accuracy/refresh", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  accuracy.refresh(store, { force: true });
+  res.json({ ok: true, running: true });
+});
 router.get("/admin/push/stats", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
   const hiddenIds = new Set(store.getIndex().filter((e) => e.hidden).map((e) => e.id));

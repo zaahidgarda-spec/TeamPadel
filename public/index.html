@@ -442,6 +442,15 @@
           </div>
           <div id="push-stats-by-league"></div>
         </div>
+        <div class="card" id="prediction-accuracy-card" style="display:none;">
+          <h2 class="section-title">Prediction accuracy</h2>
+          <p class="note" style="margin-bottom:12px;">How often the match predictions are right, and how far to trust that. It checks itself whenever new results come in — nothing to run.</p>
+          <div id="prediction-accuracy-body"><p class="empty">Loading…</p></div>
+          <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap;">
+            <span class="note" id="prediction-accuracy-updated"></span>
+            <button class="secondary" id="prediction-accuracy-refresh" type="button">Check now</button>
+          </div>
+        </div>
         <div class="card" id="push-broadcast-card" style="display:none;">
           <h2 class="section-title">Send push announcement</h2>
           <p class="note" style="margin-bottom:10px;">A real push notification to every device already subscribed — every captain in the chosen league, or across every league on the site. Hidden leagues are never included.</p>
