@@ -2438,12 +2438,12 @@ async function renderAccountStats(cards) {
     }
   }
   el("account-stats").innerHTML = `
-    <div class="stat-tile"><div class="stat-num">${results.length ? record : "—"}</div><div class="stat-lbl">Season record</div></div>
+    <div class="stat-tile"><div class="stat-num">${results.length ? record : "—"}</div><div class="stat-lbl">Season record</div>${results.length ? `<div class="note">${draws ? "wins – draws – losses" : "wins – losses"}</div>` : ""}</div>
     <div class="stat-tile"><div class="stat-num">${seenLeagues.size}</div><div class="stat-lbl">League${seenLeagues.size === 1 ? "" : "s"} this season</div></div>
     ${captainTile}
     ${ownerTile}
     ${ratingTile}
-    <div class="stat-tile"><div class="stat-num">${totalAwards ? totalAwards + "×" : "—"}</div><div class="stat-lbl">🏆 Pair of the Week</div></div>
+    ${totalAwards ? `<div class="stat-tile"><div class="stat-num">${totalAwards}×</div><div class="stat-lbl">🏆 Pair of the Week</div></div>` : ""}
   `;
 }
 // Every trophy this account's ever claimed a record for, across every
