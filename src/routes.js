@@ -4,6 +4,7 @@ const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail, isConfigured: mailConfigured, buildNotificationEmail } = require("./mailer");
+const oauth = require("./oauth");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
 
@@ -1226,6 +1227,95 @@ router.post("/players/login", loginLimiter, async (req, res) => {
   req.session.playerUser = { id: user.id };
   res.json({ id: user.id, name: user.name, email: user.email });
 });
+/* ---------- Sign in with Google / Facebook ---------- */
+
+// Which buttons the sign-up and log-in screens should show — only providers
+// whose credentials are actually set on this server.
+router.get("/auth/providers", (req, res) => {
+  res.json(oauth.enabledProviders());
+});
+function oauthRedirectUri(req, provider) {
+  const origin = (process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  return `${origin}/api/auth/${provider}/callback`;
+}
+function backToSite(res, params) {
+  res.redirect("/?" + new URLSearchParams(params).toString());
+}
+router.get("/auth/:provider/start", (req, res) => {
+  const provider = req.params.provider;
+  if (!oauth.isEnabled(provider)) return backToSite(res, { authError: "That sign-in isn't switched on yet." });
+  const state = crypto.randomBytes(24).toString("hex");
+  req.session.oauthState = { state, provider, at: Date.now() };
+  req.session.save((err) => {
+    if (err) return backToSite(res, { authError: "Couldn't start sign-in — please try again." });
+    res.redirect(oauth.buildAuthUrl(provider, { redirectUri: oauthRedirectUri(req, provider), state }));
+  });
+});
+// Finds the account this sign-in belongs to, or makes one. The same rules
+// as email sign-up apply, so a social sign-in can never be used to reach
+// someone else's account:
+//  - already linked to this provider account -> that account;
+//  - an account under the same email, and the provider vouches for that
+//    email -> the sign-in is added to it (so one person, one profile, and
+//    any records already linked to their email come with them);
+//  - an admin-made placeholder for that email (no password, no sign-in of
+//    its own yet) is taken over exactly as email sign-up would;
+//  - otherwise a new account. The password on it is random and unknown, so
+//    nobody can later "sign up" or log in with that email and a password
+//    of their choosing — only the provider, or a reset link sent to the
+//    inbox itself, gets in.
+async function accountForSocialProfile(provider, profile) {
+  const index = store.getUsersIndex();
+  const linked = index.map((e) => store.getUser(e.id)).find((u) => u && u.providers && u.providers[provider] === profile.subject);
+  if (linked) return linked;
+  if (!profile.email || !profile.emailVerified) {
+    throw new Error("We couldn't get a confirmed email from " + oauth.label(provider) + ". Sign up with your email instead, or allow email access and try again.");
+  }
+  const email = normalizeEmail(profile.email);
+  const existingId = findUserIdByEmail(email);
+  if (existingId) {
+    const existing = store.getUser(existingId);
+    if (!existing) throw new Error("Couldn't find your account — please try again.");
+    existing.providers = Object.assign({}, existing.providers, { [provider]: profile.subject });
+    if (!existing.passwordHash) {
+      existing.passwordHash = await hashPassword(crypto.randomBytes(24).toString("hex"));
+      if (profile.name) existing.name = profile.name;
+    }
+    await store.saveUserDurable(existing.id, existing);
+    return existing;
+  }
+  const id = logic.uid();
+  const user = {
+    id, email, name: (profile.name || email.split("@")[0]).trim(),
+    passwordHash: await hashPassword(crypto.randomBytes(24).toString("hex")),
+    providers: { [provider]: profile.subject }, createdAt: Date.now(), claims: [],
+  };
+  index.push({ id, email });
+  await store.saveUserDurable(id, user);
+  await store.saveUsersIndexDurable(index);
+  return user;
+}
+router.get("/auth/:provider/callback", loginLimiter, async (req, res) => {
+  const provider = req.params.provider;
+  const pending = req.session.oauthState;
+  req.session.oauthState = null;
+  if (!oauth.isEnabled(provider)) return backToSite(res, { authError: "That sign-in isn't switched on yet." });
+  if (req.query.error) return backToSite(res, { authError: "Sign-in was cancelled." });
+  const fresh = pending && Date.now() - pending.at < 10 * 60 * 1000;
+  if (!fresh || pending.provider !== provider || !req.query.state || !safeEqual(String(req.query.state), pending.state) || !req.query.code) {
+    return backToSite(res, { authError: "That sign-in link expired — please try again." });
+  }
+  try {
+    const profile = await oauth.fetchProfile(provider, { code: String(req.query.code), redirectUri: oauthRedirectUri(req, provider) });
+    const user = await accountForSocialProfile(provider, profile);
+    req.session.playerUser = { id: user.id };
+    req.session.save(() => backToSite(res, { signedIn: "1" }));
+  } catch (e) {
+    console.error("Social sign-in failed:", e.message);
+    backToSite(res, { authError: e.message || "Sign-in didn't work — please try again." });
+  }
+});
+
 // Always responds the same way whether or not the email has an account —
 // otherwise this endpoint would let anyone probe which emails are signed up.
 router.post("/players/forgot-password", loginLimiter, (req, res) => {

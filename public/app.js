@@ -1766,6 +1766,27 @@ el("export-accounts-btn").onclick = async () => {
 // (it's kicked off at startup without awaiting, so it can resolve after
 // any synchronous check further down this file has already run).
 let resetTokenInUrl = new URLSearchParams(location.search).get("resetToken");
+// "Continue with Google / Facebook": the buttons only appear for providers
+// this server has switched on, and a failed round trip comes back here as
+// ?authError=... to be shown where the other sign-in errors go.
+(async function setupSocialLogin() {
+  const params = new URLSearchParams(location.search);
+  const authError = params.get("authError");
+  if (authError || params.get("signedIn")) {
+    params.delete("authError"); params.delete("signedIn");
+    const rest = params.toString();
+    history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+  }
+  const enabled = await api("/auth/providers").catch(() => []);
+  document.querySelectorAll(".social-login").forEach((box) => {
+    box.querySelectorAll(".social-btn").forEach((a) => { a.style.display = enabled.includes(a.dataset.provider) ? "flex" : "none"; });
+    box.style.display = enabled.length ? "flex" : "none";
+  });
+  if (authError) {
+    switchHubTab("account");
+    el("account-auth-error").textContent = authError;
+  }
+})();
 async function refreshAccountStatus() {
   playerAccount = await api("/players/me").catch(() => null);
   // Nothing else on the hub says "log in" — this tab is the only door in

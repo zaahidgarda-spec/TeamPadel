@@ -1886,3 +1886,11 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .pa-next b{display:block;font-size:15px;margin:3px 0 1px;}
 .pa-next span{font-size:12px;color:#B7C5EA;}
 .pa-sec{font-family:var(--font-display);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted,#64748B);margin:18px 2px 6px;}
+
+/* Continue with Google / Facebook */
+.social-login{display:flex;flex-direction:column;gap:8px;}
+.social-or{display:flex;align-items:center;gap:10px;color:var(--muted,#64748B);font-size:12px;margin:2px 0;}
+.social-or::before,.social-or::after{content:"";flex:1;height:1px;background:var(--line);}
+.social-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;color:#12203A;font-weight:600;font-size:14px;text-decoration:none;min-height:44px;}
+.social-btn:hover{background:#F3F7FF;}
+.social-btn svg{width:18px;height:18px;flex:none;}
