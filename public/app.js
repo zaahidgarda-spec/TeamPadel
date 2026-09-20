@@ -1970,7 +1970,7 @@ async function runPlayerLookup(resultsId, qRaw, actionFor, wire) {
 function bindPlayerLookupInput(inputId, resultsId, run) {
   el(inputId).addEventListener("input", () => {
     const q = el(inputId).value.trim();
-    if (!q) { el(resultsId).innerHTML = ""; return; }
+    if (!q) { el(resultsId).innerHTML = ""; clearTimeout(warmProfilesTimer); return; }
     if (!playerIndexReady) el(resultsId).innerHTML = '<p class="empty">Searching…</p>';
     run(q);
   });
@@ -2020,7 +2020,23 @@ function runPlayerSearch(qRaw) {
         btn.addEventListener("pointerdown", () => prefetchPlayerProfile(row.dataset.league, row.dataset.player));
         btn.onclick = () => openPlayerHistory(row.dataset.league, row.dataset.player, r);
       });
+      warmNarrowedProfiles(results);
     });
+}
+// Claiming needs nothing more from the server after a tap, but opening a
+// profile waits on its download — the one thing that made this search feel
+// slower than claim search. So once typing pauses on a short list (someone
+// has narrowed it down to who they mean) the top couple of profiles start
+// downloading, and are usually already here by the time one is tapped.
+// Waits for the pause, and a longer list is left alone, so it never fires
+// requests mid-typing or for a list that's still wide open.
+let warmProfilesTimer = null;
+function warmNarrowedProfiles(results) {
+  clearTimeout(warmProfilesTimer);
+  if (results.length === 0 || results.length > 3) return;
+  warmProfilesTimer = setTimeout(() => {
+    results.slice(0, 2).forEach((r) => prefetchPlayerProfile(r.leagueId, r.playerId));
+  }, 300);
 }
 bindPlayerLookupInput("player-search-input", "player-search-results", runPlayerSearch);
 // The photo on a claimed record only used to show up once you clicked into
