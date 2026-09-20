@@ -7100,6 +7100,7 @@ async function renderLiveCourtControl(opts) {
   if (league.format === "pairs" || !viewingKey) {
     card.style.display = "none";
     el("round-nav-live-court").innerHTML = "";
+    if (liveFullscreen) setLiveFullscreen(false);
     return;
   }
   card.style.display = "block";
@@ -7230,6 +7231,7 @@ async function renderLiveCourtControl(opts) {
   // tap can act on exactly what this render showed.
   liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread };
   updateLiveMoveBar();
+  updateLiveFocusStrip();
   if (liveCourtView === "timeline") renderLiveTimeline(wrap); else renderLiveLanes(wrap);
   // Keep an open sheet in step with the board it belongs to (or close it if
   // its match has gone from this round).
@@ -7491,7 +7493,9 @@ el("lc-sheet-bd").onclick = closeLiveSheet;
 el("lc-movebar-cancel").onclick = cancelLiveMove;
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (el("lc-sheet").style.display === "block") closeLiveSheet(); else cancelLiveMove();
+  if (el("lc-sheet").style.display === "block") closeLiveSheet();
+  else if (liveMoveFrom) cancelLiveMove();
+  else if (liveFullscreen) setLiveFullscreen(false);
 });
 function renderLiveSheet() {
   const { s, c } = liveSheetCell || {};
@@ -7582,6 +7586,50 @@ function setLiveCourtView(view) {
   el("lc-view-timeline").classList.toggle("on", view === "timeline");
   if (league) renderLiveCourtControl({ reusePredictions: true });
 }
+// Full screen for the board. The card is lifted over the whole page by CSS
+// (see .lc-fs); on top of that, where the browser allows it, the page itself
+// goes properly full screen (not iPhone Safari — there the card alone fills
+// the screen), and the screen is kept awake so it doesn't dim mid-match.
+let liveFullscreen = false;
+let liveWakeLock = null;
+function updateLiveFocusStrip() {
+  if (!liveFullscreen || !liveBoard) return;
+  const round = liveBoard.round;
+  const live = liveBoard.cellInfo.reduce((n, row) => n + row.filter((ci) => ci && ci.state === "live").length, 0);
+  el("lc-fs-title").textContent = courtScheduleRoundLabel(round);
+  el("lc-fs-sub").textContent = (league ? league.name + " · " : "") + (live ? live + " live now" : "nothing live yet");
+}
+async function acquireLiveWakeLock() {
+  try {
+    if (!("wakeLock" in navigator) || liveWakeLock) return;
+    liveWakeLock = await navigator.wakeLock.request("screen");
+    liveWakeLock.addEventListener("release", () => { liveWakeLock = null; el("lc-fs-awake").style.display = "none"; });
+    el("lc-fs-awake").style.display = "inline-flex";
+  } catch { /* not allowed right now (low battery, etc.) — the board still works, it just may dim */ }
+}
+async function setLiveFullscreen(on) {
+  if (on === liveFullscreen) return;
+  liveFullscreen = on;
+  el("live-court-card").classList.toggle("lc-fs", on);
+  document.body.classList.toggle("lc-fs-on", on);
+  if (on) {
+    updateLiveFocusStrip();
+    el("live-court-card").scrollTop = 0;
+    try { if (document.documentElement.requestFullscreen && !document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch { /* refused — the card alone still fills the screen */ }
+    acquireLiveWakeLock();
+  } else {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { /* already out */ }
+    if (liveWakeLock) { try { await liveWakeLock.release(); } catch { /* already released */ } }
+    liveWakeLock = null;
+    el("lc-fs-awake").style.display = "none";
+  }
+}
+el("lc-fs-btn").onclick = () => setLiveFullscreen(true);
+el("lc-fs-exit").onclick = () => setLiveFullscreen(false);
+// The browser's own Esc / swipe-down out of full screen also leaves ours.
+document.addEventListener("fullscreenchange", () => { if (liveFullscreen && !document.fullscreenElement) setLiveFullscreen(false); });
+// A wake lock is dropped whenever the page is hidden — take it back on return.
+document.addEventListener("visibilitychange", () => { if (liveFullscreen && document.visibilityState === "visible") acquireLiveWakeLock(); });
 el("lc-view-board").onclick = () => setLiveCourtView("board");
 el("lc-view-timeline").onclick = () => setLiveCourtView("timeline");
 el("lc-view-board").classList.toggle("on", liveCourtView === "board");

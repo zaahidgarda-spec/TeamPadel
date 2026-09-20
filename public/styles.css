@@ -854,6 +854,24 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .lc-viewtoggle{display:inline-flex;background:rgba(255,255,255,.07);border-radius:10px;padding:3px;gap:2px;}
 .lc-viewtoggle button{background:none;border:none;color:#9FB0D4;font-family:var(--font-display);font-size:12px;letter-spacing:.05em;text-transform:uppercase;padding:7px 13px;border-radius:8px;cursor:pointer;min-height:0;}
 .lc-viewtoggle button.on{background:#fff;color:#0A1020;}
+/* Full screen: the card itself is lifted over the whole page (above the site
+   header, league tabs and admin bar, below the action sheet and score modal),
+   so nothing else needs hiding or moving. */
+.lc-fs-btn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:11px;letter-spacing:.05em;text-transform:uppercase;padding:8px 12px;border-radius:9px;border:1px solid #2C3B66;background:#1B2745;color:#fff;cursor:pointer;min-height:0;}
+.lc-fs-btn svg,.lc-fs-exit svg{width:13px;height:13px;flex:none;}
+.lc-fs-strip{display:none;}
+#live-court-card.lc-fs::before,#live-court-card.lc-fs::after{display:none;}
+body.lc-fs-on{overflow:hidden;}
+#live-court-card.lc-fs{position:fixed;inset:0;z-index:90;margin:0;border-radius:0;border:0;max-width:none;width:auto;overflow-y:auto;overscroll-behavior:contain;padding:calc(env(safe-area-inset-top,0px) + 8px) max(12px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 16px) max(12px,env(safe-area-inset-left,0px));box-shadow:none;background:#0A1020;}
+.lc-fs .lc-fs-strip{display:flex;align-items:center;gap:10px;margin:0 -12px 10px;padding:8px 12px 10px;border-bottom:1px solid #1B2745;position:relative;}
+.lc-fs-ttl b{display:block;font-family:var(--font-display);font-weight:600;font-size:14px;letter-spacing:.05em;text-transform:uppercase;line-height:1.1;color:#fff;}
+.lc-fs-ttl small{display:block;font-size:10.5px;color:#7C8CB0;margin-top:2px;}
+.lc-fs-sp{flex:1;}
+.lc-fs-awake{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:6px 10px;border-radius:999px;background:#1B2745;color:#8FE3B3;}
+.lc-fs-awake i{width:7px;height:7px;border-radius:50%;background:#1E9E5C;}
+.lc-fs-exit{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;padding:9px 13px;border-radius:9px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;cursor:pointer;min-height:0;}
+.lc-fs #lc-rebalance-btn,.lc-fs .lc-toolbar-note,.lc-fs .lc-fs-btn{display:none;}
+.lc-fs .lc-board .lc-tile{min-height:118px;padding:11px 9px 8px;} .lc-fs .lc-board .lc-pp{font-size:12.5px;}
 .lc-legend{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 12px;font-size:11px;color:#9FB0D4;}
 .lc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 /* Courts across the top, Match 1, 2, 3 … running down — the way the old

@@ -844,10 +844,17 @@
         </div>
         <div id="round-nav-live-court"></div>
         <div class="card floodlit urgent" id="live-court-card" style="display:none;">
+          <div class="lc-fs-strip" id="lc-fs-strip">
+            <div class="lc-fs-ttl"><b id="lc-fs-title"></b><small id="lc-fs-sub"></small></div>
+            <span class="lc-fs-sp"></span>
+            <span class="lc-fs-awake" id="lc-fs-awake" style="display:none;"><i></i>Awake</span>
+            <button type="button" class="lc-fs-exit" id="lc-fs-exit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>Exit</button>
+          </div>
           <div class="lc-toolbar">
             <div class="lc-viewtoggle" role="group" aria-label="View"><button type="button" id="lc-view-board" class="on">Board</button><button type="button" id="lc-view-timeline">Timeline</button></div>
             <button type="button" class="secondary" id="lc-rebalance-btn">Re-balance remaining matches</button>
             <span class="lc-toolbar-note" id="lc-rebalance-note"></span>
+            <button type="button" class="lc-fs-btn" id="lc-fs-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Full screen</button>
           </div>
           <div class="lc-legend"><span><i style="background:#1E9E5C"></i>Quicker</span><span><i style="background:#D93A2B"></i>Longer</span><span><i style="background:#5B6E9C"></i>Even</span><span><i style="background:#0F1B38;box-shadow:inset 0 0 0 1.5px #E2432F"></i>Live</span><span><i style="background:#18223F"></i>Finished</span></div>
           <div class="lc-movebar" id="lc-movebar" style="display:none;"><span id="lc-movebar-txt"></span><button type="button" id="lc-movebar-cancel">Cancel</button></div>
