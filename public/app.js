@@ -1947,9 +1947,13 @@ async function markPlayerIndexClaimed(playerId, claimed) {
   const row = all.find((p) => p.playerId === playerId);
   if (row) { row.claimed = claimed; writePlayerIndexCache(all); }
 }
+// Only the best matches are ever drawn — anyone looking for a name types
+// more until it's on screen, and every extra row is paint work on the
+// keystroke that produced it (a phone feels that far more than a desktop).
+const PLAYER_SEARCH_MAX_ROWS = 12;
 function filterPlayerIndex(all, qRaw) {
   const q = qRaw.trim().toLowerCase();
-  return q ? all.filter((p) => p.playerName.toLowerCase().includes(q)).slice(0, 30) : [];
+  return q ? all.filter((p) => p.playerName.toLowerCase().includes(q)).slice(0, PLAYER_SEARCH_MAX_ROWS) : [];
 }
 // ONE search path for every place a player is looked up — claiming a
 // record and the Search players tab both go through here: same index, same
@@ -1959,20 +1963,29 @@ function filterPlayerIndex(all, qRaw) {
 // also started downloading profiles for a narrowed-down list mid-typing —
 // the one thing claim search never did, and the one thing that made it
 // feel slow.
+const playerLookupSeq = {};
 async function runPlayerLookup(resultsId, qRaw, actionFor, wire) {
+  const seq = playerLookupSeq[resultsId] = (playerLookupSeq[resultsId] || 0) + 1;
   const all = await loadPlayerIndex();
+  if (seq !== playerLookupSeq[resultsId]) return; // a newer keystroke has taken over
   const results = filterPlayerIndex(all, qRaw);
   const c = el(resultsId);
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
-  c.innerHTML = results.map((r) => playerSearchRowHtml(r, actionFor(r))).join("");
+  c.innerHTML = results.map((r) => playerSearchRowHtml(r, actionFor(r))).join("")
+    + (results.length === PLAYER_SEARCH_MAX_ROWS ? `<p class="note" style="margin-top:8px;">Showing the first ${PLAYER_SEARCH_MAX_ROWS} — keep typing to narrow it down.</p>` : "");
   wire(c, results);
 }
+// The typed letter is always painted first; the results follow a beat
+// later and only for where the typing has actually got to, so a burst of
+// keystrokes costs one redraw of the list rather than one per key.
 function bindPlayerLookupInput(inputId, resultsId, run) {
+  let timer = null;
   el(inputId).addEventListener("input", () => {
+    clearTimeout(timer);
     const q = el(inputId).value.trim();
-    if (!q) { el(resultsId).innerHTML = ""; clearTimeout(warmProfilesTimer); return; }
+    if (!q) { playerLookupSeq[resultsId] = (playerLookupSeq[resultsId] || 0) + 1; el(resultsId).innerHTML = ""; clearTimeout(warmProfilesTimer); return; }
     if (!playerIndexReady) el(resultsId).innerHTML = '<p class="empty">Searching…</p>';
-    run(q);
+    timer = setTimeout(() => run(el(inputId).value.trim()), 90);
   });
 }
 function runAccountSearch(qRaw) {
