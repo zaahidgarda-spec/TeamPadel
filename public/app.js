@@ -945,6 +945,15 @@ function relativeDayLabel(iso) {
   return null;
 }
 
+// Predictions are shown to the nearest 5% ("65%", not "64%"), and never as a
+// sure thing: checked against real results, a stated figure is only good to
+// about ±10 points at this stage of the season, so an exact-looking number
+// would claim more than the model knows. Returns [sideA, sideB], adding to
+// 100. Colours, court balancing and everything else still use the exact figure.
+function shownPct(winPctA) {
+  const a = Math.min(95, Math.max(5, Math.round(winPctA / 5) * 5));
+  return [a, 100 - a];
+}
 // A lightweight win% bar for an undecided pairing — same expectation the
 // rating engine itself uses to update ratings, just not followed by an
 // actual update. Null once a seed is scored (the backend stops predicting
@@ -958,8 +967,8 @@ function predictionBarHtml(prediction, forceShow) {
   const note = prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : "";
   const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
   return `<div class="mc-predict">
-    <div class="mc-predict-bar"><span class="a" style="width:${prediction.winPctA}%"></span><span class="b" style="width:${prediction.winPctB}%"></span></div>
-    <div class="mc-predict-pcts"><span>${prediction.winPctA}%</span><span>${prediction.winPctB}%</span></div>
+    <div class="mc-predict-bar"><span class="a" style="width:${shownPct(prediction.winPctA)[0]}%"></span><span class="b" style="width:${shownPct(prediction.winPctA)[1]}%"></span></div>
+    <div class="mc-predict-pcts"><span>${shownPct(prediction.winPctA)[0]}%</span><span>${shownPct(prediction.winPctA)[1]}%</span></div>
     ${note}
     ${powered}
   </div>`;
@@ -973,7 +982,7 @@ function predictionBarHtml(prediction, forceShow) {
 function personalPredictionHtml(prediction, forceShow) {
   if ((!RATINGS_ENABLED && !forceShow) || !prediction) return "";
   const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
-  return `<div class="mc-predict-solo">${prediction.winPct}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>${powered}`;
+  return `<div class="mc-predict-solo">${shownPct(prediction.winPct)[0]}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>${powered}`;
 }
 async function renderNextMatches() {
   const card = el("next-matches-card");
@@ -8821,7 +8830,7 @@ async function generatePosterCanvas(mode, theme) {
           } else if (predEntry && predEntry.prediction) {
             ctx.fillStyle = "#FFFFFF";
             ctx.font = "700 " + sz(19) + "px Oswald, sans-serif";
-            ctx.fillText(predEntry.prediction.winPctA + "% – " + predEntry.prediction.winPctB + "%", W / 2, py + sz(14));
+            ctx.fillText(shownPct(predEntry.prediction.winPctA)[0] + "% – " + shownPct(predEntry.prediction.winPctA)[1] + "%", W / 2, py + sz(14));
           } else {
             ctx.fillStyle = "#64748B";
             ctx.font = "500 " + sz(13) + "px Oswald, sans-serif";
@@ -10306,7 +10315,7 @@ function renderCourtBalanceGrids(rounds) {
         // make for admin-facing surfaces. Blank once either side's line-up
         // for this seed isn't in yet (matchPrediction has nothing to show).
         const predictHtml = cell.winPctA != null
-          ? `<div class="cs-cell-predict"${cell.provisional ? ' title="Early prediction — not everyone has a settled rating yet"' : ""}><span class="${cell.winPctA >= cell.winPctB ? "fav" : ""}">${cell.winPctA}%</span> – <span class="${cell.winPctB >= cell.winPctA ? "fav" : ""}">${cell.winPctB}%</span></div>`
+          ? `<div class="cs-cell-predict"${cell.provisional ? ' title="Early prediction — not everyone has a settled rating yet"' : ""}><span class="${cell.winPctA >= cell.winPctB ? "fav" : ""}">${shownPct(cell.winPctA)[0]}%</span> – <span class="${cell.winPctB >= cell.winPctA ? "fav" : ""}">${shownPct(cell.winPctA)[1]}%</span></div>`
           : "";
         const fixedHtml = cell.pinned ? '<div class="opt-fixed">Fixed — stays put</div>' : "";
         return `<td style="border-radius:8px;background:${color.bg};"><div class="cs-cell-content"><div class="cs-cell-label">${escapeHtml(opt ? opt.shortLabel : "Seed " + (cell.seed + 1))}</div>${predictHtml}${fixedHtml}</div></td>`;
@@ -11106,8 +11115,8 @@ async function renderRatingsPreview() {
         <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair">${pairRefsLinksHtml(m.leagueId, m.pairB)}</span></span>
       </div>
       <div class="mc-predict">
-        <div class="mc-predict-bar"><span class="a" style="width:${m.prediction.winPctA}%"></span><span class="b" style="width:${m.prediction.winPctB}%"></span></div>
-        <div class="mc-predict-pcts"><span>${m.prediction.winPctA}%</span><span>${m.prediction.winPctB}%</span></div>
+        <div class="mc-predict-bar"><span class="a" style="width:${shownPct(m.prediction.winPctA)[0]}%"></span><span class="b" style="width:${shownPct(m.prediction.winPctA)[1]}%"></span></div>
+        <div class="mc-predict-pcts"><span>${shownPct(m.prediction.winPctA)[0]}%</span><span>${shownPct(m.prediction.winPctA)[1]}%</span></div>
         ${m.prediction.provisional ? '<div class="mc-predict-note">Early prediction — not everyone has a settled rating yet</div>' : ""}
       </div>
       <div class="mc-meta">${escapeHtml([m.teamAName + " vs " + m.teamBName, m.venue].filter(Boolean).join(" · "))}</div>
