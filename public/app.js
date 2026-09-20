@@ -1297,7 +1297,7 @@ function switchHubTab(name) {
   // Warm the player index the moment this tab opens, not the moment
   // someone starts typing — by the time they've typed anything it's
   // often already in hand. loadPlayerIndex is a no-op if already loading.
-  if (name === "search" && playerAccount) loadPlayerIndex();
+  if (name === "search" && playerAccount) { loadPlayerIndex(); renderPlayerAround(); }
 }
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
   btn.onclick = () => switchHubTab(btn.dataset.hubview);
@@ -2019,6 +2019,65 @@ function runAccountSearch(qRaw) {
 }
 bindPlayerLookupInput("account-search-input", "account-search-results", runAccountSearch);
 
+// The people a player actually looks up most — who they're playing next and
+// who's on their team — shown before anything is typed. Built from what the
+// profile load already brought back (the next fixture per team, and which
+// teams the account is on) plus the player list the search already keeps on
+// hand, so nothing extra is downloaded and there's nothing to wait on.
+let accountAroundData = null;
+async function renderPlayerAround() {
+  const wrap = el("player-around");
+  if (!wrap) return;
+  if (!playerAccount || !accountAroundData) { wrap.innerHTML = ""; return; }
+  const { cards, fixtureCards } = accountAroundData;
+  const mine = new Set(cards.map((c) => c.playerId));
+  const byName = (a, b) => a.playerName.localeCompare(b.playerName);
+  // Rows are the same shape the search results use, so opening a profile
+  // works identically; names come straight with the profile (no waiting on
+  // the player list), and only a claimed team with no upcoming fixture has to
+  // fall back to that list.
+  const rowsOf = (leagueId, teamId, teamName, leagueName, players) => players
+    .filter((p) => !mine.has(p.id)).map((p) => ({ leagueId, leagueName, teamId, teamName, playerId: p.id, playerName: p.name })).sort(byName);
+  const row = (r, tag) => playerSearchRowHtml(r, `<span class="tag">${tag}</span>`);
+  const leagueNameOf = (id) => { const c = cards.find((x) => x.leagueId === id) || fixtureCards.find((x) => x.leagueId === id); return c ? c.leagueName : ""; };
+  let html = "";
+  const shown = [];
+  fixtureCards.filter((m) => m.opponentTeamId && (m.opponentPlayers || []).length).slice(0, 3).forEach((m) => {
+    const when = [m.date ? fmtDate(m.date) : "", m.time ? fmtTime(m.time) : ""].filter(Boolean).join(" · ");
+    const opp = rowsOf(m.leagueId, m.opponentTeamId, m.opponentTeam, m.leagueName, m.opponentPlayers);
+    html += `<div class="pa-next"><div class="pa-k">${escapeHtml([m.label, when].filter(Boolean).join(" · "))}</div><b>${escapeHtml(m.teamName)} v ${escapeHtml(m.opponentTeam)}</b><span>Who you're playing next</span></div>${opp.map((r) => row(r, "Opponent")).join("")}`;
+    shown.push(...opp);
+  });
+  const teams = new Map();
+  fixtureCards.forEach((m) => teams.set(m.leagueId + ":" + m.teamId, { leagueId: m.leagueId, teamId: m.teamId, name: m.teamName, players: m.teamPlayers || null }));
+  cards.forEach((c) => { if (!teams.has(c.leagueId + ":" + c.teamId)) teams.set(c.leagueId + ":" + c.teamId, { leagueId: c.leagueId, teamId: c.teamId, name: c.teamName, players: null }); });
+  let index = null;
+  for (const t of teams.values()) {
+    let players = t.players;
+    if (!players) {
+      index = index || await loadPlayerIndex();
+      players = index.filter((p) => p.leagueId === t.leagueId && p.teamId === t.teamId).map((p) => ({ id: p.playerId, name: p.playerName }));
+    }
+    const mates = rowsOf(t.leagueId, t.teamId, t.name, leagueNameOf(t.leagueId), players);
+    if (mates.length) {
+      html += `<div class="pa-sec">${escapeHtml(teams.size > 1 ? "Your team · " + t.name : "Your team")}</div>${mates.map((r) => row(r, "Teammate")).join("")}`;
+      shown.push(...mates);
+    }
+  }
+  if (!accountAroundData) return;
+  wrap.innerHTML = html ? html + '<div class="pa-sec">Everyone else</div><p class="note" style="margin:0;">Type a name above to find anyone in any league.</p>' : '<p class="note" style="margin:10px 0 0;">Once you\'re on a team, your opponents and teammates show up here. Type a name above to find anyone.</p>';
+  wrap.querySelectorAll(".player-search-row").forEach((rowEl) => {
+    const hint = shown.find((p) => p.playerId === rowEl.dataset.player && p.leagueId === rowEl.dataset.league);
+    rowEl.style.cursor = "pointer";
+    rowEl.addEventListener("pointerdown", () => prefetchPlayerProfile(rowEl.dataset.league, rowEl.dataset.player));
+    rowEl.onclick = () => openPlayerHistory(rowEl.dataset.league, rowEl.dataset.player, hint);
+  });
+}
+// The lists above only make sense while the box is empty.
+el("player-search-input").addEventListener("input", () => {
+  el("player-around").style.display = el("player-search-input").value.trim() ? "none" : "";
+});
+
 // Read-only lookup of anyone's record — the same lookup as claiming (see
 // runPlayerLookup), just with a "View profile" button instead of a claim.
 // A profile is only fetched when one is actually tapped — the first touch
@@ -2244,6 +2303,8 @@ async function renderAccountPendingResults() {
 }
 async function renderAccountProfile() {
   const { cards, fixtureCards } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [] }));
+  accountAroundData = { cards: cards || [], fixtureCards: fixtureCards || [] };
+  renderPlayerAround();
   renderAccountAvatar(cards);
   renderAccountNextMatch(cards);
   renderAccountTables(cards);

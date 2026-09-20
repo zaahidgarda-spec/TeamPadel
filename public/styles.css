@@ -1878,3 +1878,11 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .kit-order-remove:hover{color:var(--clay);}
 .kit-download-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);}
 .kit-download-row:last-child{border-bottom:none;}
+
+/* Find a player: opponents / teammates shown before anything is typed */
+#player-around .player-search-row{border-top:1px solid var(--line);}
+.pa-next{margin:14px 0 4px;padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,#0B1424,#1B2D5E);color:#fff;}
+.pa-next .pa-k{font-family:var(--font-display);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:#9FB0D4;}
+.pa-next b{display:block;font-size:15px;margin:3px 0 1px;}
+.pa-next span{font-size:12px;color:#B7C5EA;}
+.pa-sec{font-family:var(--font-display);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted,#64748B);margin:18px 2px 6px;}

@@ -1756,6 +1756,9 @@ function teamNextFixture(league, team) {
         opponentTeamId: oppTeam ? oppTeam.id : null,
         opponentTeam: oppTeam ? oppTeam.name : "TBD",
         opponentLogo: oppTeam ? oppTeam.logo || "" : "",
+        // Names only — enough to list who you're up against on Find a
+        // player without a second request.
+        opponentPlayers: oppTeam ? oppTeam.players.map((p) => ({ id: p.id, name: p.name })) : [],
         date: sched.date || "", time: sched.time || "",
       };
     })
@@ -1782,7 +1785,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     if (fixtureTeamKeys.has(key)) return;
     fixtureTeamKeys.add(key);
     const next = teamNextFixture(league, team);
-    if (next) fixtureCards.push(Object.assign({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "" }, next));
+    if (next) fixtureCards.push(Object.assign({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "", teamPlayers: team.players.map((p) => ({ id: p.id, name: p.name })) }, next));
   };
   let changed = false;
   // Computed once for this whole request, not once per claimed card — every
