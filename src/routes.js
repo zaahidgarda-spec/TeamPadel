@@ -2457,9 +2457,9 @@ router.post("/leagues/:leagueId/captain-login", loginLimiter, (req, res) => {
   if (!league) return res.status(404).json({ error: "League not found." });
   const { code, email } = req.body || {};
   if (!code || !code.trim()) return res.status(400).json({ error: "Enter your team code." });
-  const val = code.trim().toUpperCase();
+  const val = code.replace(/[\s\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "").toUpperCase();
   const team = league.teams.find((t) => t.code === val);
-  if (!team) return res.status(401).json({ error: "Invalid team code." });
+  if (!team) return res.status(401).json({ error: "That team code wasn't recognised. Codes are 6 letters or numbers — check look-alikes such as S and 5, B and 8, or U and V, or ask your league admin to send it again." });
   if (email !== undefined && email.trim()) {
     if (!email.includes("@")) return res.status(400).json({ error: "Enter a valid email, or leave it blank." });
     team.notifyEmail = email.trim();
@@ -2478,18 +2478,22 @@ router.post("/leagues/:leagueId/captain-login", loginLimiter, (req, res) => {
 router.post("/captain-login", loginLimiter, (req, res) => {
   const { code, email } = req.body || {};
   if (!code || !code.trim()) return res.status(400).json({ error: "Enter your team code." });
-  const val = code.trim().toUpperCase();
+  const val = code.replace(/[\s\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "").toUpperCase();
   if (email !== undefined && email.trim() && !email.includes("@"))
     return res.status(400).json({ error: "Enter a valid email, or leave it blank." });
 
   const matches = [];
-  for (const entry of visibleIndexEntries()) {
+  // Every league except a hidden (import-only) one — an incognito league is a
+  // real, running league, so its captains must be able to log in with their
+  // code even though it's off public browsing. Only someone holding the code
+  // gets anything from this.
+  for (const entry of store.getIndex().filter((e) => !e.hidden)) {
     const league = store.getLeague(entry.id);
     if (!league) continue;
     const team = league.teams.find((t) => t.code === val);
     if (team) matches.push({ league, team });
   }
-  if (matches.length === 0) return res.status(401).json({ error: "Invalid team code." });
+  if (matches.length === 0) return res.status(401).json({ error: "That team code wasn't recognised. Codes are 6 letters or numbers — check look-alikes such as S and 5, B and 8, or U and V, or ask your league admin to send it again." });
   if (matches.length > 1) return res.status(409).json({ error: "That code matches more than one league — please log in from your league's own page instead." });
 
   const { league, team } = matches[0];

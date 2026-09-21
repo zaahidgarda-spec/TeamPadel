@@ -1316,11 +1316,17 @@ document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
    on the My Profile tab — what's typed decides which. An email logs in as
    a player, a 6-character team code as captain, anything else is read as
    the site admin's username. ---------- */
+// A team code pasted from WhatsApp or an email often carries stray spaces or
+// invisible characters (zero-width, direction marks) that a person can't see
+// but that make it "not a code" — strip those before deciding what was typed.
+function compactCode(value) {
+  return (value || "").replace(/[\s\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, "");
+}
 function detectLoginType(value) {
   const v = (value || "").trim();
   if (!v) return null;
   if (v.includes("@")) return "player";
-  if (/^[A-Za-z0-9]{6}$/.test(v)) return "captain";
+  if (/^[A-Za-z0-9]{6}$/.test(compactCode(v))) return "captain";
   return "owner";
 }
 function updateUnifiedLoginUI() {
@@ -1353,7 +1359,7 @@ el("unified-login-btn").onclick = async () => {
       await refreshAccountStatus();
     } else if (type === "captain") {
       const notifyEmail = el("unified-login-notify-email").value;
-      const { leagueId } = await api("/captain-login", { method: "POST", body: { code: idVal, email: notifyEmail } });
+      const { leagueId } = await api("/captain-login", { method: "POST", body: { code: compactCode(idVal), email: notifyEmail } });
       clearUnifiedLoginForm();
       // A signed-in player has a profile to land back on — stay there instead
       // of jumping into the league. A guest has no profile, so opening the
@@ -1388,7 +1394,7 @@ el("account-captain-login-btn").onclick = async () => {
   const code = el("account-captain-code").value;
   const email = playerAccount ? playerAccount.email : "";
   try {
-    await api("/captain-login", { method: "POST", body: { code, email } });
+    await api("/captain-login", { method: "POST", body: { code: compactCode(code), email } });
     el("account-captain-code").value = "";
     el("account-captain-error").textContent = "";
     await refreshAccountStatus();

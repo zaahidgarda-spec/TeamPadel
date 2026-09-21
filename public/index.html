@@ -176,7 +176,7 @@
             </div>
             <div style="display:flex;flex-direction:column;gap:10px;max-width:340px;">
               <label class="sr-only" for="unified-login-id">Email, team code, or admin username</label>
-              <input type="text" id="unified-login-id" placeholder="Email, team code, or admin username">
+              <input type="text" id="unified-login-id" placeholder="Email, team code, or admin username" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username">
               <label class="sr-only" for="unified-login-secret">Password or PIN</label>
               <input type="password" id="unified-login-secret" placeholder="Password" style="display:none;">
               <label class="sr-only" for="unified-login-notify-email">Email (optional, for notifications)</label>
@@ -354,7 +354,7 @@
             <p class="note" style="margin-bottom:10px;">Enter your team code to manage that team's line-ups and scores.</p>
             <div class="row">
               <label class="sr-only" for="account-captain-code">Team code</label>
-              <input type="text" id="account-captain-code" placeholder="Team code" style="text-transform:uppercase;width:160px;">
+              <input type="text" id="account-captain-code" placeholder="Team code" autocapitalize="characters" autocorrect="off" spellcheck="false" style="text-transform:uppercase;width:160px;">
               <button class="primary" id="account-captain-login-btn">Enter</button>
             </div>
             <div class="error" id="account-captain-error"></div>
@@ -560,7 +560,7 @@
               <div id="auth-team-panel">
                 <p class="note" style="margin-bottom:8px;">Enter the team code your organizer gave you.</p>
                 <label class="sr-only" for="captain-code">Team code</label>
-                <input type="text" id="captain-code" placeholder="Team code" style="text-transform:uppercase;">
+                <input type="text" id="captain-code" placeholder="Team code" autocapitalize="characters" autocorrect="off" spellcheck="false" style="text-transform:uppercase;">
                 <label class="sr-only" for="captain-email">Email (optional, for notifications)</label>
                 <input type="email" id="captain-email" placeholder="Email (optional, for notifications)" style="margin-top:8px;">
                 <div class="row" style="margin-top:10px;">
