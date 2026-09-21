@@ -1410,6 +1410,109 @@ el("account-owner-login-btn").onclick = async () => {
 
 /* ---------- Site owner login (gates who can create leagues) ---------- */
 
+// ---- Admin tab: summary tiles + collapsible sections ----
+// The cards below already do the work; this only lays them out: four tiles
+// up top (who's on now, claim requests, interest signups, push devices) that
+// glow when something is waiting, and every card folded into a section with
+// a count so the page reads as a short list. Which sections are open is
+// remembered on this device.
+const ADMIN_SECTIONS = [
+  { id: "live-count-card", key: "online", title: "On the app now" },
+  { id: "hub-claim-requests-card", key: "claims", title: "Claim requests", alert: true },
+  { id: "interest-signups-card", key: "signups", title: "League interest signups", alert: true },
+  { id: "manage-leagues-card", key: "leagues", title: "Leagues" },
+  { id: "player-accounts-card", key: "accounts", title: "Player accounts" },
+  { id: "combine-players-card", key: "combine", title: "Combine player profiles" },
+  { id: "push-stats-card", key: "push", title: "Push notifications" },
+  { id: "push-broadcast-card", key: "announce", title: "Send push announcement" },
+  { id: "prediction-accuracy-card", key: "accuracy", title: "Prediction accuracy" },
+  { id: "create-league-card", key: "create", title: "Create a league" },
+];
+const ADMIN_TILES = [
+  { key: "online", label: "On the app now" },
+  { key: "claims", label: "Claim requests waiting", alert: true, flag: "needs you" },
+  { key: "signups", label: "League interest signups", alert: true, flag: "to contact" },
+  { key: "push", label: "Push devices" },
+];
+const ADMIN_OPEN_KEY = "padel-admin-open";
+let adminOpen = null;
+const adminInfo = {}; // key -> { n, tag, sub }
+function readAdminOpen() {
+  try { const v = JSON.parse(localStorage.getItem(ADMIN_OPEN_KEY) || "null"); if (v && typeof v === "object") return v; } catch { /* first visit or storage blocked */ }
+  return { claims: true, signups: true };
+}
+function saveAdminOpen() { try { localStorage.setItem(ADMIN_OPEN_KEY, JSON.stringify(adminOpen)); } catch { /* not remembered */ } }
+function setAdminSectionOpen(key, open) {
+  adminOpen[key] = open;
+  const sec = ADMIN_SECTIONS.find((x) => x.key === key);
+  const card = sec && el(sec.id);
+  if (card) { card.classList.toggle("open", open); const h = card.querySelector(".admin-acc-head"); if (h) h.setAttribute("aria-expanded", String(open)); }
+  saveAdminOpen();
+}
+// `n` is the number shown on the tile and (when it's a count) on the section;
+// `tag` overrides the section's badge text (e.g. "62%"); `sub` is the tile's
+// small second line.
+function setAdminInfo(key, { n, tag, sub }) {
+  adminInfo[key] = { n, tag, sub };
+  const sec = ADMIN_SECTIONS.find((x) => x.key === key);
+  const card = sec && el(sec.id);
+  const tagEl = card && card.querySelector(".admin-acc-head .tags");
+  if (tagEl) {
+    const text = tag != null ? tag : (n != null ? String(n) : "");
+    tagEl.querySelector(".count").innerHTML = text !== "" ? `<span class="tag${sec.alert && n > 0 ? " warn" : ""}">${escapeHtml(text)}</span>` : "";
+  }
+  const tile = document.querySelector(`.admin-tile[data-tile="${key}"]`);
+  if (tile) {
+    const def = ADMIN_TILES.find((x) => x.key === key);
+    tile.querySelector(".num").textContent = n == null ? "—" : n;
+    tile.querySelector(".sub").textContent = sub || "";
+    tile.classList.toggle("alert", !!(def && def.alert && n > 0));
+    tile.querySelector(".flagslot").innerHTML = def && def.alert && n > 0 ? `<span class="flag">${def.flag}</span>` : "";
+  }
+}
+function setupAdminDashboard() {
+  if (setupAdminDashboard.done) return;
+  setupAdminDashboard.done = true;
+  adminOpen = readAdminOpen();
+  const parent = el("hub-view-admin");
+  // Tiles.
+  el("admin-tiles").innerHTML = ADMIN_TILES.map((t) => `<button type="button" class="admin-tile" data-tile="${t.key}"><div class="n">${t.key === "online" ? '<span class="live-dot"></span>' : ""}<span class="num">—</span></div><div class="l">${t.label}</div><div class="sub"></div><div class="flagslot"></div></button>`).join("");
+  el("admin-tiles").querySelectorAll(".admin-tile").forEach((btn) => {
+    btn.onclick = () => {
+      const key = btn.dataset.tile;
+      setAdminSectionOpen(key, true);
+      const sec = ADMIN_SECTIONS.find((x) => x.key === key);
+      el(sec.id).scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
+  // Log out sits up top with the title, not inside "Create a league".
+  const logout = el("owner-logout-btn");
+  if (logout) el("admin-top-actions").appendChild(logout);
+  // Sections, in this order.
+  ADMIN_SECTIONS.forEach((sec) => {
+    const card = el(sec.id);
+    if (!card) return;
+    parent.appendChild(card);
+    card.classList.add("admin-acc");
+    // Buttons that lived in the old heading move to a small row in the body.
+    const heading = card.querySelector(":scope > .section-title");
+    const moved = heading ? [...heading.querySelectorAll("button")] : [];
+    const body = document.createElement("div");
+    body.className = "admin-acc-body";
+    if (moved.length) { const row = document.createElement("div"); row.className = "admin-acc-actions"; moved.forEach((b) => row.appendChild(b)); body.appendChild(row); }
+    [...card.children].forEach((child) => { if (child !== heading) body.appendChild(child); });
+    const head = document.createElement("div");
+    head.className = "admin-acc-head";
+    head.setAttribute("role", "button"); head.tabIndex = 0;
+    head.innerHTML = `<span>${sec.title}</span><span class="tags"><span class="count"></span><span class="chev">›</span></span>`;
+    const toggle = () => setAdminSectionOpen(sec.key, !card.classList.contains("open"));
+    head.onclick = toggle;
+    head.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } };
+    card.insertBefore(head, heading || card.firstChild);
+    card.appendChild(body);
+    setAdminSectionOpen(sec.key, !!adminOpen[sec.key]);
+  });
+}
 async function refreshOwnerStatus() {
   const status = await api("/owner/me").catch(() => ({ isOwner: false }));
   isOwner = !!status.isOwner;
@@ -1419,6 +1522,8 @@ async function refreshOwnerStatus() {
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
   el("live-count-card").style.display = isOwner ? "block" : "none";
+  setupAdminDashboard();
+  el("admin-dash-top").style.display = isOwner ? "block" : "none";
   updateAdminBar();
   pollAdminBar();
   // Not a login entry point anymore (that's the unified box on My Profile)
@@ -1461,6 +1566,8 @@ async function renderLiveCount() {
   // Who, by name — from the same account list the Player accounts card uses.
   const accounts = await api("/admin/players/accounts").catch(() => null);
   if (accounts) renderOnlineNames(accounts);
+  const signedIn = accounts ? accounts.filter((a) => a.online).length : 0;
+  setAdminInfo("online", { n: data ? data.count : null, sub: data ? `${signedIn} signed in · ${Math.max(0, data.count - signedIn)} guest${data.count - signedIn === 1 ? "" : "s"}` : "" });
 }
 // The owner's full list of every league — including hidden/incognito
 // ones, which drop out of every other list on the site the moment they're
@@ -1484,6 +1591,7 @@ async function renderPushStatsCard() {
   if (!data) { el("push-stats-devices").textContent = "—"; el("push-stats-teams").textContent = "—"; return; }
   el("push-stats-devices").textContent = data.totalSubscriptions;
   el("push-stats-teams").textContent = data.totalTeamsWithAtLeastOneDevice;
+  setAdminInfo("push", { n: data.totalSubscriptions, sub: `${data.totalTeamsWithAtLeastOneDevice} team${data.totalTeamsWithAtLeastOneDevice === 1 ? "" : "s"}` });
   const byLeague = (data.byLeague || []).slice().sort((a, b) => b.deviceCount - a.deviceCount);
   el("push-stats-by-league").innerHTML = byLeague.length
     ? byLeague.map((l) => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);">
@@ -1515,6 +1623,7 @@ async function renderPredictionAccuracyCard() {
   }
   if (!r) { body.innerHTML = '<p class="empty">The first check runs a minute or so after the site starts. Try "Check now".</p>'; el("prediction-accuracy-updated").textContent = ""; return; }
   el("prediction-accuracy-updated").textContent = "Updated " + new Date(r.generatedAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  if (!r.tooFew) setAdminInfo("accuracy", { n: null, tag: Math.round(r.blend.hit * 100) + "%" });
   if (r.tooFew) { body.innerHTML = `<p class="empty">Only ${r.n} finished matches so far — it needs ${r.minMatches} before this means anything.</p>`; return; }
   const pc = (x) => Math.round(x * 100);
   const bandRows = (r.bands || []).map((b) => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span>Favourite given about ${b.said}%</span><span class="note">won ${b.won}% (±${b.margin}) · ${b.n} matches</span></div>`).join("");
@@ -1579,6 +1688,7 @@ el("push-broadcast-btn").onclick = async () => {
 async function renderManageLeagues() {
   const leagues = await api("/admin/leagues").catch(() => []);
   const c = el("manage-leagues-list");
+  setAdminInfo("leagues", { n: leagues.length });
   if (leagues.length === 0) { c.innerHTML = '<p class="empty">No leagues yet.</p>'; return; }
   const sorted = leagues.slice().sort((a, b) => a.name.localeCompare(b.name));
   c.innerHTML = sorted.map((l) => `
@@ -1633,6 +1743,7 @@ async function renderManageLeagues() {
 async function renderInterestSignups() {
   const signups = await api("/interest").catch(() => []);
   const c = el("interest-signups-list");
+  setAdminInfo("signups", { n: signups.length, sub: signups.length ? "" : "all followed up" });
   if (signups.length === 0) { c.innerHTML = '<p class="empty">No signups yet.</p>'; return; }
   c.innerHTML = signups.map((s) => `
     <div class="notif-row" data-id="${s.id}">
@@ -1789,6 +1900,7 @@ function accountRowHtml(a) {
 async function renderCombineAccounts() {
   const accounts = await api("/admin/players/accounts").catch(() => []);
   playerAccountsCache = accounts;
+  setAdminInfo("accounts", { n: accounts.filter((a) => !a.test).length });
   const c = el("combine-accounts-list");
   el("player-accounts-card").style.display = "block";
   renderOnlineNames(accounts);
@@ -4164,9 +4276,10 @@ async function renderOrphanedPlayers() {
 async function renderHubClaimRequests() {
   const card = el("hub-claim-requests-card");
   const pending = await api("/admin/claim-requests").catch(() => []);
-  card.style.display = pending.length ? "block" : "none";
-  if (!pending.length) return;
+  card.style.display = "block";
+  setAdminInfo("claims", { n: pending.length, sub: pending.length ? "" : "nothing waiting" });
   const list = el("hub-claim-requests-list");
+  if (!pending.length) { list.innerHTML = '<p class="empty">Nothing waiting.</p>'; return; }
   list.innerHTML = pending.map((r) => `
     <div class="notif-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}" style="flex-wrap:wrap;">
       <div>

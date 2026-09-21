@@ -1935,3 +1935,27 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .pa-group>summary::-webkit-details-marker{display:none;}
 .pa-group>summary::before{content:"›";display:inline-block;transition:transform .15s;color:var(--text-dim,#64748B);}
 .pa-group[open]>summary::before{transform:rotate(90deg);}
+
+/* Admin tab: summary tiles + collapsible sections */
+.admin-top-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 12px;}
+.admin-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+@media (max-width:640px){.admin-tiles{grid-template-columns:1fr 1fr;}}
+.admin-tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius,14px);padding:13px 14px;text-align:left;cursor:pointer;font:inherit;color:var(--text);min-height:0;}
+.admin-tile:hover{border-color:var(--accent);}
+.admin-tile .n{font-family:var(--font-display);font-size:28px;font-weight:600;line-height:1;display:flex;align-items:center;gap:8px;}
+.admin-tile .l{font-size:12px;color:var(--text-dim,#64748B);margin-top:5px;line-height:1.35;}
+.admin-tile .sub{font-size:11px;color:var(--text-dim,#64748B);}
+.admin-tile.alert{border-color:#F2C58B;background:#FFFAF2;}
+.admin-tile .flag{display:inline-block;margin-top:7px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#FFF1DA;color:#A35F00;}
+.admin-tile .live-dot{width:9px;height:9px;border-radius:50%;background:#1E9E5C;display:inline-block;}
+.card.admin-acc{padding:0;overflow:hidden;}
+.admin-acc>.section-title{display:none;}
+.admin-acc-head{display:flex;align-items:center;gap:10px;padding:15px 18px;cursor:pointer;font-weight:600;font-size:14.5px;user-select:none;}
+.admin-acc-head:hover{background:var(--panel-2);}
+.admin-acc-head .tags{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.admin-acc-head .chev{color:var(--text-dim,#94A3B8);transition:transform .2s;font-size:18px;line-height:1;}
+.admin-acc.open>.admin-acc-head .chev{transform:rotate(90deg);}
+.admin-acc-head .tag.warn{background:#FFF1DA;color:#A35F00;border-color:#F2C58B;}
+.admin-acc-body{padding:4px 18px 18px;border-top:1px solid var(--line);}
+.admin-acc:not(.open) .admin-acc-body{display:none;}
+.admin-acc-actions{display:flex;justify-content:flex-end;gap:8px;margin:12px 0 4px;}
