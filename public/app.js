@@ -3096,10 +3096,28 @@ el("show-team-login").onclick = () => {
   el("auth-error").textContent = "";
 };
 el("captain-login-btn").onclick = async () => {
-  const code = el("captain-code").value;
+  const code = compactCode(el("captain-code").value);
   const email = el("captain-email").value;
   try {
-    const r = await api(`/leagues/${currentLeagueId}/captain-login`, { method: "POST", body: { code, email } });
+    let r;
+    try {
+      r = await api(`/leagues/${currentLeagueId}/captain-login`, { method: "POST", body: { code, email } });
+    } catch (firstErr) {
+      // Not one of THIS league's codes — but a captain who opened the wrong
+      // league's page (easy to do) shouldn't be told their correct code is
+      // invalid. The home-page lookup searches every league; if it finds the
+      // code, take them to that league instead of failing.
+      const other = await api("/captain-login", { method: "POST", body: { code, email } }).catch(() => null);
+      if (!other) throw firstErr;
+      if (other.leagueId && other.leagueId !== currentLeagueId) {
+        el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
+        el("captain-code").value = ""; el("captain-email").value = "";
+        viewingGroupId = null;
+        await openLeague(other.leagueId);
+        return;
+      }
+      r = other;
+    }
     myRole = r.role; myTeamId = r.teamId || null;
     document.body.className = "role-" + myRole;
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
