@@ -237,6 +237,7 @@ async function api(path, opts) {
   if (!res.ok) {
     const err = new Error((data && data.error) || "Something went wrong.");
     if (data && data.needsConfirm) err.needsConfirm = true;
+    if (data && data.signupRequired) err.signupRequired = true;
     throw err;
   }
   return data;
@@ -3207,6 +3208,9 @@ async function openLeague(id) {
   el("view-league").style.display = "block";
   await refreshMe();
   await refreshLeague();
+  // A walled league answers a guest with just a preview (see walledPreview
+  // server-side); there is nothing more to load, only the top of the table.
+  if (league.walled) { renderWalledLeague(); trackPageView("/league/" + id, league.name); return; }
   // The hub card already refuses to link into an off-season league for
   // anyone but the owner, but that's only a click gate — a direct/bookmarked
   // link to #league/<id> skipped it entirely and showed every fixture and
@@ -3230,6 +3234,27 @@ async function openLeague(id) {
   initViewingKey();
   renderAll();
   trackPageView("/league/" + id, league.name);
+}
+// A walled league as a guest sees it: its name, the top three of the table
+// (from the preview the server sent), and the sign-up card. Every other tab is
+// gated by buildTabs, and the server refuses their data anyway.
+function renderWalledLeague() {
+  el("league-name").value = league.name;
+  el("league-offseason-notice").style.display = "none";
+  ["sponsor-strip", "pending-score-banner", "push-prompt-banner", "keep-team-strip"].forEach((id) => { const e = el(id); if (e) e.style.display = "none"; });
+  el("tabs").style.display = "flex";
+  buildTabs();
+  document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
+  const view = el("view-table");
+  view.classList.add("active");
+  [...view.children].forEach((c) => { if (!c.contains(el("log-container"))) c.style.display = "none"; });
+  el("table-poster-row").style.display = "none";
+  const rows = (league.preview && league.preview.rows) || [];
+  el("log-container").innerHTML = rows.length
+    ? standingsRowsHtml(rows, false, null, null, league.playoffFormat)
+    : '<p class="empty">Sign up free to see this league.</p>';
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === "table"));
+  applyLeagueWall();
 }
 async function refreshMe() {
   const me = await api(`/leagues/${currentLeagueId}/me`).catch(() => ({ role: "guest" }));

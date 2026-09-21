@@ -634,6 +634,39 @@ router.get("/config", (req, res) => {
 router.get("/me/role", (req, res) => {
   res.json({ role: req.session.user ? req.session.user.role : null, owner: !!req.session.isOwner });
 });
+// ---- The guest wall, enforced on the server ----
+// A "guest" holds no login of any kind: no player account, no team-code or
+// admin session, not the owner. For a league the owner has walled, a guest
+// gets only a small preview (its name and the top three of the table) and
+// every other league-scoped request is refused; anyone with a login is
+// unaffected. Leagues that aren't switched on behave exactly as before.
+function isGuestRequest(req) {
+  return !req.session.playerUser && !req.session.user && !req.session.isOwner;
+}
+function guestWalledFor(req, leagueId) {
+  return isGuestRequest(req) && guestWallSettings().leagues.includes(leagueId);
+}
+function walledPreview(league) {
+  const isPairs = league.format === "pairs";
+  // A pairs league's rows are people's names (each a link to a profile), so
+  // it previews with no rows and just the sign-up card.
+  const rows = isPairs ? [] : logic.computeStandings(league).slice(0, 3).map((r) => ({
+    id: r.id, name: r.name, logo: r.logo || "", played: r.played, rubbersWon: r.rubbersWon, rubbersLost: r.rubbersLost,
+    nightsDrawn: r.nightsDrawn || 0, diff: r.diff, points: r.points,
+  }));
+  return { walled: true, id: league.id, name: league.name, status: leagueStatus(league), format: league.format || "teams", playoffFormat: league.playoffFormat || "none", teamCount: league.teams.length, preview: { rows }, teams: [], fixtures: [], groups: [], sponsors: [], schedule: {} };
+}
+// League-scoped paths a guest can still reach on a walled league: branding,
+// and the private-link pages (each guarded by its own token) that must keep
+// working for someone who was simply sent a link.
+const WALL_OPEN_PATHS = [/^\/court-photo$/, /^\/me$/, /^\/kit-share\//, /^\/push\/vapid-public-key$/, /\/pay-link\//, /^\/fixtures\/[^/]+\/toss\/public$/];
+router.use("/leagues/:leagueId", (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (!guestWalledFor(req, req.params.leagueId)) return next();
+  if (req.path === "/" || req.path === "") return next(); // the league itself is answered with a preview below
+  if (WALL_OPEN_PATHS.some((re) => re.test(req.path))) return next();
+  res.status(401).json({ error: "Sign up free to see this.", signupRequired: true });
+});
 router.put("/admin/guest-wall", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const { hub, leagues } = req.body || {};
@@ -879,9 +912,10 @@ router.get("/admin/live-count", async (req, res) => {
 router.get("/next-matches", (req, res) => {
   const myLeagueId = req.session.user && req.session.user.leagueId;
   const index = visibleIndexEntries();
+  const hubWalled = isGuestRequest(req) && guestWallSettings().hub;
   const allLeagues = index
     .map((entry) => store.getLeague(entry.id))
-    .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
+    .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs" && !hubWalled && !guestWalledFor(req, l.id));
   const { ratingsData, identityOf } = loadGlobalRatings();
 
   if (myLeagueId) {
@@ -1017,9 +1051,10 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
 // league, its most recently posted round recap supplies that league's
 // current Pair of the Week (if any) and a few non-"quiet" highlights.
 router.get("/homepage/highlights", (req, res) => {
+  const hubWalled = isGuestRequest(req) && guestWallSettings().hub;
   const leagues = visibleIndexEntries()
     .map((entry) => store.getLeague(entry.id))
-    .filter((l) => l && leagueStatus(l) === "active");
+    .filter((l) => l && leagueStatus(l) === "active" && !hubWalled && !guestWalledFor(req, l.id));
   const extras = store.getHomepageExtras();
   const dismissed = new Set(extras.dismissed || []);
 
@@ -2117,6 +2152,7 @@ router.post("/leagues", async (req, res) => {
 router.get("/leagues/:leagueId", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
+  if (guestWalledFor(req, league.id)) return res.json(walledPreview(league));
   if (!league.sponsors) league.sponsors = [];
   if (league.defaultVenue === undefined) league.defaultVenue = "";
   if (league.courtPhoto === undefined) league.courtPhoto = "";

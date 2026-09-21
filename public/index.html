@@ -449,7 +449,7 @@
         </div>
         <div class="card" id="guest-wall-card" style="display:none;">
           <h2 class="section-title">Guest sign-up wall</h2>
-          <p class="note" style="margin-bottom:12px;">When on, someone who isn't signed in can look at a little, then the page fades to one "Sign up free" card. Anyone logged in with a team code, as a captain, or as admin is never stopped. Off by default — try it on one league first. It hides things on screen only; the data stays public.</p>
+          <p class="note" style="margin-bottom:12px;">When on, someone who isn't signed in can look at a little, then the page fades to one "Sign up free" card. Anyone logged in with a team code, as a captain, or as admin is never stopped. Off by default — try it on one league first. This is enforced by the server, not just the screen: for a ticked league a guest's browser only ever receives its name and the top three teams (the rest of its data is refused), and the Leagues-page option also empties the "next matches" and highlights lists for guests. The list of leagues itself stays public.</p>
           <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:10px;"><input type="checkbox" id="guest-wall-hub"> Fade the Leagues page after a little scrolling</label>
           <p class="note" style="margin:0 0 6px;">Also for a shared link to these leagues (shows the top three teams, then fades):</p>
           <div id="guest-wall-leagues"></div>
