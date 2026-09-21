@@ -1959,3 +1959,20 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .admin-acc-body{padding:4px 18px 18px;border-top:1px solid var(--line);}
 .admin-acc:not(.open) .admin-acc-body{display:none;}
 .admin-acc-actions{display:flex;justify-content:flex-end;gap:8px;margin:12px 0 4px;}
+
+/* Guest sign-up wall: a soft fade, then one card (see guestWall in app.js) */
+html.gw-locked,html.gw-locked body{overflow:hidden;}
+#guest-wall{position:fixed;inset:0;z-index:70;pointer-events:none;display:none;}
+#guest-wall.on{display:block;}
+#guest-wall .gw-fade{position:absolute;left:0;right:0;bottom:0;height:66%;background:linear-gradient(180deg,rgba(247,249,252,0) 0%,rgba(247,249,252,.93) 38%,#F7F9FC 62%);}
+#guest-wall .gw-card{position:absolute;left:14px;right:14px;bottom:max(16px,env(safe-area-inset-bottom,0px));max-width:460px;margin:0 auto;pointer-events:auto;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 16px 14px;text-align:center;box-shadow:0 18px 44px rgba(18,32,58,.22);}
+#guest-wall .gw-card h3{font-family:var(--font-display);font-size:20px;letter-spacing:.03em;text-transform:uppercase;margin:0 0 4px;}
+#guest-wall .gw-card p{margin:0 0 12px;font-size:13.5px;color:var(--text-dim);line-height:1.45;}
+#guest-wall .gw-card .primary{width:100%;padding:13px;font-size:14px;}
+#guest-wall .gw-links{margin-top:10px;font-size:12.5px;color:var(--text-dim);}
+#guest-wall .gw-links a{color:var(--accent);font-weight:600;cursor:pointer;}
+#guest-wall .gw-social{display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:14px;width:100%;margin-top:8px;color:var(--text);text-decoration:none;}
+#guest-wall .gw-social svg{width:18px;height:18px;}
+#view-league.gw-on #log-container .leaderboard > :nth-child(n+4){display:none;}
+.keep-team-modal .kt-social{display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:14px;width:100%;margin-top:8px;color:var(--text);text-decoration:none;}
+.keep-team-modal .kt-social svg{width:18px;height:18px;}

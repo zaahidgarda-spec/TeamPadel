@@ -139,6 +139,7 @@ async function init() {
   cache.set("interest-signups", (await redis.get("interest-signups")) || []);
   cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
   cache.set("prediction-accuracy", (await redis.get("prediction-accuracy")) || { latest: null, history: [] });
+  cache.set("site-settings", (await redis.get("site-settings")) || {});
 }
 
 // Lets the server wait for any in-flight writes before exiting on
@@ -284,8 +285,24 @@ function savePredictionAccuracy(data) {
   writeJsonFile("prediction-accuracy", data);
 }
 
+// Owner-controlled site-wide switches (see the guest sign-up wall).
+function getSiteSettings() {
+  if (useRedis) return cache.get("site-settings") || {};
+  return readJsonFile("site-settings", {});
+}
+function saveSiteSettings(data) {
+  if (useRedis) {
+    cache.set("site-settings", data);
+    persist("site-settings", data);
+    return;
+  }
+  writeJsonFile("site-settings", data);
+}
+
 module.exports = {
   init,
+  getSiteSettings,
+  saveSiteSettings,
   getPredictionAccuracy,
   savePredictionAccuracy,
   flush,

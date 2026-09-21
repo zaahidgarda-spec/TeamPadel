@@ -447,6 +447,14 @@
           </div>
           <div id="push-stats-by-league"></div>
         </div>
+        <div class="card" id="guest-wall-card" style="display:none;">
+          <h2 class="section-title">Guest sign-up wall</h2>
+          <p class="note" style="margin-bottom:12px;">When on, someone who isn't signed in can look at a little, then the page fades to one "Sign up free" card. Anyone logged in with a team code, as a captain, or as admin is never stopped. Off by default — try it on one league first. It hides things on screen only; the data stays public.</p>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:10px;"><input type="checkbox" id="guest-wall-hub"> Fade the Leagues page after a little scrolling</label>
+          <p class="note" style="margin:0 0 6px;">Also for a shared link to these leagues (shows the top three teams, then fades):</p>
+          <div id="guest-wall-leagues"></div>
+          <div class="note" id="guest-wall-status" style="margin-top:8px;"></div>
+        </div>
         <div class="card" id="prediction-accuracy-card" style="display:none;">
           <h2 class="section-title">Prediction accuracy</h2>
           <p class="note" style="margin-bottom:12px;">How often the match predictions are right, and how far to trust that. It checks itself whenever new results come in — nothing to run.</p>
@@ -609,6 +617,7 @@
         <button class="dismiss" id="push-prompt-dismiss" aria-label="Dismiss" type="button">&times;</button>
       </div>
 
+      <div class="roster-signup-strip" id="keep-team-strip" style="display:none;"><span class="icon">🔑</span><div class="txt"><b id="keep-team-strip-title">Keep your team on your account</b><span>Create a free account — no need to type the code again.</span></div><button class="primary" id="keep-team-strip-cta">Create account</button><button class="dismiss" id="keep-team-strip-dismiss" aria-label="Dismiss" type="button">&times;</button></div>
       <nav class="tabs" id="tabs"></nav>
 
       <div id="group-selector-row" style="display:none;flex-direction:column;gap:8px;margin-bottom:16px;">

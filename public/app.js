@@ -295,6 +295,8 @@ async function boot() {
   }
   const config = await api("/config").catch(() => ({ ratingsEnabled: false, payfastSandbox: true }));
   RATINGS_ENABLED = !!config.ratingsEnabled;
+  GUEST_WALL = config.guestWall || GUEST_WALL;
+  await refreshSessionRole();
   PAYFAST_SANDBOX = config.payfastSandbox !== false;
   leaguesIndex = await api("/leagues").catch(() => []);
   startPresencePing();
@@ -694,6 +696,9 @@ async function openKitSharePage(leagueId, token) {
   data.teams.forEach((t) => content.appendChild(kitShareTeamCard(t, data)));
 }
 function showHub() {
+  hideGuestWall();
+  el("view-league").classList.remove("gw-on");
+  refreshSessionRole();
   currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
   window.location.hash = "";
   el("view-hub").style.display = "block";
@@ -1307,6 +1312,7 @@ function switchHubTab(name) {
   // someone starts typing — by the time they've typed anything it's
   // often already in hand. loadPlayerIndex is a no-op if already loading.
   if (name === "search" && playerAccount) { loadPlayerIndex(); renderPlayerAround(); }
+  if (name !== "leagues") hideGuestWall();
 }
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
   btn.onclick = () => switchHubTab(btn.dataset.hubview);
@@ -1359,7 +1365,8 @@ el("unified-login-btn").onclick = async () => {
       await refreshAccountStatus();
     } else if (type === "captain") {
       const notifyEmail = el("unified-login-notify-email").value;
-      const { leagueId } = await api("/captain-login", { method: "POST", body: { code: compactCode(idVal), email: notifyEmail } });
+      const { leagueId, teamId } = await api("/captain-login", { method: "POST", body: { code: compactCode(idVal), email: notifyEmail } });
+      sessionRole = "captain";
       clearUnifiedLoginForm();
       // A signed-in player has a profile to land back on — stay there instead
       // of jumping into the league. A guest has no profile, so opening the
@@ -1369,6 +1376,8 @@ el("unified-login-btn").onclick = async () => {
       } else {
         viewingGroupId = null; // land on this captain's own group, not whatever a prior guest view defaulted to
         await openLeague(leagueId);
+        const keptTeam = league && league.teams.find((t) => t.id === teamId);
+        offerKeepTeam(keptTeam ? keptTeam.name : "");
       }
     } else {
       await api("/owner/login", { method: "POST", body: { username: idVal, pin: el("unified-login-secret").value } });
@@ -1416,6 +1425,160 @@ el("account-owner-login-btn").onclick = async () => {
 
 /* ---------- Site owner login (gates who can create leagues) ---------- */
 
+// ---- Guest sign-up wall ----
+// Off unless the owner turns it on (Admin > Guest sign-up wall). For someone
+// with no login of any kind, the Leagues page and a shared league link show a
+// little, then fade to one "Sign up free" card. Anyone holding ANY login — a
+// player account, a team code (captain, or a Vibora pair), or admin — is
+// never stopped, and code holders are then asked to keep that team on a free
+// account. This hides things on screen only; the data itself stays public.
+let GUEST_WALL = { hub: false, leagues: [] };
+let sessionRole = null; // "captain" | "admin" from a team-code / admin login on this browser
+async function refreshSessionRole() {
+  const r = await api("/me/role").catch(() => ({ role: null, owner: false }));
+  sessionRole = r.role || (r.owner ? "admin" : null);
+}
+function guestWallApplies(kind) {
+  if (playerAccount || isOwner || sessionRole) return false;
+  if (kind === "league") return (GUEST_WALL.leagues || []).includes(currentLeagueId) && myRole !== "captain" && myRole !== "admin";
+  return !!GUEST_WALL.hub;
+}
+const GW_GOOGLE = '<svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.3.8-4.7l-7.9-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>';
+const GW_FB = '<svg viewBox="0 0 24 24"><path fill="#1877F2" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.4l-.5 3.5h-2.9v8.4A12 12 0 0 0 24 12z"/></svg>';
+let gwProviders = null;
+async function socialProviderLinks(cls) {
+  if (!gwProviders) gwProviders = await api("/auth/providers").catch(() => []);
+  return (gwProviders.includes("google") ? `<a class="${cls}" href="/api/auth/google/start">${GW_GOOGLE}Continue with Google</a>` : "")
+    + (gwProviders.includes("facebook") ? `<a class="${cls}" href="/api/auth/facebook/start">${GW_FB}Continue with Facebook</a>` : "");
+}
+const gw = { shown: false, kind: null };
+function guestWallEl() {
+  let w = document.getElementById("guest-wall");
+  if (!w) { w = document.createElement("div"); w.id = "guest-wall"; document.body.appendChild(w); }
+  return w;
+}
+function hideGuestWall() {
+  gw.shown = false;
+  const w = document.getElementById("guest-wall");
+  if (w) { w.classList.remove("on"); w.innerHTML = ""; }
+  document.documentElement.classList.remove("gw-locked");
+}
+function wallCardHtml(kind, tabLabel) {
+  const title = kind === "league" ? (tabLabel ? "Open " + tabLabel : "See the full table") : "Keep exploring";
+  const text = kind === "league" ? "Sign up free to open the whole table, fixtures and results for every league." : "Sign up free to open every league — tables, fixtures and results.";
+  return `<div class="gw-fade"></div><div class="gw-card"><h3>${escapeHtml(title)}</h3><p>${text}</p><button class="primary" id="gw-signup" type="button">Sign up free</button><div class="gw-links">Have a team code or an account? <a id="gw-login">Log in</a></div></div>`;
+}
+function showGuestWall(kind, tabLabel) {
+  const w = guestWallEl();
+  gw.shown = true; gw.kind = kind;
+  w.innerHTML = wallCardHtml(kind, tabLabel);
+  w.classList.add("on");
+  document.documentElement.classList.add("gw-locked");
+  el("gw-signup").onclick = async () => {
+    const social = await socialProviderLinks("gw-social");
+    w.innerHTML = `<div class="gw-fade"></div><div class="gw-card"><h3>Create your free profile</h3><p>Two taps — then everything opens.</p>${social}<button class="secondary" id="gw-email" type="button" style="width:100%;padding:12px;margin-top:8px;">Use email and password</button><div class="gw-links">Have a team code? <a id="gw-login">Log in</a> · <a id="gw-back">Not now</a></div></div>`;
+    el("gw-email").onclick = () => goToSignup();
+    el("gw-login").onclick = goToLogin;
+    el("gw-back").onclick = () => showGuestWall(kind, tabLabel);
+  };
+  el("gw-login").onclick = goToLogin;
+}
+// Sign up / log in from the wall: the wall steps aside and the real forms are used.
+async function goToSignup() {
+  hideGuestWall();
+  if (currentLeagueId) await el("back-to-hub").onclick();
+  switchHubTab("account");
+  el("show-account-signup").click();
+  window.scrollTo(0, 0);
+}
+async function goToLogin() {
+  hideGuestWall();
+  if (currentLeagueId) {
+    // the league page has its own team-code / admin login in the header
+    window.scrollTo(0, 0);
+    const panel = el("auth-panel");
+    if (panel && !panel.classList.contains("open")) el("auth-toggle").click();
+    return;
+  }
+  switchHubTab("account");
+  window.scrollTo(0, 0);
+}
+// The Leagues page: a little scrolling, then the wall.
+window.addEventListener("scroll", () => {
+  if (gw.shown || !GUEST_WALL.hub || currentLeagueId) return;
+  if (getComputedStyle(el("view-hub")).display === "none") return;
+  const tab = document.querySelector(".hub-tab-btn.active");
+  if (!tab || tab.dataset.hubview !== "leagues") return;
+  // "A little" scrolling — but never more than most of a short page, or a
+  // page with only a few leagues would never trigger it.
+  const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+  if (maxScroll > 10 && window.scrollY > Math.min(160, maxScroll * 0.6) && guestWallApplies("hub")) showGuestWall("hub");
+}, { passive: true });
+// A league page: the table's top three, then the wall (landing is forced to
+// the table, since a guest otherwise lands on Fixtures).
+function applyLeagueWall() {
+  const on = !!(league && guestWallApplies("league"));
+  el("view-league").classList.toggle("gw-on", on);
+  if (on && (!gw.shown || gw.kind !== "league")) showGuestWall("league");
+  if (!on && gw.shown && gw.kind === "league") hideGuestWall();
+}
+// After a team-code login with no account: keep that team on a free account.
+function offerKeepTeam(teamName) {
+  if (playerAccount) return;
+  const old = document.getElementById("keep-team-backdrop"); if (old) old.remove();
+  const back = document.createElement("div");
+  back.className = "modal-backdrop open"; back.id = "keep-team-backdrop";
+  back.innerHTML = `<div class="modal-box keep-team-modal" style="max-width:380px;text-align:center;"><div style="font-size:30px;line-height:1;">✅</div><h3 class="modal-title" style="justify-content:center;margin-top:6px;">You're in as captain of ${escapeHtml(teamName || "your team")}</h3><p class="note" style="margin:6px 0 14px;">Create a free account and this team stays on it — on every phone and laptop, with no code to type again.</p><div id="kt-social"></div><button class="secondary" id="kt-email" type="button" style="width:100%;padding:12px;margin-top:8px;">Use email and password</button><button class="link" id="kt-skip" type="button" style="margin-top:12px;">Skip for now</button></div>`;
+  document.body.appendChild(back);
+  socialProviderLinks("kt-social-link").then((h) => { if (h) el("kt-social").innerHTML = h.replace(/class="kt-social-link"/g, 'class="kt-social"'); });
+  const close = () => back.remove();
+  el("kt-email").onclick = async () => { close(); await goToSignup(); };
+  el("kt-skip").onclick = () => { close(); updateKeepTeamStrip(); };
+}
+// The reminder left behind after "Skip for now": a captain with no account.
+function updateKeepTeamStrip() {
+  const strip = el("keep-team-strip");
+  if (!strip) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem("padel-keep-team-dismissed") === (myTeamId || ""); } catch { /* storage blocked */ }
+  const team = league && myTeamId && league.teams.find((t) => t.id === myTeamId);
+  const show = !playerAccount && myRole === "captain" && !!team && !dismissed;
+  strip.style.display = show ? "flex" : "none";
+  if (show) el("keep-team-strip-title").textContent = "Keep " + team.name + " on your account";
+}
+el("keep-team-strip-cta").onclick = () => goToSignup();
+el("keep-team-strip-dismiss").onclick = () => {
+  try { localStorage.setItem("padel-keep-team-dismissed", myTeamId || ""); } catch { /* not remembered */ }
+  el("keep-team-strip").style.display = "none";
+};
+
+// Admin > Guest sign-up wall: off by default; the Leagues page and/or chosen
+// leagues (a shared link to them). Saved on every tick.
+async function renderGuestWallCard() {
+  el("guest-wall-card").style.display = "block";
+  const cfg = await api("/config").catch(() => null);
+  const leagues = await api("/admin/leagues").catch(() => []);
+  const wall = (cfg && cfg.guestWall) || { hub: false, leagues: [] };
+  el("guest-wall-hub").checked = !!wall.hub;
+  const visible = leagues.filter((l) => !l.hidden).sort((a, b) => a.name.localeCompare(b.name));
+  el("guest-wall-leagues").innerHTML = visible.map((l) => `<label style="display:flex;align-items:center;gap:8px;padding:5px 0;"><input type="checkbox" class="gw-league-cb" value="${l.id}"${wall.leagues.includes(l.id) ? " checked" : ""}> ${escapeHtml(l.name)}</label>`).join("") || '<p class="empty">No leagues.</p>';
+  const save = async () => {
+    const status = el("guest-wall-status");
+    status.textContent = "Saving…";
+    try {
+      const r = await api("/admin/guest-wall", { method: "PUT", body: { hub: el("guest-wall-hub").checked, leagues: [...document.querySelectorAll(".gw-league-cb:checked")].map((c) => c.value) } });
+      GUEST_WALL = r.guestWall;
+      const parts = [];
+      if (r.guestWall.hub) parts.push("the Leagues page");
+      if (r.guestWall.leagues.length) parts.push(r.guestWall.leagues.length + " league link" + (r.guestWall.leagues.length === 1 ? "" : "s"));
+      status.textContent = parts.length ? "On for " + parts.join(" and ") + ". You're logged in as admin, so you won't see it yourself — open the site in a private window." : "Off.";
+      setAdminInfo("wall", { n: null, tag: parts.length ? "On" : "Off" });
+    } catch (e) { status.textContent = e.message; }
+  };
+  el("guest-wall-hub").onchange = save;
+  document.querySelectorAll(".gw-league-cb").forEach((cb) => { cb.onchange = save; });
+  setAdminInfo("wall", { n: null, tag: wall.hub || wall.leagues.length ? "On" : "Off" });
+}
 // ---- Admin tab: summary tiles + collapsible sections ----
 // The cards below already do the work; this only lays them out: four tiles
 // up top (who's on now, claim requests, interest signups, push devices) that
@@ -1431,6 +1594,7 @@ const ADMIN_SECTIONS = [
   { id: "combine-players-card", key: "combine", title: "Combine player profiles" },
   { id: "push-stats-card", key: "push", title: "Push notifications" },
   { id: "push-broadcast-card", key: "announce", title: "Send push announcement" },
+  { id: "guest-wall-card", key: "wall", title: "Guest sign-up wall" },
   { id: "prediction-accuracy-card", key: "accuracy", title: "Prediction accuracy" },
   { id: "create-league-card", key: "create", title: "Create a league" },
 ];
@@ -1544,7 +1708,7 @@ async function refreshOwnerStatus() {
   const paymentsTabBtn = el("hub-payments-tab-btn");
   paymentsTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
+  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
 // "Select a league from a menu, then find a player or team and send them
@@ -1776,6 +1940,7 @@ async function renderInterestSignups() {
 // destination once you're in.
 el("owner-logout-btn").onclick = async () => {
   await api("/owner/logout", { method: "POST" });
+  await refreshSessionRole();
   await refreshOwnerStatus();
 };
 
@@ -3034,6 +3199,7 @@ function renderAccountNextMatch(cards) {
 }
 
 async function openLeague(id) {
+  hideGuestWall(); // a wall from the page we're leaving must not carry over
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
   currentLeagueId = id;
   window.location.hash = "league/" + id;
@@ -3058,7 +3224,9 @@ async function openLeague(id) {
   }
   buildTabs();
   const isPairs = league.format === "pairs";
-  switchTab(myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : isPairs ? "results" : "fixtures");
+  // Behind the guest wall the landing is the table (its top three), which is
+  // what a shared league link is for; otherwise as before.
+  switchTab(guestWallApplies("league") ? "table" : myRole === "admin" ? "admin" : myRole === "captain" && !isPairs ? "selection" : isPairs ? "results" : "fixtures");
   initViewingKey();
   renderAll();
   trackPageView("/league/" + id, league.name);
@@ -3077,6 +3245,8 @@ async function refreshLeague() {
 el("auth-toggle").onclick = async () => {
   if (myRole !== "guest") {
     await api("/logout", { method: "POST" });
+    sessionRole = null;
+    await refreshSessionRole();
     myRole = "guest"; myTeamId = null;
     document.body.className = "role-guest";
     buildTabs(); switchTab(league.format === "pairs" ? "results" : "fixtures"); renderAll();
@@ -3113,7 +3283,10 @@ el("captain-login-btn").onclick = async () => {
         el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
         el("captain-code").value = ""; el("captain-email").value = "";
         viewingGroupId = null;
+        sessionRole = "captain";
         await openLeague(other.leagueId);
+        const otherTeam = league && league.teams.find((t) => t.id === other.teamId);
+        offerKeepTeam(otherTeam ? otherTeam.name : "");
         return;
       }
       r = other;
@@ -3123,7 +3296,10 @@ el("captain-login-btn").onclick = async () => {
     el("auth-panel").classList.remove("open"); el("auth-error").textContent = "";
     el("captain-code").value = ""; el("captain-email").value = "";
     viewingGroupId = null; // a guest browsing before logging in may have already defaulted to some other group
+    sessionRole = "captain";
     await refreshLeague(); buildTabs(); switchTab(league.format === "pairs" ? "results" : "selection"); initViewingKey(); renderAll();
+    const ownTeam = league && league.teams.find((t) => t.id === myTeamId);
+    offerKeepTeam(ownTeam ? ownTeam.name : "");
   } catch (e) { el("auth-error").textContent = e.message; }
 };
 el("login-btn").onclick = async () => {
@@ -3242,7 +3418,7 @@ function buildTabs() {
     const btn = document.createElement("button");
     btn.textContent = d.label; btn.dataset.view = d.key;
     if (d.wip) { btn.classList.add("tab-wip"); btn.title = "Work in progress — not visible to captains yet."; }
-    btn.onclick = () => switchTab(d.key);
+    btn.onclick = () => { if (guestWallApplies("league") && d.key !== "table") { showGuestWall("league", d.label); return; } switchTab(d.key); };
     nav.appendChild(btn);
   });
   updateLiveCourtTabPulse();
@@ -3500,6 +3676,8 @@ if (document.fonts) {
 }
 
 function renderAll() {
+  applyLeagueWall();
+  updateKeepTeamStrip();
   syncViewingKey();
   renderGroupSelector();
   const activeTabBtn = document.querySelector("#tabs button.active");

@@ -619,8 +619,29 @@ function migrateLegacyKnockoutRounds(league) {
 // same codebase run two ways from one env var: ratings hidden on this
 // site, shown on another deployment (a second site sharing this same
 // backend/database) without anything else differing between them.
+// The guest sign-up wall (see public/app.js): off unless the owner turns it
+// on, either for the Leagues page, for particular leagues, or both. Just
+// switches and league ids — nothing private.
+function guestWallSettings() {
+  const g = store.getSiteSettings().guestWall || {};
+  return { hub: !!g.hub, leagues: Array.isArray(g.leagues) ? g.leagues : [] };
+}
 router.get("/config", (req, res) => {
-  res.json({ ratingsEnabled: process.env.RATINGS_ENABLED === "true", payfastSandbox: payfast.config().sandbox });
+  res.json({ ratingsEnabled: process.env.RATINGS_ENABLED === "true", payfastSandbox: payfast.config().sandbox, guestWall: guestWallSettings() });
+});
+// What kind of login this browser holds, so the guest wall never stops
+// someone who logged in with a team code (or as admin) but has no account.
+router.get("/me/role", (req, res) => {
+  res.json({ role: req.session.user ? req.session.user.role : null, owner: !!req.session.isOwner });
+});
+router.put("/admin/guest-wall", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { hub, leagues } = req.body || {};
+  const known = new Set(store.getIndex().map((e) => e.id));
+  const settings = store.getSiteSettings();
+  settings.guestWall = { hub: !!hub, leagues: (Array.isArray(leagues) ? leagues : []).filter((id) => known.has(id)) };
+  store.saveSiteSettings(settings);
+  res.json({ ok: true, guestWall: guestWallSettings() });
 });
 
 // The in-league "Score not entered yet" banner only reaches a captain once
@@ -1182,6 +1203,16 @@ function findUserIdByEmail(email) {
   const entry = store.getUsersIndex().find((u) => u.email === email);
   return entry ? entry.id : null;
 }
+// Someone who logged in with a team code and only THEN signs up (or logs in)
+// would otherwise lose that captaincy the moment the code session ends —
+// captaincies are only saved to an account when one is signed in at the time
+// the code is entered. Carry the current code session across, so "create a
+// free account and this team stays on it" is actually true.
+function adoptSessionCaptaincy(req) {
+  const u = req.session.user;
+  if (!u || u.role !== "captain" || !u.leagueId || !u.teamId || !req.session.playerUser) return;
+  persistCaptaincy(req, u.leagueId, u.teamId);
+}
 function requirePlayerUser(req, res, next) {
   if (!req.session.playerUser) return res.status(401).json({ error: "Log in to your player account first." });
   next();
@@ -1214,6 +1245,7 @@ router.post("/players/signup", loginLimiter, async (req, res) => {
         return res.status(503).json({ error: "Couldn't save your account just now — try again in a moment." });
       }
       req.session.playerUser = { id: existing.id };
+      adoptSessionCaptaincy(req);
       return res.json({ id: existing.id, name: existing.name, email: existing.email });
     }
     return res.status(400).json({ error: "An account with that email already exists." });
@@ -1234,6 +1266,7 @@ router.post("/players/signup", loginLimiter, async (req, res) => {
     return res.status(503).json({ error: "Couldn't save your account just now — try again in a moment." });
   }
   req.session.playerUser = { id };
+  adoptSessionCaptaincy(req);
   res.json({ id, name: user.name, email: user.email });
 });
 router.post("/players/login", loginLimiter, async (req, res) => {
@@ -1243,6 +1276,7 @@ router.post("/players/login", loginLimiter, async (req, res) => {
   const ok = user && (await verifyPassword(password, user.passwordHash));
   if (!ok) return res.status(401).json({ error: "Incorrect email or password." });
   req.session.playerUser = { id: user.id };
+  adoptSessionCaptaincy(req);
   res.json({ id: user.id, name: user.name, email: user.email });
 });
 /* ---------- Sign in with Google / Facebook ---------- */
@@ -1327,6 +1361,7 @@ router.get("/auth/:provider/callback", loginLimiter, async (req, res) => {
     const profile = await oauth.fetchProfile(provider, { code: String(req.query.code), redirectUri: oauthRedirectUri(req, provider) });
     const user = await accountForSocialProfile(provider, profile);
     req.session.playerUser = { id: user.id };
+    adoptSessionCaptaincy(req);
     req.session.save(() => backToSite(res, { signedIn: "1" }));
   } catch (e) {
     console.error("Social sign-in failed:", e.message);
