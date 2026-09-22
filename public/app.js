@@ -12470,8 +12470,12 @@ function newsPostCardHtml(p, leagueLabel) {
       <p class="nr-form-label">In form right now</p>
       <div class="nr-form-list">${p.inForm.map((f) => `<div class="nr-form-player"><div class="nr-form-avatar">${escapeHtml(playerInitials(f.name))}</div><div class="nr-form-name">${newsPlayerLinkHtml(lid, { id: f.playerId, name: f.name })}</div><div class="nr-form-team">${escapeHtml(f.team)}</div></div>`).join("")}</div>
     </div>` : "";
+  // A round recap has no photo upload of its own — p.photo (when present)
+  // is always the league's court photo, resolved server-side.
+  const heroClass = p.photo ? "nr-hero has-photo" : "nr-hero";
+  const heroStyle = p.photo ? ` style="background-image:url('${p.photo}');"` : "";
   return `<div class="nr-round" data-id="${p.id}">
-    <div class="nr-hero">
+    <div class="${heroClass}"${heroStyle}>
       <div class="nr-hero-top"><span class="nr-round-eyebrow">${roundLabel}</span><span class="nr-round-date">${dateText}</span></div>
       ${heroInner}
     </div>

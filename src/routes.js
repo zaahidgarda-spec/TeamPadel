@@ -326,6 +326,13 @@ function backfillRoundRecaps() {
 // anything). A post with no round (a free-standing admin announcement)
 // always sorts above every round post, on the assumption it's about
 // something current, not a historical result.
+// A post's own uploaded photo wins; failing that, the league's court photo
+// stands in — the one real photo we always have for a league, and how an
+// existing round-recap post (which has no upload UI of its own) gets a
+// photo at all. Computed at response time, never written back to the post.
+function newsPostPhoto(post, league) {
+  return post.photo || (league && league.courtPhoto) || "";
+}
 function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
     // Round-based ordering only makes sense between two posts that both
@@ -1090,11 +1097,15 @@ router.get("/homepage/highlights", (req, res) => {
     }
 
     // A photo an admin attached to a news post is the one piece of real
-    // photography we have per league, so the newest one across every
-    // visible league becomes the Leagues-tab hero card below.
+    // photography we have per league; failing that, the league's own court
+    // photo stands in (see newsPostPhoto) — so an existing round-recap
+    // post, which has no upload of its own, still qualifies. The newest
+    // post with *some* photo, across every visible league, becomes the
+    // Leagues-tab hero card below.
     (league.news || []).forEach((p) => {
-      if (!p.photo) return;
-      heroCandidates.push({ title: p.title || "", body: p.body || "", photo: p.photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name });
+      const photo = newsPostPhoto(p, league);
+      if (!photo) return;
+      heroCandidates.push({ title: p.title || "", body: p.body || "", photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name });
     });
 
     const latest = (league.news || [])
@@ -2145,7 +2156,7 @@ router.get("/players/news", requirePlayerUser, (req, res) => {
   leagueIds.forEach((leagueId) => {
     const league = store.getLeague(leagueId);
     if (!league) return;
-    (league.news || []).forEach((p) => posts.push({ ...p, leagueId: league.id, leagueName: league.name }));
+    (league.news || []).forEach((p) => posts.push({ ...p, photo: newsPostPhoto(p, league), leagueId: league.id, leagueName: league.name }));
   });
   res.json(sortNewsPosts(posts));
 });
@@ -5950,7 +5961,8 @@ router.post("/leagues/:leagueId/super-tie/generate", requireAdmin, (req, res) =>
 router.get("/leagues/:leagueId/news", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });
-  res.json(sortNewsPosts(league.news || []));
+  const posts = sortNewsPosts(league.news || []).map((p) => ({ ...p, photo: newsPostPhoto(p, league) }));
+  res.json(posts);
 });
 router.post("/leagues/:leagueId/news", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
