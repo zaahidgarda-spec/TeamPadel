@@ -12650,7 +12650,7 @@ function updateNewsPhotoPreview() {
   el("news-photo-preview-wrap").style.display = pendingNewsPhoto ? "block" : "none";
   el("news-photo-preview").src = pendingNewsPhoto || "";
 }
-el("news-photo-btn").onclick = () => el("news-photo-input").click();
+el("news-photo-btn").onclick = () => { el("news-logo-picker").style.display = "none"; el("news-photo-input").click(); };
 el("news-photo-input").addEventListener("change", () => {
   const file = el("news-photo-input").files[0];
   if (!file) return;
@@ -12664,13 +12664,34 @@ el("news-photo-input").addEventListener("change", () => {
   }, 0.75);
 });
 el("news-photo-remove-btn").onclick = () => { pendingNewsPhoto = ""; updateNewsPhotoPreview(); };
+// A quick alternative to uploading a photo — this league's teams already
+// have logos on file (for their kit/roster), so a post like "Dons win the
+// league" can just reuse the Dons logo instead of needing a real photo.
+el("news-logo-btn").onclick = () => {
+  const picker = el("news-logo-picker");
+  const opening = picker.style.display === "none";
+  if (!opening) { picker.style.display = "none"; return; }
+  const teams = (league.teams || []).filter((t) => t.logo);
+  picker.innerHTML = teams.length
+    ? `<div class="row" style="gap:8px;">${teams.map((t) => `<button type="button" class="news-logo-opt" data-team="${t.id}" title="${escapeHtml(t.name)}"><img src="${t.logo}" alt=""></button>`).join("")}</div>`
+    : `<p class="note">No team logos uploaded in this league yet.</p>`;
+  picker.querySelectorAll(".news-logo-opt").forEach((btn) => {
+    btn.onclick = () => {
+      const team = teams.find((t) => t.id === btn.dataset.team);
+      pendingNewsPhoto = team.logo;
+      updateNewsPhotoPreview();
+      picker.style.display = "none";
+    };
+  });
+  picker.style.display = "block";
+};
 el("news-post-btn").onclick = async () => {
   const title = el("news-title").value.trim(), body = el("news-body").value.trim();
   if (!title) return alert("Give the update a title.");
   try {
     await api(`/leagues/${currentLeagueId}/news`, { method: "POST", body: { title, body, photo: pendingNewsPhoto } });
     el("news-title").value = ""; el("news-body").value = "";
-    pendingNewsPhoto = ""; updateNewsPhotoPreview();
+    pendingNewsPhoto = ""; updateNewsPhotoPreview(); el("news-logo-picker").style.display = "none";
     renderNews();
   } catch (e) {
     alert("Couldn't post: " + e.message);
