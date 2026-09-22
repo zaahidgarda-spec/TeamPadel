@@ -333,6 +333,18 @@ function backfillRoundRecaps() {
 function newsPostPhoto(post, league) {
   return post.photo || (league && league.courtPhoto) || "";
 }
+// An auto round-recap's own title/body is the whole multi-paragraph
+// wrap-up — fine for the News Room, way too much text for a hero card.
+// This reduces it to one headline: the most notable highlight's short
+// line (the same text "Interesting this week" already uses), or just the
+// round label if the round was quiet. A manual admin post is already
+// short (they wrote it themselves), so it's used as-is.
+function newsPostHeadline(post) {
+  if (!post.auto) return { headline: post.title || "", body: post.body || "" };
+  const usable = (post.highlights || []).find((h) => h.type !== "quiet" && (h.short || h.text));
+  const headline = usable ? (usable.short || usable.text) : `Round ${post.round} wrap-up`;
+  return { headline, body: "" };
+}
 function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
     // Round-based ordering only makes sense between two posts that both
@@ -1105,7 +1117,8 @@ router.get("/homepage/highlights", (req, res) => {
     (league.news || []).forEach((p) => {
       const photo = newsPostPhoto(p, league);
       if (!photo) return;
-      heroCandidates.push({ title: p.title || "", body: p.body || "", photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name });
+      const { headline, body } = newsPostHeadline(p);
+      heroCandidates.push({ title: headline, body, photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name, round: p.auto ? p.round : null });
     });
 
     const latest = (league.news || [])
@@ -1135,7 +1148,14 @@ router.get("/homepage/highlights", (req, res) => {
   // request — only relevant when the photo happens to belong to whichever
   // league currently has a Pair of the Week.
   if (heroNews) heroNews.potw = potw.find((p) => p.leagueId === heroNews.leagueId) || null;
-  res.json({ potw, highlights: manualHighlights.concat(autoHighlights.slice(0, 9)), heroNews });
+  // That same round's bigwin/rough-night/table cards would otherwise repeat
+  // right below it — once a round is the hero, its own highlights drop out
+  // of "Interesting this week" rather than saying the same thing twice.
+  const shownHighlights = heroNews && heroNews.round != null
+    ? autoHighlights.filter((h) => !(h.leagueId === heroNews.leagueId && h.round === heroNews.round))
+    : autoHighlights;
+  if (heroNews) delete heroNews.round;
+  res.json({ potw, highlights: manualHighlights.concat(shownHighlights.slice(0, 9)), heroNews });
 });
 
 // Every visible league's sponsors, flattened into one site-wide list for
