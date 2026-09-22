@@ -1638,11 +1638,21 @@ const ADMIN_SECTIONS = [
   { id: "prediction-accuracy-card", key: "accuracy", title: "Prediction accuracy" },
   { id: "create-league-card", key: "create", title: "Create a league" },
 ];
-const ADMIN_TILES = [
-  { key: "online", label: "On the app now" },
-  { key: "claims", label: "Claim requests waiting", alert: true, flag: "needs you" },
-  { key: "signups", label: "League interest signups", alert: true, flag: "to contact" },
-  { key: "push", label: "Push devices" },
+// What "is anything wrong right now" means — each one drops onto the red
+// strip up top the moment its count is above zero, and off again once it
+// isn't (a claim gets resolved, a signup gets followed up).
+const ADMIN_ALERTS = [
+  { key: "claims", label: "Claim requests" },
+  { key: "signups", label: "League interest signups" },
+];
+// A glance at the site's health, not an inbox — counts that go up and
+// down slowly, not ones that need action today (those are ADMIN_ALERTS,
+// above).
+const ADMIN_KPIS = [
+  { key: "online", label: "On the app now", icon: "🟢" },
+  { key: "leagues", label: "Leagues", icon: "🏆" },
+  { key: "accounts", label: "Players", icon: "👤" },
+  { key: "accuracy", label: "Prediction accuracy", icon: "🎯" },
 ];
 const ADMIN_OPEN_KEY = "padel-admin-open";
 let adminOpen = null;
@@ -1659,9 +1669,25 @@ function setAdminSectionOpen(key, open) {
   if (card) { card.classList.toggle("open", open); const h = card.querySelector(".admin-acc-head"); if (h) h.setAttribute("aria-expanded", String(open)); }
   saveAdminOpen();
 }
-// `n` is the number shown on the tile and (when it's a count) on the section;
-// `tag` overrides the section's badge text (e.g. "62%"); `sub` is the tile's
-// small second line.
+function jumpToAdminSection(key) {
+  setAdminSectionOpen(key, true);
+  const sec = ADMIN_SECTIONS.find((x) => x.key === key);
+  el(sec.id).scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// The red strip up top — only the alerts with something actually waiting,
+// so it disappears entirely once nothing needs you.
+function renderAdminAlertStrip() {
+  const strip = el("admin-alert-strip");
+  const items = ADMIN_ALERTS.map((a) => ({ ...a, n: adminInfo[a.key] && adminInfo[a.key].n })).filter((a) => a.n > 0);
+  if (!items.length) { strip.style.display = "none"; return; }
+  strip.innerHTML = `<div class="admin-alert-title">Needs your attention</div>` +
+    items.map((a) => `<div class="admin-alert-row" data-key="${a.key}"><span class="t">${escapeHtml(a.label)}</span><span class="n">${a.n} &rsaquo;</span></div>`).join("");
+  strip.querySelectorAll("[data-key]").forEach((row) => { row.onclick = () => jumpToAdminSection(row.dataset.key); });
+  strip.style.display = "block";
+}
+// `n` is the number shown on a KPI tile and (when it's a count) on the
+// section; `tag` overrides the section's badge text (e.g. "62%") and, for
+// a KPI, its number too — accuracy has no plain count, just a percentage.
 function setAdminInfo(key, { n, tag, sub }) {
   adminInfo[key] = { n, tag, sub };
   const sec = ADMIN_SECTIONS.find((x) => x.key === key);
@@ -1671,30 +1697,19 @@ function setAdminInfo(key, { n, tag, sub }) {
     const text = tag != null ? tag : (n != null ? String(n) : "");
     tagEl.querySelector(".count").innerHTML = text !== "" ? `<span class="tag${sec.alert && n > 0 ? " warn" : ""}">${escapeHtml(text)}</span>` : "";
   }
-  const tile = document.querySelector(`.admin-tile[data-tile="${key}"]`);
-  if (tile) {
-    const def = ADMIN_TILES.find((x) => x.key === key);
-    tile.querySelector(".num").textContent = n == null ? "—" : n;
-    tile.querySelector(".sub").textContent = sub || "";
-    tile.classList.toggle("alert", !!(def && def.alert && n > 0));
-    tile.querySelector(".flagslot").innerHTML = def && def.alert && n > 0 ? `<span class="flag">${def.flag}</span>` : "";
-  }
+  const kpi = document.querySelector(`.admin-kpi[data-key="${key}"]`);
+  if (kpi) kpi.querySelector(".num").textContent = tag != null ? tag : (n == null ? "—" : n);
+  if (ADMIN_ALERTS.some((a) => a.key === key)) renderAdminAlertStrip();
 }
 function setupAdminDashboard() {
   if (setupAdminDashboard.done) return;
   setupAdminDashboard.done = true;
   adminOpen = readAdminOpen();
   const parent = el("hub-view-admin");
-  // Tiles.
-  el("admin-tiles").innerHTML = ADMIN_TILES.map((t) => `<button type="button" class="admin-tile" data-tile="${t.key}"><div class="n">${t.key === "online" ? '<span class="live-dot"></span>' : ""}<span class="num">—</span></div><div class="l">${t.label}</div><div class="sub"></div><div class="flagslot"></div></button>`).join("");
-  el("admin-tiles").querySelectorAll(".admin-tile").forEach((btn) => {
-    btn.onclick = () => {
-      const key = btn.dataset.tile;
-      setAdminSectionOpen(key, true);
-      const sec = ADMIN_SECTIONS.find((x) => x.key === key);
-      el(sec.id).scrollIntoView({ behavior: "smooth", block: "start" });
-    };
-  });
+  // KPIs — a glance at site health; the red alert strip above them (see
+  // renderAdminAlertStrip) is what actually needs a decision today.
+  el("admin-kpi-grid").innerHTML = ADMIN_KPIS.map((k) => `<button type="button" class="admin-kpi" data-key="${k.key}"><div class="ic">${k.icon}</div><div class="num">—</div><div class="l">${k.label}</div></button>`).join("");
+  el("admin-kpi-grid").querySelectorAll(".admin-kpi").forEach((btn) => { btn.onclick = () => jumpToAdminSection(btn.dataset.key); });
   // Log out sits up top with the title, not inside "Create a league".
   const logout = el("owner-logout-btn");
   if (logout) el("admin-top-actions").appendChild(logout);
