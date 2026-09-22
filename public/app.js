@@ -1081,9 +1081,11 @@ async function renderHomepageHighlights() {
     heroEl.className = "nr-hero has-photo week-hero-photo";
     heroEl.style.backgroundImage = `url('${heroNews.photo}')`;
     heroEl.innerHTML = `
-      <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
-      <div class="nr-potw-names" style="margin-top:10px;">${escapeHtml(heroNews.title)}</div>
-      ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}`;
+      <div class="week-hero-content">
+        <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
+        <div class="nr-potw-names" style="margin-top:10px;">${escapeHtml(heroNews.title)}</div>
+        ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}
+      </div>`;
     heroEl.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
   }
   // Without its own photo hero (nothing posted anywhere yet), the rows
@@ -1150,8 +1152,15 @@ async function renderHomepageHighlights() {
   potwSection.style.display = potw.length ? "block" : "none";
   if (potw.length) {
     el("homepage-week-potw-strip").innerHTML = potw.map((p) => {
-      const initials = p.names.split(" & ").map((n) => playerInitials(n));
-      const avatars = initials.map((i) => `<div class="week-potw-avatar">${escapeHtml(i)}</div>`).join("");
+      // A player's own uploaded photo wins; failing that, their team's
+      // logo stands in — plain initials are the last resort, not the
+      // default, same fallback order as a player's profile photo.
+      const names = p.names.split(" & ");
+      const photos = [p.playerAPhoto, p.playerBPhoto];
+      const avatars = names.map((n, i) => {
+        const src = photos[i] || p.teamLogo;
+        return src ? `<img class="week-potw-avatar" src="${src}" alt="">` : `<div class="week-potw-avatar">${escapeHtml(playerInitials(n))}</div>`;
+      }).join("");
       return `<div class="week-potw-chip">
         <div class="week-potw-avatars">${avatars}</div>
         <div class="week-potw-chip-name">${pairRefsLinksHtml(p.leagueId, [{ id: p.playerAId, name: p.playerAName }, { id: p.playerBId, name: p.playerBName }])}</div>
@@ -1794,6 +1803,27 @@ function plPlayerHtml() {
       <option value="">Choose a player&hellip;</option>
       ${options}
     </select>
+    <div id="pl-amount-form" style="display:none;margin-top:14px;">
+      <div class="field-group">
+        <label for="pl-amount-input">Amount</label>
+        <div class="amount-input-wrap">
+          <span class="prefix">R</span>
+          <input type="number" id="pl-amount-input" min="0" step="1">
+        </div>
+        <div class="amount-presets" id="pl-amount-presets">
+          <button type="button" data-amount="50">R50</button>
+          <button type="button" data-amount="100">R100</button>
+          <button type="button" data-amount="250">R250</button>
+          <button type="button" class="active" data-amount="">Custom</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label for="pl-reason-input">Reason</label>
+        <input type="text" id="pl-reason-input" placeholder="e.g. Season fee" maxlength="200">
+      </div>
+      <div class="error" id="pl-amount-error"></div>
+      <button class="primary" id="pl-get-link-btn" type="button" style="width:100%;">Get link</button>
+    </div>
     <div class="pl-result" id="pl-result"></div>
   </div>`;
 }
@@ -1829,21 +1859,48 @@ function renderPayLinkFinder() {
   });
   const select = document.getElementById("pl-player-select");
   if (select) {
-    select.onchange = async () => {
+    select.onchange = () => {
+      const form = document.getElementById("pl-amount-form");
       const resultEl = document.getElementById("pl-result");
+      resultEl.classList.remove("show"); resultEl.innerHTML = "";
+      if (!select.value) { form.style.display = "none"; return; }
+      form.style.display = "block";
+      el("pl-amount-input").value = "";
+      el("pl-reason-input").value = "Season fee";
+      el("pl-amount-error").textContent = "";
+      document.querySelectorAll("#pl-amount-presets button").forEach((b) => b.classList.toggle("active", !b.dataset.amount));
+    };
+    document.querySelectorAll("#pl-amount-presets button").forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll("#pl-amount-presets button").forEach((b) => b.classList.toggle("active", b === btn));
+        if (btn.dataset.amount) el("pl-amount-input").value = btn.dataset.amount;
+        else el("pl-amount-input").focus();
+      };
+    });
+    el("pl-amount-input").oninput = () => {
+      const val = el("pl-amount-input").value;
+      document.querySelectorAll("#pl-amount-presets button").forEach((b) => b.classList.toggle("active", b.dataset.amount === val && val !== ""));
+    };
+    el("pl-get-link-btn").onclick = async () => {
+      const errEl = el("pl-amount-error");
+      const amountRands = Number(el("pl-amount-input").value);
+      const reason = el("pl-reason-input").value.trim();
+      if (!Number.isFinite(amountRands) || amountRands <= 0) { errEl.textContent = "Enter a valid amount."; return; }
+      if (!reason) { errEl.textContent = "Enter a reason for this payment."; return; }
+      errEl.textContent = "";
       const playerId = select.value;
-      if (!playerId) { resultEl.classList.remove("show"); resultEl.innerHTML = ""; return; }
       const player = plState.team.players.find((p) => p.id === playerId);
+      const resultEl = document.getElementById("pl-result");
       resultEl.classList.add("show");
       resultEl.innerHTML = `<p class="note">Getting link&hellip;</p>`;
-      const data = await api(`/leagues/${plState.league.id}/teams/${plState.team.id}/players/${playerId}/pay-link`).catch(() => null);
-      if (!data || !data.url) { resultEl.innerHTML = `<p class="note">Couldn't get a link — try again.</p>`; return; }
+      const data = await api(`/leagues/${plState.league.id}/custom-charges`, { method: "POST", body: { teamId: plState.team.id, playerId, amountRands, reason } }).catch((e) => ({ error: e.message }));
+      if (!data || !data.url) { resultEl.innerHTML = `<p class="note">${escapeHtml((data && data.error) || "Couldn't get a link — try again.")}</p>`; return; }
       resultEl.innerHTML = `
         <div class="pl-result-player">
           <div class="pl-result-avatar">${escapeHtml(playerInitials(player.name))}</div>
           <div>
             <div class="pl-result-name">${escapeHtml(player.name)}</div>
-            <div class="pl-result-sub">${escapeHtml(plState.team.name)} &middot; ${escapeHtml(plState.league.name)}</div>
+            <div class="pl-result-sub">${escapeHtml(plState.team.name)} &middot; ${escapeHtml(plState.league.name)} &middot; R${(data.amountCents / 100).toFixed(2)}</div>
           </div>
         </div>
         <div class="pl-link-row"><span class="pl-link-text">${escapeHtml(data.url)}</span></div>
@@ -12551,10 +12608,12 @@ function newsPostCardHtml(p, leagueLabel) {
   if (!p.highlights) {
     if (p.photo) {
       return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;" data-id="${p.id}">
-        <div class="nr-hero has-photo" style="background-image:url('${p.photo}');">
-          <div class="nr-hero-top"><span class="nr-round-eyebrow">${leagueLabel ? escapeHtml(leagueLabel) : "Update"}</span><span class="nr-round-date">${dateText}</span></div>
-          <p class="nr-potw-label" style="margin-top:16px;">${escapeHtml(p.title)}</p>
-          ${p.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(p.body)}</div>` : ""}
+        <div class="nr-hero has-photo week-hero-photo" style="background-image:url('${p.photo}');">
+          <div class="week-hero-content">
+            <div class="nr-hero-top"><span class="nr-round-eyebrow">${leagueLabel ? escapeHtml(leagueLabel) : "Update"}</span><span class="nr-round-date">${dateText}</span></div>
+            <div class="nr-potw-names" style="margin-top:10px;">${escapeHtml(p.title)}</div>
+            ${p.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(p.body)}</div>` : ""}
+          </div>
         </div>
       </div>`;
     }

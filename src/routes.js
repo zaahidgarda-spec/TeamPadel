@@ -342,8 +342,17 @@ function newsPostPhoto(post, league) {
 function newsPostHeadline(post) {
   if (!post.auto) return { headline: post.title || "", body: post.body || "" };
   const usable = (post.highlights || []).find((h) => h.type !== "quiet" && (h.short || h.text));
-  const headline = usable ? (usable.short || usable.text) : `Round ${post.round} wrap-up`;
-  return { headline, body: "" };
+  if (!usable) return { headline: `Round ${post.round} wrap-up`, body: "" };
+  // `.text` reads as a real sentence ("X (Team) 6-0 beat Y.") for every
+  // type except "table", where it's just a bare team name — `.short`
+  // ("X — top of the table") is the only one of the two that reads as
+  // one there. When a round had several of the same highlight, `.text`
+  // joins each into its own sentence — only the first is used here, so
+  // the hero states one thing plainly instead of running them all on.
+  if (usable.type === "table") return { headline: usable.short || usable.text, body: "" };
+  const full = usable.text || usable.short;
+  const cut = full.indexOf(". ");
+  return { headline: cut === -1 ? full : full.slice(0, cut + 1), body: "" };
 }
 function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
@@ -1097,8 +1106,8 @@ router.get("/homepage/highlights", (req, res) => {
         const team = p.teamId ? league.teams.find((t) => t.id === p.teamId) : null;
         potw.push({
           names: p.playerAName + " & " + p.playerBName,
-          playerAId: p.playerAId, playerAName: p.playerAName,
-          playerBId: p.playerBId, playerBName: p.playerBName,
+          playerAId: p.playerAId, playerAName: p.playerAName, playerAPhoto: p.playerAPhoto || "",
+          playerBId: p.playerBId, playerBName: p.playerBName, playerBPhoto: p.playerBPhoto || "",
           team: p.teamName,
           leagueId: league.id,
           leagueName: league.name,

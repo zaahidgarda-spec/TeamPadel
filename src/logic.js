@@ -468,8 +468,10 @@ function potwEligiblePairs(league, round) {
           teamName: team.name,
           playerAId: p1.id,
           playerAName: p1.name,
+          playerAPhoto: p1.photo || "",
           playerBId: p2.id,
           playerBName: p2.name,
+          playerBPhoto: p2.photo || "",
         });
       });
     });
