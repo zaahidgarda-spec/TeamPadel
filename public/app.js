@@ -1078,11 +1078,11 @@ async function renderHomepageHighlights() {
   heroEl.style.display = heroNews ? "block" : "none";
   if (heroNews) {
     const dateText = new Date(heroNews.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-    heroEl.className = "nr-hero has-photo";
+    heroEl.className = "nr-hero has-photo week-hero-photo";
     heroEl.style.backgroundImage = `url('${heroNews.photo}')`;
     heroEl.innerHTML = `
       <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
-      <p class="nr-potw-label" style="margin-top:16px;">${escapeHtml(heroNews.title)}</p>
+      <div class="nr-potw-names" style="margin-top:10px;">${escapeHtml(heroNews.title)}</div>
       ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}`;
     heroEl.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
   }
@@ -1122,10 +1122,14 @@ async function renderHomepageHighlights() {
     };
   }
   if (isOwner) {
-    document.getElementById("homepage-week-add-btn").onclick = () => {
-      el("interesting-add-short").value = ""; el("interesting-add-league").value = ""; el("interesting-add-error").textContent = "";
-      el("interesting-add-modal-backdrop").classList.add("open");
-    };
+    document.getElementById("homepage-week-add-btn").onclick = () => openInterestingModal(null);
+    // A manual card has no league to open, so its row's click opens the
+    // same modal instead — pre-filled, so attaching a photo to one written
+    // before photos existed is just "click it, add a photo, save".
+    el("homepage-week-rows").querySelectorAll("[data-manual-id]").forEach((row) => {
+      const h = highlights.find((x) => x.manualId === row.dataset.manualId);
+      if (h) row.onclick = (e) => { if (e.target.closest(".week-row-remove")) return; openInterestingModal(h); };
+    });
     el("homepage-week-rows").querySelectorAll(".week-row-remove").forEach((btn) => {
       btn.onclick = async (e) => {
         e.stopPropagation();
@@ -8906,13 +8910,50 @@ el("round-complete-modal-vote").onclick = () => {
   el("round-complete-modal-backdrop").classList.remove("open");
   switchTab("awards");
 };
+// Staged the same way the News Room photo picker is — chosen, previewed,
+// then only actually sent once Add/Save is pressed. editingInterestingId
+// is null for a fresh card, or an existing one's manualId when the row
+// itself was clicked to edit it (see renderHomepageHighlights).
+let pendingInterestingPhoto = "";
+let editingInterestingId = null;
+function updateInterestingPhotoPreview() {
+  el("interesting-add-photo-preview-wrap").style.display = pendingInterestingPhoto ? "block" : "none";
+  el("interesting-add-photo-preview").src = pendingInterestingPhoto || "";
+}
+function openInterestingModal(existing) {
+  editingInterestingId = existing ? existing.manualId : null;
+  el("interesting-add-modal-title").textContent = existing ? "Edit interesting card" : 'Add to "Interesting this week"';
+  el("interesting-add-short").value = existing ? existing.short : "";
+  el("interesting-add-league").value = existing ? existing.leagueName : "";
+  el("interesting-add-error").textContent = "";
+  el("interesting-add-save").textContent = existing ? "Save" : "Add";
+  pendingInterestingPhoto = existing ? (existing.photo || "") : "";
+  updateInterestingPhotoPreview();
+  el("interesting-add-modal-backdrop").classList.add("open");
+}
+el("interesting-add-photo-btn").onclick = () => el("interesting-add-photo-input").click();
+el("interesting-add-photo-input").addEventListener("change", () => {
+  const file = el("interesting-add-photo-input").files[0];
+  if (!file) return;
+  const errEl = el("interesting-add-error");
+  errEl.textContent = "";
+  resizeImageToDataUrl(file, 1000, (dataUrl) => {
+    el("interesting-add-photo-input").value = "";
+    if (!dataUrl) { errEl.textContent = "Couldn't read that image — try a different file."; return; }
+    pendingInterestingPhoto = dataUrl;
+    updateInterestingPhotoPreview();
+  }, 0.75);
+});
+el("interesting-add-photo-remove-btn").onclick = () => { pendingInterestingPhoto = ""; updateInterestingPhotoPreview(); };
 el("interesting-add-modal-close").onclick = () => el("interesting-add-modal-backdrop").classList.remove("open");
 el("interesting-add-cancel").onclick = () => el("interesting-add-modal-backdrop").classList.remove("open");
 el("interesting-add-save").onclick = async () => {
   const short = el("interesting-add-short").value.trim(), leagueName = el("interesting-add-league").value.trim();
   if (!short) { el("interesting-add-error").textContent = "Enter something to show."; return; }
   try {
-    await api("/admin/interesting/manual", { method: "POST", body: { short, leagueName } });
+    const body = { short, leagueName, photo: pendingInterestingPhoto };
+    if (editingInterestingId) await api(`/admin/interesting/manual/${editingInterestingId}`, { method: "PUT", body });
+    else await api("/admin/interesting/manual", { method: "POST", body });
     el("interesting-add-modal-backdrop").classList.remove("open");
     renderHomepageHighlights();
   } catch (e) { el("interesting-add-error").textContent = e.message; }

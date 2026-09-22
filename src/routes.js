@@ -1144,7 +1144,7 @@ router.get("/homepage/highlights", (req, res) => {
   // cap on auto-generated ones — they were deliberately added, not just
   // whatever happened to be most recent.
   const manualHighlights = (extras.manual || []).slice().sort((a, b) => b.createdAt - a.createdAt)
-    .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id }));
+    .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id, photo: m.photo || "" }));
   heroCandidates.sort((a, b) => b.createdAt - a.createdAt);
   const heroNews = heroCandidates[0] || null;
   // That same round's bigwin/rough-night/table cards would otherwise repeat
@@ -1202,11 +1202,26 @@ router.post("/admin/interesting/restore", (req, res) => {
 // actually interesting that the recap engine has no way to know about.
 router.post("/admin/interesting/manual", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
-  const { short, leagueName } = req.body || {};
+  const { short, leagueName, photo } = req.body || {};
   if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
   const extras = store.getHomepageExtras();
   if (!extras.manual) extras.manual = [];
-  extras.manual.push({ id: logic.uid(), short: short.trim(), leagueName: (leagueName || "").trim(), createdAt: Date.now() });
+  extras.manual.push({ id: logic.uid(), short: short.trim(), leagueName: (leagueName || "").trim(), photo: photo || "", createdAt: Date.now() });
+  store.saveHomepageExtras(extras);
+  res.json({ ok: true });
+});
+// Editing an existing manual card — most often just to attach a photo to
+// one that was written before photos were an option.
+router.put("/admin/interesting/manual/:id", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { short, leagueName, photo } = req.body || {};
+  if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
+  const extras = store.getHomepageExtras();
+  const entry = (extras.manual || []).find((m) => m.id === req.params.id);
+  if (!entry) return res.status(404).json({ error: "Not found." });
+  entry.short = short.trim();
+  entry.leagueName = (leagueName || "").trim();
+  entry.photo = photo || "";
   store.saveHomepageExtras(extras);
   res.json({ ok: true });
 });

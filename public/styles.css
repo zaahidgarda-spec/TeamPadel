@@ -1776,6 +1776,12 @@ nav.tabs::-webkit-scrollbar{display:none;}
    into one continuous surface instead of a photo card sitting above a
    plain white one. */
 .week-dark{background:linear-gradient(180deg,rgba(20,30,54,.97),rgba(9,13,24,.99));}
+/* Forces the photo to actually read as a hero — .nr-hero on its own has no
+   height beyond whatever its text needs, which left the court photo mostly
+   cropped away behind a couple of short lines. This pins it to a tall,
+   consistent aspect ratio and anchors the eyebrow/headline to the bottom
+   of it, same as the round-recap News Room hero. */
+.week-hero-photo{aspect-ratio:16/11;display:flex;flex-direction:column;justify-content:flex-end;}
 /* Shown only when nothing has a photo yet, so the rows below still have a
    heading to sit under (matches .section-title's rhythm, recolored for a
    dark surface instead of a white card). */

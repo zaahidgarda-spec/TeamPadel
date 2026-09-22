@@ -530,10 +530,17 @@
       <div id="interesting-add-modal-backdrop" class="modal-backdrop">
         <div class="modal-box" style="max-width:380px;">
           <button class="modal-close" id="interesting-add-modal-close" aria-label="Close">&times;</button>
-          <h3 class="modal-title">Add to "Interesting this week"</h3>
+          <h3 class="modal-title" id="interesting-add-modal-title">Add to "Interesting this week"</h3>
           <p class="note" style="margin:4px 0 14px;">A short line for the homepage card strip — keep it to a phrase, not a paragraph.</p>
-          <label class="sr-only" for="interesting-add-short">What's interesting</label>
-          <input type="text" id="interesting-add-short" placeholder="e.g. Season finals set for 14 Sept" style="width:100%;margin-bottom:10px;">
+          <div class="row" style="margin-bottom:10px;align-items:center;">
+            <input type="text" id="interesting-add-short" placeholder="e.g. Season finals set for 14 Sept" style="flex:1;min-width:0;">
+            <button class="icon-btn" id="interesting-add-photo-btn" type="button" title="Add a photo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          </div>
+          <input type="file" id="interesting-add-photo-input" accept="image/*" style="display:none;">
+          <div id="interesting-add-photo-preview-wrap" style="display:none;margin-bottom:10px;position:relative;">
+            <img id="interesting-add-photo-preview" style="width:100%;max-height:140px;object-fit:cover;border-radius:var(--radius-sm);display:block;">
+            <button class="icon-btn icon-btn-danger" id="interesting-add-photo-remove-btn" type="button" title="Remove photo" style="position:absolute;top:8px;right:8px;background:rgba(18,32,58,.6);color:#fff;border-color:transparent;">&#10005;</button>
+          </div>
           <label class="sr-only" for="interesting-add-league">League (optional)</label>
           <input type="text" id="interesting-add-league" placeholder="League name (optional)" style="width:100%;">
           <div class="error" id="interesting-add-error"></div>
