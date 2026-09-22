@@ -1733,6 +1733,11 @@ nav.tabs::-webkit-scrollbar{display:none;}
   background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));
   position:relative;overflow:hidden;padding:18px 18px 20px;
 }
+/* An admin-attached news photo stands in for the plain gradient — the
+   same radial glow and scanline overlays (::before/::after below) still
+   sit on top, so the headline stays legible over any photo. */
+.nr-hero.has-photo{background-size:cover;background-position:center;}
+.nr-hero.has-photo::before{background:linear-gradient(180deg,rgba(6,10,20,.15) 0%,rgba(6,10,20,.55) 55%,rgba(6,10,20,.92) 100%);}
 .nr-hero::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% -10%,rgba(37,99,235,.3),transparent 60%);}
 .nr-hero::after{
   content:"";position:absolute;inset:0;pointer-events:none;opacity:.14;

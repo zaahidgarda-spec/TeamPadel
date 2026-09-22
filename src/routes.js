@@ -1060,6 +1060,7 @@ router.get("/homepage/highlights", (req, res) => {
 
   const potw = [];
   const autoHighlights = [];
+  const heroCandidates = [];
   leagues.forEach((league) => {
     // Computed straight off the votes for the league's own most recent
     // decided round, not off the latest auto-recap News post — a pairs-
@@ -1088,6 +1089,14 @@ router.get("/homepage/highlights", (req, res) => {
       break;
     }
 
+    // A photo an admin attached to a news post is the one piece of real
+    // photography we have per league, so the newest one across every
+    // visible league becomes the Leagues-tab hero card below.
+    (league.news || []).forEach((p) => {
+      if (!p.photo) return;
+      heroCandidates.push({ title: p.title || "", body: p.body || "", photo: p.photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name });
+    });
+
     const latest = (league.news || [])
       .filter((p) => p.auto)
       .sort((a, b) => b.round - a.round)[0];
@@ -1109,7 +1118,13 @@ router.get("/homepage/highlights", (req, res) => {
   // whatever happened to be most recent.
   const manualHighlights = (extras.manual || []).slice().sort((a, b) => b.createdAt - a.createdAt)
     .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id }));
-  res.json({ potw, highlights: manualHighlights.concat(autoHighlights.slice(0, 9)) });
+  heroCandidates.sort((a, b) => b.createdAt - a.createdAt);
+  const heroNews = heroCandidates[0] || null;
+  // Carried along so the hero card can show "who won" without a second
+  // request — only relevant when the photo happens to belong to whichever
+  // league currently has a Pair of the Week.
+  if (heroNews) heroNews.potw = potw.find((p) => p.leagueId === heroNews.leagueId) || null;
+  res.json({ potw, highlights: manualHighlights.concat(autoHighlights.slice(0, 9)), heroNews });
 });
 
 // Every visible league's sponsors, flattened into one site-wide list for
@@ -5939,10 +5954,10 @@ router.get("/leagues/:leagueId/news", (req, res) => {
 });
 router.post("/leagues/:leagueId/news", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
-  const { title, body } = req.body || {};
+  const { title, body, photo } = req.body || {};
   if (!title || !title.trim()) return res.status(400).json({ error: "Title is required." });
   if (!league.news) league.news = [];
-  league.news.push({ id: logic.uid(), title: title.trim(), body: (body || "").trim(), createdAt: Date.now() });
+  league.news.push({ id: logic.uid(), title: title.trim(), body: (body || "").trim(), photo: photo || "", createdAt: Date.now() });
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

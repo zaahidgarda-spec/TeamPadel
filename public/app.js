@@ -1057,8 +1057,35 @@ function renderNextMatchSlide() {
 // (see the News Room redesign) rather than computing anything new. Either
 // section hides itself if there's nothing to show yet (a brand-new site
 // with no finalized rounds, for instance).
+// The single most recent news photo across every visible league (see
+// heroNews in /homepage/highlights) — a bigger, F1-style photo lead at the
+// top of the Leagues tab instead of a plain text card. Hidden entirely
+// until some admin actually attaches a photo to a post.
+function renderHomepageNewsHero(heroNews) {
+  const card = el("homepage-news-hero-card");
+  card.style.display = heroNews ? "block" : "none";
+  if (!heroNews) return;
+  const dateText = new Date(heroNews.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const p = heroNews.potw;
+  const potwAvatars = p ? p.names.split(" & ").map((n, i) => `<div class="nr-form-avatar" style="width:28px;height:28px;font-size:10px;${i ? "margin-left:-9px;background:#1c2f52;" : ""}">${escapeHtml(playerInitials(n))}</div>`).join("") : "";
+  const potwHtml = p ? `<div class="row" style="margin-top:12px;gap:8px;align-items:center;">
+      <div style="display:flex;flex-shrink:0;">${potwAvatars}</div>
+      <div>
+        <div style="font-family:var(--font-display);font-size:12px;font-weight:600;color:#F2F6FF;">&#128081; ${escapeHtml(p.names)}</div>
+        <div style="font-size:10.5px;color:#9FB0D6;">${escapeHtml(p.team)} &middot; Pair of the week</div>
+      </div>
+    </div>` : "";
+  el("homepage-news-hero-inner").innerHTML = `<div class="nr-hero has-photo" style="background-image:url('${heroNews.photo}');">
+    <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
+    <p class="nr-potw-label" style="margin-top:16px;">${escapeHtml(heroNews.title)}</p>
+    ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}
+    ${potwHtml}
+  </div>`;
+  card.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
+}
 async function renderHomepageHighlights() {
   const data = await api("/homepage/highlights").catch(() => null);
+  renderHomepageNewsHero((data && data.heroNews) || null);
   const potw = (data && data.potw) || [];
   const potwCard = el("homepage-potw-card");
   potwCard.style.display = potw.length ? "block" : "none";
@@ -12389,6 +12416,15 @@ function newsPostCardHtml(p, leagueLabel) {
   const dateText = new Date(p.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   const byline = leagueLabel ? `${escapeHtml(leagueLabel)} · ${dateText}` : dateText;
   if (!p.highlights) {
+    if (p.photo) {
+      return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px;" data-id="${p.id}">
+        <div class="nr-hero has-photo" style="background-image:url('${p.photo}');">
+          <div class="nr-hero-top"><span class="nr-round-eyebrow">${leagueLabel ? escapeHtml(leagueLabel) : "Update"}</span><span class="nr-round-date">${dateText}</span></div>
+          <p class="nr-potw-label" style="margin-top:16px;">${escapeHtml(p.title)}</p>
+          ${p.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(p.body)}</div>` : ""}
+        </div>
+      </div>`;
+    }
     return `<div class="news-post" data-id="${p.id}">
       <h3>${escapeHtml(p.title)}</h3>
       <time>${byline}</time>
@@ -12469,12 +12505,35 @@ async function renderAccountNews() {
   c.innerHTML = posts.map((p) => newsPostCardHtml(p, p.leagueName)).join("");
   bindNewsPlayerLinks(c);
 }
+// The photo an admin picks is held here (as a compressed data URL) between
+// choosing it and hitting Post — same staged-then-submitted pattern as the
+// court photo, just scoped to whatever update is currently being composed.
+let pendingNewsPhoto = "";
+function updateNewsPhotoPreview() {
+  el("news-photo-preview-wrap").style.display = pendingNewsPhoto ? "block" : "none";
+  el("news-photo-preview").src = pendingNewsPhoto || "";
+}
+el("news-photo-btn").onclick = () => el("news-photo-input").click();
+el("news-photo-input").addEventListener("change", () => {
+  const file = el("news-photo-input").files[0];
+  if (!file) return;
+  const errEl = el("news-photo-error");
+  errEl.textContent = "";
+  resizeImageToDataUrl(file, 1000, (dataUrl) => {
+    el("news-photo-input").value = "";
+    if (!dataUrl) { errEl.textContent = "Couldn't read that image — try a different file."; return; }
+    pendingNewsPhoto = dataUrl;
+    updateNewsPhotoPreview();
+  }, 0.75);
+});
+el("news-photo-remove-btn").onclick = () => { pendingNewsPhoto = ""; updateNewsPhotoPreview(); };
 el("news-post-btn").onclick = async () => {
   const title = el("news-title").value.trim(), body = el("news-body").value.trim();
   if (!title) return alert("Give the update a title.");
   try {
-    await api(`/leagues/${currentLeagueId}/news`, { method: "POST", body: { title, body } });
+    await api(`/leagues/${currentLeagueId}/news`, { method: "POST", body: { title, body, photo: pendingNewsPhoto } });
     el("news-title").value = ""; el("news-body").value = "";
+    pendingNewsPhoto = ""; updateNewsPhotoPreview();
     renderNews();
   } catch (e) {
     alert("Couldn't post: " + e.message);
