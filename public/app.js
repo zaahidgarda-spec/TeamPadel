@@ -12617,8 +12617,7 @@ function bindNewsPlayerLinks(root) {
     btn.onclick = (e) => { e.stopPropagation(); openPlayerHistory(btn.dataset.lid, btn.dataset.pid); };
   });
 }
-const NEWS_HIGHLIGHT_ICONS = { bigwin: "🏆", distance: "⏳", upset: "😮", rough: "😢", table: "📊", quiet: "😴" };
-// The highlight that becomes the card's headline — same pick the Leagues-
+// The highlight that becomes a post's headline — same pick the Leagues-
 // tab hero uses (see newsPostHeadline server-side): the first non-quiet
 // one, so both places tell the same "what happened" story for a round.
 function newsHeadlineHighlight(highlights) {
@@ -12630,79 +12629,121 @@ function newsHeadlineText(h) {
   const cut = full.indexOf(". ");
   return cut === -1 ? full : full.slice(0, cut + 1);
 }
-function newsPostCardHtml(p, leagueLabel) {
+// One shape for both post types (manual and auto round-recap), used by
+// all three feed tiers below and by the detail modal — a manual post's
+// "headline" is just its title.
+function newsCardData(p, leagueLabel) {
   const dateText = new Date(p.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   if (!p.highlights) {
-    const thumb = p.photo ? `<img class="nf-manual-thumb" src="${p.photo}" alt="">` : "";
-    return `<div class="nf-manual-card" data-id="${p.id}">
-      ${thumb}
-      <div style="flex:1;min-width:0;">
-        <div class="nf-manual-title">${escapeHtml(p.title)}</div>
-        ${p.body ? `<div class="nf-manual-body">${escapeHtml(p.body)}</div>` : ""}
-        <div class="nf-manual-date">${leagueLabel ? escapeHtml(leagueLabel) + " · " : ""}${dateText}</div>
-      </div>
-    </div>`;
+    return { id: p.id, photo: p.photo || "", eyebrow: leagueLabel ? escapeHtml(leagueLabel) : "Update", dateText, headline: escapeHtml(p.title), potw: null };
   }
-  // Cross-league posts (the homepage News Room tab) carry their own
-  // leagueId from /players/news; an in-league post relies on whichever
-  // league's page is currently open.
   const lid = p.leagueId || currentLeagueId;
   const potw = p.potw || [];
-  const roundEyebrow = leagueLabel ? escapeHtml(leagueLabel) : "Round " + p.round;
   const headlineHighlight = newsHeadlineHighlight(p.highlights);
   const headline = headlineHighlight ? newsHeadlineText(headlineHighlight) : `Round ${p.round} wrap-up`;
-  // Every other highlight becomes a quick chip instead of a paragraph —
-  // whichever one already became the headline above doesn't repeat itself
-  // down here too.
-  const chips = (p.highlights || [])
-    .filter((h) => h !== headlineHighlight)
-    .map((h) => `<div class="nf-chip"><span class="ic">${NEWS_HIGHLIGHT_ICONS[h.type] || "•"}</span>${escapeHtml(h.short || h.text)}</div>`)
-    .join("");
   const potwNamesHtml = potw.map((x) =>
     x.playerAId ? newsPlayerLinkHtml(lid, { id: x.playerAId, name: x.playerAName }) + " &amp; " + newsPlayerLinkHtml(lid, { id: x.playerBId, name: x.playerBName }) : escapeHtml(x.names)
   ).join(", ");
-  const potwChip = potw.length ? `<div class="nf-chip potw"><span class="ic">👑</span>${potwNamesHtml} · ${escapeHtml(potw.map((x) => x.team).join(", "))}</div>` : "";
-  const formHtml = (p.inForm || []).length ? `<div class="nf-form-strip">${p.inForm.map((f) => `<div class="nf-form-pill"><div class="nf-avatar">${escapeHtml(playerInitials(f.name))}</div>${newsPlayerLinkHtml(lid, { id: f.playerId, name: f.name })}</div>`).join("")}</div>` : "";
-  // A round recap has no photo upload of its own — p.photo (when present)
-  // is always the league's court photo, resolved server-side; without one
-  // .nf-mag-photo falls back to a plain dark surface (see styles.css).
-  const photoStyle = p.photo ? ` style="background-image:url('${p.photo}');"` : "";
-  return `<div class="nf-mag-card" data-id="${p.id}">
-    <div class="nf-mag-photo"${photoStyle}>
-      <div class="nf-mag-content">
-        <div class="nf-mag-eyebrow">${roundEyebrow} &middot; ${dateText}</div>
-        <div class="nf-mag-headline">${escapeHtml(headline)}</div>
-      </div>
-    </div>
-    <div class="nf-chip-row">${potwChip}${chips}</div>
-    ${formHtml}
+  return {
+    id: p.id, photo: p.photo || "",
+    eyebrow: leagueLabel ? escapeHtml(leagueLabel) : "Round " + p.round,
+    dateText, headline: escapeHtml(headline),
+    potw: potw.length ? { html: potwNamesHtml, team: escapeHtml(potw.map((x) => x.team).join(", ")) } : null,
+  };
+}
+function newsHeroHtml(d) {
+  const photoStyle = d.photo ? ` style="background-image:url('${d.photo}');"` : "";
+  return `<div class="nf-hero-photo" data-id="${d.id}"${photoStyle}>
+    <span class="nf-pill">${d.eyebrow}</span>
+    <div class="nf-hero-head">${d.headline}</div>
+    ${d.potw ? `<div class="nf-hero-potw"><span class="ic">👑</span>${d.potw.html} &middot; ${d.potw.team}</div>` : ""}
   </div>`;
+}
+function newsGridCardHtml(d) {
+  const photoStyle = d.photo ? ` style="background-image:url('${d.photo}');"` : "";
+  return `<div class="nf-grid-card" data-id="${d.id}"${photoStyle}>
+    <div class="nf-grid-label">${d.eyebrow}</div>
+    <div class="nf-grid-head">${d.headline}</div>
+  </div>`;
+}
+function newsListRowHtml(d) {
+  const thumbStyle = d.photo ? ` style="background-image:url('${d.photo}');"` : "";
+  return `<div class="nf-list-row" data-id="${d.id}">
+    <div class="nf-list-thumb"${thumbStyle}></div>
+    <div style="flex:1;min-width:0;"><div class="nf-list-text">${d.headline}</div><div class="nf-list-sub">${d.eyebrow} &middot; ${d.dateText}</div></div>
+  </div>`;
+}
+// The full story behind whichever card was tapped — highlight-by-highlight
+// (or the manual post's own body), Pair of the Week, and who's in form.
+// Delete (admin only) lives here too now, not on the compact feed cards.
+function openNewsDetailModal(p, leagueLabel, canDelete) {
+  const d = newsCardData(p, leagueLabel);
+  const lid = p.leagueId || currentLeagueId;
+  const photoStyle = d.photo ? ` style="background-image:url('${d.photo}');"` : "";
+  let bodyHtml;
+  if (!p.highlights) {
+    bodyHtml = p.body ? `<p style="font-size:13.5px;line-height:1.6;color:var(--text);margin:0;white-space:pre-wrap;">${escapeHtml(p.body)}</p>` : "";
+  } else {
+    const rows = (p.highlights || []).map((h) => `<div style="margin-bottom:12px;"><div style="font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin-bottom:3px;">${escapeHtml(h.label)}</div><div style="font-size:13px;line-height:1.55;color:var(--text);">${escapeHtml(h.text || h.short)}</div></div>`).join("");
+    const formHtml = (p.inForm || []).length ? `<div style="margin-top:4px;"><div style="font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:9px;">In form right now</div><div style="display:flex;gap:14px;flex-wrap:wrap;">${p.inForm.map((f) => `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:56px;"><div class="nf-avatar" style="width:32px;height:32px;font-size:11px;">${escapeHtml(playerInitials(f.name))}</div><div style="font-size:10px;text-align:center;">${newsPlayerLinkHtml(lid, { id: f.playerId, name: f.name })}</div></div>`).join("")}</div></div>` : "";
+    bodyHtml = rows + formHtml;
+  }
+  const deleteHtml = canDelete ? `<button class="link" id="news-detail-delete-btn" type="button" style="margin-top:16px;color:var(--clay);">Delete this post</button>` : "";
+  const box = el("news-detail-modal-box");
+  box.innerHTML = `
+    <button class="modal-close" id="news-detail-modal-close" aria-label="Close" style="background:rgba(18,32,58,.55);border-color:transparent;color:#fff;">&times;</button>
+    <div class="nf-detail-photo"${photoStyle}>
+      <span class="nf-pill">${d.eyebrow} &middot; ${d.dateText}</span>
+      <div class="nf-detail-head">${d.headline}</div>
+      ${d.potw ? `<div class="nf-hero-potw"><span class="ic">👑</span>${d.potw.html} &middot; ${d.potw.team}</div>` : ""}
+    </div>
+    ${bodyHtml}
+    ${deleteHtml}`;
+  bindNewsPlayerLinks(box);
+  el("news-detail-modal-close").onclick = () => el("news-detail-modal-backdrop").classList.remove("open");
+  if (canDelete) {
+    el("news-detail-delete-btn").onclick = async () => {
+      if (!confirm("Delete this post?")) return;
+      await api(`/leagues/${currentLeagueId}/news/${p.id}`, { method: "DELETE" });
+      el("news-detail-modal-backdrop").classList.remove("open");
+      renderNews();
+    };
+  }
+  el("news-detail-modal-backdrop").classList.add("open");
+}
+// The newest post leads full-size, the next few become a 2-up photo grid,
+// and anything older than that drops into a plain list — tapping any of
+// the three opens the full story (see openNewsDetailModal).
+function renderNewsFeedInto(containerEl, posts, leagueLabelFor, canDelete) {
+  if (posts.length === 0) { containerEl.innerHTML = '<p class="empty">No updates posted yet.</p>'; return; }
+  const items = posts.map((p) => ({ p, leagueLabel: leagueLabelFor(p), d: newsCardData(p, leagueLabelFor(p)) }));
+  const [hero, ...restItems] = items;
+  const grid = restItems.slice(0, 4);
+  const rest = restItems.slice(4);
+  let html = newsHeroHtml(hero.d);
+  if (grid.length) html += `<div class="nf-grid">${grid.map((x) => newsGridCardHtml(x.d)).join("")}</div>`;
+  if (rest.length) html += `<div class="card" style="padding:2px 14px;margin-bottom:14px;">${rest.map((x) => newsListRowHtml(x.d)).join("")}</div>`;
+  containerEl.innerHTML = html;
+  bindNewsPlayerLinks(containerEl);
+  containerEl.querySelectorAll("[data-id]").forEach((node) => {
+    node.onclick = () => {
+      const item = items.find((x) => x.d.id === node.dataset.id);
+      openNewsDetailModal(item.p, item.leagueLabel, canDelete);
+    };
+  });
 }
 async function renderNews() {
   el("news-post-fab").style.display = myRole === "admin" ? "flex" : "none";
   const posts = await api(`/leagues/${currentLeagueId}/news`).catch(() => []);
-  const c = el("news-list");
-  if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates posted yet.</p>'; return; }
-  c.innerHTML = posts.map((p) => newsPostCardHtml(p)).join("");
-  bindNewsPlayerLinks(c);
-  if (myRole === "admin") {
-    c.querySelectorAll("[data-id]").forEach((div) => {
-      const del = document.createElement("button"); del.className = "link"; del.textContent = "Delete"; del.style.margin = "8px 0 4px";
-      del.onclick = async () => { await api(`/leagues/${currentLeagueId}/news/${div.dataset.id}`, { method: "DELETE" }); renderNews(); };
-      div.appendChild(del);
-    });
-  }
+  renderNewsFeedInto(el("news-list"), posts, () => null, myRole === "admin");
 }
-// Cross-league News Room — same card markup as the in-league renderNews
-// above, just labeled with which league each post is from and with no
-// admin controls (this is a signed-in player's read-only aggregated view,
-// not any one league's own News Room).
+// Cross-league News Room — same feed and detail modal as the in-league
+// renderNews above, just labeled with which league each post is from and
+// with no delete control (this is a signed-in player's read-only
+// aggregated view, not any one league's own News Room).
 async function renderAccountNews() {
   const posts = await api("/players/news").catch(() => []);
-  const c = el("account-news-list");
-  if (posts.length === 0) { c.innerHTML = '<p class="empty">No updates yet from any league you play in.</p>'; return; }
-  c.innerHTML = posts.map((p) => newsPostCardHtml(p, p.leagueName)).join("");
-  bindNewsPlayerLinks(c);
+  renderNewsFeedInto(el("account-news-list"), posts, (p) => p.leagueName, false);
 }
 // The photo an admin picks is held here (as a compressed data URL) between
 // choosing it and hitting Post — same staged-then-submitted pattern as the
