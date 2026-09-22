@@ -96,7 +96,6 @@
           <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
           <button class="hub-tab-btn" data-hubview="search">Search players</button>
           <button class="hub-tab-btn" data-hubview="news">News room</button>
-          <button class="hub-tab-btn" data-hubview="payments" id="hub-payments-tab-btn" style="display:none;">Payments</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
@@ -403,17 +402,6 @@
         </div>
       </section>
 
-      <section class="hub-view" id="hub-view-payments">
-        <div class="card">
-          <h2 class="section-title">Payments</h2>
-          <p class="note" style="margin-bottom:14px;">Pick a league to see who's paid, find a player or team, and copy their pay link.</p>
-          <label class="sr-only" for="payments-league-select">Choose a league</label>
-          <select id="payments-league-select" style="max-width:320px;">
-            <option value="">Choose a league…</option>
-          </select>
-        </div>
-      </section>
-
       <section class="hub-view" id="hub-view-admin">
         <div class="card" id="owner-login-card">
           <h2 class="section-title">Admin</h2>
@@ -481,6 +469,11 @@
             <div class="note" id="push-broadcast-status"></div>
             <button class="primary" id="push-broadcast-btn">Send announcement</button>
           </div>
+        </div>
+        <div class="card" id="pay-link-finder-card" style="display:none;">
+          <h2 class="section-title">Find a player's pay link</h2>
+          <p class="note" style="margin-bottom:14px;">Pick a league, then a team, then the player — copy their pay link and send it. No need to open that league's own Payments tab first.</p>
+          <div id="pay-link-finder-body"></div>
         </div>
         <div class="card" id="manage-leagues-card" style="display:none;">
           <h2 class="section-title">Manage league visibility</h2>

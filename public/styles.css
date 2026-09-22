@@ -1952,6 +1952,47 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .admin-acc:not(.open) .admin-acc-body{display:none;}
 .admin-acc-actions{display:flex;justify-content:flex-end;gap:8px;margin:12px 0 4px;}
 
+/* ---------- Admin: find a player's pay link ---------- */
+.pl-crumb{display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin-bottom:14px;}
+.pl-crumb-btn{background:none;border:none;padding:2px 3px;font-family:var(--font-display);font-size:12.5px;font-weight:600;letter-spacing:.02em;color:var(--text-dim);cursor:pointer;}
+.pl-crumb-btn.current{color:var(--accent);cursor:default;}
+.pl-crumb-btn:not(.current):hover{color:var(--accent);text-decoration:underline;}
+.pl-crumb-sep{color:var(--text-faint);font-size:12px;}
+
+.pl-league-list{display:flex;flex-direction:column;gap:10px;}
+.pl-league-row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;}
+.pl-league-row:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow-sm);}
+.pl-league-logos{display:flex;flex-shrink:0;}
+.pl-league-logos .avatar,.pl-league-logos .avatar-fb{margin-left:-9px;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);}
+.pl-league-logos .avatar:first-child,.pl-league-logos .avatar-fb:first-child{margin-left:0;}
+.pl-league-name{font-family:var(--font-display);font-size:14.5px;font-weight:600;letter-spacing:.01em;}
+.pl-league-meta{font-size:11.5px;color:var(--text-faint);}
+
+.pl-team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;}
+.pl-team-tile{display:flex;flex-direction:column;align-items:center;gap:9px;padding:16px 10px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel);cursor:pointer;text-align:center;transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;}
+.pl-team-tile:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-sm);}
+.pl-team-logo{width:56px;height:56px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:1px solid var(--line);}
+.pl-team-logo-fb{width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:19px;flex-shrink:0;}
+.pl-team-name{font-family:var(--font-display);font-size:12.5px;font-weight:600;line-height:1.25;}
+.pl-team-count{font-size:10.5px;color:var(--text-faint);}
+
+.pl-player-card{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px;}
+.pl-player-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.pl-player-head img{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--panel);border:1px solid var(--line);}
+.pl-player-head .pl-team-logo-fb{width:40px;height:40px;font-size:14px;}
+.pl-player-head-team{font-family:var(--font-display);font-size:13px;font-weight:600;}
+.pl-player-head-league{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;font-family:var(--font-display);font-weight:600;}
+#pl-player-select{width:100%;font-size:14px;}
+
+.pl-result{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);display:none;}
+.pl-result.show{display:block;}
+.pl-result-player{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.pl-result-avatar{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;flex-shrink:0;}
+.pl-result-name{font-family:var(--font-display);font-size:15px;font-weight:600;}
+.pl-result-sub{font-size:11.5px;color:var(--text-dim);margin-top:1px;}
+.pl-link-row{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;overflow-x:auto;}
+.pl-link-text{font-size:12px;color:var(--text-dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;}
+
 /* Guest sign-up wall: a soft fade, then one card (see guestWall in app.js) */
 html.gw-locked,html.gw-locked body{overflow:hidden;}
 #guest-wall{position:fixed;inset:0;z-index:70;pointer-events:none;display:none;}

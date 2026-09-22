@@ -1619,6 +1619,7 @@ const ADMIN_SECTIONS = [
   { id: "live-count-card", key: "online", title: "On the app now" },
   { id: "hub-claim-requests-card", key: "claims", title: "Claim requests", alert: true },
   { id: "interest-signups-card", key: "signups", title: "League interest signups", alert: true },
+  { id: "pay-link-finder-card", key: "paylink", title: "Find a player's pay link" },
   { id: "manage-leagues-card", key: "leagues", title: "Leagues" },
   { id: "player-accounts-card", key: "accounts", title: "Player accounts" },
   { id: "combine-players-card", key: "combine", title: "Combine player profiles" },
@@ -1732,32 +1733,125 @@ async function refreshOwnerStatus() {
   const adminTabBtn = document.querySelector('.hub-tab-btn[data-hubview="admin"]');
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
-  // Same gate as the Admin tab — only the owner sees payment status across
-  // every league; a captain still only ever sees their own team's inside
-  // that league's own Pay tab.
-  const paymentsTabBtn = el("hub-payments-tab-btn");
-  paymentsTabBtn.style.display = isOwner ? "" : "none";
-  if (!isOwner && paymentsTabBtn.classList.contains("active")) switchHubTab("leagues");
-  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPaymentsLeaguePicker(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
+  el("pay-link-finder-card").style.display = isOwner ? "block" : "none";
+  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
-// "Select a league from a menu, then find a player or team and send them
-// the link" — this tab is just that shortcut: skip hunting through a
-// league's own tab bar and jump straight to its Pay tab (which already has
-// the payment status, search-by-team, and per-player "Copy pay link").
-function renderPaymentsLeaguePicker() {
-  const select = el("payments-league-select");
-  const current = select.value;
-  const sorted = leaguesIndex.slice().sort((a, b) => a.name.localeCompare(b.name));
-  select.innerHTML = '<option value="">Choose a league…</option>' + sorted.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("");
-  select.value = current;
+// Cross-league "find a player's pay link" tool — pick a league (each
+// shown by its own teams' logos, since most leagues have no badge of
+// their own), pick a team (a real logo tile), then the player from a
+// dropdown. The link itself is the same one already behind each Custom
+// Charges row inside a league's own Pay tab — this just finds it in three
+// taps instead of opening that league first.
+const plState = { league: null, full: null, team: null };
+function plCrumbHtml() {
+  const parts = [`<button type="button" class="pl-crumb-btn${plState.league ? "" : " current"}" data-plnav="leagues">Find a player</button>`];
+  if (plState.league) parts.push(`<span class="pl-crumb-sep">&rsaquo;</span><button type="button" class="pl-crumb-btn${plState.team ? "" : " current"}" data-plnav="teams">${escapeHtml(plState.league.name)}</button>`);
+  if (plState.team) parts.push(`<span class="pl-crumb-sep">&rsaquo;</span><button type="button" class="pl-crumb-btn current" data-plnav="team">${escapeHtml(plState.team.name)}</button>`);
+  return `<div class="pl-crumb">${parts.join("")}</div>`;
 }
-el("payments-league-select").onchange = async () => {
-  const id = el("payments-league-select").value;
-  if (!id) return;
-  await openLeague(id);
-  switchTab("pay");
-};
+function plLeaguesHtml() {
+  const sorted = leaguesIndex.slice().sort((a, b) => a.name.localeCompare(b.name));
+  if (!sorted.length) return `<p class="empty">No leagues yet.</p>`;
+  const rows = sorted.map((l) => {
+    const logos = (l.teams || []).slice(0, 4).map((t) => avatarHtml(t)).join("");
+    const playerCount = (l.teams || []).reduce((n, t) => n + (t.players ? t.players.length : 0), 0);
+    return `<div class="pl-league-row" data-league="${l.id}">
+      <div class="pl-league-logos">${logos}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="pl-league-name">${escapeHtml(l.name)}</div>
+        <div class="pl-league-meta">${(l.teams || []).length} teams</div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-faint);flex-shrink:0;"><path d="M9 6l6 6-6 6"/></svg>
+    </div>`;
+  }).join("");
+  return `<div class="pl-league-list">${rows}</div>`;
+}
+function plTeamsHtml() {
+  const teams = plState.full.teams || [];
+  if (!teams.length) return `<p class="empty">No teams in this league yet.</p>`;
+  const tiles = teams.map((t) => `
+    <div class="pl-team-tile" data-team="${t.id}">
+      ${t.logo ? `<img class="pl-team-logo" src="${t.logo}" alt="">` : `<div class="pl-team-logo-fb">${escapeHtml((t.name || "?").charAt(0))}</div>`}
+      <div class="pl-team-name">${escapeHtml(t.name)}</div>
+      <div class="pl-team-count">${(t.players || []).length} player${(t.players || []).length === 1 ? "" : "s"}</div>
+    </div>`).join("");
+  return `<div class="pl-team-grid">${tiles}</div>`;
+}
+function plPlayerHtml() {
+  const players = (plState.team.players || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const options = players.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  return `<div class="pl-player-card">
+    <div class="pl-player-head">
+      ${plState.team.logo ? `<img src="${plState.team.logo}" alt="">` : `<div class="pl-team-logo-fb">${escapeHtml((plState.team.name || "?").charAt(0))}</div>`}
+      <div>
+        <div class="pl-player-head-team">${escapeHtml(plState.team.name)}</div>
+        <div class="pl-player-head-league">${escapeHtml(plState.league.name)}</div>
+      </div>
+    </div>
+    <label class="sr-only" for="pl-player-select">Player</label>
+    <select id="pl-player-select">
+      <option value="">Choose a player&hellip;</option>
+      ${options}
+    </select>
+    <div class="pl-result" id="pl-result"></div>
+  </div>`;
+}
+function renderPayLinkFinder() {
+  const body = el("pay-link-finder-body");
+  if (!plState.league) body.innerHTML = plCrumbHtml() + plLeaguesHtml();
+  else if (!plState.team) body.innerHTML = plCrumbHtml() + plTeamsHtml();
+  else body.innerHTML = plCrumbHtml() + plPlayerHtml();
+
+  body.querySelectorAll("[data-plnav]").forEach((btn) => {
+    btn.onclick = () => {
+      const nav = btn.dataset.plnav;
+      if (nav === "leagues") { plState.league = null; plState.full = null; plState.team = null; }
+      if (nav === "teams") { plState.team = null; }
+      renderPayLinkFinder();
+    };
+  });
+  body.querySelectorAll("[data-league]").forEach((row) => {
+    row.onclick = async () => {
+      const leagueEntry = leaguesIndex.find((l) => l.id === row.dataset.league);
+      row.style.opacity = "0.6";
+      const full = await api(`/leagues/${leagueEntry.id}`).catch(() => null);
+      if (!full) { row.style.opacity = ""; alert("Couldn't load that league — try again."); return; }
+      plState.league = leagueEntry; plState.full = full;
+      renderPayLinkFinder();
+    };
+  });
+  body.querySelectorAll("[data-team]").forEach((tile) => {
+    tile.onclick = () => {
+      plState.team = plState.full.teams.find((t) => t.id === tile.dataset.team);
+      renderPayLinkFinder();
+    };
+  });
+  const select = document.getElementById("pl-player-select");
+  if (select) {
+    select.onchange = async () => {
+      const resultEl = document.getElementById("pl-result");
+      const playerId = select.value;
+      if (!playerId) { resultEl.classList.remove("show"); resultEl.innerHTML = ""; return; }
+      const player = plState.team.players.find((p) => p.id === playerId);
+      resultEl.classList.add("show");
+      resultEl.innerHTML = `<p class="note">Getting link&hellip;</p>`;
+      const data = await api(`/leagues/${plState.league.id}/teams/${plState.team.id}/players/${playerId}/pay-link`).catch(() => null);
+      if (!data || !data.url) { resultEl.innerHTML = `<p class="note">Couldn't get a link — try again.</p>`; return; }
+      resultEl.innerHTML = `
+        <div class="pl-result-player">
+          <div class="pl-result-avatar">${escapeHtml(playerInitials(player.name))}</div>
+          <div>
+            <div class="pl-result-name">${escapeHtml(player.name)}</div>
+            <div class="pl-result-sub">${escapeHtml(plState.team.name)} &middot; ${escapeHtml(plState.league.name)}</div>
+          </div>
+        </div>
+        <div class="pl-link-row"><span class="pl-link-text">${escapeHtml(data.url)}</span></div>
+        <button class="primary pl-copy-btn" type="button" style="width:100%;">Copy link</button>`;
+      resultEl.querySelector(".pl-copy-btn").onclick = (e) => copyTextWhenReady(Promise.resolve(data.url), e.target);
+    };
+  }
+}
 // Owner-only — refetched each time the Admin tab is (re)entered rather than
 // polled continuously, since it's a glance-at stat, not a live dashboard.
 async function renderLiveCount() {
