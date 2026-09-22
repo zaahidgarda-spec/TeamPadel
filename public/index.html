@@ -1217,14 +1217,21 @@
       </section>
 
       <section class="view" id="view-news">
-        <div class="card" id="news-post-card" style="display:none;">
-          <h2 class="section-title">
-            Post an update
-            <span class="row" style="gap:6px;">
-              <button class="icon-btn" id="news-logo-btn" type="button" title="Use a team logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></button>
-              <button class="icon-btn" id="news-photo-btn" type="button" title="Add a photo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-            </span>
-          </h2>
+        <div class="card">
+          <h2 class="section-title">News room</h2>
+          <div id="news-list"></div>
+        </div>
+        <button class="nf-fab" id="news-post-fab" type="button" title="Post an update" style="display:none;">+</button>
+      </section>
+
+      <div id="news-post-modal-backdrop" class="modal-backdrop">
+        <div class="modal-box">
+          <button class="modal-close" id="news-post-modal-close" aria-label="Close">&times;</button>
+          <h3 class="modal-title">Post an update</h3>
+          <div class="row" style="margin:10px 0 12px;">
+            <button class="icon-btn" id="news-logo-btn" type="button" title="Use a team logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></button>
+            <button class="icon-btn" id="news-photo-btn" type="button" title="Add a photo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          </div>
           <div id="news-logo-picker" style="display:none;margin-bottom:12px;"></div>
           <input type="file" id="news-photo-input" accept="image/*" style="display:none;">
           <div id="news-photo-preview-wrap" style="display:none;margin-bottom:10px;position:relative;">
@@ -1236,13 +1243,12 @@
             <input type="text" id="news-title" placeholder="Title" style="flex:1;min-width:200px;">
           </div>
           <textarea id="news-body" rows="3" placeholder="Details (optional)" style="margin-top:8px;"></textarea>
-          <button class="primary" id="news-post-btn" style="margin-top:8px;">Post</button>
+          <div class="row" style="margin-top:16px;justify-content:flex-end;">
+            <button class="secondary" id="news-post-cancel">Cancel</button>
+            <button class="primary" id="news-post-btn">Post</button>
+          </div>
         </div>
-        <div class="card">
-          <h2 class="section-title">News room</h2>
-          <div id="news-list"></div>
-        </div>
-      </section>
+      </div>
 
       <footer class="actions">
         <span id="team-count-label"></span>

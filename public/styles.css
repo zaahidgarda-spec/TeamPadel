@@ -1170,12 +1170,6 @@ html.has-admin-bar .wrap{padding-top:76px;}
   .pd-stats{grid-template-columns:1fr 1fr;}
 }
 
-.news-post{border-bottom:1px solid var(--line);padding:16px 2px;}
-.news-post:last-child{border-bottom:none;}
-.news-post h3{font-family:var(--font-display);font-size:15px;margin:0 0 4px;}
-.news-post time{font-size:11px;color:var(--text-dim);}
-.news-post p{font-size:14px;line-height:1.55;margin:8px 0 0;white-space:pre-wrap;}
-
 /* A directory of crests, not a card per team — tapping one opens the same
    full team page the League Table's own rows open (see openTeamModal),
    so the roster itself lives in exactly one place regardless of which
@@ -1722,16 +1716,10 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .call-stage button.link{color:#8FB4FF;}
 
 /* ---------- News Room ---------- */
-/* A round-recap post (has `highlights`) gets its own floodlit hero — same
-   night-court gradient and etched lines as .floodlit.urgent above — with
-   Pair of the Week spotlighted inside it, then each other highlight as its
-   own icon row below instead of one dense paragraph. A free-standing admin
-   post (no structure to key off) falls back to .news-post, a plain card. */
-.news-post{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow-sm);}
-.news-post h3{font-family:var(--font-display);font-size:15px;margin:0 0 4px;}
-.news-post time{font-size:11.5px;color:var(--text-faint);}
-.news-post p{font-size:13.5px;line-height:1.55;color:var(--text-dim);margin:10px 0 0;white-space:pre-wrap;}
-.nr-round{margin-bottom:18px;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md);}
+/* .nr-hero (the photo/gradient lead) is shared with the Leagues-tab "This
+   week" hero — see .week-hero-photo there. The magazine-feed card classes
+   for News Room itself (.nf-*) are further down, near the "This week" row
+   styles they're modeled on. */
 .nr-hero{
   background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));
   position:relative;overflow:hidden;padding:18px 18px 20px;
@@ -1751,26 +1739,8 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .nr-hero-top{display:flex;align-items:center;justify-content:space-between;position:relative;}
 .nr-round-eyebrow{font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8FB4FF;}
 .nr-round-date{font-size:12px;color:#7C8CB0;}
-.nr-potw-label{font-family:var(--font-display);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#7FA8FF;margin:16px 0 6px;position:relative;}
 .nr-potw-names{font-family:var(--font-display);font-size:21px;font-weight:600;color:#F2F6FF;line-height:1.25;text-shadow:0 0 14px rgba(120,165,255,.45);position:relative;}
 .nr-potw-team{font-size:12.5px;color:#9FB0D6;margin-top:4px;position:relative;}
-.nr-body{background:var(--panel);padding:4px 4px 6px;}
-/* No per-category color or icon here on purpose — same call as the
-   homepage strip's redesign, just spelling the category out as a plain
-   label instead of a colored letter square nobody could read at a glance. */
-.nr-row{padding:12px 14px;border-bottom:1px solid var(--line);}
-.nr-row:last-child{border-bottom:none;}
-.nr-row-label{font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:3px;}
-.nr-row-text{font-size:13px;line-height:1.5;color:var(--text);}
-.nr-row-item{font-size:13px;line-height:1.5;color:var(--text);}
-.nr-row-item+.nr-row-item{margin-top:6px;}
-.nr-form{padding:13px 16px 16px;border-top:1px solid var(--line);}
-.nr-form-label{font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin:0 0 10px;}
-.nr-form-list{display:flex;gap:16px;flex-wrap:wrap;}
-.nr-form-player{display:flex;flex-direction:column;align-items:center;gap:5px;width:60px;}
-.nr-form-avatar{width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:13px;}
-.nr-form-name{font-size:10.5px;text-align:center;line-height:1.25;color:var(--text);font-weight:500;}
-.nr-form-team{font-size:9.5px;color:var(--text-faint);text-align:center;}
 
 /* ---------- Homepage: "This week" — one card, not three ---------- */
 /* Hero, highlight rows and the pairs-of-the-week strip all live inside
@@ -1813,6 +1783,40 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .week-potw-avatar+.week-potw-avatar{margin-left:-10px;}
 .week-potw-chip-name{font-size:9.5px;color:#F2F6FF;text-align:center;line-height:1.3;font-weight:500;}
 .week-potw-chip-team{font-size:8.5px;color:#9FB0D6;text-align:center;text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-display);font-weight:600;}
+
+/* ---------- News Room: magazine feed ---------- */
+/* Every round-recap post is a photo card — same court-photo-or-gradient
+   idea as .week-hero-photo, just its own aspect ratio (a touch shorter,
+   since News Room shows many of these in a row rather than one lead
+   story) and its own bottom-anchored content block rather than sharing
+   .week-hero-content, which is sized for the single Leagues-tab hero. */
+.nf-mag-card{border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-md);margin-bottom:14px;}
+.nf-mag-photo{position:relative;aspect-ratio:16/10;background-size:cover;background-position:center;background:linear-gradient(180deg,rgba(20,30,54,.96),rgba(9,13,24,.98));}
+.nf-mag-photo::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(6,10,20,.1) 0%,rgba(6,10,20,.5) 60%,rgba(6,10,20,.92) 100%);}
+.nf-mag-content{position:absolute;left:0;right:0;bottom:0;padding:14px 16px 15px;}
+.nf-mag-eyebrow{font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#8FB4FF;}
+.nf-mag-headline{font-family:var(--font-display);font-size:16px;font-weight:600;color:#F2F6FF;line-height:1.32;margin-top:6px;text-shadow:0 2px 10px rgba(0,0,0,.35);}
+.nf-chip-row{display:flex;gap:7px;overflow-x:auto;padding:12px 14px;background:var(--panel);}
+.nf-chip{flex-shrink:0;display:flex;align-items:center;gap:5px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:11.5px;color:var(--text);white-space:nowrap;}
+.nf-chip .ic{font-size:12px;}
+.nf-chip.potw{background:rgba(232,184,75,.14);border-color:#E8B84B;color:#8a6a1c;font-weight:600;}
+.nf-form-strip{display:flex;gap:14px;padding:0 14px 14px;flex-wrap:wrap;background:var(--panel);}
+.nf-avatar{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:8.5px;flex-shrink:0;}
+.nf-form-pill{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);}
+.nf-form-pill .player-link{color:inherit;}
+/* A manual admin post — no structured highlights to chip-ify, so it stays
+   a plain row: a small square (photo or team logo, when there is one)
+   beside the title/body, not the full magazine treatment. */
+.nf-manual-card{background:var(--panel);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);margin-bottom:14px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;}
+.nf-manual-thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--panel-2);border:1px solid var(--line);}
+.nf-manual-title{font-family:var(--font-display);font-size:13.5px;font-weight:600;}
+.nf-manual-body{font-size:12.5px;color:var(--text-dim);margin-top:4px;line-height:1.4;}
+.nf-manual-date{font-size:10.5px;color:var(--text-faint);margin-top:5px;}
+/* Composing lives behind this button now instead of a card permanently
+   pinned above the feed — position:fixed so it stays put over whatever
+   part of the feed is scrolled into view. */
+.nf-fab{position:fixed;bottom:22px;right:22px;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;font-size:26px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(37,99,235,.4);border:none;cursor:pointer;z-index:40;}
+.nf-fab:hover{filter:brightness(1.08);}
 
 /* ---------- Team kit ---------- */
 .kit-photos-row{display:flex;gap:16px;flex-wrap:wrap;}
