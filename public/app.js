@@ -1057,106 +1057,104 @@ function renderNextMatchSlide() {
 // (see the News Room redesign) rather than computing anything new. Either
 // section hides itself if there's nothing to show yet (a brand-new site
 // with no finalized rounds, for instance).
-// The single most recent news photo across every visible league (see
-// heroNews in /homepage/highlights) — a bigger, F1-style photo lead at the
-// top of the Leagues tab instead of a plain text card. Hidden entirely
-// until some admin actually attaches a photo to a post.
-function renderHomepageNewsHero(heroNews) {
-  const card = el("homepage-news-hero-card");
-  card.style.display = heroNews ? "block" : "none";
-  if (!heroNews) return;
-  const dateText = new Date(heroNews.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  const p = heroNews.potw;
-  const potwAvatars = p ? p.names.split(" & ").map((n, i) => `<div class="nr-form-avatar" style="width:28px;height:28px;font-size:10px;${i ? "margin-left:-9px;background:#1c2f52;" : ""}">${escapeHtml(playerInitials(n))}</div>`).join("") : "";
-  const potwHtml = p ? `<div class="row" style="margin-top:12px;gap:8px;align-items:center;">
-      <div style="display:flex;flex-shrink:0;">${potwAvatars}</div>
-      <div>
-        <div style="font-family:var(--font-display);font-size:12px;font-weight:600;color:#F2F6FF;">&#128081; ${escapeHtml(p.names)}</div>
-        <div style="font-size:10.5px;color:#9FB0D6;">${escapeHtml(p.team)} &middot; Pair of the week</div>
-      </div>
-    </div>` : "";
-  el("homepage-news-hero-inner").innerHTML = `<div class="nr-hero has-photo" style="background-image:url('${heroNews.photo}');">
-    <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
-    <p class="nr-potw-label" style="margin-top:16px;">${escapeHtml(heroNews.title)}</p>
-    ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}
-    ${potwHtml}
-  </div>`;
-  card.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
-}
+// One merged "This week" card instead of three stacked ones: a photo hero
+// (see heroNews in /homepage/highlights) leads, ordinary highlight rows
+// follow underneath it, and every league's current Pair of the Week sits
+// in its own strip at the bottom — hero, rows and pairs all share the same
+// dark/photo, white-text treatment (see .week-dark in styles.css) so the
+// whole thing reads as one object, not three different-looking sections.
 async function renderHomepageHighlights() {
   const data = await api("/homepage/highlights").catch(() => null);
-  renderHomepageNewsHero((data && data.heroNews) || null);
-  const potw = (data && data.potw) || [];
-  const potwCard = el("homepage-potw-card");
-  potwCard.style.display = potw.length ? "block" : "none";
-  if (potw.length) {
-    el("homepage-potw-strip").innerHTML = potw.map((p) => {
-      const avatars = p.names.split(" & ").map((n) => `<div class="potw-avatar">${escapeHtml(playerInitials(n))}</div>`).join("");
-      // Gold-foil "Rare" card, white body + gold trim (see .potw-card in
-      // styles.css) — every card gets the same treatment regardless of
-      // whether the team has a logo, so it always looks finished. A logo,
-      // when there is one, is just a small corner badge — never blown up
-      // full-bleed, so there's no pixelation or pale-logo legibility
-      // problem to patch.
-      const badge = p.teamLogo ? `<img class="potw-badge" src="${p.teamLogo}" alt="">` : "";
-      return `<div class="potw-card">
-        ${badge}
-        <div class="potw-crown">👑</div>
-        <div class="potw-avatars">${avatars}</div>
-        <div class="potw-names">${pairRefsLinksHtml(p.leagueId, [{ id: p.playerAId, name: p.playerAName }, { id: p.playerBId, name: p.playerBName }])}</div>
-        <div class="potw-team">${escapeHtml(p.team)}</div>
-        <div class="potw-league">${escapeHtml(p.leagueName)}</div>
-      </div>`;
-    }).join("");
-    bindNewsPlayerLinks(el("homepage-potw-strip"));
-  }
+  const heroNews = (data && data.heroNews) || null;
   const highlights = (data && data.highlights) || [];
-  const interestingCard = el("homepage-interesting-card");
+  const potw = (data && data.potw) || [];
+  const card = el("homepage-week-card");
   // An owner with nothing to show yet still gets the card, just to reach
-  // the "+" add tile — a guest (or an owner once something's posted) sees
+  // the "+" add row — a guest (or an owner once something's posted) sees
   // it hide/show based on whether there's actually anything in it.
-  interestingCard.style.display = (highlights.length || isOwner) ? "block" : "none";
-  // Only the first few show up front — the rest sit behind a "+N More"
-  // tile at the end of the strip, same shape as scrolling itself, for
-  // whoever's on a pointer device rather than swiping.
+  card.style.display = (heroNews || highlights.length || potw.length || isOwner) ? "block" : "none";
+
+  const heroEl = el("homepage-week-hero");
+  heroEl.style.display = heroNews ? "block" : "none";
+  if (heroNews) {
+    const dateText = new Date(heroNews.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    heroEl.className = "nr-hero has-photo";
+    heroEl.style.backgroundImage = `url('${heroNews.photo}')`;
+    heroEl.innerHTML = `
+      <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
+      <p class="nr-potw-label" style="margin-top:16px;">${escapeHtml(heroNews.title)}</p>
+      ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}`;
+    heroEl.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
+  }
+  // Without its own photo hero (nothing posted anywhere yet), the rows
+  // still need a heading of their own to sit under.
+  el("homepage-week-title").style.display = heroNews ? "none" : (highlights.length || isOwner) ? "block" : "none";
+
+  // Only the first few show up front — the rest sit behind a "+N more" row
+  // for whoever doesn't feel like scrolling.
   const shownUpfront = 4;
-  const cardHtml = (h, hidden) => {
-    const removeBtn = isOwner ? `<button class="interesting-remove" type="button" aria-label="Remove">&times;</button>` : "";
+  const rowHtml = (h, hidden) => {
+    const removeBtn = isOwner ? `<button class="week-row-remove" type="button" aria-label="Remove">&times;</button>` : "";
     const dataAttrs = h.manualId ? ` data-manual-id="${h.manualId}"` : ` data-league-id="${h.leagueId}" data-round="${h.round}" data-type="${h.type}"`;
-    const logoHtml = h.teamLogo ? `<img class="interesting-logo" src="${h.teamLogo}" alt="">` : "";
-    return `<div class="interesting-card${hidden ? " interesting-hidden" : ""}"${dataAttrs}>${removeBtn}<div class="interesting-label-row">${logoHtml}<span class="interesting-label">${escapeHtml(h.label)}</span></div><div class="interesting-phrase">${escapeHtml(h.short)}</div><div class="interesting-league">${escapeHtml(h.leagueName)}</div></div>`;
+    const thumb = h.photo || h.teamLogo || "";
+    return `<div class="week-row${hidden ? " week-row-hidden" : ""}"${dataAttrs} style="${hidden ? "display:none;" : ""}">
+      <div class="week-row-thumb" style="${thumb ? `background-image:url('${thumb}');` : ""}"></div>
+      <div style="min-width:0;flex:1;">
+        <div class="week-row-text">${escapeHtml(h.short)}</div>
+        <div class="week-row-league">${escapeHtml(h.leagueName)}</div>
+      </div>
+      ${removeBtn}
+    </div>`;
   };
   const hiddenCount = Math.max(0, highlights.length - shownUpfront);
-  const moreTile = hiddenCount
-    ? `<button class="interesting-more" id="homepage-interesting-more-btn"><span class="n">+${hiddenCount}</span><span class="lbl">More</span></button>`
-    : "";
-  const addTile = isOwner ? `<button class="interesting-add" id="homepage-interesting-add-btn"><span class="n">+</span><span class="lbl">Add</span></button>` : "";
-  el("homepage-interesting-strip").innerHTML = highlights.map((h, i) => cardHtml(h, i >= shownUpfront)).join("") + moreTile + addTile;
-  const moreBtn = document.getElementById("homepage-interesting-more-btn");
+  const moreRow = hiddenCount ? `<button class="week-row-more" id="homepage-week-more-btn" type="button">+${hiddenCount} more</button>` : "";
+  const addRow = isOwner ? `<button class="week-row-add" id="homepage-week-add-btn" type="button">+ Add something interesting</button>` : "";
+  el("homepage-week-rows").innerHTML = highlights.map((h, i) => rowHtml(h, i >= shownUpfront)).join("") + moreRow + addRow;
+  el("homepage-week-rows").querySelectorAll("[data-league-id], [data-manual-id]").forEach((row) => {
+    if (!row.dataset.leagueId) return;
+    row.onclick = (e) => { if (e.target.closest(".week-row-remove")) return; openLeague(row.dataset.leagueId); };
+  });
+  const moreBtn = document.getElementById("homepage-week-more-btn");
   if (moreBtn) {
     moreBtn.onclick = () => {
-      el("homepage-interesting-strip").querySelectorAll(".interesting-hidden").forEach((n) => n.classList.remove("interesting-hidden"));
+      el("homepage-week-rows").querySelectorAll(".week-row-hidden").forEach((n) => { n.classList.remove("week-row-hidden"); n.style.display = ""; });
       moreBtn.remove();
     };
   }
   if (isOwner) {
-    document.getElementById("homepage-interesting-add-btn").onclick = () => {
+    document.getElementById("homepage-week-add-btn").onclick = () => {
       el("interesting-add-short").value = ""; el("interesting-add-league").value = ""; el("interesting-add-error").textContent = "";
       el("interesting-add-modal-backdrop").classList.add("open");
     };
-    el("homepage-interesting-strip").querySelectorAll(".interesting-remove").forEach((btn) => {
-      btn.onclick = async () => {
-        const card = btn.closest(".interesting-card");
+    el("homepage-week-rows").querySelectorAll(".week-row-remove").forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const row = btn.closest("[data-league-id], [data-manual-id]");
         try {
-          if (card.dataset.manualId) {
-            await api(`/admin/interesting/manual/${card.dataset.manualId}`, { method: "DELETE" });
+          if (row.dataset.manualId) {
+            await api(`/admin/interesting/manual/${row.dataset.manualId}`, { method: "DELETE" });
           } else {
-            await api("/admin/interesting/dismiss", { method: "POST", body: { leagueId: card.dataset.leagueId, round: Number(card.dataset.round), type: card.dataset.type } });
+            await api("/admin/interesting/dismiss", { method: "POST", body: { leagueId: row.dataset.leagueId, round: Number(row.dataset.round), type: row.dataset.type } });
           }
           renderHomepageHighlights();
-        } catch (e) { alert(e.message); }
+        } catch (e2) { alert(e2.message); }
       };
     });
+  }
+
+  const potwSection = el("homepage-week-potw-section");
+  potwSection.style.display = potw.length ? "block" : "none";
+  if (potw.length) {
+    el("homepage-week-potw-strip").innerHTML = potw.map((p) => {
+      const initials = p.names.split(" & ").map((n) => playerInitials(n));
+      const avatars = initials.map((i) => `<div class="week-potw-avatar">${escapeHtml(i)}</div>`).join("");
+      return `<div class="week-potw-chip">
+        <div class="week-potw-avatars">${avatars}</div>
+        <div class="week-potw-chip-name">${pairRefsLinksHtml(p.leagueId, [{ id: p.playerAId, name: p.playerAName }, { id: p.playerBId, name: p.playerBName }])}</div>
+        <div class="week-potw-chip-team">${escapeHtml(p.leagueName)}</div>
+      </div>`;
+    }).join("");
+    bindNewsPlayerLinks(el("homepage-week-potw-strip"));
   }
 }
 // Fetches a league card's background photo only once that card actually

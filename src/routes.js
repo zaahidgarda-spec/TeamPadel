@@ -1133,7 +1133,10 @@ router.get("/homepage/highlights", (req, res) => {
       // have one, so fall back to the (longer) News Room text rather than
       // showing a blank card.
       const team = h.teamId ? league.teams.find((t) => t.id === h.teamId) : null;
-      autoHighlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, round: latest.round, createdAt: latest.createdAt, teamLogo: team ? team.logo || "" : "" });
+      // The row's own thumbnail — that league's court photo, same fallback
+      // idea as newsPostPhoto, so every row in the merged "This week" card
+      // gets a photo, not just the one at the top.
+      autoHighlights.push({ type: h.type, label: h.label, short: h.short || h.text, leagueId: league.id, leagueName: league.name, round: latest.round, createdAt: latest.createdAt, teamLogo: team ? team.logo || "" : "", photo: league.courtPhoto || "" });
     });
   });
   autoHighlights.sort((a, b) => b.createdAt - a.createdAt);
@@ -1144,10 +1147,6 @@ router.get("/homepage/highlights", (req, res) => {
     .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id }));
   heroCandidates.sort((a, b) => b.createdAt - a.createdAt);
   const heroNews = heroCandidates[0] || null;
-  // Carried along so the hero card can show "who won" without a second
-  // request — only relevant when the photo happens to belong to whichever
-  // league currently has a Pair of the Week.
-  if (heroNews) heroNews.potw = potw.find((p) => p.leagueId === heroNews.leagueId) || null;
   // That same round's bigwin/rough-night/table cards would otherwise repeat
   // right below it — once a round is the hero, its own highlights drop out
   // of "Interesting this week" rather than saying the same thing twice.
