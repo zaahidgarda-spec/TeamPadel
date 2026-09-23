@@ -1136,34 +1136,83 @@ function renderNextMatchSlide() {
   void slide.offsetWidth;
   slide.classList.add("mc-slide");
 }
-// Desktop has the vertical room to just show several tickets stacked
-// instead of rotating one at a time like a phone has to — same source
-// data either way (see renderNextMatchesView), capped so a busy night
-// across many leagues doesn't turn the card into an endless scroll.
+// Desktop has the vertical room to show several tickets stacked instead
+// of rotating one at a time like a phone has to — but This week is the
+// reference for how tall the row gets, not something Next Matches should
+// be free to inflate past. So instead of a flat cap, fitNextMatchesDesktopList
+// measures This week's own height and works out how many tickets actually
+// fit in it; anything left over rotates through in same-sized pages.
 const NEXT_MATCHES_DESKTOP_MQ = window.matchMedia ? window.matchMedia("(min-width:900px)") : null;
-const NEXT_MATCHES_DESKTOP_MAX = 6;
+const NEXT_MATCHES_DESKTOP_ROTATE_MS = 6000;
+const MCB_LIST_GAP = 10; // must match .mcb-list's gap in styles.css
 function isNextMatchesDesktop() {
   return !!(NEXT_MATCHES_DESKTOP_MQ && NEXT_MATCHES_DESKTOP_MQ.matches);
 }
-function renderNextMatchesDesktopList() {
-  updateNextMatchesPhotoLayer(nextMatchesPairings[0]);
+let nextMatchesDesktopFit = 1;
+let nextMatchesDesktopPage = 0;
+let nextMatchesDesktopTimer = null;
+function renderNextMatchesDesktopPage() {
+  const total = nextMatchesPairings.length;
+  const fit = Math.min(nextMatchesDesktopFit, total);
+  // Round-robin per item (not per page) so every rotation always shows a
+  // full page — the last page never comes up short just because it lands
+  // near the end of the list.
+  const shown = Array.from({ length: fit }, (_, i) => nextMatchesPairings[(nextMatchesDesktopPage + i) % total]);
+  updateNextMatchesPhotoLayer(shown[0]);
   const liveTag = el("next-matches-live-tag");
-  if (liveTag) liveTag.style.display = nextMatchesPairings.some((m) => isWithinLiveWindow(m.date, m.time)) ? "inline-block" : "none";
+  if (liveTag) liveTag.style.display = shown.some((m) => isWithinLiveWindow(m.date, m.time)) ? "inline-block" : "none";
   const slide = el("next-matches-slide");
-  const shown = nextMatchesPairings.slice(0, NEXT_MATCHES_DESKTOP_MAX);
   slide.innerHTML = `<div class="mcb-list">${shown.map(mcbTicketHtml).join("")}</div>` + (shown.some((m) => m.prediction) ? mcbPoweredHtml() : "");
   bindNewsPlayerLinks(slide);
   slide.classList.remove("mc-slide");
   void slide.offsetWidth;
   slide.classList.add("mc-slide");
 }
+function startNextMatchesDesktopTimer() {
+  if (nextMatchesDesktopTimer) { clearInterval(nextMatchesDesktopTimer); nextMatchesDesktopTimer = null; }
+  if (nextMatchesPairings.length <= nextMatchesDesktopFit) return;
+  nextMatchesDesktopTimer = setInterval(() => {
+    nextMatchesDesktopPage = (nextMatchesDesktopPage + nextMatchesDesktopFit) % nextMatchesPairings.length;
+    renderNextMatchesDesktopPage();
+  }, NEXT_MATCHES_DESKTOP_ROTATE_MS);
+}
+// Measures This week's own natural height and sizes the ticket stack to
+// fit inside it. Next Matches is briefly un-stretched (align-self:
+// flex-start) while measuring — otherwise .hub-top-row's align-items:
+// stretch always pulls it up to match This week first, making it
+// impossible to tell "how tall is my own content" from "how tall did my
+// sibling make me."
+function fitNextMatchesDesktopList() {
+  if (!isNextMatchesDesktop() || !nextMatchesPairings.length) return;
+  const nmCard = el("next-matches-card");
+  const weekCard = el("homepage-week-card");
+  const slide = el("next-matches-slide");
+  const carousel = slide.parentElement;
+
+  slide.innerHTML = `<div class="mcb-list">${mcbTicketHtml(nextMatchesPairings[0])}</div>`;
+  nmCard.style.alignSelf = "flex-start";
+  void nmCard.offsetHeight;
+  const ticketH = slide.querySelector(".mcb-card").getBoundingClientRect().height;
+  const chrome = nmCard.getBoundingClientRect().height - carousel.getBoundingClientRect().height;
+  const weekH = weekCard.getBoundingClientRect().height;
+  nmCard.style.alignSelf = "";
+
+  const budget = weekH - chrome;
+  nextMatchesDesktopFit = Math.max(1, Math.floor((budget + MCB_LIST_GAP) / (ticketH + MCB_LIST_GAP)));
+  nextMatchesDesktopPage = 0;
+  renderNextMatchesDesktopPage();
+  startNextMatchesDesktopTimer();
+}
 // Same source data either way — just a different presentation chosen by
 // viewport width, re-picked on every load and again if the window is
 // resized across the breakpoint (see the matchMedia listener below).
 function renderNextMatchesView() {
+  if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
+  if (nextMatchesDesktopTimer) { clearInterval(nextMatchesDesktopTimer); nextMatchesDesktopTimer = null; }
   if (isNextMatchesDesktop()) {
-    renderNextMatchesDesktopList();
+    fitNextMatchesDesktopList();
   } else {
+    nextMatchesIdx = 0;
     renderNextMatchSlide();
     startNextMatchesTimer();
   }
@@ -1171,13 +1220,20 @@ function renderNextMatchesView() {
 if (NEXT_MATCHES_DESKTOP_MQ) {
   const onNextMatchesBreakpointChange = () => {
     if (!nextMatchesPairings.length) return;
-    if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
-    nextMatchesIdx = 0;
     renderNextMatchesView();
   };
   if (NEXT_MATCHES_DESKTOP_MQ.addEventListener) NEXT_MATCHES_DESKTOP_MQ.addEventListener("change", onNextMatchesBreakpointChange);
   else NEXT_MATCHES_DESKTOP_MQ.addListener(onNextMatchesBreakpointChange);
 }
+// A narrower-but-still-desktop resize can wrap pair names onto a second
+// line (taller tickets) or reflow This week's rows — re-fit rather than
+// leaving a stale ticket count from whatever width the page first loaded at.
+let nextMatchesResizeDebounce = null;
+window.addEventListener("resize", () => {
+  if (!isNextMatchesDesktop() || !nextMatchesPairings.length) return;
+  clearTimeout(nextMatchesResizeDebounce);
+  nextMatchesResizeDebounce = setTimeout(fitNextMatchesDesktopList, 200);
+});
 // Two homepage teasers, public and site-wide — every visible league's
 // current Pair of the Week, and a handful of recent highlights across all
 // of them. Both come from /homepage/highlights, which just reads the
@@ -1297,6 +1353,11 @@ async function renderHomepageHighlights() {
     }).join("");
     bindNewsPlayerLinks(el("homepage-week-potw-strip"));
   }
+  // This week and Next Matches load independently (two separate API
+  // calls), so whichever finishes second re-fits the ticket stack against
+  // the other's now-current height — fitNextMatchesDesktopList no-ops
+  // harmlessly if Next Matches hasn't loaded yet.
+  fitNextMatchesDesktopList();
 }
 // Fetches a league card's background photo only once that card actually
 // scrolls into view, instead of every card's full photo shipping upfront
