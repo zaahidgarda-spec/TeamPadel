@@ -1042,7 +1042,6 @@ function renderNextMatchSlide() {
   // fixture's slides — "Match N" (the seed number) actually tells them
   // apart instead.
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
-  const meta = [when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   const liveTag = el("next-matches-live-tag");
   if (liveTag) liveTag.style.display = isWithinLiveWindow(m.date, m.time) ? "inline-block" : "none";
   const slide = el("next-matches-slide");
@@ -1062,23 +1061,29 @@ function renderNextMatchSlide() {
     centerHtml = `<div class="mcb-vs">VS</div>`;
   }
   const powered = m.prediction ? '<a class="mcb-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
+  const footerLeft = [m.leagueName ? escapeHtml(m.leagueName) : "", `Seed ${m.seed}`, `Match ${m.seed}`].filter(Boolean).join(" &middot; ");
+  const footerRight = [when, m.venue].filter(Boolean).map(escapeHtml).join(" &middot; ");
   slide.innerHTML = `
-    <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
-    <div class="mcb-row">
-      <div class="mcb-side">
-        ${mcbCrestHtml(m.teamALogo, m.teamAName)}
-        <div class="mcb-pair${m.winner === "A" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairA)}</div>
-        <div class="mcb-team">${escapeHtml(m.teamAName)}</div>
+    <div class="mcb-card">
+      <div class="mcb-body">
+        <div class="mcb-accent"></div>
+        <div class="mcb-content">
+          <div class="mcb-side">
+            ${mcbCrestHtml(m.teamALogo, m.teamAName)}
+            <div class="mcb-pair${m.winner === "A" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairA)}</div>
+            <div class="mcb-team">${escapeHtml(m.teamAName)}</div>
+          </div>
+          <div class="mcb-center">${centerHtml}</div>
+          <div class="mcb-side">
+            ${mcbCrestHtml(m.teamBLogo, m.teamBName)}
+            <div class="mcb-pair${m.winner === "B" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairB)}</div>
+            <div class="mcb-team">${escapeHtml(m.teamBName)}</div>
+          </div>
+        </div>
       </div>
-      <div class="mcb-center">${centerHtml}</div>
-      <div class="mcb-side">
-        ${mcbCrestHtml(m.teamBLogo, m.teamBName)}
-        <div class="mcb-pair${m.winner === "B" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairB)}</div>
-        <div class="mcb-team">${escapeHtml(m.teamBName)}</div>
-      </div>
+      <div class="mcb-footer"><span>${footerLeft}</span><span>${footerRight}</span></div>
     </div>
     ${powered}
-    <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   bindNewsPlayerLinks(slide);
   // Re-trigger the slide-in animation on every rotation, not just the first
