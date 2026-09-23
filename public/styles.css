@@ -799,6 +799,24 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 #next-matches-card.floodlit.urgent .section-title{color:#C4C6CB;border-bottom-color:rgba(200,203,209,.2);}
 #next-matches-card.floodlit.urgent .tag{background:rgba(200,203,209,.14);border-color:rgba(200,203,209,.35);color:#C4C6CB;}
 
+/* A league that's uploaded its own court photo (same one on its hub card
+   and pay-link page) gets that photo as a black-and-white backdrop behind
+   the whole card instead of the flat grey gradient — the ticket becomes a
+   frosted-glass overlay sitting on top of it, "broadcast on location"
+   rather than a plain studio graphic. .mcb-photo-layer is a real element
+   (not ::before/::after) so its background-image and grayscale filter
+   don't also wash out the ticket content painted after it. */
+#next-matches-card.floodlit.urgent.has-court-photo{background:#0c0d0e;}
+#next-matches-card.floodlit.urgent.has-court-photo::before,
+#next-matches-card.floodlit.urgent.has-court-photo::after{display:none;}
+.mcb-photo-layer{position:absolute;inset:0;background-size:cover;background-position:center;filter:grayscale(1) contrast(1.05) brightness(.85);}
+.mcb-photo-overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,8,9,.35) 0%,rgba(8,8,9,.6) 55%,rgba(6,6,7,.9) 100%);}
+#next-matches-card.has-court-photo .section-title,
+#next-matches-card.has-court-photo .mc-carousel{position:relative;z-index:1;}
+#next-matches-card.has-court-photo .mcb-card{background:rgba(10,10,12,.72);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);}
+#next-matches-card.has-court-photo .mcb-accent{background:#C7CAD1;}
+#next-matches-card.has-court-photo .mcb-footer{background:rgba(0,0,0,.4);border-top:1px solid rgba(255,255,255,.08);}
+
 /* The mockup's "broadcast lower third" is a ticket, not a flat row: a
    solid near-black card sits on top of the outer grey gradient, with a
    thin accent bar down the left edge and its own darker footer strip for

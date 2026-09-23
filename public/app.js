@@ -937,6 +937,44 @@ function leagueCardHtml(l) {
 let nextMatchesPairings = [];
 let nextMatchesIdx = 0;
 let nextMatchesTimer = null;
+// Same court photo a league admin uploads for its hub card/pay-link page
+// (GET /leagues/:id/court-photo) — reused here as a black-and-white hero
+// backdrop, so leagues that already have a real venue photo get it, and
+// leagues without one just keep the plain grey gradient. Cached per league
+// since the carousel can revisit the same league's matches on every
+// rotation.
+const nextMatchesCourtPhotoCache = new Map();
+function updateNextMatchesPhotoLayer(m) {
+  const card = el("next-matches-card");
+  const layer = el("next-matches-photo-layer");
+  if (!card || !layer) return;
+  if (!m || !m.hasCourtPhoto) {
+    card.classList.remove("has-court-photo");
+    layer.style.display = "none";
+    return;
+  }
+  const apply = (photo) => {
+    if (!photo) { card.classList.remove("has-court-photo"); layer.style.display = "none"; return; }
+    // Bail if the carousel has already rotated past this match by the
+    // time a fresh fetch resolves.
+    const current = nextMatchesPairings[nextMatchesIdx];
+    if (!current || current.leagueId !== m.leagueId) return;
+    layer.style.backgroundImage = `url('${photo}')`;
+    layer.style.display = "block";
+    card.classList.add("has-court-photo");
+  };
+  if (nextMatchesCourtPhotoCache.has(m.leagueId)) {
+    apply(nextMatchesCourtPhotoCache.get(m.leagueId));
+    return;
+  }
+  card.classList.remove("has-court-photo");
+  layer.style.display = "none";
+  api(`/leagues/${m.leagueId}/court-photo`).then((res) => {
+    const photo = (res && res.photo) || "";
+    nextMatchesCourtPhotoCache.set(m.leagueId, photo);
+    apply(photo);
+  }).catch(() => {});
+}
 const NEXT_MATCHES_ROTATE_MS = 4500;
 function startNextMatchesTimer() {
   if (nextMatchesTimer) clearInterval(nextMatchesTimer);
@@ -1037,6 +1075,7 @@ function mcbCrestHtml(logo, teamName) {
 function renderNextMatchSlide() {
   const m = nextMatchesPairings[nextMatchesIdx];
   if (!m) return;
+  updateNextMatchesPhotoLayer(m);
   // Every seed pairing within one fixture shares the same round-level
   // time, so showing the clock time here just repeats itself across that
   // fixture's slides — "Match N" (the seed number) actually tells them

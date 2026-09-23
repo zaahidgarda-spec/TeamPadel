@@ -936,6 +936,7 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
         winner,
         score: winner ? logic.rubberScoreText(rubber) : null,
         prediction,
+        hasCourtPhoto: !!league.courtPhoto,
       });
     });
   });
