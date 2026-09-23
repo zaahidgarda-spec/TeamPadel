@@ -4208,11 +4208,29 @@ function generateSeasonCourtRotation(league) {
     const courtPtr = Array(slots).fill(0);
     const place = (slot, fixtureId, seed) => { if (courtPtr[slot] < courts) grid[slot][courtPtr[slot]++] = { fixtureId, seed }; };
 
-    if (!needsDoubles) {
+    if (!needsDoubles && singlesOn) {
+      // Ormonde rules: don't give each fixture its own dedicated court —
+      // pool every fixture's 4 pairs seeds into one flat list and pack them
+      // densely, `pairsCourts` at a time, across consecutive slots. 16
+      // matches over 5 pairs courts is 3 full slots of 5 plus a 4th slot
+      // with just 1 match, instead of a court sitting idle every single
+      // slot because there simply aren't enough fixtures to give it one of
+      // its own. The Super Tie keeps its usual one-per-fixture placement on
+      // its own reserved court, untouched by this.
+      const flat = [];
+      fixtures.forEach((f) => {
+        for (let seed = 0; seed < 4; seed++) flat.push({ fixtureId: f.id, seed });
+        teamTally(f.teamA); teamTally(f.teamB);
+      });
+      flat.forEach((item, k) => {
+        const slot = Math.floor(k / pairsCourts), court = k % pairsCourts;
+        if (slot < slots) grid[slot][court] = item;
+      });
+      fixtures.forEach((f, i) => { grid[i % slots][superTieCourt] = { fixtureId: f.id, seed: 4 }; });
+    } else if (!needsDoubles) {
       fixtures.forEach((f, i) => {
         const court = i % pairsCourts;
         for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][court] = { fixtureId: f.id, seed };
-        if (superTieCourt !== null) grid[i % slots][superTieCourt] = { fixtureId: f.id, seed: 4 };
         teamTally(f.teamA); teamTally(f.teamB);
       });
     } else {
