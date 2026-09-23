@@ -1025,6 +1025,15 @@ async function renderNextMatches() {
   renderNextMatchSlide();
   startNextMatchesTimer();
 }
+// Big-crest "broadcast" layout, scoped to the Next Matches hero only (see
+// the .mcb- rules in styles.css) — everywhere else that shares .mc-pair/
+// .mc-team-logo (My Profile's tonight card, Live Court Control's sheet)
+// keeps the original small-logo-beside-the-name layout untouched.
+function mcbCrestHtml(logo, teamName) {
+  if (logo) return `<img class="mcb-crest" src="${logo}" alt="${escapeHtml(teamName)}">`;
+  const initial = teamName ? teamName.trim().charAt(0).toUpperCase() : "?";
+  return `<div class="mcb-crest-fallback">${escapeHtml(initial)}</div>`;
+}
 function renderNextMatchSlide() {
   const m = nextMatchesPairings[nextMatchesIdx];
   if (!m) return;
@@ -1033,23 +1042,42 @@ function renderNextMatchSlide() {
   // fixture's slides — "Match N" (the seed number) actually tells them
   // apart instead.
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
-  const meta = [m.teamAName + " vs " + m.teamBName, when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  const meta = [when, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   const liveTag = el("next-matches-live-tag");
   if (liveTag) liveTag.style.display = isWithinLiveWindow(m.date, m.time) ? "inline-block" : "none";
   const slide = el("next-matches-slide");
   // A seed already scored (captains enter results one at a time through
-  // the night) shows that score in place of a bare "vs", with the winning
-  // pair checked off — same convention as the results list.
-  const centerHtml = m.score ? `<span class="vs mc-score">${escapeHtml(m.score)}</span>` : `<span class="vs">vs</span>`;
-  const logoHtml = (logo, teamName) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(teamName)}">` : "";
+  // the night) shows that score in the center instead of a win%, with the
+  // winning pair checked off — same convention as the results list. No
+  // score yet but a real prediction shows the win% split; neither shows a
+  // plain "VS".
+  let centerHtml;
+  if (m.score) {
+    centerHtml = `<div class="mcb-score">${escapeHtml(m.score)}</div>`;
+  } else if (m.prediction) {
+    const [pctA, pctB] = shownPct(m.prediction.winPctA);
+    const note = m.prediction.provisional ? '<div class="mcb-note">Early prediction</div>' : "";
+    centerHtml = `<div class="mcb-pct">${pctA}<span class="sep">&#8201;/&#8201;</span>${pctB}</div><div class="mcb-pct-label">Win probability</div>${note}`;
+  } else {
+    centerHtml = `<div class="mcb-vs">VS</div>`;
+  }
+  const powered = m.prediction ? '<a class="mcb-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
   slide.innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; Seed ${m.seed}</div>
-    <div class="mc-pairing">
-      <span class="mc-pair-row">${logoHtml(m.teamALogo, m.teamAName)}<span class="mc-pair${m.winner === "A" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairA)}</span></span>
-      ${centerHtml}
-      <span class="mc-pair-row">${logoHtml(m.teamBLogo, m.teamBName)}<span class="mc-pair${m.winner === "B" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairB)}</span></span>
+    <div class="mcb-row">
+      <div class="mcb-side">
+        ${mcbCrestHtml(m.teamALogo, m.teamAName)}
+        <div class="mcb-pair${m.winner === "A" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairA)}</div>
+        <div class="mcb-team">${escapeHtml(m.teamAName)}</div>
+      </div>
+      <div class="mcb-center">${centerHtml}</div>
+      <div class="mcb-side">
+        ${mcbCrestHtml(m.teamBLogo, m.teamBName)}
+        <div class="mcb-pair${m.winner === "B" ? " won" : ""}">${pairRefsLinksHtml(m.leagueId, m.pairB)}</div>
+        <div class="mcb-team">${escapeHtml(m.teamBName)}</div>
+      </div>
     </div>
-    ${predictionBarHtml(m.prediction, true)}
+    ${powered}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   bindNewsPlayerLinks(slide);

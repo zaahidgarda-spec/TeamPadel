@@ -777,6 +777,48 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .mc-predict-powered{color:#7C8CB0;}
 .floodlit.urgent .mc-predict-powered:hover{color:#8FB4FF;}
 
+/* Next Matches hero: a dedicated grey "broadcast" treatment with big,
+   centered crests — scoped to this one card (the #next-matches-card
+   selector always wins over the plain .floodlit.urgent it's layered on
+   top of) so .floodlit itself, and every other .mc-pair/.mc-team-logo
+   consumer (My Profile's tonight card, Live Court Control's match sheet),
+   keep their original look untouched. */
+#next-matches-card.floodlit.urgent{
+  background:linear-gradient(180deg,rgba(64,68,77,.96),rgba(23,25,29,.98));
+  border-color:rgba(200,203,209,.22);
+  box-shadow:0 0 0 1px rgba(200,203,209,.08),0 20px 44px rgba(0,0,0,.4),0 0 60px -10px rgba(120,124,132,.35);
+}
+#next-matches-card.floodlit.urgent::before{
+  background:radial-gradient(120% 90% at 50% -10%,rgba(139,143,152,.32),transparent 60%);
+}
+#next-matches-card.floodlit.urgent::after{
+  background-image:
+    linear-gradient(0deg,transparent 12%,#9A9EA6 12%,#9A9EA6 12.8%,transparent 12.8%),
+    linear-gradient(0deg,transparent 88%,#9A9EA6 88%,#9A9EA6 88.8%,transparent 88.8%);
+}
+#next-matches-card.floodlit.urgent .section-title{color:#C4C6CB;border-bottom-color:rgba(200,203,209,.2);}
+#next-matches-card.floodlit.urgent .tag{background:rgba(200,203,209,.14);border-color:rgba(200,203,209,.35);color:#C4C6CB;}
+#next-matches-card.floodlit.urgent .mc-league{color:#C4C6CB;}
+#next-matches-card.floodlit.urgent .mc-meta{color:#9A9EA6;}
+
+.mcb-row{display:flex;align-items:center;justify-content:center;gap:14px;}
+.mcb-side{display:flex;flex-direction:column;align-items:center;gap:6px;width:118px;min-width:0;}
+.mcb-crest{width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);}
+.mcb-crest-fallback{width:52px;height:52px;border-radius:50%;flex-shrink:0;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:17px;color:#fff;}
+.mcb-pair{font-family:var(--font-display);font-size:13px;font-weight:600;color:#F2F6FF;line-height:1.25;text-align:center;}
+.mcb-pair.won{color:#6EE7A8;}
+.mcb-pair.won::before{content:"✓ ";}
+.mcb-team{font-size:9.5px;font-weight:600;color:#9A9EA6;letter-spacing:.05em;text-transform:uppercase;}
+.mcb-center{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:64px;}
+.mcb-pct{font-family:var(--font-display);font-size:24px;font-weight:700;color:#E4E5E9;font-variant-numeric:tabular-nums;}
+.mcb-pct .sep{font-size:13px;color:rgba(255,255,255,.35);}
+.mcb-pct-label{font-family:var(--font-display);font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7A7E87;}
+.mcb-score{font-family:var(--font-display);font-size:22px;font-weight:700;color:#6EE7A8;}
+.mcb-vs{font-family:var(--font-display);font-size:16px;font-weight:700;color:#C4C6CB;}
+.mcb-note{font-size:9px;color:#7A7E87;margin-top:2px;text-align:center;}
+.mcb-powered{display:block;text-align:center;margin-top:9px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;color:#7A7E87;text-decoration:none;}
+.mcb-powered:hover{color:#C4C6CB;text-decoration:underline;}
+
 /* Court schedule, inside the same floodlit treatment as the homepage's
    Next Match hero — a lit court at night, applied here to the admin/
    captain court-assignment grid instead of just the teaser card. Every
