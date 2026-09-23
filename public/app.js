@@ -7688,7 +7688,7 @@ function renderCourtScheduleGrid(fixtures) {
   const thead = document.createElement("thead");
   if (myRole === "admin") {
     thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) =>
-      `<th><input type="text" class="court-name-input" placeholder="Court ${c + 1}" value="${escapeHtml(courtNames[c] || "")}"></th>`
+      `<th><input type="text" class="court-name-input" placeholder="Court ${c + 1}" value="${escapeHtml(courtNames[c] || "")}">${c === superTieCourt ? '<div class="note" style="margin-top:2px;">Super Tie</div>' : ""}</th>`
     ).join("") + "</tr>";
     thead.querySelectorAll(".court-name-input").forEach((input) => {
       input.onchange = async () => {
@@ -7700,7 +7700,9 @@ function renderCourtScheduleGrid(fixtures) {
       };
     });
   } else {
-    thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml(courtNames[c] || ("Court " + (c + 1)))}</th>`).join("") + "</tr>";
+    // The reserved Super Tie court gets an explicit "(Super Tie)" suffix,
+    // custom-named or not, so it's never ambiguous which court it is.
+    thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml((courtNames[c] || ("Court " + (c + 1))) + (c === superTieCourt ? " (Super Tie)" : ""))}</th>`).join("") + "</tr>";
   }
   table.appendChild(thead);
   const tbody = document.createElement("tbody");
