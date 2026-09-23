@@ -183,11 +183,19 @@ nav.tabs.tabs-sub button.active{background:var(--accent-soft);color:var(--accent
 .hub-top-row{margin-bottom:14px;}
 .hub-top-row > .card + .card{margin-top:14px;}
 @media (min-width:900px){
-  .hub-top-row{display:flex;align-items:flex-start;gap:16px;margin-bottom:0;}
+  /* stretch, not flex-start: This week's news list routinely runs much
+     taller than the ticket, and flex-start left the shorter card ending
+     early — a big blank gap of page background next to the tall dark
+     card instead of two cards that read as a matched pair. Both get
+     turned into flex columns so their own dark background actually
+     fills that stretched height rather than leaving white underneath. */
+  .hub-top-row{display:flex;align-items:stretch;gap:16px;margin-bottom:0;}
   .hub-top-row > .card{margin-bottom:0;}
   .hub-top-row > .card + .card{margin-top:0;}
-  .hub-top-row > #next-matches-card{flex:1.3 1 0;min-width:0;}
-  .hub-top-row > #homepage-week-card{flex:1 1 0;min-width:320px;}
+  .hub-top-row > #next-matches-card{flex:1.3 1 0;min-width:0;display:flex;flex-direction:column;}
+  .hub-top-row > #next-matches-card .mc-carousel{margin-top:auto;margin-bottom:auto;}
+  .hub-top-row > #homepage-week-card{flex:1 1 0;min-width:320px;display:flex;flex-direction:column;}
+  .hub-top-row > #homepage-week-card .week-dark{flex:1;display:flex;flex-direction:column;min-height:0;}
 }
 button{transition:filter .12s ease,transform .08s ease,border-color .12s ease,background-color .12s ease;font-family:var(--font-body);}
 button:active{transform:translateY(1px);}
