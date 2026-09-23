@@ -3848,6 +3848,21 @@ router.get("/leagues/:leagueId/season-history", (req, res) => {
   }));
   res.json(summaries);
 });
+// Permanently wipes every archived season for this league — the past
+// fixtures/results/standings snapshots season/reset creates. Hall of Fame
+// entries are untouched (they're admin-entered free text, not derived from
+// these snapshots), but anything computed FROM a snapshot (a player's
+// "unbeaten season" badge, an archived season's own results view) is gone
+// for good along with it. Owner-only, same tier as deleting the league
+// itself.
+router.delete("/leagues/:leagueId/season-history", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const removed = (league.seasonHistory || []).length;
+  league.seasonHistory = [];
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, removed });
+});
 router.get("/leagues/:leagueId/season-history/:seasonId", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });

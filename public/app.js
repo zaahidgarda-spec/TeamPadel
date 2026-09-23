@@ -5224,6 +5224,18 @@ function renderRulesCard() {
     };
     actionsWrap.appendChild(hideBtn);
   }
+  if (league.seasonHistoryCount > 0) {
+    const clearHistoryBtn = document.createElement("button");
+    clearHistoryBtn.className = "danger"; clearHistoryBtn.textContent = "Clear past seasons";
+    clearHistoryBtn.onclick = async () => {
+      if (!confirm(`Permanently delete all ${league.seasonHistoryCount} archived season${league.seasonHistoryCount === 1 ? "" : "s"} for "${league.name}"? Their fixtures, results and standings are gone for good — this cannot be undone. Hall of Fame entries stay (they're separate), but anything tied to a specific past season (like an "unbeaten season" badge) goes with it. The current, live season isn't touched.`)) return;
+      try {
+        await api(`/leagues/${currentLeagueId}/season-history`, { method: "DELETE" });
+        await refreshLeague(); renderAll();
+      } catch (e) { alert(e.message); }
+    };
+    actionsWrap.appendChild(clearHistoryBtn);
+  }
   const deleteBtn = document.createElement("button");
   deleteBtn.className = "danger"; deleteBtn.textContent = "Delete this league";
   deleteBtn.onclick = async () => {
