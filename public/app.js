@@ -6775,7 +6775,10 @@ function timeSlotPanel(f, teamA, teamB) {
         const th = document.createElement("th");
         th.textContent = "Match " + (s + 1);
         tr.appendChild(th);
-        const rowCount = ownedCells.filter((oc) => oc.slot === s).length;
+        // The Super Tie seed is excluded from this count — it's meant to run
+        // alongside a pairs seed in the same slot, on its own reserved
+        // court, so that's never the scheduling squeeze this badge flags.
+        const rowCount = ownedCells.filter((oc) => oc.slot === s && oc.seed !== 4).length;
         usedCourts.forEach((c) => {
           const key = s + ":" + c;
           const td = document.createElement("td");
@@ -7712,10 +7715,13 @@ function renderCourtScheduleGrid(fixtures) {
     th.textContent = "Match " + (s + 1);
     tr.appendChild(th);
     // A "double" is a fixture that appears twice in this slot row — two of
-    // its rubbers running on two different courts at the same time.
+    // its PAIRS rubbers running on two different courts at the same time
+    // (a genuine scheduling squeeze). The Super Tie court is excluded
+    // entirely — it's meant to run alongside a pairs seed in the same slot,
+    // so that's never a squeeze and never gets merged or tagged as one.
     const rowCounts = {};
-    (savedGrid[s] || []).forEach((cell) => { if (cell) rowCounts[cell.fixtureId] = (rowCounts[cell.fixtureId] || 0) + 1; });
-    const isDouble = (cell) => !!(cell && rowCounts[cell.fixtureId] > 1);
+    (savedGrid[s] || []).forEach((cell) => { if (cell && cell.seed !== 4) rowCounts[cell.fixtureId] = (rowCounts[cell.fixtureId] || 0) + 1; });
+    const isDouble = (cell) => !!(cell && cell.seed !== 4 && rowCounts[cell.fixtureId] > 1);
     const doubleBadge = (text) => { const b = document.createElement("div"); b.className = "cs-double-badge"; b.textContent = text; return b; };
 
     for (let c = 0; c < courts; c++) {
