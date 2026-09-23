@@ -454,6 +454,24 @@ function effectiveKit(team) {
   const kit = team.kit || defaultKit();
   return { ...kit, logo: kit.logo === null ? "" : (kit.logo || team.logo || "") };
 }
+// Every photo/logo upload in the app lands inside its league's own single
+// stored record (one JSON blob per league — teams, kit photos, news posts,
+// everything), so a big enough image doesn't just cost that one upload —
+// it makes EVERY future read and write of that whole league bigger, until
+// a save trips Upstash's 10MB per-request limit and starts failing
+// silently (store.saveLeague's Redis write is fire-and-forget; nothing
+// here would otherwise know it didn't actually save). Client-side resize
+// already keeps normal uploads well under this, but nothing enforced it
+// server-side — this is the backstop for whatever gets here anyway
+// (resize skipped, bypassed, or a future upload path that forgets it).
+const MAX_IMAGE_DATA_URL_LENGTH = 2_800_000; // ~2MB of actual image data, base64-inflated
+function imageTooLarge(res, dataUrl) {
+  if (dataUrl && dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+    res.status(413).json({ error: "That image is too large — try a smaller photo." });
+    return true;
+  }
+  return false;
+}
 
 // Strip anything a given viewer shouldn't see: password hashes always,
 // and any not-yet-submitted seed selection that isn't theirs (this is
@@ -1225,6 +1243,7 @@ router.post("/admin/interesting/manual", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const { short, leagueName, photo } = req.body || {};
   if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
+  if (imageTooLarge(res, photo)) return;
   const extras = store.getHomepageExtras();
   if (!extras.manual) extras.manual = [];
   extras.manual.push({ id: logic.uid(), short: short.trim(), leagueName: (leagueName || "").trim(), photo: photo || "", createdAt: Date.now() });
@@ -1237,6 +1256,7 @@ router.put("/admin/interesting/manual/:id", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const { short, leagueName, photo } = req.body || {};
   if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
+  if (imageTooLarge(res, photo)) return;
   const extras = store.getHomepageExtras();
   const entry = (extras.manual || []).find((m) => m.id === req.params.id);
   if (!entry) return res.status(404).json({ error: "Not found." });
@@ -2721,7 +2741,10 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
-  if (req.body.logo !== undefined) team.logo = req.body.logo;
+  if (req.body.logo !== undefined) {
+    if (imageTooLarge(res, req.body.logo)) return;
+    team.logo = req.body.logo;
+  }
   if (req.body.name !== undefined) {
     const name = req.body.name.trim();
     if (!name) return res.status(400).json({ error: "Name is required." });
@@ -2756,6 +2779,7 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/photo", requireAdminOrCaptain((
   if (!team) return res.status(404).json({ error: "Team not found." });
   const { side, image } = req.body || {};
   if (side !== "front" && side !== "back") return res.status(400).json({ error: "Invalid side." });
+  if (imageTooLarge(res, image)) return;
   if (!team.kit) team.kit = defaultKit();
   team.kit[side] = image || "";
   store.saveLeague(league.id, league);
@@ -2766,6 +2790,7 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/logo", requireAdminOrCaptain((r
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
+  if (imageTooLarge(res, req.body && req.body.image)) return;
   if (!team.kit) team.kit = defaultKit();
   // A real upload is stored as-is; an explicit removal is remembered as
   // null (not "") so it stays removed instead of falling back to the
@@ -2782,6 +2807,7 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain
   if (!team) return res.status(404).json({ error: "Team not found." });
   const { slot, image } = req.body || {};
   if (!KIT_SPONSOR_SLOTS.includes(slot)) return res.status(400).json({ error: "Invalid sponsor slot." });
+  if (imageTooLarge(res, image)) return;
   if (!team.kit) team.kit = defaultKit();
   team.kit.sponsors[slot] = image || "";
   store.saveLeague(league.id, league);
@@ -2850,6 +2876,7 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/notes", requireAdminOrCaptain((
 router.put("/leagues/:leagueId/kit-main-sponsor", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
+  if (imageTooLarge(res, req.body && req.body.image)) return;
   league.kitMainSponsor = (req.body && req.body.image) || "";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -2857,6 +2884,7 @@ router.put("/leagues/:leagueId/kit-main-sponsor", requireAdmin, (req, res) => {
 router.put("/leagues/:leagueId/kit-secondary-sponsor", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
+  if (imageTooLarge(res, req.body && req.body.image)) return;
   league.kitSecondarySponsor = (req.body && req.body.image) || "";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -2965,6 +2993,7 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res
     isOwnProfile = !!(account && (account.claims || []).some((c) => c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
   }
   if (!isAdmin && !isCaptain && !isOwnProfile) return res.status(403).json({ error: "Not allowed." });
+  if (imageTooLarge(res, req.body.photo)) return;
 
   player.photo = req.body.photo || "";
   store.saveLeague(league.id, league);
@@ -3941,6 +3970,7 @@ router.put("/leagues/:leagueId/default-venue", requireAdmin, (req, res) => {
 // data-URL-on-the-object approach as a team's logo, just a bigger image.
 router.put("/leagues/:leagueId/court-photo", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
+  if (imageTooLarge(res, req.body.photo)) return;
   league.courtPhoto = req.body.photo || "";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -6026,6 +6056,7 @@ router.post("/leagues/:leagueId/news", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const { title, body, photo } = req.body || {};
   if (!title || !title.trim()) return res.status(400).json({ error: "Title is required." });
+  if (imageTooLarge(res, photo)) return;
   if (!league.news) league.news = [];
   league.news.push({ id: logic.uid(), title: title.trim(), body: (body || "").trim(), photo: photo || "", createdAt: Date.now() });
   store.saveLeague(league.id, league);
@@ -6456,6 +6487,7 @@ router.post("/leagues/:leagueId/sponsors", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const { name, link, image } = req.body || {};
   if (!image) return res.status(400).json({ error: "An image is required." });
+  if (imageTooLarge(res, image)) return;
   if (!league.sponsors) league.sponsors = [];
   league.sponsors.push({ id: logic.uid(), name: (name || "").trim(), link: (link || "").trim(), image });
   store.saveLeague(league.id, league);

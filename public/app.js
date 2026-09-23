@@ -10271,17 +10271,16 @@ function kitOpenBadgePicker(key) {
 }
 // Shared by the file-input's onchange and a drag-and-drop onto the photo
 // or a badge — same resize-then-PUT flow regardless of how the file
-// arrived. These are the exact files a kit supplier downloads off the Kit
-// Share page to actually produce the kit — 240px for a badge was fine for
-// showing where it sits on the on-screen mockup, but far too small to
-// hand to a printer/embroiderer for real production. Bumped both tiers
-// up (badges still smaller than the garment photo, which needs the most
-// detail) — this data only ever goes to the captain who owns this team or
-// a kit-share/admin fetch (see sanitize()'s viewerIsThisTeam check), never
-// into a page every visitor loads, so there's no broad payload cost here.
+// arrived. These used to go up to 1600/900px for print-quality kit-share
+// downloads, on the assumption that "never shown on a page every visitor
+// loads" meant no real payload cost — but every kit photo still lands
+// inside its league's one shared stored record (see MAX_IMAGE_DATA_URL_
+// LENGTH server-side), so a whole season's worth of front/back photos
+// across every team was quietly pushing some leagues toward Redis's 10MB
+// per-write limit. Pulled back to still-good-for-a-supplier-email sizes.
 function kitHandleUploadedFile(target, file) {
   if (!file) return;
-  const maxSize = target.field === "front" || target.field === "back" ? 1600 : 900;
+  const maxSize = target.field === "front" || target.field === "back" ? 1100 : 650;
   resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
     if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
     try {
@@ -10302,7 +10301,7 @@ function kitHandleUploadedFile(target, file) {
       }
       await refreshLeague(); renderKit();
     } catch (e) { alert(e.message); }
-  });
+  }, 0.75);
 }
 el("kit-file-input").onchange = () => {
   const input = el("kit-file-input");
