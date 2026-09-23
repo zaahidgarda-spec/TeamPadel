@@ -8018,10 +8018,15 @@ async function renderLiveCourtControl(opts) {
   // meaningfully lighter — a 2-minute difference isn't worth interrupting
   // someone for.
   const SUGGEST_THRESHOLD_MINS = 8;
+  // Ormonde rules reserves the last court for the Super Tie — never suggest
+  // moving a pairs match there, or the Super Tie onto a pairs court; the
+  // server would just reject it (see court-schedule/:round/assign).
+  const superTieCourt = league.singlesDecider && league.format !== "pairs" && courts > 1 ? courts - 1 : null;
   function suggestBetterCourt(s, currentCourt) {
     let best = -1, bestLoad = Infinity;
     for (let c = 0; c < courts; c++) {
       if (c === currentCourt || grid[s][c]) continue;
+      if (superTieCourt !== null && (c === superTieCourt) !== (currentCourt === superTieCourt)) continue;
       if (courtLoadUpcoming[c] < bestLoad) { bestLoad = courtLoadUpcoming[c]; best = c; }
     }
     if (best === -1 || courtLoadUpcoming[currentCourt] - bestLoad < SUGGEST_THRESHOLD_MINS) return null;
@@ -8032,7 +8037,7 @@ async function renderLiveCourtControl(opts) {
   const courtLabel = (c) => courtNames[c] || ("Court " + (c + 1));
   // Everything the tiles, the timeline and the action sheet need, kept so a
   // tap can act on exactly what this render showed.
-  liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread };
+  liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread, superTieCourt };
   updateLiveMoveBar();
   updateLiveFocusStrip();
   if (liveCourtView === "timeline") renderLiveTimeline(wrap); else renderLiveLanes(wrap);
@@ -8072,13 +8077,16 @@ function shortPlayerName(name) {
   if (parts.length < 2) return parts[0] || "TBD";
   return parts[0][0].toUpperCase() + ". " + parts.slice(1).join(" ");
 }
-// Both sides of a match: the team (for its badge) and the two players who
-// are actually playing this seed.
+// Both sides of a match: the team (for its badge) and the players who are
+// actually playing this seed — 2 for a pairs seed, 1 for an Ormonde-rules
+// Super Tie seed (no padded "TBD" partner there; it isn't a pair).
 function liveSides(t, full) {
+  const isSuperTie = rubberSlot4Kind(t.f, t.cell.seed) === "singles";
+  const wanted = isSuperTie ? 1 : 2;
   const side = (team, sel) => {
     const pair = (sel && sel.pairs && sel.pairs[t.cell.seed]) || [];
     const players = pair.map((id) => playerById(team, id)).filter(Boolean).map((p) => (full ? p.name : shortPlayerName(p.name)));
-    while (players.length < 2) players.push("TBD");
+    while (players.length < wanted) players.push("TBD");
     return { team, players };
   };
   return [side(t.opt && t.opt.teamA, t.f.selectionA), side(t.opt && t.opt.teamB, t.f.selectionB)];
@@ -8087,13 +8095,14 @@ function liveTileHtml(s, c, oneFixture) {
   const t = liveTileInfo(s, c);
   if (!t) return `<div class="lc-slot" data-s="${s}" data-c="${c}"><div class="lc-tile lc-empty">&mdash;</div></div>`;
   const { info } = t, sides = liveSides(t, false);
-  const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b><b>${escapeHtml(sd.players[1])}</b></div>`;
+  const isSuperTie = rubberSlot4Kind(t.f, t.cell.seed) === "singles";
+  const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b>${isSuperTie ? "" : `<b>${escapeHtml(sd.players[1])}</b>`}</div>`;
   // The two teams' badges sit once in the court's header when the court
   // hosts a single fixture; a court that mixes fixtures has no one pair of
   // teams to name up there, so each tile carries its own little badges.
   const mid = oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`;
   const teams = `${lines(sides[0])}<div class="lc-vs">${mid}</div>${lines(sides[1])}`;
-  const label = `Seed ${t.cell.seed + 1}`;
+  const label = isSuperTie ? "Super Tie" : `Seed ${t.cell.seed + 1}`;
   let foot;
   if (info.state === "live") {
     foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}">${elapsedClock(info.rubber.startedAt)}</span></div>`;
@@ -8111,6 +8120,11 @@ function liveTileHtml(s, c, oneFixture) {
 let liveMoveFrom = null;
 function liveMoveTargetOk(s, c) {
   if (!liveMoveFrom || (liveMoveFrom.s === s && liveMoveFrom.c === c)) return false;
+  // Ormonde rules reserves the last court for the Super Tie — a move can
+  // only land on a court of the same kind (pairs<->pairs, Super Tie's own
+  // court<->itself) the source is already on.
+  const stc = liveBoard.superTieCourt;
+  if (stc !== null && stc !== undefined && (c === stc) !== (liveMoveFrom.c === stc)) return false;
   const t = liveTileInfo(s, c);
   return !t || t.info.state === "upcoming";
 }
@@ -8305,10 +8319,12 @@ function renderLiveSheet() {
   const t = liveSheetCell ? liveTileInfo(s, c) : null;
   if (!t) { closeLiveSheet(); return; }
   const b = liveBoard, { info, f, cell } = t, n = liveNames(t), sides = liveSides(t, true);
+  const isSuperTie = rubberSlot4Kind(f, cell.seed) === "singles";
   const swatch = info.state === "upcoming" ? { g: "#1E9E5C", r: "#D93A2B", n: "#5B6E9C" }[info.tone] : "#243360";
   const status = info.state === "live" ? "Live" : info.state === "done" ? "Finished" : "To play";
-  const sideHtml = (sd) => `<div class="lc-sh-side">${sd.team ? avatarHtml(sd.team) : ""}<div><b>${escapeHtml(sd.team ? sd.team.name : "TBD")}</b><span>${escapeHtml(sd.players[0])} &amp; ${escapeHtml(sd.players[1])}</span></div></div>`;
-  let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1}</b><span>Seed ${cell.seed + 1} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>
+  const sideHtml = (sd) => `<div class="lc-sh-side">${sd.team ? avatarHtml(sd.team) : ""}<div><b>${escapeHtml(sd.team ? sd.team.name : "TBD")}</b><span>${escapeHtml(sd.players[0])}${isSuperTie ? "" : " &amp; " + escapeHtml(sd.players[1])}</span></div></div>`;
+  const seedLabel = isSuperTie ? "Super Tie" : "Seed " + (cell.seed + 1);
+  let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1}</b><span>${seedLabel} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>
     <div class="lc-sh-sides">${sideHtml(sides[0])}<span class="lc-v">v</span>${sideHtml(sides[1])}</div>`;
   if (info.state === "upcoming") {
     const pos = info.pace || "auto";
