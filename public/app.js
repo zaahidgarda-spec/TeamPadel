@@ -1060,8 +1060,7 @@ async function renderNextMatches() {
   el("next-matches-title").textContent = soonestLabel ? `Matches ${soonestLabel}` : "Next matches";
   card.classList.add("urgent");
   nextMatchesIdx = 0;
-  renderNextMatchSlide();
-  startNextMatchesTimer();
+  renderNextMatchesView();
 }
 // Big-crest "broadcast" layout, scoped to the Next Matches hero only (see
 // the .mcb- rules in styles.css) — everywhere else that shares .mc-pair/
@@ -1072,18 +1071,15 @@ function mcbCrestHtml(logo, teamName) {
   const initial = teamName ? teamName.trim().charAt(0).toUpperCase() : "?";
   return `<div class="mcb-crest-fallback">${escapeHtml(initial)}</div>`;
 }
-function renderNextMatchSlide() {
-  const m = nextMatchesPairings[nextMatchesIdx];
-  if (!m) return;
-  updateNextMatchesPhotoLayer(m);
+// One ticket's markup — shared by the mobile single-slide carousel and the
+// desktop stacked list (renderNextMatchesDesktopList) below, so the two
+// presentations never drift apart.
+function mcbTicketHtml(m) {
   // Every seed pairing within one fixture shares the same round-level
   // time, so showing the clock time here just repeats itself across that
   // fixture's slides — "Match N" (the seed number) actually tells them
   // apart instead.
   const when = m.date ? (relativeDayLabel(m.date) || fmtDate(m.date)) : "Date TBC";
-  const liveTag = el("next-matches-live-tag");
-  if (liveTag) liveTag.style.display = isWithinLiveWindow(m.date, m.time) ? "inline-block" : "none";
-  const slide = el("next-matches-slide");
   // A seed already scored (captains enter results one at a time through
   // the night) shows that score in the center instead of a win%, with the
   // winning pair checked off — same convention as the results list. No
@@ -1099,10 +1095,9 @@ function renderNextMatchSlide() {
   } else {
     centerHtml = `<div class="mcb-vs">VS</div>`;
   }
-  const powered = m.prediction ? '<a class="mcb-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
   const footerLeft = [m.leagueName ? escapeHtml(m.leagueName) : "", `Seed ${m.seed}`, `Match ${m.seed}`].filter(Boolean).join(" &middot; ");
   const footerRight = [when, m.venue].filter(Boolean).map(escapeHtml).join(" &middot; ");
-  slide.innerHTML = `
+  return `
     <div class="mcb-card">
       <div class="mcb-body">
         <div class="mcb-accent"></div>
@@ -1122,8 +1117,17 @@ function renderNextMatchSlide() {
       </div>
       <div class="mcb-footer"><span>${footerLeft}</span><span>${footerRight}</span></div>
     </div>
-    ${powered}
   `;
+}
+const mcbPoweredHtml = () => '<a class="mcb-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>';
+function renderNextMatchSlide() {
+  const m = nextMatchesPairings[nextMatchesIdx];
+  if (!m) return;
+  updateNextMatchesPhotoLayer(m);
+  const liveTag = el("next-matches-live-tag");
+  if (liveTag) liveTag.style.display = isWithinLiveWindow(m.date, m.time) ? "inline-block" : "none";
+  const slide = el("next-matches-slide");
+  slide.innerHTML = mcbTicketHtml(m) + (m.prediction ? mcbPoweredHtml() : "");
   bindNewsPlayerLinks(slide);
   // Re-trigger the slide-in animation on every rotation, not just the first
   // render — swapping innerHTML alone doesn't replay a CSS animation
@@ -1131,6 +1135,48 @@ function renderNextMatchSlide() {
   slide.classList.remove("mc-slide");
   void slide.offsetWidth;
   slide.classList.add("mc-slide");
+}
+// Desktop has the vertical room to just show several tickets stacked
+// instead of rotating one at a time like a phone has to — same source
+// data either way (see renderNextMatchesView), capped so a busy night
+// across many leagues doesn't turn the card into an endless scroll.
+const NEXT_MATCHES_DESKTOP_MQ = window.matchMedia ? window.matchMedia("(min-width:900px)") : null;
+const NEXT_MATCHES_DESKTOP_MAX = 6;
+function isNextMatchesDesktop() {
+  return !!(NEXT_MATCHES_DESKTOP_MQ && NEXT_MATCHES_DESKTOP_MQ.matches);
+}
+function renderNextMatchesDesktopList() {
+  updateNextMatchesPhotoLayer(nextMatchesPairings[0]);
+  const liveTag = el("next-matches-live-tag");
+  if (liveTag) liveTag.style.display = nextMatchesPairings.some((m) => isWithinLiveWindow(m.date, m.time)) ? "inline-block" : "none";
+  const slide = el("next-matches-slide");
+  const shown = nextMatchesPairings.slice(0, NEXT_MATCHES_DESKTOP_MAX);
+  slide.innerHTML = `<div class="mcb-list">${shown.map(mcbTicketHtml).join("")}</div>` + (shown.some((m) => m.prediction) ? mcbPoweredHtml() : "");
+  bindNewsPlayerLinks(slide);
+  slide.classList.remove("mc-slide");
+  void slide.offsetWidth;
+  slide.classList.add("mc-slide");
+}
+// Same source data either way — just a different presentation chosen by
+// viewport width, re-picked on every load and again if the window is
+// resized across the breakpoint (see the matchMedia listener below).
+function renderNextMatchesView() {
+  if (isNextMatchesDesktop()) {
+    renderNextMatchesDesktopList();
+  } else {
+    renderNextMatchSlide();
+    startNextMatchesTimer();
+  }
+}
+if (NEXT_MATCHES_DESKTOP_MQ) {
+  const onNextMatchesBreakpointChange = () => {
+    if (!nextMatchesPairings.length) return;
+    if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
+    nextMatchesIdx = 0;
+    renderNextMatchesView();
+  };
+  if (NEXT_MATCHES_DESKTOP_MQ.addEventListener) NEXT_MATCHES_DESKTOP_MQ.addEventListener("change", onNextMatchesBreakpointChange);
+  else NEXT_MATCHES_DESKTOP_MQ.addListener(onNextMatchesBreakpointChange);
 }
 // Two homepage teasers, public and site-wide — every visible league's
 // current Pair of the Week, and a handful of recent highlights across all

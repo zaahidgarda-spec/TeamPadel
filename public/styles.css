@@ -193,7 +193,13 @@ nav.tabs.tabs-sub button.active{background:var(--accent-soft);color:var(--accent
   .hub-top-row > .card{margin-bottom:0;}
   .hub-top-row > .card + .card{margin-top:0;}
   .hub-top-row > #next-matches-card{flex:1.3 1 0;min-width:0;display:flex;flex-direction:column;}
-  .hub-top-row > #next-matches-card .mc-carousel{margin-top:auto;margin-bottom:auto;}
+  /* No more 380px cap and no more single centered ticket up here — desktop
+     renders a stacked list of tickets (renderNextMatchesDesktopList in
+     app.js) that's free to use the card's full width, and grows toward
+     matching This week's height instead of one ticket floating in a lot
+     of padding. The auto margins still center a short list (a quiet
+     night with only one match) rather than pinning it to the top. */
+  .hub-top-row > #next-matches-card .mc-carousel{max-width:none;margin-top:auto;margin-bottom:auto;}
   .hub-top-row > #homepage-week-card{flex:1 1 0;min-width:320px;display:flex;flex-direction:column;}
   .hub-top-row > #homepage-week-card .week-dark{flex:1;display:flex;flex-direction:column;min-height:0;}
 }
@@ -845,6 +851,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
    thin accent bar down the left edge and its own darker footer strip for
    the league/date line — that nesting is what reads as "broadcast" rather
    than just a recolored version of the plain layout. */
+/* Desktop's stacked-tickets mode (renderNextMatchesDesktopList) — several
+   .mcb-card tickets one after another instead of the single centered one
+   the mobile carousel rotates through. */
+.mcb-list{display:flex;flex-direction:column;gap:10px;}
 .mcb-card{background:rgba(10,10,12,.92);border-radius:8px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.4);text-align:left;}
 .mcb-body{display:flex;align-items:stretch;}
 .mcb-accent{width:5px;flex-shrink:0;background:#8B8F98;}
