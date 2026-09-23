@@ -2912,7 +2912,7 @@ async function renderAccountPendingResults() {
     const tilesHtml = !r.lineupsSubmitted
       ? '<div class="pr-lineups-pending">Waiting for both captains to submit their line-up.</div>'
       : r.rubbers.map((rb) => {
-          const seedLabel = rb.isDecider ? "Decider" : rb.isSingles ? "Singles" : total === 1 ? "Match" : "Seed " + rb.seed;
+          const seedLabel = rb.isDecider ? "Decider" : rb.isSingles ? "Super Tie" : total === 1 ? "Match" : "Seed " + rb.seed;
           const scoreChip = rb.scoreText ? `<span class="pr-score-chip">${escapeHtml(rb.scoreText)}</span>` : '<span class="pr-score-chip pending">Not played</span>';
           const nameLine = (name, won) => `<div${won ? ' class="won"' : ""}>${escapeHtml(name)}</div>`;
           const btnLabel = rb.scoreText ? "Edit" : "Enter score";
@@ -6987,7 +6987,7 @@ function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
-    const seedNum = sel.pairs.length === 5 && i === 4 ? "Singles" : "Seed " + (i + 1);
+    const seedNum = sel.pairs.length === 5 && i === 4 ? "Super Tie" : "Seed " + (i + 1);
     html += `<div class="seed-row"><span class="num">${seedNum}</span><span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
@@ -7187,7 +7187,7 @@ function selectionForm(f, team, side) {
     // Ormonde rules: the 5th seed is a real, always-played singles rubber —
     // one player, not a pair, so it gets one picker below instead of two.
     const isSingles = localPairs.length === 5 && i === 4;
-    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Singles" : "Seed " + (i + 1)}</span>`;
+    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Super Tie" : "Seed " + (i + 1)}</span>`;
     const seedIdx = i;
     const fields = [];
     const fieldLabel = (slot) => {
@@ -8422,7 +8422,8 @@ function renderFixtures() {
           const nameB = pairNamesClickableHtml(teamB, pairB, f.selectionB);
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
-          const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
+          const isSuperTie = f.selectionA.pairs.length === 5 && i === 4;
+          const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : isSuperTie ? "Super Tie" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
           html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span class="rubber-vs">vs</span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
         });
         html += "</div>";
@@ -8468,6 +8469,8 @@ function tiebreakWinnerClient(tb) {
   return av > bv ? "A" : "B";
 }
 function rubberWinnerClient(r) {
+  // Ormonde rules' Super Tie seed: no sets, just the one tie-break.
+  if (r.sets.length === 0) return tiebreakWinnerClient(r.tb);
   if (r.sets.length >= 3) {
     // Vibora (pairs): best of 3 real sets, first to 2 — no match tie-break.
     let winsA = 0, winsB = 0;
@@ -8485,6 +8488,7 @@ function rubberWinnerClient(r) {
 // tie-break, and for a pairs rubber's optional 3rd set. Name is a holdover
 // from the team-only original; the check itself doesn't care about format.
 function needsTiebreakClient(r) {
+  if (r.sets.length === 0) return false;
   const s1 = setWinnerClient(r.sets[0]), s2 = setWinnerClient(r.sets[1]);
   return !!(s1 && s2 && s1 !== s2);
 }
@@ -8499,6 +8503,9 @@ function fixtureScoreClient(f) {
 // pairs draw's skipped 3rd set) are left out rather than shown as "?-?".
 function rubberScoreText(r) {
   const setText = (s) => (s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "") ? s[0] + "-" + s[1] : null;
+  // Ormonde rules' Super Tie seed: the tie-break IS the whole match, so it
+  // shows as a bare score ("10-7"), not bracketed after a set list.
+  if (r.sets.length === 0) return setText(r.tb) || "";
   const parts = r.sets.map(setText).filter(Boolean);
   if (r.sets.length < 3 && needsTiebreakClient(r) && tiebreakWinnerClient(r.tb)) {
     const tb = setText(r.tb);
@@ -8841,7 +8848,7 @@ function resultsCard(f) {
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Super Tie" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
@@ -8866,10 +8873,12 @@ function resultsCard(f) {
       tag.textContent = "Forfeit — " + (winnerTeam ? winnerTeam.name : "?") + " awarded the win";
       scores.appendChild(tag);
     }
-    [0, 1].forEach((si) => {
-      const valid = isValidSetClient(rubber.sets[si][0], rubber.sets[si][1]);
-      if (valid === false) { const w = document.createElement("div"); w.className = "warn"; w.textContent = "Set " + (si + 1) + ": not a real padel score"; scores.appendChild(w); }
-    });
+    if (rubber.sets.length > 0) {
+      [0, 1].forEach((si) => {
+        const valid = isValidSetClient(rubber.sets[si][0], rubber.sets[si][1]);
+        if (valid === false) { const w = document.createElement("div"); w.className = "warn"; w.textContent = "Set " + (si + 1) + ": not a real padel score"; scores.appendChild(w); }
+      });
+    }
     if (editable) {
       const editBtn = document.createElement("button"); editBtn.className = "secondary score-edit-btn";
       editBtn.textContent = rubberScoreText(rubber) ? "Edit score" : "Enter score";
@@ -8955,13 +8964,16 @@ function resultsCard(f) {
 function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pairBHtml, opts) {
   opts = opts || {};
   const isPairsRubber = rubber.sets.length >= 3;
+  // Ormonde rules' Super Tie seed: no sets at all — the whole "match" is
+  // one tie-break, so it gets its own much simpler entry form below instead
+  // of the normal 2-sets(+decider) grid.
+  const isSuperTieOnly = rubber.sets.length === 0;
   const state = {
     sets: rubber.sets.map((s) => [s[0] === null || s[0] === "" ? null : Number(s[0]), s[1] === null || s[1] === "" ? null : Number(s[1])]),
     tb: [rubber.tb[0] === null || rubber.tb[0] === "" ? 0 : Number(rubber.tb[0]), rubber.tb[1] === null || rubber.tb[1] === "" ? 0 : Number(rubber.tb[1])],
   };
   const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-  const isSinglesSeed = rubberSlot4Kind(f, idx) === "singles";
-  el("score-modal-title").textContent = isDecider ? "Decider score" : isSinglesSeed ? "Singles score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  el("score-modal-title").textContent = isDecider ? "Decider score" : isSuperTieOnly ? "Super Tie score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
   const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
   const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
   const splitAfterTwo = () => {
@@ -8969,8 +8981,51 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     return !!(s1 && s2 && s1 !== s2);
   };
   const showThirdSet = () => isPairsRubber && splitAfterTwo();
-  const showTb = () => !isPairsRubber && splitAfterTwo();
+  const showTb = () => !isPairsRubber && !isSuperTieOnly && splitAfterTwo();
+  // Just the one tie-break, first to 10 win by 2 — no sets, no decider
+  // branching. A much shorter form than the normal score grid below.
+  function renderSuperTie() {
+    const body = el("score-modal-body");
+    const wtb = tiebreakWinnerClient(state.tb);
+    const winCls = (won) => won ? " won" : "";
+    let html = `<div class="score-table" style="grid-template-columns:1fr var(--score-col-w,48px);">`;
+    html += `<div class="score-th"></div><div class="score-th">Super Tie</div>`;
+    html += `<div class="score-team-cell">${avatarHtml(teamA)}<span>${nameA}</span></div>`;
+    html += `<input class="score-cell-input tb${winCls(wtb === "A")}" type="text" inputmode="numeric" data-tb="0" value="${state.tb[0]}">`;
+    html += `<div class="score-row-divider" style="grid-column:1/-1;"></div>`;
+    html += `<div class="score-team-cell">${avatarHtml(teamB)}<span>${nameB}</span></div>`;
+    html += `<input class="score-cell-input tb${winCls(wtb === "B")}" type="text" inputmode="numeric" data-tb="1" value="${state.tb[1]}">`;
+    html += `</div>`;
+    body.innerHTML = html;
+    body.querySelectorAll(".score-cell-input[data-tb]").forEach((inp) => {
+      inp.maxLength = 2;
+      inp.onfocus = () => inp.select();
+      inp.onchange = () => {
+        const side = Number(inp.dataset.tb);
+        const v = inp.value.trim();
+        state.tb[side] = v === "" ? 0 : Math.max(0, parseInt(v, 10) || 0);
+        renderSuperTie();
+      };
+      // A super tie-break runs to 10+ (first to 10, win by 2), so one digit
+      // isn't always finished. Move on once two digits are in — or once a
+      // single digit can only be the losing score (the other side already
+      // has 10 or more).
+      inp.oninput = () => {
+        const digits = inp.value.replace(/\D/g, "");
+        if (!digits) return;
+        const side = Number(inp.dataset.tb);
+        state.tb[side] = parseInt(digits, 10);
+        const done = digits.length >= 2 || state.tb[1 - side] >= 10;
+        if (!done) return;
+        inp.onchange = null;
+        renderSuperTie();
+        if (side === 0) { const c = body.querySelector('.score-cell-input[data-tb="1"]'); if (c) { c.focus(); c.select(); } }
+        else el("score-modal-save").focus();
+      };
+    });
+  }
   function render() {
+    if (isSuperTieOnly) { renderSuperTie(); return; }
     const body = el("score-modal-body");
     const thirdSet = showThirdSet();
     const tb = showTb();
@@ -9068,7 +9123,7 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   }
   async function saveScore() {
     const body = { sets: state.sets };
-    if (showTb()) body.tb = state.tb;
+    if (showTb() || isSuperTieOnly) body.tb = state.tb;
     const endpointBase = opts.endpointBase || `/leagues/${currentLeagueId}/fixtures/${f.id}`;
     try {
       await api(`${endpointBase}/rubbers/${idx}`, { method: "PUT", body });
@@ -9093,6 +9148,10 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   // away — one digit per box, no tapping around.
   const firstEmpty = [...el("score-modal-body").querySelectorAll(".score-cell-input[data-set]")].sort((a, b) => Number(a.dataset.set) - Number(b.dataset.set) || Number(a.dataset.side) - Number(b.dataset.side)).find((i) => i.value === "");
   if (firstEmpty) firstEmpty.focus();
+  else if (isSuperTieOnly) {
+    const firstTb = el("score-modal-body").querySelector('.score-cell-input[data-tb="0"]');
+    if (firstTb && !firstTb.value) firstTb.focus();
+  }
   el("score-modal-clear").onclick = () => { state.sets = state.sets.map(() => [null, null]); state.tb = [0, 0]; render(); };
   el("score-modal-save").onclick = saveScore;
 }
@@ -11606,7 +11665,7 @@ function archivedFixtureCard(seasonId, f, teams) {
     const row = document.createElement("div"); row.className = "rubber-row";
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
-    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Super Tie" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.

@@ -23,6 +23,14 @@ function emptyRubber(setCount) {
     forfeited: null,
   };
 }
+// Ormonde rules' 5th seed ("Super Tie"): no sets at all — the whole match
+// is one super tie-break (first to 10, win by 2), the same format already
+// used to decide a split-sets rubber, just played as the entire contest
+// instead of after 2 sets. `sets.length === 0` is what rubberWinner/
+// rubberScoreText key off to render and score it differently.
+function emptySuperTieRubber() {
+  return { sets: [], tb: [null, null], startedAt: null, completedAt: null, forfeited: null };
+}
 // seedCount is 4 for a team fixture (4 sub-matches/seeds a night) and 1 for
 // a Vibora (pairs) fixture — a pair IS the line-up, so there's only ever
 // one match to play.
@@ -37,7 +45,7 @@ function emptyFixtureExtras(seedCount) {
     venue: "",
     selectionA: emptySelection(n),
     selectionB: emptySelection(n),
-    rubbers: Array.from({ length: n }, () => emptyRubber(n === 1 ? 3 : 2)),
+    rubbers: Array.from({ length: n }, (_, i) => (n === 5 && i === 4 ? emptySuperTieRubber() : emptyRubber(n === 1 ? 3 : 2))),
     finalized: false,
     slotOrder: null, // once agreed: [seedIndex, ...] = play order for the night (team leagues only)
     courtOrderProposal: null, // { by: 'A'|'B', assignments: [{slot,court,seed}] } awaiting the other captain's response
@@ -114,6 +122,8 @@ function tiebreakWinner(tb) {
   return av > bv ? "A" : "B";
 }
 function rubberWinner(rubber) {
+  // Ormonde rules' Super Tie seed: no sets, just the one tie-break.
+  if (rubber.sets.length === 0) return tiebreakWinner(rubber.tb);
   if (rubber.sets.length >= 3) {
     // Vibora (pairs): best of 3 real sets, first to 2 — no match tie-break.
     let winsA = 0, winsB = 0;
@@ -133,6 +143,7 @@ function rubberWinner(rubber) {
   return tiebreakWinner(rubber.tb);
 }
 function needsTiebreak(rubber) {
+  if (rubber.sets.length === 0) return false;
   const s1 = setWinner(rubber.sets[0]);
   const s2 = setWinner(rubber.sets[1]);
   return !!(s1 && s2 && s1 !== s2);
@@ -150,6 +161,9 @@ function rubberScoreText(rubber, flip) {
     if (s[0] === null || s[0] === "" || s[1] === null || s[1] === "") return null;
     return flip ? s[1] + "-" + s[0] : s[0] + "-" + s[1];
   };
+  // Ormonde rules' Super Tie seed: the tie-break IS the whole match, so it
+  // shows as a bare score ("10-7"), not bracketed after a set list.
+  if (rubber.sets.length === 0) return setText(rubber.tb) || "";
   const parts = rubber.sets.map(setText).filter(Boolean);
   if (rubber.sets.length < 3 && needsTiebreak(rubber) && tiebreakWinner(rubber.tb)) {
     const tb = setText(rubber.tb);
@@ -1116,7 +1130,9 @@ function playerMatchHistory(league, playerId, ratingsData) {
       // A finalized team-league rubber always has a winner (finalize
       // requires it). A finalized pairs match can stand as a draw instead
       // — the split sets are real, played data, so it still belongs here.
-      const played = setWinner(rubber.sets[0]) && setWinner(rubber.sets[1]);
+      // Ormonde rules' Super Tie seed has no sets at all — its own
+      // tie-break winner (above) is all there is, no separate draw case.
+      const played = rubber.sets.length > 0 && !!(setWinner(rubber.sets[0]) && setWinner(rubber.sets[1]));
       if (!winner && !played) return;
       rows.push({
         label: stageLabel(league, f),
@@ -1229,6 +1245,10 @@ function teamTiebreakStats(league) {
         if (!f.finalized || (f.teamA !== t.id && f.teamB !== t.id)) return;
         const mySide = f.teamA === t.id ? "A" : "B";
         f.rubbers.forEach((r) => {
+          // Ormonde rules' Super Tie seed has no sets to split — it isn't a
+          // "team rubber that went to a tie-break", it's a different match
+          // shape entirely, so it's excluded from this stat.
+          if (r.sets.length === 0) return;
           const s1 = setWinner(r.sets[0]), s2 = setWinner(r.sets[1]);
           if (s1 && s2 && s1 !== s2) {
             const w = tiebreakWinner(r.tb);
@@ -1345,6 +1365,9 @@ function computeLeagueStats(league) {
   let totalRubbers = 0, totalTiebreaks = 0;
   finalized.forEach((f) => {
     f.rubbers.forEach((r) => {
+      // Ormonde rules' Super Tie seed has no sets — its own tie-break
+      // decides whether it counts as played, not a pair of set winners.
+      if (r.sets.length === 0) { if (rubberWinner(r)) totalRubbers++; return; }
       const s1 = setWinner(r.sets[0]), s2 = setWinner(r.sets[1]);
       // Both sets decided means the match was played, whether or not it
       // ended with an outright winner — a Vibora draw still counts.

@@ -3912,8 +3912,14 @@ router.post("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/rub
   if (winner !== "A" && winner !== "B") return res.status(400).json({ error: "Say which side gets the walkover." });
 
   const rubber = f.rubbers[idx];
-  rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
-  rubber.tb = [null, null];
+  // Ormonde rules' Super Tie seed has no sets at all — its walkover is a
+  // synthetic 10-0 tie-break instead of a synthetic 6-0, 6-0.
+  if (rubber.sets.length === 0) {
+    rubber.tb = winner === "A" ? [10, 0] : [0, 10];
+  } else {
+    rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
+    rubber.tb = [null, null];
+  }
   rubber.forfeited = winner;
   rubber.startedAt = Date.now();
   rubber.completedAt = rubber.startedAt;
@@ -5613,8 +5619,14 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requi
   if (f.finalized) return res.status(400).json({ error: "This fixture is already finalized — unlock it first." });
 
   const rubber = f.rubbers[idx];
-  rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
-  rubber.tb = [null, null];
+  // Ormonde rules' Super Tie seed has no sets at all — its walkover is a
+  // synthetic 10-0 tie-break instead of a synthetic 6-0, 6-0.
+  if (rubber.sets.length === 0) {
+    rubber.tb = winner === "A" ? [10, 0] : [0, 10];
+  } else {
+    rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
+    rubber.tb = [null, null];
+  }
   rubber.forfeited = winner;
   // Matches how a real completion reads everywhere that checks these two
   // fields (Live Court Control's live/done state, the elapsed-time strip)
@@ -5628,8 +5640,10 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requi
   const label = fixtureLabel(league, f);
   const winnerName = winner === "A" ? (teamA ? teamA.name : "?") : (teamB ? teamB.name : "?");
   const loserName = winner === "A" ? (teamB ? teamB.name : "?") : (teamA ? teamA.name : "?");
-  const seedLabel = f.rubbers.length === 1 ? "The match" : "Seed " + (idx + 1);
-  const msg = `${seedLabel} for ${label} was forfeited — ${winnerName} awarded a 6-0, 6-0 walkover over ${loserName}.`;
+  const isSuperTieSeed = idx === 4 && f.selectionA.pairs.length === 5;
+  const seedLabel = f.rubbers.length === 1 ? "The match" : isSuperTieSeed ? "The Super Tie" : "Seed " + (idx + 1);
+  const walkoverScore = rubber.sets.length === 0 ? "10-0" : "6-0, 6-0";
+  const msg = `${seedLabel} for ${label} was forfeited — ${winnerName} awarded a ${walkoverScore} walkover over ${loserName}.`;
   notify(league, f.teamA, "forfeit", msg, { round: f.round });
   notify(league, f.teamB, "forfeit", msg, { round: f.round });
   logAudit(league, req, f, "forfeit", { seedIdx: idx, winner, winnerName, loserName });
