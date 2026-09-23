@@ -3775,8 +3775,13 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   // Reset always archives first — there's no separate "remember to save
   // before you wipe" step to forget. A season with no fixtures yet (still
   // in setup) has nothing worth keeping, so it's skipped rather than
-  // saving an empty snapshot.
-  if (league.fixtures.length > 0) {
+  // saving an empty snapshot — and neither does a season whose fixtures
+  // exist but not one rubber has an actual result yet (e.g. resetting
+  // right after Start season to change a setting like Ormonde rules,
+  // before a single match has been played): archiving that would just
+  // leave an empty, score-free entry cluttering Season History.
+  const hasAnyResult = league.fixtures.some((f) => f.finalized || f.rubbers.some((r) => logic.rubberWinner(r) !== null));
+  if (hasAnyResult) {
     if (!league.seasonHistory) league.seasonHistory = [];
     const label = (req.body && req.body.seasonLabel && req.body.seasonLabel.trim()) || `Season ending ${new Date().toISOString().slice(0, 10)}`;
     // Same season numbering Hall of Fame entries already use (a plain
