@@ -1234,6 +1234,26 @@ window.addEventListener("resize", () => {
   clearTimeout(nextMatchesResizeDebounce);
   nextMatchesResizeDebounce = setTimeout(fitNextMatchesDesktopList, 200);
 });
+// This week and Next Matches load from two separate API calls that can
+// resolve in either order — if Next Matches happens to finish first, This
+// week is still display:none (real height 0) at that moment, so the fit
+// measurement locks in fit=1 no matter how much content This week ends up
+// with. A ResizeObserver on This week catches its real height landing
+// (or changing later — a hero photo swapped in, highlights added/removed)
+// regardless of which call wins the race, instead of hoping whichever
+// render function finishes second happens to re-fit correctly.
+if ("ResizeObserver" in window) {
+  const weekCardEl = document.getElementById("homepage-week-card");
+  if (weekCardEl) {
+    let weekResizeDebounce = null;
+    new ResizeObserver(() => {
+      clearTimeout(weekResizeDebounce);
+      weekResizeDebounce = setTimeout(() => {
+        if (isNextMatchesDesktop() && nextMatchesPairings.length) fitNextMatchesDesktopList();
+      }, 50);
+    }).observe(weekCardEl);
+  }
+}
 // Two homepage teasers, public and site-wide — every visible league's
 // current Pair of the Week, and a handful of recent highlights across all
 // of them. Both come from /homepage/highlights, which just reads the
