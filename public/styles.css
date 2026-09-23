@@ -807,7 +807,11 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mcb-card{background:rgba(10,10,12,.92);border-radius:8px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.4);text-align:left;}
 .mcb-body{display:flex;align-items:stretch;}
 .mcb-accent{width:5px;flex-shrink:0;background:#8B8F98;}
-.mcb-content{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:14px;padding:16px 14px;}
+/* flex-start, not center: a longer pair name on one side makes that
+   .mcb-side taller, and centering each side independently would then
+   float its crest out of line with the other side's — top-aligning keeps
+   both crests level regardless of name length. */
+.mcb-content{flex:1;min-width:0;display:flex;align-items:flex-start;justify-content:center;gap:14px;padding:16px 14px;}
 .mcb-footer{background:#0E0F11;padding:6px 14px;font-family:var(--font-display);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#84878E;display:flex;justify-content:space-between;gap:10px;}
 .mcb-footer span:last-child{text-align:right;white-space:nowrap;}
 .mcb-side{display:flex;flex-direction:column;align-items:center;gap:6px;width:118px;min-width:0;}
@@ -817,7 +821,7 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mcb-pair.won{color:#6EE7A8;}
 .mcb-pair.won::before{content:"✓ ";}
 .mcb-team{font-size:9.5px;font-weight:600;color:#9A9EA6;letter-spacing:.05em;text-transform:uppercase;}
-.mcb-center{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:64px;}
+.mcb-center{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:64px;margin-top:13px;}
 .mcb-pct{font-family:var(--font-display);font-size:24px;font-weight:700;color:#E4E5E9;font-variant-numeric:tabular-nums;}
 .mcb-pct .sep{font-size:13px;color:rgba(255,255,255,.35);}
 .mcb-pct-label{font-family:var(--font-display);font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7A7E87;}
