@@ -71,7 +71,7 @@ function kickoffMsOf(date, time) {
   return Number.isNaN(ms) ? null : ms;
 }
 
-function newLeagueObj(name, adminEmail, format) {
+function newLeagueObj(name, adminEmail, format, singlesDecider) {
   return {
     id: logic.uid(),
     name,
@@ -80,6 +80,12 @@ function newLeagueObj(name, adminEmail, format) {
     // League: each entrant is a fixed 2-player pair, one match a night, no
     // weekly selection at all since the pair already is the line-up).
     format: format === "pairs" ? "pairs" : "teams",
+    // "Ormonde rules": a team-format-only opt-in adding a 5th, always-played
+    // singles rubber to every night alongside the usual 4 pairs rubbers —
+    // pairs rubbers are worth 2 points each, the singles rubber 1 (see
+    // computeStandings). Never available on a Vibora (pairs) league, which
+    // has no seeded rubbers to add a 5th to.
+    singlesDecider: format === "pairs" ? false : !!singlesDecider,
     adminEmail: (adminEmail || "").trim(),
     adminPasswordHash: null,
     status: "setup",
@@ -2238,11 +2244,11 @@ router.get("/players/news", requirePlayerUser, (req, res) => {
 
 router.post("/leagues", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Only the site admin can create leagues. Log in first." });
-  const { name, adminEmail, format } = req.body || {};
+  const { name, adminEmail, format, singlesDecider } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "League name is required." });
   if (!adminEmail || !adminEmail.includes("@")) return res.status(400).json({ error: "A valid admin email is required." });
   if (format && !["teams", "pairs"].includes(format)) return res.status(400).json({ error: "Unknown league format." });
-  const league = newLeagueObj(name.trim(), adminEmail, format);
+  const league = newLeagueObj(name.trim(), adminEmail, format, singlesDecider);
   store.saveLeague(league.id, league);
   const index = store.getIndex();
   index.push({ id: league.id, name: league.name, createdAt: league.createdAt });
@@ -2288,6 +2294,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   if (league.allowRoundsByDate === undefined) league.allowRoundsByDate = false;
   if (league.strength === undefined) league.strength = 0;
   if (!league.format) league.format = "teams";
+  if (league.singlesDecider === undefined) league.singlesDecider = false;
   if (!league.groups) league.groups = [];
   if (!league.hallOfFame) league.hallOfFame = [];
   if (!league.registrationFeeCents) league.registrationFeeCents = 0;
@@ -3683,7 +3690,7 @@ router.post("/leagues/:leagueId/season/start", requireAdmin, (req, res) => {
     }
   } else {
     if (league.teams.length < 3) return res.status(400).json({ error: "Add at least 3 teams first." });
-    const gen = logic.generateRoundRobin(league.teams, !!req.body.doubleRound, isPairs ? 1 : 4);
+    const gen = logic.generateRoundRobin(league.teams, !!req.body.doubleRound, isPairs ? 1 : (league.singlesDecider ? 5 : 4));
     fixtures = gen.fixtures;
     byes = gen.byes;
   }
@@ -4953,18 +4960,23 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
       const teamB = league.teams.find((t) => t.id === f.teamB);
       const lineupsSubmitted = !!(f.selectionA.submitted && f.selectionB.submitted);
       const { winsA, winsB } = logic.fixtureScore(f);
-      // Same decider-visibility rule resultsCard uses client-side — only
-      // shown once the regulation rubbers have actually tied.
+      // The 5th rubber (index 4) is either the knockout playoff decider —
+      // only shown once the first 4 rubbers have actually tied, and no
+      // selection slot of its own — or, on an Ormonde-rules regular fixture,
+      // a real singles match with its own (single-player) selection slot,
+      // always shown. Same rule resultsCard uses client-side.
+      const isSinglesFixture = f.selectionA.pairs.length === 5;
       const rubbers = lineupsSubmitted
         ? f.rubbers
             .map((rubber, idx) => ({ rubber, idx }))
-            .filter(({ idx }) => idx !== 4 || winsA === winsB)
+            .filter(({ idx }) => idx !== 4 || isSinglesFixture || winsA === winsB)
             .map(({ rubber, idx }) => {
               const winner = logic.rubberWinner(rubber);
+              const isKnockoutDecider = idx === 4 && !isSinglesFixture;
               return {
-                seed: idx + 1, isDecider: idx === 4,
-                pairA: idx === 4 ? teamA.name : pairNamesText(teamA, f.selectionA.pairs[idx]),
-                pairB: idx === 4 ? teamB.name : pairNamesText(teamB, f.selectionB.pairs[idx]),
+                seed: idx + 1, isDecider: isKnockoutDecider, isSingles: idx === 4 && isSinglesFixture,
+                pairA: isKnockoutDecider ? teamA.name : pairNamesText(teamA, f.selectionA.pairs[idx]),
+                pairB: isKnockoutDecider ? teamB.name : pairNamesText(teamB, f.selectionB.pairs[idx]),
                 scoreText: logic.rubberScoreText(rubber) || null,
                 wonSide: winner,
               };
@@ -5275,8 +5287,9 @@ router.post("/leagues/:leagueId/rounds", requireAdmin, (req, res) => {
       return res.status(400).json({ error: "Unknown team." });
   }
   const nextRound = (league.fixtures.reduce((max, f) => Math.max(max, f.round), 0) || 0) + 1;
+  const extraSeedCount = league.format === "pairs" ? 1 : (league.singlesDecider ? 5 : 4);
   const newFixtures = matches.map((m) =>
-    Object.assign({ id: logic.uid(), round: nextRound, stage: "regular", teamA: m.teamA, teamB: m.teamB }, logic.emptyFixtureExtras())
+    Object.assign({ id: logic.uid(), round: nextRound, stage: "regular", teamA: m.teamA, teamB: m.teamB }, logic.emptyFixtureExtras(extraSeedCount))
   );
   league.fixtures.push(...newFixtures);
   if (!league.roundMeta) league.roundMeta = {};
@@ -5364,7 +5377,8 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   // start and never goes through this route at all.
   const expectedSeeds = f[selKey].pairs.length;
   if (!Array.isArray(pairs) || pairs.length !== expectedSeeds) return res.status(400).json({ error: `Send exactly ${expectedSeeds} seed pair${expectedSeeds === 1 ? "" : "s"}.` });
-  const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp);
+  const singlesIdx = league.singlesDecider && league.format !== "pairs" && expectedSeeds === 5 ? 4 : null;
+  const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp, singlesIdx);
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
 
   const isFirstSubmit = !f[selKey].submitted;
@@ -5746,7 +5760,12 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
   if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
-  if (!logic.requiredRubbersOk(f, league.format === "pairs")) return res.status(400).json({ error: "Enter a full score before finalizing." });
+  // An Ormonde-rules regular fixture's 5th rubber is a real, always-played
+  // singles match — all 5 rubbers are required, not just the first 4 with
+  // the 5th only on a tie (that's the knockout-decider shape, still used by
+  // playoff fixtures, which stay untouched by leaving this undefined).
+  const singlesRegulation = league.singlesDecider && f.stage === "regular" && f.rubbers.length === 5 ? 5 : undefined;
+  if (!logic.requiredRubbersOk(f, league.format === "pairs", singlesRegulation)) return res.status(400).json({ error: "Enter a full score before finalizing." });
   f.finalized = true;
   logAudit(league, req, f, "finalize", {});
   syncPlayoffs(league);

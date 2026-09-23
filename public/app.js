@@ -160,6 +160,16 @@ function goldNameHtml(p, isSub) {
 // `sel` (a fixture's selectionA/selectionB) is optional — pass it whenever
 // available so a player listed in sel.subs renders in the substitute
 // colour; omit it only where no selection object exists in scope.
+// Rubber index 4, when a fixture has one, is one of two different things:
+// the knockout playoff decider (only appended once the first 4 rubbers tie,
+// with no selection slot of its own — selectionA.pairs stays length 4) or,
+// on an Ormonde-rules regular fixture, a real, always-played singles rubber
+// with its own (single-player) selection slot (selectionA.pairs is length
+// 5). Returns "decider", "singles", or null.
+function rubberSlot4Kind(f, idx) {
+  if (idx !== 4) return null;
+  return f.selectionA.pairs.length >= 5 ? "singles" : "decider";
+}
 function pairNamesGoldHtml(team, pair, sel) {
   if (!pair) return "—";
   const subs = (sel && sel.subs) || [];
@@ -1237,15 +1247,26 @@ function renderHub() {
   });
 }
 el("hub-league-search").oninput = () => renderHub();
+// Ormonde rules only makes sense for a Team League — a Vibora (pairs)
+// league has no seeded rubbers to add a 5th singles one to.
+function refreshNewLeagueSinglesVisibility() {
+  const isTeams = el("new-league-format").value !== "pairs";
+  el("new-league-singles-wrap").style.display = isTeams ? "flex" : "none";
+  if (!isTeams) el("new-league-singles").checked = false;
+}
+el("new-league-format").onchange = refreshNewLeagueSinglesVisibility;
+refreshNewLeagueSinglesVisibility();
 el("create-league-btn").onclick = async () => {
   const name = el("new-league-name").value.trim();
   const email = el("new-league-admin-email").value.trim();
   const format = el("new-league-format").value;
+  const singlesDecider = el("new-league-singles").checked;
   if (!name) return alert("Give the league a name.");
   if (!email || !email.includes("@")) return alert("Enter a valid email.");
   try {
-    const { id } = await api("/leagues", { method: "POST", body: { name, adminEmail: email, format } });
+    const { id } = await api("/leagues", { method: "POST", body: { name, adminEmail: email, format, singlesDecider } });
     el("new-league-name").value = ""; el("new-league-admin-email").value = ""; el("new-league-format").value = "teams";
+    el("new-league-singles").checked = false; refreshNewLeagueSinglesVisibility();
     leaguesIndex = await api("/leagues");
     await openLeague(id);
   } catch (e) { alert(e.message); }
@@ -2891,7 +2912,7 @@ async function renderAccountPendingResults() {
     const tilesHtml = !r.lineupsSubmitted
       ? '<div class="pr-lineups-pending">Waiting for both captains to submit their line-up.</div>'
       : r.rubbers.map((rb) => {
-          const seedLabel = rb.isDecider ? "Decider" : total === 1 ? "Match" : "Seed " + rb.seed;
+          const seedLabel = rb.isDecider ? "Decider" : rb.isSingles ? "Singles" : total === 1 ? "Match" : "Seed " + rb.seed;
           const scoreChip = rb.scoreText ? `<span class="pr-score-chip">${escapeHtml(rb.scoreText)}</span>` : '<span class="pr-score-chip pending">Not played</span>';
           const nameLine = (name, won) => `<div${won ? ' class="won"' : ""}>${escapeHtml(name)}</div>`;
           const btnLabel = rb.scoreText ? "Edit" : "Enter score";
@@ -2917,7 +2938,7 @@ async function renderAccountPendingResults() {
       const f = league.fixtures.find((x) => x.id === fixtureId) || (league.playoffs && [league.playoffs.semis && league.playoffs.semis[0], league.playoffs.semis && league.playoffs.semis[1], league.playoffs.final, ...(league.playoffs.matches || [])].filter(Boolean).find((x) => x.id === fixtureId));
       if (!f) return;
       const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-      const isDecider = idx === 4;
+      const isDecider = rubberSlot4Kind(f, idx) === "decider";
       const pairAHtml = isDecider ? escapeHtml(teamA.name) : pairNamesGoldHtml(teamA, f.selectionA.pairs[idx], f.selectionA);
       const pairBHtml = isDecider ? escapeHtml(teamB.name) : pairNamesGoldHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
       openScoreModal(f, idx, f.rubbers[idx], teamA, teamB, isDecider, pairAHtml, pairBHtml);
@@ -6966,7 +6987,8 @@ function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
-    html += `<div class="seed-row"><span class="num">Seed ${i + 1}</span><span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
+    const seedNum = sel.pairs.length === 5 && i === 4 ? "Singles" : "Seed " + (i + 1);
+    html += `<div class="seed-row"><span class="num">${seedNum}</span><span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
   bindPlayerLinks(div);
@@ -7110,6 +7132,11 @@ function selectionForm(f, team, side) {
   }
   function refreshSeedRatings() {
     if (!ratingById) return;
+    // The Ormonde-rules singles seed (index 4 of 5) is a single player, not
+    // a pair — it never gets a combined-rating chip, and it's excluded from
+    // the "optimal seed order" suggestion below, which only ever reorders
+    // pairs by their own combined rating.
+    const pairIdxs = localPairs.map((_, i) => i).filter((i) => !(localPairs.length === 5 && i === 4));
     const seedRatings = localPairs.map((pair, i) => {
       const [a, b] = pair;
       const chip = rowChips[i];
@@ -7121,21 +7148,22 @@ function selectionForm(f, team, side) {
       if (chip) chip.style.display = "none";
       return null;
     });
-    if (seedRatings.some((r) => r === null) || seedRatings.length < 2) {
+    const pairRatings = pairIdxs.map((i) => seedRatings[i]);
+    if (pairRatings.some((r) => r === null) || pairRatings.length < 2) {
       seedRatingNote.style.display = "none";
       return;
     }
     // The captain's own pairs, sorted by their own rating — this is
     // "optimal seed order" for exactly the partnerships already chosen,
     // not a different pairing.
-    const order = seedRatings.map((r, i) => i).sort((a, b) => seedRatings[b] - seedRatings[a]);
-    const alreadyOptimal = order.every((seedIdx, rank) => seedIdx === rank);
+    const order = pairIdxs.slice().sort((a, b) => seedRatings[b] - seedRatings[a]);
+    const alreadyOptimal = order.every((seedIdx, rank) => seedIdx === pairIdxs[rank]);
     seedRatingNote.style.display = "block";
     if (alreadyOptimal) {
-      seedRatingNote.innerHTML = `<p class="note">This line-up runs strongest to weakest, Seed 1 to Seed ${seedRatings.length}.</p>`;
+      seedRatingNote.innerHTML = `<p class="note">This line-up runs strongest to weakest, Seed 1 to Seed ${pairIdxs.length}.</p>`;
     } else {
       const rows = order.map((seedIdx, rank) => {
-        const already = seedIdx === rank;
+        const already = seedIdx === pairIdxs[rank];
         return `<li>${pairLabel(seedIdx)}${already ? "" : ` <span class="note">(currently Seed ${seedIdx + 1})</span>`}</li>`;
       }).join("");
       seedRatingNote.innerHTML = `<p class="note seed-rating-warn">Suggested order for these pairs:</p><ol class="seed-rating-list">${rows}</ol>`;
@@ -7156,7 +7184,10 @@ function selectionForm(f, team, side) {
   // driven by however many pairs the fixture actually has, not a fixed 4.
   for (let i = 0; i < localPairs.length; i++) {
     const row = document.createElement("div"); row.className = "seed-row";
-    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : "Seed " + (i + 1)}</span>`;
+    // Ormonde rules: the 5th seed is a real, always-played singles rubber —
+    // one player, not a pair, so it gets one picker below instead of two.
+    const isSingles = localPairs.length === 5 && i === 4;
+    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Singles" : "Seed " + (i + 1)}</span>`;
     const seedIdx = i;
     const fields = [];
     const fieldLabel = (slot) => {
@@ -7215,14 +7246,14 @@ function selectionForm(f, team, side) {
       row.insertAdjacentElement("afterend", list);
       openList = list;
     };
-    [0, 1].forEach((slot) => {
+    (isSingles ? [0] : [0, 1]).forEach((slot) => {
       const field = document.createElement("button");
       field.type = "button"; field.className = "pick-field";
       field.onclick = () => openPickList(slot);
       fields.push(field);
       row.appendChild(field);
       renderField(slot);
-      if (slot === 0) {
+      if (slot === 0 && !isSingles) {
         const amp = document.createElement("span");
         amp.className = "seed-row-amp"; amp.textContent = "&";
         row.appendChild(amp);
@@ -8791,7 +8822,9 @@ function resultsCard(f) {
   const isSingleMatch = f.rubbers.length === 1;
   const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
   const splitNoDecider = isSingleMatch && needsTiebreakClient(f.rubbers[0]) && !rubberWinnerClient(f.rubbers[0]);
-  const statusText = f.finalized ? "Final" : isSingleMatch ? (splitNoDecider ? "1 set each — 3rd set optional" : decided > 0 ? "In progress" : "Pending") : decided + "/4 matches";
+  const isSinglesFixture = f.selectionA.pairs.length === 5;
+  const singlesDecided = isSinglesFixture && f.rubbers[4] && rubberWinnerClient(f.rubbers[4]) !== null;
+  const statusText = f.finalized ? "Final" : isSingleMatch ? (splitNoDecider ? "1 set each — 3rd set optional" : decided > 0 ? "In progress" : "Pending") : decided + "/4 pairs" + (isSinglesFixture ? (singlesDecided ? " + singles" : "") : "");
   const matchWinner = f.finalized && headline.a !== headline.b ? (headline.a > headline.b ? "A" : "B") : null;
   card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} <span class="fx-name${matchWinner === "A" ? " winner" : ""}">${escapeHtml(teamA ? teamA.name : "TBD")}</span> <span class="vs">vs</span> <span class="fx-name${matchWinner === "B" ? " winner" : ""}">${escapeHtml(teamB ? teamB.name : "TBD")}</span> ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${statusText}</span></div></div>`;
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
@@ -8801,13 +8834,14 @@ function resultsCard(f) {
   const rubbersWrap = document.createElement("div"); rubbersWrap.className = "rubbers";
 
   f.rubbers.forEach((rubber, idx) => {
-    const isDecider = idx === 4;
+    const slot4 = rubberSlot4Kind(f, idx);
+    const isDecider = slot4 === "decider";
     if (isDecider) { const { winsA: wa, winsB: wb } = fixtureScoreClient(f); if (wa !== wb) return; }
     const row = document.createElement("div"); row.className = "rubber-row";
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-    seedTag.textContent = isDecider ? "Decider" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
@@ -8926,7 +8960,8 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     tb: [rubber.tb[0] === null || rubber.tb[0] === "" ? 0 : Number(rubber.tb[0]), rubber.tb[1] === null || rubber.tb[1] === "" ? 0 : Number(rubber.tb[1])],
   };
   const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-  el("score-modal-title").textContent = isDecider ? "Decider score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  const isSinglesSeed = rubberSlot4Kind(f, idx) === "singles";
+  el("score-modal-title").textContent = isDecider ? "Decider score" : isSinglesSeed ? "Singles score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
   const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
   const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
   const splitAfterTwo = () => {
@@ -11103,11 +11138,22 @@ function lastCompletedRoundClient() {
 // from strictly before `beforeRound` — i.e. the table exactly as it stood
 // before that round's results came in, so it can be diffed against today's
 // table to show who moved up or down because of that round.
+// Ormonde rules: the always-played 5th rubber (a real singles match, with
+// its own selection slot — unlike the knockout playoff decider, which only
+// ever exists at rubbers[4] once the first 4 tie and has no selection slot
+// of its own). Mirrors the singlesOn branch of logic.js's computeStandings.
+function singlesWinForClient(f, isA) {
+  if (!f.rubbers[4]) return 0;
+  const sw = rubberWinnerClient(f.rubbers[4]);
+  if (!sw) return 0;
+  return (sw === "A") === isA ? 1 : 0;
+}
 function standingsBeforeRoundClient(beforeRound) {
   const isPairs = league.format === "pairs";
+  const singlesOn = !isPairs && !!league.singlesDecider;
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
   const rows = scopedTeams.map((t) => {
-    let rubbersWon = 0, rubbersLost = 0, nightsWon = 0, nightsDrawn = 0, setsWon = 0, setsLost = 0;
+    let rubbersWon = 0, rubbersLost = 0, nightsWon = 0, nightsDrawn = 0, setsWon = 0, setsLost = 0, points = 0;
     league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round) && f.round < beforeRound).forEach((f) => {
       const isA = f.teamA === t.id;
       const { winsA, winsB } = fixtureScoreClient(f);
@@ -11121,9 +11167,14 @@ function standingsBeforeRoundClient(beforeRound) {
           if ((w === "A") === isA) setsWon++; else setsLost++;
         });
       }
+      if (singlesOn) {
+        const sw = singlesWinForClient(f, isA);
+        if (sw) rubbersWon++; else if (f.rubbers[4] && rubberWinnerClient(f.rubbers[4])) rubbersLost++;
+        points += myWins * 2 + sw;
+      }
     });
     const diff = isPairs ? setsWon - setsLost : rubbersWon - rubbersLost;
-    return { id: t.id, name: t.name, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
+    return { id: t.id, name: t.name, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : singlesOn ? points : rubbersWon };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
   return rows;
@@ -11140,10 +11191,11 @@ function priorRankMapClient() {
 }
 function computeStandingsClient() {
   const isPairs = league.format === "pairs";
+  const singlesOn = !isPairs && !!league.singlesDecider;
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
   const rows = scopedTeams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
-    let setsWon = 0, setsLost = 0;
+    let setsWon = 0, setsLost = 0, points = 0;
     league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
       const isA = f.teamA === t.id;
       const { winsA, winsB } = fixtureScoreClient(f);
@@ -11160,9 +11212,14 @@ function computeStandingsClient() {
           if ((w === "A") === isA) setsWon++; else setsLost++;
         });
       }
+      if (singlesOn) {
+        const sw = singlesWinForClient(f, isA);
+        if (sw) rubbersWon++; else if (f.rubbers[4] && rubberWinnerClient(f.rubbers[4])) rubbersLost++;
+        points += myWins * 2 + sw;
+      }
     });
     const diff = isPairs ? setsWon - setsLost : rubbersWon - rubbersLost;
-    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, setsWon, setsLost, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon };
+    return { ...t, played, nightsWon, nightsDrawn, nightsLost, rubbersWon, rubbersLost, setsWon, setsLost, diff, points: isPairs ? nightsWon * 2 + nightsDrawn : singlesOn ? points : rubbersWon };
   });
   rows.sort((a, b) => b.points - a.points || b.diff - a.diff || a.name.localeCompare(b.name));
   // Promotes the winner to the front of its OWN tied group's slice of the
@@ -11189,14 +11246,17 @@ function detectSuperTieClient() {
   if (league.format === "pairs") return null;
   if (!league.fixtures.length || league.superTie) return null;
   if (!league.fixtures.every((f) => f.finalized)) return null;
+  const singlesOn = !!league.singlesDecider;
   const rows = league.teams.map((t) => {
-    let rubbersWon = 0, rubbersLost = 0;
+    let rubbersWon = 0, rubbersLost = 0, points = 0;
     league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
       const isA = f.teamA === t.id;
       const { winsA, winsB } = fixtureScoreClient(f);
-      rubbersWon += isA ? winsA : winsB; rubbersLost += isA ? winsB : winsA;
+      const myWins = isA ? winsA : winsB;
+      rubbersWon += myWins; rubbersLost += isA ? winsB : winsA;
+      if (singlesOn) points += myWins * 2 + singlesWinForClient(f, isA);
     });
-    return { id: t.id, points: rubbersWon };
+    return { id: t.id, points: singlesOn ? points : rubbersWon };
   });
   if (rows.length < 2) return null;
   const topPoints = Math.max(...rows.map((r) => r.points));
@@ -11237,7 +11297,10 @@ function superTieWinnerClient() {
 function matchWinnerClient(f) {
   const { winsA, winsB } = fixtureScoreClient(f);
   if (winsA > winsB) return "A"; if (winsB > winsA) return "B";
-  if (f.rubbers.length > 4) return rubberWinnerClient(f.rubbers[4]);
+  // Only a knockout playoff fixture's 5th rubber settles a 2-2 tie — an
+  // Ormonde-rules regular fixture's 5th rubber is a real singles match, not
+  // a tie-breaking decider, so a regular fixture can stand as a draw.
+  if (f.rubbers.length > 4 && f.stage !== "regular") return rubberWinnerClient(f.rubbers[4]);
   return null;
 }
 // "If the season ended today" — the final-spot pairings (1st v 2nd, 3rd v
@@ -11537,12 +11600,13 @@ function archivedFixtureCard(seasonId, f, teams) {
   }
   const rubbersWrap = document.createElement("div"); rubbersWrap.className = "rubbers";
   f.rubbers.forEach((rubber, idx) => {
-    const isDecider = idx === 4;
+    const slot4 = rubberSlot4Kind(f, idx);
+    const isDecider = slot4 === "decider";
     if (isDecider) { const { winsA: wa, winsB: wb } = fixtureScoreClient(f); if (wa !== wb) return; }
     const row = document.createElement("div"); row.className = "rubber-row";
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
-    seedTag.textContent = isDecider ? "Decider" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.

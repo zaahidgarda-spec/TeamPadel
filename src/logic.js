@@ -169,12 +169,18 @@ function fixtureScore(f) {
   });
   return { winsA, winsB, decided };
 }
-function requiredRubbersOk(f, allowDraw) {
-  const { winsA, winsB, decided } = fixtureScore(f);
+// `regulationOverride` is passed only for an Ormonde-rules ("singles
+// decider") regular-season fixture, where the 5th rubber is a real, always-
+// played singles match rather than a knockout decider that only comes into
+// play on a 2-2 tie — so all 5 must be decided before finalizing, not just
+// the first 4. Left undefined everywhere else, which keeps the old
+// tie-triggered-decider behavior for playoff fixtures.
+function requiredRubbersOk(f, allowDraw, regulationOverride) {
   // Regulation is 4 rubbers for a team fixture, 1 for a pairs fixture — a
   // knockout decider (only ever appended to team fixtures) sits beyond that,
   // so this stays correct for both without needing the league's format here.
-  const regulation = f.rubbers.length > 4 ? 4 : f.rubbers.length;
+  const regulation = regulationOverride || (f.rubbers.length > 4 ? 4 : f.rubbers.length);
+  const decided = f.rubbers.slice(0, regulation).filter((r) => rubberWinner(r) !== null).length;
   if (decided < regulation) {
     // A Vibora (pairs) match that splits its first two sets is allowed to
     // stand as a draw instead of being forced to a decider — playing the
@@ -189,14 +195,23 @@ function requiredRubbersOk(f, allowDraw) {
     }
     return false;
   }
-  if (f.rubbers.length > 4 && winsA === winsB) return rubberWinner(f.rubbers[4]) !== null;
+  if (regulationOverride) return true;
+  if (f.rubbers.length > 4) {
+    const { winsA, winsB } = fixtureScore(f);
+    if (winsA === winsB) return rubberWinner(f.rubbers[4]) !== null;
+  }
   return true;
 }
 function matchWinner(f) {
   const { winsA, winsB } = fixtureScore(f);
   if (winsA > winsB) return "A";
   if (winsB > winsA) return "B";
-  if (f.rubbers.length > 4) return rubberWinner(f.rubbers[4]);
+  // The appended 5th rubber only settles a 2-2 tie for a knockout playoff
+  // fixture (semis/final/position) — a regular-season fixture (including an
+  // Ormonde-rules fixture, whose 5th rubber is a real, always-played
+  // singles match, not a tie-breaking decider) can legitimately stand as a
+  // draw on its 4 pairs rubbers.
+  if (f.rubbers.length > 4 && f.stage !== "regular") return rubberWinner(f.rubbers[4]);
   return null;
 }
 
@@ -216,9 +231,16 @@ function roundCountsToTable(league, round) {
 function computeStandings(league, includeFixture) {
   const counts = includeFixture || ((f) => f.finalized);
   const isPairs = league.format === "pairs";
+  // Ormonde rules: a 5th rubber every night is a real, always-played singles
+  // match (rubbers[4], with its own selection slot — unlike the knockout
+  // playoff decider, which only ever exists at rubbers[4] once the first 4
+  // tie and has no selection slot of its own). Pairs rubbers are worth 2
+  // points each, the singles rubber 1 — set only on leagues the admin
+  // opted in at creation, everyone else scores exactly as before.
+  const singlesOn = !isPairs && !!league.singlesDecider;
   const rows = league.teams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
-    let setsWon = 0, setsLost = 0;
+    let setsWon = 0, setsLost = 0, points = 0;
     league.fixtures
       .filter((f) => counts(f) && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(league, f.round))
       .forEach((f) => {
@@ -241,6 +263,17 @@ function computeStandings(league, includeFixture) {
             if ((w === "A") === isA) setsWon++; else setsLost++;
           });
         }
+        if (singlesOn) {
+          let mySinglesWin = 0;
+          if (f.rubbers[4]) {
+            const sw = rubberWinner(f.rubbers[4]);
+            if (sw) {
+              if ((sw === "A") === isA) { mySinglesWin = 1; rubbersWon++; }
+              else rubbersLost++;
+            }
+          }
+          points += myWins * 2 + mySinglesWin;
+        }
       });
     return {
       id: t.id,
@@ -258,8 +291,10 @@ function computeStandings(league, includeFixture) {
       // A Vibora league scores like a round-robin table: 2 points for a win,
       // 1 for a draw. A team league instead awards a point per rubber won —
       // there's no such thing as a drawn night once the knockout decider
-      // forces a winner.
-      points: isPairs ? nightsWon * 2 + nightsDrawn : rubbersWon,
+      // forces a winner. An Ormonde-rules league weights that further: 2
+      // points per pairs rubber won, plus 1 for the singles rubber (points
+      // accumulated above, since it needs the per-fixture singles result).
+      points: isPairs ? nightsWon * 2 + nightsDrawn : singlesOn ? points : rubbersWon,
     };
   });
   // Points first, then the tiebreaker (set difference for pairs, rubber
@@ -358,11 +393,20 @@ function superTieWinner(league) {
 // A player can never be paired with themselves. A double-up (playing more
 // than one rubber in the same night) is allowed, but only if the caller
 // explicitly confirms it — otherwise we flag it and ask first.
-function validateSelection(pairs, confirmDoubleUp) {
+// `singlesIdx` is the Ormonde-rules 5th seed (always index 4) on a league
+// that opted into a singles decider — that one seed takes exactly one
+// player, not a pair, so it skips the usual two-players/no-self-pair checks.
+function validateSelection(pairs, confirmDoubleUp, singlesIdx) {
   const seen = new Set();
   let doubleUp = false;
   for (let i = 0; i < pairs.length; i++) {
     const [a, b] = pairs[i];
+    if (i === singlesIdx) {
+      if (!a || b) return { error: "The singles seed needs exactly one player selected." };
+      if (seen.has(a)) doubleUp = true;
+      seen.add(a);
+      continue;
+    }
     if (!a || !b) return { error: "Every seed needs two players selected." };
     if (a === b) return { error: "A player can't be paired with themselves (seed " + (i + 1) + ")." };
     if (seen.has(a) || seen.has(b)) doubleUp = true;
