@@ -4170,6 +4170,16 @@ function generateSeasonCourtRotation(league) {
   const tally = {};
   const teamTally = (id) => tally[id] || (tally[id] = Array(slots).fill(0));
   const needsDoubles = slots < 4;
+  // Ormonde rules reserves the LAST court exclusively for that round's
+  // Super Tie seed (one per fixture, one player a side) — the remaining
+  // courts handle the usual 4 pairs seeds, same as any other league. Only
+  // applied when there's a spare court to give it and enough slots that
+  // pairs seeds don't already need to double up (the rarer needsDoubles
+  // case below is left exactly as before — Super Ties there go unscheduled,
+  // same as an admin can already place them manually).
+  const singlesOn = !!league.singlesDecider && league.format !== "pairs" && !needsDoubles && courts > 1;
+  const pairsCourts = singlesOn ? courts - 1 : courts;
+  const superTieCourt = singlesOn ? courts - 1 : null;
 
   if (!league.courtSchedule) league.courtSchedule = {};
 
@@ -4190,8 +4200,9 @@ function generateSeasonCourtRotation(league) {
 
     if (!needsDoubles) {
       fixtures.forEach((f, i) => {
-        const court = i % courts;
+        const court = i % pairsCourts;
         for (let seed = 0; seed < 4 && seed < slots; seed++) grid[seed][court] = { fixtureId: f.id, seed };
+        if (superTieCourt !== null) grid[i % slots][superTieCourt] = { fixtureId: f.id, seed: 4 };
         teamTally(f.teamA); teamTally(f.teamB);
       });
     } else {
@@ -5148,10 +5159,19 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
     }
   }
 
+  // Ormonde rules reserves the LAST court exclusively for the Super Tie
+  // seed (index 4) — same reservation generateSeasonCourtRotation applies
+  // when auto-filling, enforced here too so a manual drag/tap-swap can't
+  // put a pairs seed there or a Super Tie anywhere else.
+  const singlesOn = !!league.singlesDecider && league.format !== "pairs" && courts > 1;
+  const superTieCourt = singlesOn ? courts - 1 : null;
   if (fixtureId) {
     const f = roundFixtures.find((x) => x.id === fixtureId);
     if (!f) return res.status(400).json({ error: "That match isn't in this round." });
-    if (!Number.isInteger(seed) || seed < 0 || seed > 3) return res.status(400).json({ error: "Invalid seed." });
+    const maxSeed = f.selectionA.pairs.length === 5 ? 4 : 3;
+    if (!Number.isInteger(seed) || seed < 0 || seed > maxSeed) return res.status(400).json({ error: "Invalid seed." });
+    if (seed === 4 && court !== superTieCourt) return res.status(400).json({ error: "Super Tie matches can only go on the reserved Super Tie court." });
+    if (seed !== 4 && superTieCourt !== null && court === superTieCourt) return res.status(400).json({ error: "That court is reserved for Super Tie matches." });
     // A player named in two of this fixture's seeds (a captain-confirmed
     // "double-up" at selection time) physically can't play both if this
     // placement would put them in the same time slot on two different

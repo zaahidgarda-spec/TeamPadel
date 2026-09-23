@@ -7388,11 +7388,15 @@ function courtScheduleOptions(fixtures) {
   fixtures.forEach((f) => {
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
-    for (let seed = 0; seed < 4; seed++) {
+    // Ormonde rules: a 5th, Super Tie seed (one player a side) alongside
+    // the usual 4 pairs seeds — scheduled on its own reserved court.
+    const seedCount = f.selectionA.pairs.length === 5 ? 5 : 4;
+    for (let seed = 0; seed < seedCount; seed++) {
+      const isSuperTie = seed === 4;
       const pairLabel = revealed
         ? playerNamesForGold(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[seed])
         : null;
-      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || ("Seed " + (seed + 1)) });
+      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || (isSuperTie ? "Super Tie" : "Seed " + (seed + 1)) });
     }
   });
   return options;
@@ -7559,6 +7563,11 @@ function renderCourtScheduleGrid(fixtures) {
   const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
   const courts = league.courtCount || 4;
   const slots = league.slotCount || 3;
+  // Ormonde rules reserves the last court for the Super Tie seed — mirrors
+  // the server's own reservation (see the court-schedule/:round/assign
+  // route) so the empty-cell picker only ever offers what the server will
+  // actually accept there.
+  const superTieCourt = league.singlesDecider && league.format !== "pairs" && courts > 1 ? courts - 1 : null;
   // Resize to the current court/slot counts on read, same as the server
   // does on write — otherwise a saved grid from before a count change would
   // display with stale, misaligned cells until the next edit re-saves it.
@@ -7614,7 +7623,8 @@ function renderCourtScheduleGrid(fixtures) {
     if (!cell) return "This empty court";
     const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
     if (!opt) return "This match";
-    return (opt.teamA ? opt.teamA.name : "TBD") + " vs " + (opt.teamB ? opt.teamB.name : "TBD") + " (Seed " + (cell.seed + 1) + ")";
+    const seedLabel = cell.seed === 4 ? "Super Tie" : "Seed " + (cell.seed + 1);
+    return (opt.teamA ? opt.teamA.name : "TBD") + " vs " + (opt.teamB ? opt.teamB.name : "TBD") + " (" + seedLabel + ")";
   };
   // Ownership gate for tap-to-swap: admin can touch any cell; a captain
   // only their own team's matches (an empty cell is always fair game, since
@@ -7739,6 +7749,10 @@ function renderCourtScheduleGrid(fixtures) {
       // tap-to-swap (below) and, for a mouse, drag are the only ways to
       // rearrange the grid.
       const opt = cell ? options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed) : null;
+      // An empty cell's picker only ever offers what the server will
+      // actually accept there — on the reserved Super Tie court that's
+      // only Super Tie seeds, and everywhere else it's only pairs seeds.
+      const cellUnplaced = superTieCourt === null ? unplaced : unplaced.filter((o) => (o.seed === 4) === (c === superTieCourt));
       if (opt) {
         const box = document.createElement("div");
         box.className = "cs-cell-content";
@@ -7754,13 +7768,13 @@ function renderCourtScheduleGrid(fixtures) {
           box.ondragend = () => td.classList.remove("cs-dragging");
         }
         td.appendChild(box);
-      } else if (myRole === "admin" && unplaced.length) {
+      } else if (myRole === "admin" && cellUnplaced.length) {
         // An empty cell with at least one seed sitting nowhere on the grid
         // — offer it directly, instead of leaving the gap with no way to
         // fill it short of regenerating the whole round.
         const select = document.createElement("select");
         select.className = "cs-empty-picker";
-        select.innerHTML = '<option value="">— Empty —</option>' + unplaced.map((o) =>
+        select.innerHTML = '<option value="">— Empty —</option>' + cellUnplaced.map((o) =>
           `<option value="${o.fixtureId}:${o.seed}">${escapeHtml((o.teamA ? o.teamA.name : "TBD") + " vs " + (o.teamB ? o.teamB.name : "TBD") + " — " + o.shortLabel)}</option>`
         ).join("");
         select.onclick = (e) => e.stopPropagation();
