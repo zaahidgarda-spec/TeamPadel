@@ -442,6 +442,18 @@ function defaultKit() {
     notes: "", // free text for the kit supplier — fabric, fit, deadline, whatever doesn't fit a badge or a size
   };
 }
+// The kit's own logo badge defaults to the team's real logo — a captain
+// who's already uploaded one for the league card/next-matches/etc. never
+// had a reason to expect their kit mockup to still be blank. Computed at
+// read time (never written back), so it also stays in sync if the team's
+// logo changes later, and an explicit kit-logo upload still overrides it.
+// null (as opposed to "", which just means "never touched") means a
+// captain deliberately removed it — that one case does NOT fall back, or
+// the remove button would look broken (the badge just reappearing).
+function effectiveKit(team) {
+  const kit = team.kit || defaultKit();
+  return { ...kit, logo: kit.logo === null ? "" : (kit.logo || team.logo || "") };
+}
 
 // Strip anything a given viewer shouldn't see: password hashes always,
 // and any not-yet-submitted seed selection that isn't theirs (this is
@@ -454,7 +466,7 @@ function sanitize(league, req) {
   const teamId = user ? user.teamId : null;
 
   const teams = league.teams.map((t) => {
-    const { code, notifyEmail, kit, pushSubscriptions, payLinkToken: _teamPayToken, ...restAll } = t;
+    const { code, notifyEmail, kit: _kit, pushSubscriptions, payLinkToken: _teamPayToken, ...restAll } = t;
     const viewerIsThisTeam = isAdmin || (teamId && teamId === t.id);
     // Who has paid, how, and when is between the league admin and that
     // team's own captain — not something to hand to anyone who opens the
@@ -478,7 +490,7 @@ function sanitize(league, req) {
       // Kit design (photos, sponsor placement, who's ordering) is as
       // private as the team's own login code — nobody outside that team's
       // captain/admin has any reason to see it.
-      kit: viewerIsThisTeam ? (kit || defaultKit()) : undefined,
+      kit: viewerIsThisTeam ? effectiveKit(t) : undefined,
       // A push subscription's endpoint+keys are sensitive in the same way a
       // login code is (anyone holding one could push-spam that device) —
       // never belonged in the general public league payload.
@@ -2755,7 +2767,10 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/logo", requireAdminOrCaptain((r
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
   if (!team.kit) team.kit = defaultKit();
-  team.kit.logo = (req.body && req.body.image) || "";
+  // A real upload is stored as-is; an explicit removal is remembered as
+  // null (not "") so it stays removed instead of falling back to the
+  // team's own logo again on the very next load — see effectiveKit.
+  team.kit.logo = (req.body && req.body.image) || null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -2897,7 +2912,7 @@ router.get("/leagues/:leagueId/kit-share/:token", (req, res) => {
   if (!league || !league.kitShareToken || league.kitShareToken !== req.params.token) {
     return res.status(404).json({ error: "This link is invalid or has been revoked." });
   }
-  const teams = league.teams.map((t) => ({ id: t.id, name: t.name, kit: t.kit || defaultKit() }));
+  const teams = league.teams.map((t) => ({ id: t.id, name: t.name, kit: effectiveKit(t) }));
   res.json({
     leagueId: league.id, leagueName: league.name, teams,
     mainSponsor: league.kitMainSponsor || "", mainSponsorPos: league.kitMainSponsorPos || { x: 50, y: 45 },
