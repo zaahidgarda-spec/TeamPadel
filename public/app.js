@@ -4547,7 +4547,8 @@ function renderAdmin() {
     el("start-season-btn").onclick = async () => {
       try {
         const playoffFormat = isPairs ? "none" : el("playoff-format-select").value;
-        await api(`/leagues/${currentLeagueId}/season/start`, { method: "POST", body: { doubleRound: el("double-round-toggle").checked, playoffFormat } });
+        const singlesDecider = isPairs ? false : el("singles-decider-toggle").checked;
+        await api(`/leagues/${currentLeagueId}/season/start`, { method: "POST", body: { doubleRound: el("double-round-toggle").checked, playoffFormat, singlesDecider } });
         await refreshLeague(); initViewingKey(); renderAll();
       } catch (e) { alert(e.message); }
     };
@@ -4992,6 +4993,7 @@ el("bulk-add-btn").onclick = async () => {
 
 let draftDoubleRound = false;
 let draftPlayoffFormat = "none";
+let draftSinglesDecider = false;
 function renderRulesCard() {
   const c = el("rules-body");
   const status = league.status;
@@ -5012,9 +5014,16 @@ function renderRulesCard() {
       <div class="row" style="align-items:center;">
         <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="double-round-toggle"> Home and away (double round)</label>
       </div>
+      ${isPairs ? "" : `<div class="row" style="align-items:center;margin-top:10px;">
+        <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="singles-decider-toggle"> Ormonde rules — add a 5th, always-played Super Tie seed each night (one player a side, a single super tie-break instead of full sets). Pairs rubbers worth 2 points each, the Super Tie 1.</label>
+      </div>`}
       ${playoffBlock}`;
     el("double-round-toggle").checked = draftDoubleRound;
     el("double-round-toggle").onchange = () => { draftDoubleRound = el("double-round-toggle").checked; };
+    if (!isPairs) {
+      el("singles-decider-toggle").checked = draftSinglesDecider || !!league.singlesDecider;
+      el("singles-decider-toggle").onchange = () => { draftSinglesDecider = el("singles-decider-toggle").checked; };
+    }
     if (!isPairs) {
       el("playoff-format-select").value = draftPlayoffFormat;
       el("playoff-format-select").onchange = () => { draftPlayoffFormat = el("playoff-format-select").value; };
@@ -5032,7 +5041,8 @@ function renderRulesCard() {
           </select>
         </label>
       </div>
-      <p class="note" style="margin-top:8px;">Change this any time before playoff results are entered — no season reset needed.</p>`;
+      <p class="note" style="margin-top:8px;">Change this any time before playoff results are entered — no season reset needed.</p>
+      ${league.singlesDecider ? '<p class="note" style="margin-top:8px;">Ormonde rules is on for this season — every fixture gets a 5th Super Tie seed.</p>' : ""}`;
     el("playoff-format-live-select").value = league.playoffFormat || "none";
     el("playoff-format-live-select").onchange = async (e) => {
       const format = e.target.value;

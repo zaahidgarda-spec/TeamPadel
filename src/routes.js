@@ -3673,6 +3673,11 @@ router.post("/leagues/:leagueId/season/start", requireAdmin, (req, res) => {
   if (isPairs && league.teams.some((t) => t.players.length !== 2)) {
     return res.status(400).json({ error: "Every pair needs exactly 2 players before starting the season." });
   }
+  // Ormonde rules can also be switched on here (not just at league creation)
+  // — it only actually does anything once, right below, when the season's
+  // fixtures get generated with either 4 or 5 seeds, so any later point is
+  // just as valid as creation time. Team-format only, same as creation.
+  if (!isPairs && req.body.singlesDecider !== undefined) league.singlesDecider = !!req.body.singlesDecider;
 
   let fixtures = [], byes = [];
   if (hasGroups) {
