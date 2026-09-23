@@ -5461,9 +5461,17 @@ el("court-photo-remove-btn").addEventListener("click", async () => {
   }
 });
 async function saveCourtSettings() {
-  const courtCount = Number(el("court-count-input").value);
+  const pairsCourtsOn = league.singlesDecider && league.format !== "pairs";
+  // The "Courts" field only ever means pairs courts to the admin — the
+  // Super Tie's reserved court is never one of the courts they're counting.
+  // Storage still holds the true total (pairs courts + 1), matching what
+  // every grid-rendering/auto-fill/assign codepath already reads — this is
+  // the only place that number gets shown or entered, so the +1 is added
+  // and stripped back off right here, nowhere else.
+  const enteredCourts = Number(el("court-count-input").value);
+  const courtCount = pairsCourtsOn ? enteredCourts + 1 : enteredCourts;
   const slotCount = Number(el("slot-count-input").value);
-  if (!courtCount || !slotCount) return;
+  if (!enteredCourts || !slotCount) return;
   try {
     await api(`/leagues/${currentLeagueId}/court-settings`, { method: "PUT", body: { courtCount, slotCount } });
     await refreshLeague(); renderAll();
@@ -5496,7 +5504,13 @@ el("gold-tier-count-input").addEventListener("change", async () => {
 function renderAdminFixtures() {
   el("default-venue-input").value = league.defaultVenue || "";
   updateCourtPhotoControls();
-  el("court-count-input").value = league.courtCount || 4;
+  const pairsCourtsOn = league.singlesDecider && league.format !== "pairs";
+  // Shown/entered value is pairs courts only — see saveCourtSettings for
+  // why the stored number (which includes the reserved Super Tie court)
+  // gets translated right here rather than anywhere else.
+  el("court-count-input").value = (league.courtCount || 4) - (pairsCourtsOn ? 1 : 0);
+  el("court-count-input").max = pairsCourtsOn ? 11 : 12;
+  el("court-count-super-tie-note").style.display = pairsCourtsOn ? "inline" : "none";
   el("slot-count-input").value = league.slotCount || 3;
   const c = el("admin-fixtures");
   c.innerHTML = "";
