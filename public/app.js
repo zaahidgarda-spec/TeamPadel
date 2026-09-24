@@ -7091,7 +7091,18 @@ function timeSlotPanel(f, teamA, teamB) {
       const endpoint = myRole === "admin" ? "court-order" : "court-order/propose";
       try {
         await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/${endpoint}`, { method: "POST", body: { assignments: assignmentsFrom(seedAt) } });
+        // The admin's save applies immediately with nothing else on screen
+        // to show it worked (a captain's proposal at least visibly becomes
+        // "waiting on the other side") — same success-banner mechanism
+        // "Confirm this order" already uses below, so both give the same
+        // "yes, that went through" feedback instead of the button just
+        // going back to normal with no confirmation at all.
+        courtOrderNotice = { fixtureId: f.id, text: myRole === "admin" ? "Order saved." : "Order proposed — waiting on your opponent." };
         await refreshLeague(); renderAll();
+        setTimeout(() => {
+          if (courtOrderNotice && courtOrderNotice.fixtureId === f.id) courtOrderNotice = null;
+          renderAll();
+        }, 2200);
       } catch (e) { err.textContent = e.message; }
     };
     box.appendChild(btn); box.appendChild(err);
