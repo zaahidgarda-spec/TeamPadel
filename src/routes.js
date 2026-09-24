@@ -116,6 +116,7 @@ function newLeagueObj(name, adminEmail, format, singlesDecider) {
     courtNames: [], // keyed by court index -> custom label; falls back to "Court N" when blank
     tieringEnabled: false, // gold-tier seeding — off by default, admin opts in
     goldTierCount: 0, // how many players per team must be tagged "gold" once enabled
+    goldMatchCount: 0, // how many of the 4 seeds are gold-eligible once enabled — independent of goldTierCount: a team can have 3 gold players but still only 2 gold-flagged matches to fit them into
     strength: 0, // 0-5 rating admin sets to describe how competitive the league is; 0 = not rated, hidden on the league card
     // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
     // which match (a specific seed within a fixture) is assigned to that court at that time.
@@ -2361,6 +2362,11 @@ router.get("/leagues/:leagueId", (req, res) => {
   });
   if (league.tieringEnabled === undefined) league.tieringEnabled = false;
   if (!league.goldTierCount) league.goldTierCount = 0;
+  // Migration: leagues from before this was its own setting used
+  // goldTierCount (gold PLAYERS per team) to also decide how many seeds
+  // were gold-eligible — keep that same effective seed count unchanged
+  // until an admin deliberately sets goldMatchCount on its own.
+  if (league.goldMatchCount === undefined) league.goldMatchCount = Math.max(1, Math.min(4, league.goldTierCount || 1));
   if (league.flatTierLabels === undefined) league.flatTierLabels = false;
   if (league.allowRoundsByDate === undefined) league.allowRoundsByDate = false;
   if (league.strength === undefined) league.strength = 0;
@@ -3521,7 +3527,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/choice", re
   if (round.firstSide) return res.status(400).json({ error: "This pairing is already decided." });
   const side = fixtureSide(league, f, req, round.winnerSide);
   if (side !== round.winnerSide) return res.status(403).json({ error: "Only the team that won this pairing's toss can make this choice." });
-  const goldSlots = Math.max(0, Math.min(4, league.goldTierCount || 0));
+  const goldSlots = Math.max(0, Math.min(4, league.goldMatchCount || 0));
   const silverSlots = 4 - goldSlots;
   let goldUsed = 0, silverUsed = 0;
   rounds.forEach((r, i) => { if (i !== roundIdx && r.tier === "gold") goldUsed++; if (i !== roundIdx && r.tier === "silver") silverUsed++; });
@@ -3718,8 +3724,18 @@ router.put("/leagues/:leagueId/tiering", requireAdmin, (req, res) => {
     league.goldTierCount = goldTierCount;
   }
   league.tieringEnabled = enabled;
+  // goldMatchCount (how many of the 4 seeds are gold-eligible) is its own
+  // dial, independent of goldTierCount (how many players per team may be
+  // tagged gold) — a team can easily have 3 gold players who only ever
+  // fit into 2 gold-flagged matches (2 there, 1 sharing a silver match).
+  if (req.body.goldMatchCount !== undefined) {
+    const goldMatchCount = Number(req.body.goldMatchCount);
+    if (!Number.isInteger(goldMatchCount) || goldMatchCount < 1 || goldMatchCount > 4)
+      return res.status(400).json({ error: "Gold matches must be between 1 and 4." });
+    league.goldMatchCount = goldMatchCount;
+  }
   // Two ways a league can present its gold/silver split: "seeded" keeps
-  // Seed 1..N as a fixed ranking, with only the first goldTierCount seeds
+  // Seed 1..N as a fixed ranking, with only the first goldMatchCount seeds
   // gold-eligible (silver can still play any seed) — the original design.
   // "flat" drops seed numbers entirely: a match is just labeled Gold match
   // or Silver match, no ranking implied between two seeds of the same tier.
@@ -5560,13 +5576,13 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   // gold), but if this fixture's pair-toss ceremony already tossed a tier
   // for that seed, that decision is the real one and wins — the ceremony
   // can hand "gold" to any of the 4 pairings, not just the first.
-  const goldTierCount = Math.max(0, Math.min(4, league.goldTierCount || 0));
+  const goldMatchCount = Math.max(0, Math.min(4, league.goldMatchCount || 0));
   const goldRule = league.tieringEnabled && league.format !== "pairs" && myTeam
     ? {
         goldIds: new Set(myTeam.players.filter((p) => p.gold).map((p) => p.id)),
         isGoldSeed: (i) => {
           const tossed = f.pairToss && f.pairToss[i] && f.pairToss[i].tier;
-          return tossed ? tossed === "gold" : i < goldTierCount;
+          return tossed ? tossed === "gold" : i < goldMatchCount;
         },
       }
     : null;

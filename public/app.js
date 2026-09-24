@@ -153,12 +153,16 @@ function goldPrefix(p) { return isGoldPlayer(p) ? "★ " : ""; }
 // pairings, not just the first) — so whenever that ceremony has already
 // tossed this seed, f.pairToss[seedIdx].tier is the source of truth. Only a
 // fixture that never went through the ceremony (submitted via the plain
-// seed-picker instead) falls back to the fixed "Seed 1..goldTierCount are
-// gold" rule. A singles/Super Tie seed is never gold-restricted.
+// seed-picker instead) falls back to the fixed "Seed 1..goldMatchCount are
+// gold" rule. goldMatchCount (how many seeds are gold-eligible) is its own
+// dial, separate from goldTierCount (how many players per team may be
+// tagged gold) — a team can have 3 gold players who still only ever fit
+// into 2 gold-flagged matches. A singles/Super Tie seed is never
+// gold-restricted.
 function effectiveSeedTier(f, seedIdx) {
   const tossed = f && f.pairToss && f.pairToss[seedIdx] && f.pairToss[seedIdx].tier;
   if (tossed) return tossed;
-  return seedIdx < (league.goldTierCount || 0) ? "gold" : "silver";
+  return seedIdx < (league.goldMatchCount || 0) ? "gold" : "silver";
 }
 function tierChipHtml(f, seedIdx, isRestrictedSeed) {
   // In "flat" mode the tier is already the whole label (seedLabelText below
@@ -4795,6 +4799,9 @@ function renderAdmin() {
   el("tiering-enabled-toggle").checked = !!league.tieringEnabled;
   el("tiering-count-row").style.display = league.tieringEnabled ? "flex" : "none";
   el("gold-tier-count-input").value = league.goldTierCount || 1;
+  el("gold-match-count-input").value = league.goldMatchCount || 1;
+  el("tiering-match-count-row").style.display = league.tieringEnabled ? "flex" : "none";
+  el("tiering-match-count-hint").style.display = league.tieringEnabled ? "block" : "none";
   el("tiering-flat-toggle").checked = !!league.flatTierLabels;
   el("tiering-flat-row").style.display = league.tieringEnabled ? "flex" : "none";
   el("tiering-flat-hint").style.display = league.tieringEnabled ? "block" : "none";
@@ -5745,17 +5752,23 @@ el("slot-count-input").addEventListener("change", saveCourtSettings);
 el("tiering-enabled-toggle").addEventListener("change", async (e) => {
   const enabled = e.target.checked;
   el("tiering-count-row").style.display = enabled ? "flex" : "none";
+  el("tiering-match-count-row").style.display = enabled ? "flex" : "none";
+  el("tiering-match-count-hint").style.display = enabled ? "block" : "none";
   el("tiering-flat-row").style.display = enabled ? "flex" : "none";
   el("tiering-flat-hint").style.display = enabled ? "block" : "none";
   const goldTierCount = Number(el("gold-tier-count-input").value) || 1;
   if (enabled) el("gold-tier-count-input").value = goldTierCount;
+  const goldMatchCount = Number(el("gold-match-count-input").value) || 1;
+  if (enabled) el("gold-match-count-input").value = goldMatchCount;
   try {
-    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled, goldTierCount, flatTierLabels: el("tiering-flat-toggle").checked } });
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled, goldTierCount, goldMatchCount, flatTierLabels: el("tiering-flat-toggle").checked } });
     await refreshLeague(); renderAll();
   } catch (err) {
     alert(err.message);
     e.target.checked = !enabled;
     el("tiering-count-row").style.display = !enabled ? "flex" : "none";
+    el("tiering-match-count-row").style.display = !enabled ? "flex" : "none";
+    el("tiering-match-count-hint").style.display = !enabled ? "block" : "none";
     el("tiering-flat-row").style.display = !enabled ? "flex" : "none";
     el("tiering-flat-hint").style.display = !enabled ? "block" : "none";
   }
@@ -5765,6 +5778,14 @@ el("gold-tier-count-input").addEventListener("change", async () => {
   if (!goldTierCount || goldTierCount < 1) return;
   try {
     await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount } });
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+});
+el("gold-match-count-input").addEventListener("change", async () => {
+  const goldMatchCount = Number(el("gold-match-count-input").value);
+  if (!goldMatchCount || goldMatchCount < 1) return;
+  try {
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount: league.goldTierCount || 1, goldMatchCount } });
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 });
@@ -6642,7 +6663,7 @@ function tossCard(f) {
 function pairTossAccordion(f, teamA, teamB, mySide) {
   const wrap = document.createElement("div");
   const rounds = f.pairToss && f.pairToss.length === 4 ? f.pairToss : [{}, {}, {}, {}];
-  const goldSlots = Math.max(0, Math.min(4, league.goldTierCount || 0));
+  const goldSlots = Math.max(0, Math.min(4, league.goldMatchCount || 0));
   const silverSlots = 4 - goldSlots;
 
   function roundFilledLocal(side, idx) {
