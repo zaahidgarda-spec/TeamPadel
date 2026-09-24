@@ -6682,7 +6682,11 @@ function pairTossAccordion(f, teamA, teamB, mySide) {
   function usedPlayerIds(side, excludeIdx) {
     const sel = side === "A" ? f.selectionA : f.selectionB;
     const used = new Set();
-    sel.pairs.forEach((p, i) => { if (i !== excludeIdx) { if (p[0]) used.add(p[0]); if (p[1]) used.add(p[1]); } });
+    // Seed index 4 (Ormonde rules' singles seed, when this fixture has one)
+    // is a different match entirely, not another doubles pairing — playing
+    // it alongside a pair-toss round isn't a double-up, so it never makes
+    // a player unavailable here.
+    sel.pairs.forEach((p, i) => { if (i !== excludeIdx && i !== 4) { if (p[0]) used.add(p[0]); if (p[1]) used.add(p[1]); } });
     return used;
   }
   function coinEl(landedHeads) {
@@ -7444,9 +7448,14 @@ function selectionForm(f, team, side) {
   doubleUpNote.appendChild(doubleUpLabel);
 
   function findDuplicate() {
+    // The Ormonde-rules 5th seed is the singles match, not a second doubles
+    // pairing — playing it alongside a doubles seed isn't a double-up, so
+    // it's excluded from this check entirely.
+    const singlesIdx = localPairs.length === 5 ? 4 : -1;
     const seen = new Set();
-    for (const pair of localPairs) {
-      for (const id of pair) {
+    for (let i = 0; i < localPairs.length; i++) {
+      if (i === singlesIdx) continue;
+      for (const id of localPairs[i]) {
         if (!id) continue;
         if (seen.has(id)) return true;
         seen.add(id);

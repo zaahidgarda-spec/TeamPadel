@@ -438,9 +438,11 @@ function validateSelection(pairs, confirmDoubleUp, singlesIdx, goldRule) {
   for (let i = 0; i < pairs.length; i++) {
     const [a, b] = pairs[i];
     if (i === singlesIdx) {
+      // The singles seed is a genuinely different match, not a second
+      // doubles pairing — a player who's already in a doubles seed tonight
+      // and also plays singles isn't a double-up, so this seed never
+      // reads from or writes to `seen`.
       if (!a || b) return { error: "The singles seed needs exactly one player selected." };
-      if (seen.has(a)) doubleUp = true;
-      seen.add(a);
       continue;
     }
     if (!a || !b) return { error: "Every seed needs two players selected." };
@@ -473,9 +475,12 @@ function validateRoundPair(existingPairs, roundIdx, pair, confirmDoubleUp, round
   if (roundTier === "silver" && goldIds && (goldIds.has(a) || goldIds.has(b))) {
     return { error: "A gold-tier player can only play a gold pairing — this one was tossed silver." };
   }
+  // Only the 4 pair-toss rounds count as "already used" — an Ormonde-rules
+  // fixture's 5th slot (index 4) is the singles seed, a different match
+  // entirely, so playing it alongside a doubles pairing isn't a double-up.
   const seen = new Set();
   existingPairs.forEach((p, i) => {
-    if (i === roundIdx) return;
+    if (i === roundIdx || i === 4) return;
     if (p[0]) seen.add(p[0]);
     if (p[1]) seen.add(p[1]);
   });
