@@ -8338,7 +8338,14 @@ function liveNames(t) {
 }
 // "Ryan Naidoo" -> "R. Naidoo": the players a court is actually waiting on,
 // short enough for a tile. A one-word name is left as it is.
-function shortPlayerName(name) {
+// Named distinctly from the player-object shortPlayerName(p) above — this
+// one takes a plain string. They used to share a name, which meant this
+// later declaration silently won for BOTH call sites (function
+// declarations in the same scope don't overload, the last one replaces the
+// first) — poster generation ended up calling this string version with a
+// whole player object, and String(playerObject) is where the poster's
+// "[object Object]" text came from.
+function shortLiveCourtName(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return parts[0] || "TBD";
   return parts[0][0].toUpperCase() + ". " + parts.slice(1).join(" ");
@@ -8351,7 +8358,7 @@ function liveSides(t, full) {
   const wanted = isSuperTie ? 1 : 2;
   const side = (team, sel) => {
     const pair = (sel && sel.pairs && sel.pairs[t.cell.seed]) || [];
-    const players = pair.map((id) => playerById(team, id)).filter(Boolean).map((p) => (full ? p.name : shortPlayerName(p.name)));
+    const players = pair.map((id) => playerById(team, id)).filter(Boolean).map((p) => (full ? p.name : shortLiveCourtName(p.name)));
     while (players.length < wanted) players.push("TBD");
     return { team, players };
   };
