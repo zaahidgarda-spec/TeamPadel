@@ -2361,6 +2361,7 @@ router.get("/leagues/:leagueId", (req, res) => {
   });
   if (league.tieringEnabled === undefined) league.tieringEnabled = false;
   if (!league.goldTierCount) league.goldTierCount = 0;
+  if (league.flatTierLabels === undefined) league.flatTierLabels = false;
   if (league.allowRoundsByDate === undefined) league.allowRoundsByDate = false;
   if (league.strength === undefined) league.strength = 0;
   if (!league.format) league.format = "teams";
@@ -3717,6 +3718,12 @@ router.put("/leagues/:leagueId/tiering", requireAdmin, (req, res) => {
     league.goldTierCount = goldTierCount;
   }
   league.tieringEnabled = enabled;
+  // Two ways a league can present its gold/silver split: "seeded" keeps
+  // Seed 1..N as a fixed ranking, with only the first goldTierCount seeds
+  // gold-eligible (silver can still play any seed) — the original design.
+  // "flat" drops seed numbers entirely: a match is just labeled Gold match
+  // or Silver match, no ranking implied between two seeds of the same tier.
+  if (req.body.flatTierLabels !== undefined) league.flatTierLabels = !!req.body.flatTierLabels;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

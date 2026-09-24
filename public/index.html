@@ -681,6 +681,10 @@
             <span class="note" style="width:180px;">Gold-tier players per team</span>
             <input type="number" id="gold-tier-count-input" min="1" max="20" style="width:70px;">
           </div>
+          <div class="row" id="tiering-flat-row" style="align-items:center;margin-top:10px;display:none;">
+            <label class="note" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="tiering-flat-toggle"> Show matches as Gold/Silver only, no seed numbers</label>
+          </div>
+          <p class="note" id="tiering-flat-hint" style="margin-top:6px;display:none;">Off: Seed 1 stays Seed 1, just flagged Gold — a silver player can still play it. On: seeds drop their numbers entirely — a match is just labeled "Gold match" or "Silver match", with no ranking between two of the same tier.</p>
         </div>
         <div class="card" id="rosters-card">
           <h2 class="section-title">Player rosters</h2>

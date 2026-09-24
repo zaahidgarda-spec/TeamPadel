@@ -161,10 +161,29 @@ function effectiveSeedTier(f, seedIdx) {
   return seedIdx < (league.goldTierCount || 0) ? "gold" : "silver";
 }
 function tierChipHtml(f, seedIdx, isRestrictedSeed) {
-  if (!league.tieringEnabled || league.format === "pairs" || !isRestrictedSeed) return "";
+  // In "flat" mode the tier is already the whole label (seedLabelText below
+  // says "Gold match"/"Silver match" outright) — showing this chip too
+  // would just repeat it.
+  if (!league.tieringEnabled || league.format === "pairs" || !isRestrictedSeed || league.flatTierLabels) return "";
   return effectiveSeedTier(f, seedIdx) === "gold"
     ? '<span class="tier-chip gold">&#9733; Gold</span>'
     : '<span class="tier-chip silver">Silver</span>';
+}
+// In "flat" mode (league.flatTierLabels), a seed carries no fixed rank —
+// only its gold/silver tier does, so it's never called "Seed 1"/"Seed 2";
+// the match is just "Gold match" or "Silver match". Numbered only when more
+// than one seed shares that tier this fixture, purely to tell identical
+// labels apart — never a strength ranking, unlike seeded mode's Seed 1-4.
+// Falls straight through to "Seed N" in seeded mode, or when tiering's off.
+function seedLabelText(f, seedIdx, isRestrictedSeed) {
+  if (!isRestrictedSeed || !league.tieringEnabled || league.format === "pairs" || !league.flatTierLabels) {
+    return "Seed " + (seedIdx + 1);
+  }
+  const tier = effectiveSeedTier(f, seedIdx);
+  const sameTier = [];
+  for (let i = 0; i < 4; i++) { if (effectiveSeedTier(f, i) === tier) sameTier.push(i); }
+  const label = tier === "gold" ? "Gold match" : "Silver match";
+  return sameTier.length > 1 ? label + " " + (sameTier.indexOf(seedIdx) + 1) : label;
 }
 // `isSub` colours the name to flag a mid-fixture substitute — independent
 // of gold-tier (a sub can also be a gold player, so the ★ prefix and the
@@ -4776,6 +4795,9 @@ function renderAdmin() {
   el("tiering-enabled-toggle").checked = !!league.tieringEnabled;
   el("tiering-count-row").style.display = league.tieringEnabled ? "flex" : "none";
   el("gold-tier-count-input").value = league.goldTierCount || 1;
+  el("tiering-flat-toggle").checked = !!league.flatTierLabels;
+  el("tiering-flat-row").style.display = league.tieringEnabled ? "flex" : "none";
+  el("tiering-flat-hint").style.display = league.tieringEnabled ? "block" : "none";
   el("teams-section-title").textContent = isPairs ? "Pairs" : "Teams";
   el("groups-card").style.display = isPairs ? "block" : "none";
   el("add-group-row").style.display = status === "setup" ? "flex" : "none";
@@ -5723,15 +5745,19 @@ el("slot-count-input").addEventListener("change", saveCourtSettings);
 el("tiering-enabled-toggle").addEventListener("change", async (e) => {
   const enabled = e.target.checked;
   el("tiering-count-row").style.display = enabled ? "flex" : "none";
+  el("tiering-flat-row").style.display = enabled ? "flex" : "none";
+  el("tiering-flat-hint").style.display = enabled ? "block" : "none";
   const goldTierCount = Number(el("gold-tier-count-input").value) || 1;
   if (enabled) el("gold-tier-count-input").value = goldTierCount;
   try {
-    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled, goldTierCount } });
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled, goldTierCount, flatTierLabels: el("tiering-flat-toggle").checked } });
     await refreshLeague(); renderAll();
   } catch (err) {
     alert(err.message);
     e.target.checked = !enabled;
     el("tiering-count-row").style.display = !enabled ? "flex" : "none";
+    el("tiering-flat-row").style.display = !enabled ? "flex" : "none";
+    el("tiering-flat-hint").style.display = !enabled ? "block" : "none";
   }
 });
 el("gold-tier-count-input").addEventListener("change", async () => {
@@ -5741,6 +5767,16 @@ el("gold-tier-count-input").addEventListener("change", async () => {
     await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount } });
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
+});
+el("tiering-flat-toggle").addEventListener("change", async (e) => {
+  const flatTierLabels = e.target.checked;
+  try {
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount: league.goldTierCount || 1, flatTierLabels } });
+    await refreshLeague(); renderAll();
+  } catch (err) {
+    alert(err.message);
+    e.target.checked = !flatTierLabels;
+  }
 });
 function renderAdminFixtures() {
   el("default-venue-input").value = league.defaultVenue || "";
@@ -7274,8 +7310,9 @@ function selectionReveal(f, team, sel, side) {
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
     const isSuperTie = sel.pairs.length === 5 && i === 4;
-    const seedNum = isSuperTie ? "Singles" : "Seed " + (i + 1);
-    const chip = tierChipHtml(f, i, sel.pairs.length > 1 && !isSuperTie);
+    const isRestrictedSeed = sel.pairs.length > 1 && !isSuperTie;
+    const seedNum = isSuperTie ? "Singles" : seedLabelText(f, i, isRestrictedSeed);
+    const chip = tierChipHtml(f, i, isRestrictedSeed);
     html += `<div class="seed-row"><span class="num">${seedNum}</span>${chip}<span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
@@ -7475,8 +7512,9 @@ function selectionForm(f, team, side) {
     // Ormonde rules: the 5th seed is a real, always-played singles rubber —
     // one player, not a pair, so it gets one picker below instead of two.
     const isSingles = localPairs.length === 5 && i === 4;
-    const chip = tierChipHtml(f, i, localPairs.length > 1 && !isSingles);
-    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Singles" : "Seed " + (i + 1)}</span>${chip}`;
+    const isRestrictedSeed = localPairs.length > 1 && !isSingles;
+    const chip = tierChipHtml(f, i, isRestrictedSeed);
+    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Singles" : seedLabelText(f, i, isRestrictedSeed)}</span>${chip}`;
     const seedIdx = i;
     const goldBlockedSeed = league.tieringEnabled && league.format !== "pairs" && !isSingles && effectiveSeedTier(f, seedIdx) === "silver";
     const fields = [];
@@ -7689,7 +7727,7 @@ function courtScheduleOptions(fixtures) {
       const pairLabel = revealed
         ? playerNamesForGold(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[seed])
         : null;
-      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || (isSuperTie ? "Singles" : "Seed " + (seed + 1)) });
+      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || (isSuperTie ? "Singles" : seedLabelText(f, seed, true)) });
     }
   });
   return options;
@@ -7916,7 +7954,8 @@ function renderCourtScheduleGrid(fixtures) {
     if (!cell) return "This empty court";
     const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
     if (!opt) return "This match";
-    const seedLabel = cell.seed === 4 ? "Singles" : "Seed " + (cell.seed + 1);
+    const cellFixture = fixtures.find((x) => x.id === cell.fixtureId);
+    const seedLabel = cell.seed === 4 ? "Singles" : seedLabelText(cellFixture, cell.seed, true);
     return (opt.teamA ? opt.teamA.name : "TBD") + " vs " + (opt.teamB ? opt.teamB.name : "TBD") + " (" + seedLabel + ")";
   };
   // Ownership gate for tap-to-swap: admin can touch any cell; a captain
@@ -8375,7 +8414,7 @@ function liveTileHtml(s, c, oneFixture) {
   // teams to name up there, so each tile carries its own little badges.
   const mid = oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`;
   const teams = `${lines(sides[0])}<div class="lc-vs">${mid}</div>${lines(sides[1])}`;
-  const label = isSuperTie ? "Singles" : `Seed ${t.cell.seed + 1}`;
+  const label = isSuperTie ? "Singles" : seedLabelText(t.f, t.cell.seed, true);
   let foot;
   if (info.state === "live") {
     foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}">${elapsedClock(info.rubber.startedAt)}</span></div>`;
@@ -8596,7 +8635,7 @@ function renderLiveSheet() {
   const swatch = info.state === "upcoming" ? { g: "#1E9E5C", r: "#D93A2B", n: "#5B6E9C" }[info.tone] : "#243360";
   const status = info.state === "live" ? "Live" : info.state === "done" ? "Finished" : "To play";
   const sideHtml = (sd) => `<div class="lc-sh-side">${sd.team ? avatarHtml(sd.team) : ""}<div><b>${escapeHtml(sd.team ? sd.team.name : "TBD")}</b><span>${escapeHtml(sd.players[0])}${isSuperTie ? "" : " &amp; " + escapeHtml(sd.players[1])}</span></div></div>`;
-  const seedLabel = isSuperTie ? "Singles" : "Seed " + (cell.seed + 1);
+  const seedLabel = isSuperTie ? "Singles" : seedLabelText(f, cell.seed, true);
   let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1}</b><span>${seedLabel} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>
     <div class="lc-sh-sides">${sideHtml(sides[0])}<span class="lc-v">v</span>${sideHtml(sides[1])}</div>`;
   if (info.state === "upcoming") {
@@ -8758,8 +8797,9 @@ function renderFixtures() {
           const w = rubberWinnerClient(f.rubbers[i]);
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
           const isSuperTie = f.selectionA.pairs.length === 5 && i === 4;
-          const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : isSuperTie ? "Singles" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
-          const chip = tierChipHtml(f, i, f.selectionA.pairs.length > 1 && !isSuperTie);
+          const isRestrictedSeed = f.selectionA.pairs.length > 1 && !isSuperTie;
+          const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : isSuperTie ? "Singles" : seedLabelText(f, i, isRestrictedSeed) + (slotNum ? " · Slot " + slotNum : "");
+          const chip = tierChipHtml(f, i, isRestrictedSeed);
           html += `<div class="rubber-row"><span class="seed">${seedLbl}${chip}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span class="rubber-vs">vs</span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
         });
         html += "</div>";
@@ -9192,7 +9232,8 @@ function resultsCard(f) {
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    const isRestrictedSeed = !isDecider && slot4 !== "singles" && f.rubbers.length > 1;
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : seedLabelText(f, idx, isRestrictedSeed) + (slotNum ? " · Slot " + slotNum : "");
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
@@ -9336,7 +9377,8 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     tb: [rubber.tb[0] === null || rubber.tb[0] === "" ? 0 : Number(rubber.tb[0]), rubber.tb[1] === null || rubber.tb[1] === "" ? 0 : Number(rubber.tb[1])],
   };
   const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-  el("score-modal-title").textContent = isDecider ? "Decider score" : isSuperTieOnly ? "Singles score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  const isRestrictedSeed = !isDecider && !isSuperTieOnly && f.rubbers.length > 1;
+  el("score-modal-title").textContent = isDecider ? "Decider score" : isSuperTieOnly ? "Singles score" : f.rubbers.length === 1 ? "Match score" : seedLabelText(f, idx, isRestrictedSeed) + " score" + (slotNum ? " · Slot " + slotNum : "");
   const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
   const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
   const splitAfterTwo = () => {
@@ -10238,7 +10280,7 @@ async function generateCourtSchedulePosterCanvas(theme) {
         } else {
           ctx.fillStyle = "#FFFFFF";
           ctx.font = "500 " + csz(18) + "px Inter, sans-serif";
-          ctx.fillText("Seed " + (cell.seed + 1), midX, cellY + cellH * 0.55);
+          ctx.fillText(cell.seed === 4 ? "Singles" : seedLabelText(fixture, cell.seed, true), midX, cellY + cellH * 0.55);
         }
       } else {
         ctx.textAlign = "center";
@@ -12121,7 +12163,8 @@ function archivedFixtureCard(seasonId, f, teams) {
     const row = document.createElement("div"); row.className = "rubber-row";
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
-    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
+    const isRestrictedSeed = !isDecider && slot4 !== "singles" && f.rubbers.length > 1;
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : seedLabelText(f, idx, isRestrictedSeed);
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
