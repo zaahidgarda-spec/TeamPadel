@@ -448,6 +448,19 @@ function defaultKit() {
     notes: "", // free text for the kit supplier — fabric, fit, deadline, whatever doesn't fit a badge or a size
   };
 }
+// A kit photo field is dual-shaped, for backward compatibility with every
+// kit photo saved before this split existed — a non-empty STRING is the
+// old format (the actual photo, still sitting inline in this league's own
+// record exactly as it always has, until whoever owns it re-uploads);
+// `true` is the new format, meaning the real bytes live in their own
+// Redis key instead (store.saveKitPhoto/getKitPhoto). Reading either shape
+// transparently means nothing needs a one-time migration pass against
+// production data this app has no direct access to.
+function resolveKitPhotoField(leagueId, teamId, raw, field) {
+  if (typeof raw === "string" && raw) return Promise.resolve(raw); // old inline format
+  if (!raw) return Promise.resolve("");
+  return store.getKitPhoto(leagueId, teamId, field); // new format
+}
 // The kit's own logo badge defaults to the team's real logo — a captain
 // who's already uploaded one for the league card/next-matches/etc. never
 // had a reason to expect their kit mockup to still be blank. Computed at
@@ -455,18 +468,65 @@ function defaultKit() {
 // logo changes later, and an explicit kit-logo upload still overrides it.
 // null (as opposed to "", which just means "never touched") means a
 // captain deliberately removed it — that one case does NOT fall back, or
-// the remove button would look broken (the badge just reappearing).
-function effectiveKit(team) {
+// the remove button would look broken (the badge just reappearing) — see
+// resolvedKit below, which applies that fallback once the raw logo field
+// (string, true, or null) has been resolved to actual bytes or null.
+// Full kit, real photo bytes resolved — for the Kit Designer's own lazy
+// fetch (GET .../kit/full) and the kit-share supplier link, the two
+// places that actually need the pixels. Everywhere else (the general
+// team payload) uses kitSummary below instead, so opening an unrelated
+// page never pays for every team's kit photos riding along unasked.
+async function resolvedKit(league, team) {
   const kit = team.kit || defaultKit();
-  return { ...kit, logo: kit.logo === null ? "" : (kit.logo || team.logo || "") };
+  const sponsors = kit.sponsors || {};
+  const [front, back, rawLogo, sleeveLeft, sleeveRight, backSponsor1, backSponsor2, backSponsor3] = await Promise.all([
+    resolveKitPhotoField(league.id, team.id, kit.front, "front"),
+    resolveKitPhotoField(league.id, team.id, kit.back, "back"),
+    kit.logo === null ? Promise.resolve(null) : resolveKitPhotoField(league.id, team.id, kit.logo, "logo"),
+    resolveKitPhotoField(league.id, team.id, sponsors.sleeveLeft, "sleeveLeft"),
+    resolveKitPhotoField(league.id, team.id, sponsors.sleeveRight, "sleeveRight"),
+    resolveKitPhotoField(league.id, team.id, sponsors.backSponsor1, "backSponsor1"),
+    resolveKitPhotoField(league.id, team.id, sponsors.backSponsor2, "backSponsor2"),
+    resolveKitPhotoField(league.id, team.id, sponsors.backSponsor3, "backSponsor3"),
+  ]);
+  return {
+    ...kit,
+    front, back,
+    logo: rawLogo === null ? "" : (rawLogo || team.logo || ""),
+    sponsors: { sleeveLeft, sleeveRight, backSponsor1, backSponsor2, backSponsor3 },
+  };
 }
-// Every photo/logo upload in the app lands inside its league's own single
-// stored record (one JSON blob per league — teams, kit photos, news posts,
-// everything), so a big enough image doesn't just cost that one upload —
-// it makes EVERY future read and write of that whole league bigger, until
-// a save trips Upstash's 10MB per-request limit and starts failing
-// silently (store.saveLeague's Redis write is fire-and-forget; nothing
-// here would otherwise know it didn't actually save). Client-side resize
+// Lightweight kit info for the general per-team payload — presence flags
+// and the small non-photo fields (positions/orders/notes), never the
+// actual photo bytes. A page that isn't the Kit Designer (fixtures,
+// standings, anything) has no reason to pay for every team's kit photos
+// riding along on every load — that was the whole reason this league's
+// record kept growing toward Upstash's 10MB per-request limit.
+function kitSummary(team) {
+  const kit = team.kit || defaultKit();
+  const sponsors = kit.sponsors || {};
+  const has = (raw) => !!raw; // truthy for both the old (non-empty string) and new (true) shapes
+  return {
+    hasFront: has(kit.front), hasBack: has(kit.back),
+    logoState: kit.logo === null ? "removed" : (has(kit.logo) ? "custom" : "unset"),
+    sponsors: {
+      sleeveLeft: has(sponsors.sleeveLeft), sleeveRight: has(sponsors.sleeveRight),
+      backSponsor1: has(sponsors.backSponsor1), backSponsor2: has(sponsors.backSponsor2), backSponsor3: has(sponsors.backSponsor3),
+    },
+    positions: kit.positions,
+    orders: kit.orders,
+    notes: kit.notes,
+  };
+}
+// Every photo/logo upload in the app used to land inside its league's own
+// single stored record (one JSON blob per league — teams, kit photos, news
+// posts, everything), so a big enough image didn't just cost that one
+// upload — it made EVERY future read and write of that whole league
+// bigger, until a save tripped Upstash's 10MB per-request limit and
+// started failing silently (store.saveLeague's Redis write is fire-and-
+// forget; nothing here would otherwise know it didn't actually save). Kit
+// photos (the main driver — several high-res images per team) now live in
+// their own keys (see store.saveKitPhoto) instead. Client-side resize
 // already keeps normal uploads well under this, but nothing enforced it
 // server-side — this is the backstop for whatever gets here anyway
 // (resize skipped, bypassed, or a future upload path that forgets it).
@@ -513,8 +573,10 @@ function sanitize(league, req) {
       notifyEmail: viewerIsThisTeam ? notifyEmail : undefined,
       // Kit design (photos, sponsor placement, who's ordering) is as
       // private as the team's own login code — nobody outside that team's
-      // captain/admin has any reason to see it.
-      kit: viewerIsThisTeam ? effectiveKit(t) : undefined,
+      // captain/admin has any reason to see it. Flags only, not the actual
+      // photo bytes — the Kit Designer fetches those lazily on its own
+      // (GET .../kit/full) only when it's actually opened.
+      kit: viewerIsThisTeam ? kitSummary(t) : undefined,
       // A push subscription's endpoint+keys are sensitive in the same way a
       // login code is (anyone holding one could push-spam that device) —
       // never belonged in the general public league payload.
@@ -2561,6 +2623,11 @@ router.put("/leagues/:leagueId/incognito", (req, res) => {
 });
 
 router.delete("/leagues/:leagueId", requireAdmin, (req, res) => {
+  // Best-effort — kit photos live in their own keys now (store.saveKitPhoto),
+  // so deleting just the league record would leave every team's orphaned
+  // behind forever otherwise.
+  const league = store.getLeague(req.params.leagueId);
+  if (league) Promise.all(league.teams.map((t) => store.deleteKitPhotosForTeam(league.id, t.id))).catch(() => {});
   store.deleteLeague(req.params.leagueId);
   const index = store.getIndex().filter((l) => l.id !== req.params.leagueId);
   store.saveIndex(index);
@@ -2781,7 +2848,7 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
 /* ---------- Team kit (captain-managed — upload the kit design, place
    sponsor logos on it, list who wants one and what size) ---------- */
 
-router.put("/leagues/:leagueId/teams/:teamId/kit/photo", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+router.put("/leagues/:leagueId/teams/:teamId/kit/photo", requireAdminOrCaptain((req) => req.params.teamId), async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
@@ -2789,27 +2856,33 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/photo", requireAdminOrCaptain((
   if (side !== "front" && side !== "back") return res.status(400).json({ error: "Invalid side." });
   if (imageTooLarge(res, image)) return;
   if (!team.kit) team.kit = defaultKit();
-  team.kit[side] = image || "";
+  // The actual bytes go to their own key (store.saveKitPhoto) — the
+  // league's own record only ever keeps a boolean flag now, so a team's
+  // kit photos stop costing anything on every other save of this league.
+  await store.saveKitPhoto(league.id, team.id, side, image || "");
+  team.kit[side] = !!image;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
 
-router.put("/leagues/:leagueId/teams/:teamId/kit/logo", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+router.put("/leagues/:leagueId/teams/:teamId/kit/logo", requireAdminOrCaptain((req) => req.params.teamId), async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
-  if (imageTooLarge(res, req.body && req.body.image)) return;
+  const image = req.body && req.body.image;
+  if (imageTooLarge(res, image)) return;
   if (!team.kit) team.kit = defaultKit();
-  // A real upload is stored as-is; an explicit removal is remembered as
+  await store.saveKitPhoto(league.id, team.id, "logo", image || "");
+  // A real upload is stored as true; an explicit removal is remembered as
   // null (not "") so it stays removed instead of falling back to the
-  // team's own logo again on the very next load — see effectiveKit.
-  team.kit.logo = (req.body && req.body.image) || null;
+  // team's own logo again on the very next load — see resolvedKit.
+  team.kit.logo = image ? true : null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
 
 const KIT_SPONSOR_SLOTS = ["sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2", "backSponsor3"];
-router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain((req) => req.params.teamId), async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
@@ -2817,9 +2890,20 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/sponsor", requireAdminOrCaptain
   if (!KIT_SPONSOR_SLOTS.includes(slot)) return res.status(400).json({ error: "Invalid sponsor slot." });
   if (imageTooLarge(res, image)) return;
   if (!team.kit) team.kit = defaultKit();
-  team.kit.sponsors[slot] = image || "";
+  await store.saveKitPhoto(league.id, team.id, slot, image || "");
+  team.kit.sponsors[slot] = !!image;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+// The Kit Designer's own lazy fetch — real photo bytes, only when it's
+// actually opened (see kitSummary above for why the general team payload
+// doesn't carry these).
+router.get("/leagues/:leagueId/teams/:teamId/kit/full", requireAdminOrCaptain((req) => req.params.teamId), async (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  res.json({ kit: await resolvedKit(league, team) });
 });
 
 // Percent coordinates (0-100), relative to whichever photo that badge sits
@@ -2943,12 +3027,12 @@ router.post("/leagues/:leagueId/kit-share-link/revoke", requireAdmin, (req, res)
 // logo, sponsors and their placement, who's ordering) so a supplier can
 // see and download everything from one link without ever needing an
 // account or captain code.
-router.get("/leagues/:leagueId/kit-share/:token", (req, res) => {
+router.get("/leagues/:leagueId/kit-share/:token", async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league || !league.kitShareToken || league.kitShareToken !== req.params.token) {
     return res.status(404).json({ error: "This link is invalid or has been revoked." });
   }
-  const teams = league.teams.map((t) => ({ id: t.id, name: t.name, kit: effectiveKit(t) }));
+  const teams = await Promise.all(league.teams.map(async (t) => ({ id: t.id, name: t.name, kit: await resolvedKit(league, t) })));
   res.json({
     leagueId: league.id, leagueName: league.name, teams,
     mainSponsor: league.kitMainSponsor || "", mainSponsorPos: league.kitMainSponsorPos || { x: 50, y: 45 },
@@ -3115,6 +3199,7 @@ router.delete("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams are locked once the season has started." });
   league.teams = league.teams.filter((t) => t.id !== req.params.teamId);
   store.saveLeague(league.id, league);
+  store.deleteKitPhotosForTeam(league.id, req.params.teamId).catch(() => {}); // best-effort cleanup
   res.json({ ok: true });
 });
 

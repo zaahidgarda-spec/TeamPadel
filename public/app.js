@@ -10638,16 +10638,16 @@ function kitOpenBadgePicker(key) {
 }
 // Shared by the file-input's onchange and a drag-and-drop onto the photo
 // or a badge — same resize-then-PUT flow regardless of how the file
-// arrived. These used to go up to 1600/900px for print-quality kit-share
-// downloads, on the assumption that "never shown on a page every visitor
-// loads" meant no real payload cost — but every kit photo still lands
-// inside its league's one shared stored record (see MAX_IMAGE_DATA_URL_
-// LENGTH server-side), so a whole season's worth of front/back photos
-// across every team was quietly pushing some leagues toward Redis's 10MB
-// per-write limit. Pulled back to still-good-for-a-supplier-email sizes.
+// arrived. Print-quality sizes again (1600px front/back, 900px badges) —
+// these used to be pulled back to smaller, email-safe sizes because every
+// kit photo landed inside its league's one shared stored record, and a
+// whole season's front/back photos across every team was quietly pushing
+// some leagues toward Redis's 10MB per-write limit. Kit photos now live
+// in their own keys (see store.saveKitPhoto server-side), so resolution
+// here no longer costs anything on that shared record at all.
 function kitHandleUploadedFile(target, file) {
   if (!file) return;
-  const maxSize = target.field === "front" || target.field === "back" ? 1100 : 650;
+  const maxSize = target.field === "front" || target.field === "back" ? 1600 : 900;
   resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
     if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
     try {
@@ -11106,7 +11106,7 @@ function renderKitBadgeList(kit, overlaps) {
   }).join("");
   c.querySelectorAll("[data-reset-key]").forEach((btn) => { btn.onclick = () => kitResetBadgePosition(btn.dataset.resetKey); });
 }
-function renderKit() {
+async function renderKit() {
   if (myRole !== "admin" && myRole !== "captain") return;
   el("kit-team-select-row").style.display = myRole === "admin" ? "flex" : "none";
   el("kit-share-card").style.display = myRole === "admin" ? "block" : "none";
@@ -11120,7 +11120,15 @@ function renderKit() {
   }
   const team = kitTeamInEdit();
   if (!team) { el("kit-orders-list").innerHTML = ""; el("kit-download-list").innerHTML = ""; return; }
-  const kit = kitKitOf(team);
+  // Real kit photo bytes are fetched lazily, only while the Kit Designer is
+  // actually open — the general team payload only carries presence flags
+  // (see kitSummary server-side) so every other page load stays light.
+  const teamId = team.id;
+  const data = await api(`/leagues/${currentLeagueId}/teams/${teamId}/kit/full`).catch(() => null);
+  const current = kitTeamInEdit();
+  if (!current || current.id !== teamId) return; // switched teams while this was in flight
+  if (data && data.kit) current.kit = data.kit;
+  const kit = kitKitOf(current);
 
   renderKitPhotoFrame("front", kit);
   renderKitPhotoFrame("back", kit);
@@ -11134,9 +11142,9 @@ function renderKit() {
   // so the list isn't empty for no reason — once anything's been saved,
   // show exactly that (a captain who deliberately removed someone
   // shouldn't see them reappear on every reload).
-  kitOrdersDraft = (kit.orders && kit.orders.length ? kit.orders : team.players.map((p) => ({ id: p.id, name: p.name, size: "" }))).map((o) => ({ ...o }));
+  kitOrdersDraft = (kit.orders && kit.orders.length ? kit.orders : current.players.map((p) => ({ id: p.id, name: p.name, size: "" }))).map((o) => ({ ...o }));
   renderKitOrdersList();
-  renderKitDownloadList(team, kit.orders || []);
+  renderKitDownloadList(current, kit.orders || []);
   el("kit-notes-textarea").value = kit.notes || "";
 }
 

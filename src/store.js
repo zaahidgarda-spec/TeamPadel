@@ -182,6 +182,50 @@ function deleteLeague(id) {
   if (fs.existsSync(p)) fs.unlinkSync(p);
 }
 
+// Kit photos (a team's front/back, logo, up to 5 sponsor slots) are the
+// one exception to "everything lives in the league's own JSON record" —
+// every team's set can add up to several high-resolution images, and
+// unlike a fixture score or a court photo, they're rarely read (only the
+// Kit Designer, a kit-sheet download, or a supplier's kit-share link ever
+// need them). Bundling them into the shared league blob meant every
+// future save of THAT league — a score, a new fixture, anything — carried
+// their bytes too, until a big enough kit collection tipped that one
+// league's record over Upstash's 10MB per-request limit and started
+// silently failing to save (see saveLeague/persist's fire-and-forget
+// write). Each kit photo gets its own key instead, fetched only when
+// actually needed, so resolution stops being a shared-blob risk.
+// Deliberately NOT preloaded into `cache` at boot like leagues/users are —
+// loading every team's kit photos into memory on every restart would cost
+// far more than the rare reads they serve.
+function kitPhotoKey(leagueId, teamId, field) {
+  return `kitphoto:${leagueId}:${teamId}:${field}`;
+}
+async function getKitPhoto(leagueId, teamId, field) {
+  if (!useRedis) return readJsonFile(kitPhotoKey(leagueId, teamId, field).replace(/:/g, "_"), "");
+  return (await redis.get(kitPhotoKey(leagueId, teamId, field)).catch((e) => { console.error("Failed to read kit photo:", e.message); return null; })) || "";
+}
+// Awaited directly (unlike saveLeague's fire-and-forget persist) — kit
+// photo uploads are rare enough that it's worth the round trip to know
+// the write actually landed before telling the uploader it saved.
+async function saveKitPhoto(leagueId, teamId, field, dataUrl) {
+  const key = kitPhotoKey(leagueId, teamId, field);
+  if (!useRedis) {
+    const fname = key.replace(/:/g, "_");
+    if (dataUrl) writeJsonFile(fname, dataUrl);
+    else { const p = filePath(fname); if (fs.existsSync(p)) fs.unlinkSync(p); }
+    return;
+  }
+  if (dataUrl) await redis.set(key, dataUrl).catch((e) => console.error("Failed to save kit photo:", e.message));
+  else await redis.del(key).catch((e) => console.error("Failed to delete kit photo:", e.message));
+}
+const KIT_PHOTO_FIELDS = ["front", "back", "logo", "sleeveLeft", "sleeveRight", "backSponsor1", "backSponsor2", "backSponsor3"];
+// Best-effort cleanup so a deleted team/league doesn't leave orphaned kit
+// photo keys behind forever — not urgent (each is its own tiny key, never
+// itself a size risk) but tidy.
+async function deleteKitPhotosForTeam(leagueId, teamId) {
+  await Promise.all(KIT_PHOTO_FIELDS.map((f) => saveKitPhoto(leagueId, teamId, f, "")));
+}
+
 function getUsersIndex() {
   if (useRedis) return cache.get("users-index") || [];
   return readJsonFile("users-index", []);
@@ -326,4 +370,7 @@ module.exports = {
   saveSignups,
   getHomepageExtras,
   saveHomepageExtras,
+  getKitPhoto,
+  saveKitPhoto,
+  deleteKitPhotosForTeam,
 };
