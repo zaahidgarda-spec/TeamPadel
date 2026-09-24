@@ -5467,10 +5467,14 @@ function adminRosterBlock(t) {
   fileInput.type = "file"; fileInput.accept = "image/*"; fileInput.style.display = "none";
   fileInput.onchange = () => {
     if (!fileInput.files[0]) return;
+    // PNG, not JPEG — a team logo is flat-color/text artwork, not a photo,
+    // and it's also the kit's own logo badge fallback when no custom kit
+    // logo is set (see resolvedKit server-side) — JPEG's block compression
+    // is exactly what was reading as "blurry" once it landed on a kit sheet.
     resizeImageToDataUrl(fileInput.files[0], 480, async (dataUrl) => {
       await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { logo: dataUrl } });
       await refreshLeague(); renderAdminRoster(); renderRoster();
-    });
+    }, null, true);
   };
   uploadLabel.appendChild(fileInput);
   nameWrap.appendChild(uploadLabel);
@@ -5595,7 +5599,15 @@ function adminRosterBlock(t) {
   wrap.appendChild(bulkDetails);
   return wrap;
 }
-function resizeImageToDataUrl(file, maxSize, cb, quality) {
+// `asPng` matters: JPEG is the right call for a real photo (court photos,
+// kit front/back), but it's a bad one for a logo or sponsor badge — flat
+// colors and text are exactly what JPEG's block compression and chroma
+// subsampling distort, which is what actually reads as "blurry" on a
+// downloaded kit sheet (measured: re-encoding a test logo as JPEG at this
+// same quality shifted real pixel values; PNG round-tripped byte-for-byte
+// identical). Team/kit logos and sponsor artwork stay small and simple
+// enough that PNG's larger file size is a non-issue.
+function resizeImageToDataUrl(file, maxSize, cb, quality, asPng) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
@@ -5606,7 +5618,7 @@ function resizeImageToDataUrl(file, maxSize, cb, quality) {
       else { if (h > maxSize) { w = Math.round((w * maxSize) / h); h = maxSize; } }
       canvas.width = w; canvas.height = h;
       canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      cb(canvas.toDataURL("image/jpeg", quality || 0.82));
+      cb(asPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", quality || 0.82));
     };
     img.onerror = () => cb(null);
     img.src = e.target.result;
@@ -10685,7 +10697,12 @@ function kitOpenBadgePicker(key) {
 // here no longer costs anything on that shared record at all.
 function kitHandleUploadedFile(target, file) {
   if (!file) return;
-  const maxSize = target.field === "front" || target.field === "back" ? 1600 : 900;
+  const isPhoto = target.field === "front" || target.field === "back";
+  const maxSize = isPhoto ? 1600 : 900;
+  // Logo/sponsor badges go out as PNG (see resizeImageToDataUrl) — JPEG on
+  // this kind of flat-color, text-heavy artwork is exactly what was
+  // reading as "blurry" on the downloaded sheet. Front/back are real
+  // photos, where JPEG is still the right call.
   resizeImageToDataUrl(file, maxSize, async (dataUrl) => {
     if (!dataUrl) { alert("Couldn't read that image — try a different file."); return; }
     try {
@@ -10706,7 +10723,7 @@ function kitHandleUploadedFile(target, file) {
       }
       await refreshLeague(); renderKit();
     } catch (e) { alert(e.message); }
-  }, 0.75);
+  }, 0.75, !isPhoto);
 }
 el("kit-file-input").onchange = () => {
   const input = el("kit-file-input");
@@ -11195,6 +11212,14 @@ async function generateKitSheetCanvas(team, order, kitOverride) {
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
+  // Every logo/sponsor badge and the front/back photos themselves are
+  // downscaled a fair amount to fit their box (a 900px badge upload into a
+  // ~110-275px circle, for instance) — the canvas default smoothing
+  // quality ("low" in most browsers) does a crude resample at that ratio,
+  // which is what actually reads as "blurry", not an under-sized source
+  // image (uploads are already comfortably larger than any badge draws).
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, W, H);
 
