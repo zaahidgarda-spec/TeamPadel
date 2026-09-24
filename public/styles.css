@@ -1915,6 +1915,18 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .nf-list-text{font-size:12.5px;font-weight:600;color:var(--text);line-height:1.35;}
 .nf-list-sub{font-size:10.5px;color:var(--text-faint);margin-top:2px;}
 .nf-avatar{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:8.5px;flex-shrink:0;}
+/* A 4:3 hero and a fixed 2-column grid read fine on a phone, but the News
+   Room card is nearly full .wrap width (~1180px) on desktop — 4:3 at that
+   width is an ~885px-tall banner with a few lines of text pinned to the
+   bottom, and the grid is stuck at 2 giant square tiles no matter how
+   wide the screen gets. Same "everything too big" pattern as the
+   homepage hero. A letterbox ratio keeps the hero a banner instead of a
+   wall, and auto-fill lets the grid actually add columns on a wide
+   screen instead of just inflating 2 oversized squares. */
+@media (min-width:900px){
+  .nf-hero-photo{aspect-ratio:2.6/1;}
+  .nf-grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));}
+}
 /* The detail modal's own hero — same idea as .nf-hero-photo, sized for a
    modal instead of the feed, and never itself clickable. */
 .nf-detail-photo{position:relative;aspect-ratio:16/11;background-size:cover;background-position:center;background-color:#141e36;padding:16px 18px 17px;display:flex;flex-direction:column;justify-content:flex-end;margin:-24px -24px 18px;}
