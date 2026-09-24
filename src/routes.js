@@ -5312,8 +5312,8 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
     if (!f) return res.status(400).json({ error: "That match isn't in this round." });
     const maxSeed = f.selectionA.pairs.length === 5 ? 4 : 3;
     if (!Number.isInteger(seed) || seed < 0 || seed > maxSeed) return res.status(400).json({ error: "Invalid seed." });
-    if (seed === 4 && court !== superTieCourt) return res.status(400).json({ error: "Super Tie matches can only go on the reserved Super Tie court." });
-    if (seed !== 4 && superTieCourt !== null && court === superTieCourt) return res.status(400).json({ error: "That court is reserved for Super Tie matches." });
+    if (seed === 4 && court !== superTieCourt) return res.status(400).json({ error: "Singles matches can only go on the reserved singles court." });
+    if (seed !== 4 && superTieCourt !== null && court === superTieCourt) return res.status(400).json({ error: "That court is reserved for singles matches." });
     // A player named in two of this fixture's seeds (a captain-confirmed
     // "double-up" at selection time) physically can't play both if this
     // placement would put them in the same time slot on two different
@@ -5823,7 +5823,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requi
   const teamB = league.teams.find((t) => t.id === f.teamB);
   const label = fixtureLabel(league, f);
   const isSuperTieSeed = idx === 4 && f.selectionA.pairs.length === 5;
-  const seedLabel = f.rubbers.length === 1 ? "The match" : isSuperTieSeed ? "The Super Tie" : "Seed " + (idx + 1);
+  const seedLabel = f.rubbers.length === 1 ? "The match" : isSuperTieSeed ? "The Singles" : "Seed " + (idx + 1);
   const msg = winner === "double"
     ? `${seedLabel} for ${label} was forfeited by both sides — no result, no points to either team.`
     : (() => {

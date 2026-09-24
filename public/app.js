@@ -3129,7 +3129,7 @@ async function renderAccountPendingResults() {
     const tilesHtml = !r.lineupsSubmitted
       ? '<div class="pr-lineups-pending">Waiting for both captains to submit their line-up.</div>'
       : r.rubbers.map((rb) => {
-          const seedLabel = rb.isDecider ? "Decider" : rb.isSingles ? "Super Tie" : total === 1 ? "Match" : "Seed " + rb.seed;
+          const seedLabel = rb.isDecider ? "Decider" : rb.isSingles ? "Singles" : total === 1 ? "Match" : "Seed " + rb.seed;
           const scoreChip = rb.scoreText ? `<span class="pr-score-chip">${escapeHtml(rb.scoreText)}</span>` : '<span class="pr-score-chip pending">Not played</span>';
           const nameLine = (name, won) => `<div${won ? ' class="won"' : ""}>${escapeHtml(name)}</div>`;
           const btnLabel = rb.scoreText ? "Edit" : "Enter score";
@@ -7274,7 +7274,7 @@ function selectionReveal(f, team, sel, side) {
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
     const isSuperTie = sel.pairs.length === 5 && i === 4;
-    const seedNum = isSuperTie ? "Super Tie" : "Seed " + (i + 1);
+    const seedNum = isSuperTie ? "Singles" : "Seed " + (i + 1);
     const chip = tierChipHtml(f, i, sel.pairs.length > 1 && !isSuperTie);
     html += `<div class="seed-row"><span class="num">${seedNum}</span>${chip}<span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
@@ -7476,7 +7476,7 @@ function selectionForm(f, team, side) {
     // one player, not a pair, so it gets one picker below instead of two.
     const isSingles = localPairs.length === 5 && i === 4;
     const chip = tierChipHtml(f, i, localPairs.length > 1 && !isSingles);
-    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Super Tie" : "Seed " + (i + 1)}</span>${chip}`;
+    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Singles" : "Seed " + (i + 1)}</span>${chip}`;
     const seedIdx = i;
     const goldBlockedSeed = league.tieringEnabled && league.format !== "pairs" && !isSingles && effectiveSeedTier(f, seedIdx) === "silver";
     const fields = [];
@@ -7689,7 +7689,7 @@ function courtScheduleOptions(fixtures) {
       const pairLabel = revealed
         ? playerNamesForGold(teamA, f.selectionA.pairs[seed]) + " v " + playerNamesForGold(teamB, f.selectionB.pairs[seed])
         : null;
-      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || (isSuperTie ? "Super Tie" : "Seed " + (seed + 1)) });
+      options.push({ fixtureId: f.id, seed, teamA, teamB, shortLabel: pairLabel || (isSuperTie ? "Singles" : "Seed " + (seed + 1)) });
     }
   });
   return options;
@@ -7916,7 +7916,7 @@ function renderCourtScheduleGrid(fixtures) {
     if (!cell) return "This empty court";
     const opt = options.find((o) => o.fixtureId === cell.fixtureId && o.seed === cell.seed);
     if (!opt) return "This match";
-    const seedLabel = cell.seed === 4 ? "Super Tie" : "Seed " + (cell.seed + 1);
+    const seedLabel = cell.seed === 4 ? "Singles" : "Seed " + (cell.seed + 1);
     return (opt.teamA ? opt.teamA.name : "TBD") + " vs " + (opt.teamB ? opt.teamB.name : "TBD") + " (" + seedLabel + ")";
   };
   // Ownership gate for tap-to-swap: admin can touch any cell; a captain
@@ -7971,7 +7971,7 @@ function renderCourtScheduleGrid(fixtures) {
   const thead = document.createElement("thead");
   if (myRole === "admin") {
     thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) =>
-      `<th><input type="text" class="court-name-input" placeholder="Court ${c + 1}" value="${escapeHtml(courtNames[c] || "")}">${c === superTieCourt ? '<div class="note" style="margin-top:2px;">Super Tie</div>' : ""}</th>`
+      `<th><input type="text" class="court-name-input" placeholder="Court ${c + 1}" value="${escapeHtml(courtNames[c] || "")}">${c === superTieCourt ? '<div class="note" style="margin-top:2px;">Singles</div>' : ""}</th>`
     ).join("") + "</tr>";
     thead.querySelectorAll(".court-name-input").forEach((input) => {
       input.onchange = async () => {
@@ -7985,7 +7985,7 @@ function renderCourtScheduleGrid(fixtures) {
   } else {
     // The reserved Super Tie court gets an explicit "(Super Tie)" suffix,
     // custom-named or not, so it's never ambiguous which court it is.
-    thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml((courtNames[c] || ("Court " + (c + 1))) + (c === superTieCourt ? " (Super Tie)" : ""))}</th>`).join("") + "</tr>";
+    thead.innerHTML = "<tr><th></th>" + Array.from({ length: courts }, (_, c) => `<th>${escapeHtml((courtNames[c] || ("Court " + (c + 1))) + (c === superTieCourt ? " (Singles)" : ""))}</th>`).join("") + "</tr>";
   }
   table.appendChild(thead);
   const tbody = document.createElement("tbody");
@@ -8375,7 +8375,7 @@ function liveTileHtml(s, c, oneFixture) {
   // teams to name up there, so each tile carries its own little badges.
   const mid = oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`;
   const teams = `${lines(sides[0])}<div class="lc-vs">${mid}</div>${lines(sides[1])}`;
-  const label = isSuperTie ? "Super Tie" : `Seed ${t.cell.seed + 1}`;
+  const label = isSuperTie ? "Singles" : `Seed ${t.cell.seed + 1}`;
   let foot;
   if (info.state === "live") {
     foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}">${elapsedClock(info.rubber.startedAt)}</span></div>`;
@@ -8596,7 +8596,7 @@ function renderLiveSheet() {
   const swatch = info.state === "upcoming" ? { g: "#1E9E5C", r: "#D93A2B", n: "#5B6E9C" }[info.tone] : "#243360";
   const status = info.state === "live" ? "Live" : info.state === "done" ? "Finished" : "To play";
   const sideHtml = (sd) => `<div class="lc-sh-side">${sd.team ? avatarHtml(sd.team) : ""}<div><b>${escapeHtml(sd.team ? sd.team.name : "TBD")}</b><span>${escapeHtml(sd.players[0])}${isSuperTie ? "" : " &amp; " + escapeHtml(sd.players[1])}</span></div></div>`;
-  const seedLabel = isSuperTie ? "Super Tie" : "Seed " + (cell.seed + 1);
+  const seedLabel = isSuperTie ? "Singles" : "Seed " + (cell.seed + 1);
   let html = `<div class="grab"></div><div class="st"><div class="sw" style="background:${swatch}"></div><div class="stt"><b>${escapeHtml(b.courtLabel(c))} &middot; Match ${s + 1}</b><span>${seedLabel} &middot; ${status}</span></div><button type="button" class="x" data-x aria-label="Close">&times;</button></div>
     <div class="lc-sh-sides">${sideHtml(sides[0])}<span class="lc-v">v</span>${sideHtml(sides[1])}</div>`;
   if (info.state === "upcoming") {
@@ -9192,7 +9192,7 @@ function resultsCard(f) {
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
     const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Super Tie" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1) + (slotNum ? " · Slot " + slotNum : "");
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
@@ -9336,7 +9336,7 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     tb: [rubber.tb[0] === null || rubber.tb[0] === "" ? 0 : Number(rubber.tb[0]), rubber.tb[1] === null || rubber.tb[1] === "" ? 0 : Number(rubber.tb[1])],
   };
   const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
-  el("score-modal-title").textContent = isDecider ? "Decider score" : isSuperTieOnly ? "Super Tie score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  el("score-modal-title").textContent = isDecider ? "Decider score" : isSuperTieOnly ? "Singles score" : f.rubbers.length === 1 ? "Match score" : "Seed " + (idx + 1) + " score" + (slotNum ? " · Slot " + slotNum : "");
   const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
   const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
   const splitAfterTwo = () => {
@@ -9352,7 +9352,7 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     const wtb = tiebreakWinnerClient(state.tb);
     const winCls = (won) => won ? " won" : "";
     let html = `<div class="score-table" style="grid-template-columns:1fr var(--score-col-w,48px);">`;
-    html += `<div class="score-th"></div><div class="score-th">Super Tie</div>`;
+    html += `<div class="score-th"></div><div class="score-th">Singles</div>`;
     html += `<div class="score-team-cell">${avatarHtml(teamA)}<span>${nameA}</span></div>`;
     html += `<input class="score-cell-input tb${winCls(wtb === "A")}" type="text" inputmode="numeric" data-tb="0" value="${state.tb[0]}">`;
     html += `<div class="score-row-divider" style="grid-column:1/-1;"></div>`;
@@ -12121,7 +12121,7 @@ function archivedFixtureCard(seasonId, f, teams) {
     const row = document.createElement("div"); row.className = "rubber-row";
     const winner = rubberWinnerClient(rubber);
     const seedTag = document.createElement("div"); seedTag.className = "seed";
-    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Super Tie" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
+    seedTag.textContent = isDecider ? "Decider" : slot4 === "singles" ? "Singles" : f.rubbers.length === 1 ? "Match" : "Seed " + (idx + 1);
     // Plain (non-clickable) versions still feed the score modal's title,
     // which is a one-shot innerHTML use with no click handlers wired up
     // afterward — clickable-looking buttons there would just do nothing.
