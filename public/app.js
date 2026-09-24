@@ -9477,6 +9477,65 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   }
   el("score-modal-clear").onclick = () => { state.sets = state.sets.map(() => [null, null]); state.tb = [0, 0]; render(); };
   el("score-modal-save").onclick = saveScore;
+
+  // A pairs-format match never reaches resultsCard's own Forfeit corner
+  // button until AFTER it's finalized (renderPairsResults only ever passes
+  // already-finalized fixtures through resultsCard — everything still to
+  // play goes through this modal instead, opened straight from an
+  // opponent card), so this modal is the only place a pairs admin can
+  // actually reach it. Team-format fixtures still have the resultsCard
+  // corner button too; this is just a second, equally valid way in.
+  const forfeitRow = el("score-modal-forfeit-row");
+  const forfeitBtn = el("score-modal-forfeit-btn");
+  const forfeitPicker = el("score-modal-forfeit-picker");
+  forfeitPicker.innerHTML = "";
+  forfeitPicker.style.display = "none";
+  forfeitBtn.style.display = "";
+  const canForfeit = myRole === "admin" && !f.finalized && !rubber.forfeited && teamA && teamB;
+  forfeitRow.style.display = canForfeit ? "block" : "none";
+  if (canForfeit) {
+    forfeitBtn.onclick = () => {
+      forfeitBtn.style.display = "none";
+      forfeitPicker.style.display = "block";
+      const endpointBase = opts.endpointBase || `/leagues/${currentLeagueId}/fixtures/${f.id}`;
+      const doForfeit = async (winner) => {
+        try {
+          await api(`${endpointBase}/rubbers/${idx}/forfeit`, { method: "POST", body: { winner } });
+          // Same rule saveScore follows: a pairs fixture is exactly one
+          // rubber, so a forfeited match IS the whole result — finalize
+          // right away instead of leaving it sitting open for a separate
+          // step. Harmless no-op server-side for a team fixture, whose
+          // other rubbers are presumably still undecided.
+          let finalizeRes = null;
+          if (isPairsRubber && !opts.skipFinalize) finalizeRes = await api(`${endpointBase}/finalize`, { method: "POST" }).catch(() => null);
+          el("score-modal-backdrop").classList.remove("open");
+          if (opts.onSaved) await opts.onSaved();
+          else { await refreshLeague(); renderResults(); }
+          if (finalizeRes) maybePromptRoundComplete(finalizeRes);
+        } catch (e) { alert(e.message); }
+      };
+      [["A", teamA], ["B", teamB]].forEach(([side, t]) => {
+        const btn = document.createElement("button"); btn.className = "secondary"; btn.style.marginRight = "6px";
+        btn.textContent = t.name + " forfeits";
+        btn.onclick = async () => {
+          const winnerName = side === "A" ? teamB.name : teamA.name;
+          if (!confirm(`${t.name} forfeits to ${winnerName} — posts a 6-0, 6-0 walkover for the table. Elo ratings won't be affected either way. Continue?`)) return;
+          await doForfeit(side === "A" ? "B" : "A");
+        };
+        forfeitPicker.appendChild(btn);
+      });
+      const doubleBtn = document.createElement("button"); doubleBtn.className = "danger"; doubleBtn.style.marginRight = "6px";
+      doubleBtn.textContent = "Both teams forfeit";
+      doubleBtn.onclick = async () => {
+        if (!confirm(`Neither ${teamA.name} nor ${teamB.name} played this — marks it a double forfeit. It counts as played but neither side gets any points for it. Continue?`)) return;
+        await doForfeit("double");
+      };
+      forfeitPicker.appendChild(doubleBtn);
+      const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
+      cancelBtn.onclick = () => { forfeitPicker.style.display = "none"; forfeitPicker.innerHTML = ""; forfeitBtn.style.display = ""; };
+      forfeitPicker.appendChild(cancelBtn);
+    };
+  }
 }
 // Fires right after whichever finalize call just completed the last
 // fixture in a round — an immediate on-screen nudge to go vote, on top of
