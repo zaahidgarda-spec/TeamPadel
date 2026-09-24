@@ -425,7 +425,14 @@ function superTieWinner(league) {
 // `singlesIdx` is the Ormonde-rules 5th seed (always index 4) on a league
 // that opted into a singles decider — that one seed takes exactly one
 // player, not a pair, so it skips the usual two-players/no-self-pair checks.
-function validateSelection(pairs, confirmDoubleUp, singlesIdx) {
+// `goldRule` (only for a tiering-enabled team league) is
+// `{ goldIds, isGoldSeed }` — goldIds is the SUBMITTING team's own
+// gold-tier player ids, and isGoldSeed(i) says whether seed i admits a
+// gold-tier player (normally just the first `goldTierCount` seeds, but a
+// seed already decided by the pair-toss ceremony defers to that instead).
+// A silver player has no such restriction and can be seeded anywhere,
+// including a gold seed.
+function validateSelection(pairs, confirmDoubleUp, singlesIdx, goldRule) {
   const seen = new Set();
   let doubleUp = false;
   for (let i = 0; i < pairs.length; i++) {
@@ -438,6 +445,9 @@ function validateSelection(pairs, confirmDoubleUp, singlesIdx) {
     }
     if (!a || !b) return { error: "Every seed needs two players selected." };
     if (a === b) return { error: "A player can't be paired with themselves (seed " + (i + 1) + ")." };
+    if (goldRule && !goldRule.isGoldSeed(i) && (goldRule.goldIds.has(a) || goldRule.goldIds.has(b))) {
+      return { error: "A gold-tier player can only be seeded in a gold-tier seed — seed " + (i + 1) + " is silver." };
+    }
     if (seen.has(a) || seen.has(b)) doubleUp = true;
     seen.add(a);
     seen.add(b);
@@ -452,10 +462,17 @@ function validateSelection(pairs, confirmDoubleUp, singlesIdx) {
 // one round of a gold/silver pair-toss at a time rather than all 4 seeds at
 // once — "already used" only looks at the OTHER rounds' pairs, since this
 // round's own (possibly stale) slot is what's being overwritten.
-function validateRoundPair(existingPairs, roundIdx, pair, confirmDoubleUp) {
+// `goldIds` (the submitting team's own gold-tier player ids) is only
+// checked against a "silver" round — this round's tier was already
+// decided in the /choice step, so there's no seed-index math here, just
+// "does this pairing's declared tier actually admit a gold player."
+function validateRoundPair(existingPairs, roundIdx, pair, confirmDoubleUp, roundTier, goldIds) {
   const [a, b] = pair || [];
   if (!a || !b) return { error: "Pick two players for this pairing." };
   if (a === b) return { error: "A player can't be paired with themselves." };
+  if (roundTier === "silver" && goldIds && (goldIds.has(a) || goldIds.has(b))) {
+    return { error: "A gold-tier player can only play a gold pairing — this one was tossed silver." };
+  }
   const seen = new Set();
   existingPairs.forEach((p, i) => {
     if (i === roundIdx) return;

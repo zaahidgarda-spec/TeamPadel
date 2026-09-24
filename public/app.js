@@ -148,6 +148,24 @@ function ratingDeltaHtml(delta) {
 }
 function isGoldPlayer(p) { return !!(league && league.tieringEnabled && p && p.gold); }
 function goldPrefix(p) { return isGoldPlayer(p) ? "★ " : ""; }
+// Which tier a seed is restricted to. The pair-toss ceremony decides this
+// per pairing dynamically (a coin toss can hand "gold" to any of the 4
+// pairings, not just the first) — so whenever that ceremony has already
+// tossed this seed, f.pairToss[seedIdx].tier is the source of truth. Only a
+// fixture that never went through the ceremony (submitted via the plain
+// seed-picker instead) falls back to the fixed "Seed 1..goldTierCount are
+// gold" rule. A singles/Super Tie seed is never gold-restricted.
+function effectiveSeedTier(f, seedIdx) {
+  const tossed = f && f.pairToss && f.pairToss[seedIdx] && f.pairToss[seedIdx].tier;
+  if (tossed) return tossed;
+  return seedIdx < (league.goldTierCount || 0) ? "gold" : "silver";
+}
+function tierChipHtml(f, seedIdx, isRestrictedSeed) {
+  if (!league.tieringEnabled || league.format === "pairs" || !isRestrictedSeed) return "";
+  return effectiveSeedTier(f, seedIdx) === "gold"
+    ? '<span class="tier-chip gold">&#9733; Gold</span>'
+    : '<span class="tier-chip silver">Silver</span>';
+}
 // `isSub` colours the name to flag a mid-fixture substitute — independent
 // of gold-tier (a sub can also be a gold player, so the ★ prefix and the
 // colour can both apply to the same name at once).
@@ -6639,7 +6657,7 @@ function pairTossAccordion(f, teamA, teamB, mySide) {
     const title = document.createElement("span"); title.className = "toss-hud-label"; title.style.margin = "0"; title.textContent = "Pairing " + roundNum;
     titleRow.appendChild(title);
     if (round.tier) {
-      const badge = document.createElement("span"); badge.className = "pair-tier-badge " + round.tier; badge.textContent = round.tier;
+      const badge = document.createElement("span"); badge.className = "pair-tier-badge " + round.tier; badge.textContent = round.tier === "gold" ? "★ Gold" : "Silver";
       titleRow.appendChild(badge);
     }
     panel.appendChild(titleRow);
@@ -6783,7 +6801,7 @@ function pairTossAccordion(f, teamA, teamB, mySide) {
       } else {
         const canEdit = myRole === "admin" || (myRole === "captain" && myTeamId === team.id);
         if (canEdit) {
-          panel.appendChild(roundPairForm(f, team, side, idx, usedPlayerIds(side, idx)));
+          panel.appendChild(roundPairForm(f, team, side, idx, usedPlayerIds(side, idx), round.tier));
         } else {
           panel.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-top:6px;", textContent: "Waiting for " + team.name + "'s captain." }));
         }
@@ -6808,13 +6826,16 @@ function pairTossAccordion(f, teamA, teamB, mySide) {
 // One pairing's worth of the player-picker — two selects plus a submit
 // button, scoped to whichever players this team hasn't already used in
 // an earlier pairing round this fixture.
-function roundPairForm(f, team, side, roundIdx, usedIds) {
+function roundPairForm(f, team, side, roundIdx, usedIds, roundTier) {
   const div = document.createElement("div");
   div.style.marginTop = "10px";
   const available = team.players.filter((p) => !usedIds.has(p.id));
   if (available.length < 2) {
     div.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-error", textContent: "Not enough unused players left on this roster for another pairing." }));
     return div;
+  }
+  if (roundTier === "silver" && available.some((p) => isGoldPlayer(p))) {
+    div.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-bottom:8px;", textContent: "This pairing tossed silver — gold-tier players can only play a gold pairing." }));
   }
   const sel = side === "A" ? f.selectionA : f.selectionB;
   const existing = sel.pairs[roundIdx] || [null, null];
@@ -6824,7 +6845,11 @@ function roundPairForm(f, team, side, roundIdx, usedIds) {
   const selects = [];
   function optionsFor(mySlot) {
     const otherVal = localPair[mySlot === 0 ? 1 : 0];
-    return '<option value="">Player…</option>' + available.map((p) => `<option value="${p.id}" ${p.id === otherVal ? "disabled" : ""} ${p.id === localPair[mySlot] ? "selected" : ""}>${goldPrefix(p)}${escapeHtml(p.name)}</option>`).join("");
+    return '<option value="">Player…</option>' + available.map((p) => {
+      const goldBlocked = roundTier === "silver" && isGoldPlayer(p);
+      const disabled = p.id === otherVal || goldBlocked;
+      return `<option value="${p.id}" ${disabled ? "disabled" : ""} ${p.id === localPair[mySlot] ? "selected" : ""}>${goldPrefix(p)}${escapeHtml(p.name)}${goldBlocked ? " — gold only" : ""}</option>`;
+    }).join("");
   }
   [0, 1].forEach((slot) => {
     const select = document.createElement("select");
@@ -7248,8 +7273,10 @@ function selectionReveal(f, team, sel, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   let html = `<h3>${avatarHtml(team)} ${escapeHtml(team.name)}</h3>`;
   sel.pairs.forEach((pair, i) => {
-    const seedNum = sel.pairs.length === 5 && i === 4 ? "Super Tie" : "Seed " + (i + 1);
-    html += `<div class="seed-row"><span class="num">${seedNum}</span><span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
+    const isSuperTie = sel.pairs.length === 5 && i === 4;
+    const seedNum = isSuperTie ? "Super Tie" : "Seed " + (i + 1);
+    const chip = tierChipHtml(f, i, sel.pairs.length > 1 && !isSuperTie);
+    html += `<div class="seed-row"><span class="num">${seedNum}</span>${chip}<span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
   bindPlayerLinks(div);
@@ -7448,8 +7475,10 @@ function selectionForm(f, team, side) {
     // Ormonde rules: the 5th seed is a real, always-played singles rubber —
     // one player, not a pair, so it gets one picker below instead of two.
     const isSingles = localPairs.length === 5 && i === 4;
-    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Super Tie" : "Seed " + (i + 1)}</span>`;
+    const chip = tierChipHtml(f, i, localPairs.length > 1 && !isSingles);
+    row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Super Tie" : "Seed " + (i + 1)}</span>${chip}`;
     const seedIdx = i;
+    const goldBlockedSeed = league.tieringEnabled && league.format !== "pairs" && !isSingles && effectiveSeedTier(f, seedIdx) === "silver";
     const fields = [];
     const fieldLabel = (slot) => {
       const pid = localPairs[seedIdx][slot];
@@ -7481,10 +7510,13 @@ function selectionForm(f, team, side) {
       const isBlank = !localPairs[seedIdx][slot];
       const blankHtml = `<div class="pick-row pick-row-blank${isBlank ? " hi" : ""}"><span class="pick-avatar">&mdash;</span><span class="placeholder">Blank</span>${isBlank ? '<span class="check">&#10003;</span>' : ""}</div>`;
       const playersHtml = team.players.map((p) => {
-        const disabled = p.id === otherVal;
+        const goldBlocked = goldBlockedSeed && isGoldPlayer(p);
+        const disabled = p.id === otherVal || goldBlocked;
         const current = p.id === localPairs[seedIdx][slot];
         const elsewhereIdx = usedElsewhere[p.id];
-        const note = elsewhereIdx !== undefined ? `<span class="reason">${localPairs.length === 1 ? "Also in" : "Also Seed " + (elsewhereIdx + 1)}</span>` : "";
+        const note = goldBlocked
+          ? `<span class="reason">Silver seed</span>`
+          : elsewhereIdx !== undefined ? `<span class="reason">${localPairs.length === 1 ? "Also in" : "Also Seed " + (elsewhereIdx + 1)}</span>` : "";
         return `<div class="pick-row pick-row-player${disabled ? " disabled" : ""}${current ? " hi" : ""}" data-pid="${p.id}"><span class="pick-avatar">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>${goldPrefix(p)}${escapeHtml(p.name)}${note}${current ? '<span class="check">&#10003;</span>' : ""}</div>`;
       }).join("");
       list.innerHTML = blankHtml + playersHtml;
@@ -8720,7 +8752,8 @@ function renderFixtures() {
           const slotNum = f.slotOrder ? f.slotOrder.indexOf(i) + 1 : null;
           const isSuperTie = f.selectionA.pairs.length === 5 && i === 4;
           const seedLbl = f.selectionA.pairs.length === 1 ? "Match" : isSuperTie ? "Singles" : "Seed " + (i + 1) + (slotNum ? " · Slot " + slotNum : "");
-          html += `<div class="rubber-row"><span class="seed">${seedLbl}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span class="rubber-vs">vs</span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
+          const chip = tierChipHtml(f, i, f.selectionA.pairs.length > 1 && !isSuperTie);
+          html += `<div class="rubber-row"><span class="seed">${seedLbl}${chip}</span><span class="pair ${w === "A" ? "won" : ""}">${nameA}</span><span class="rubber-vs">vs</span><span class="pair ${w === "B" ? "won" : ""}">${nameB}</span></div>`;
         });
         html += "</div>";
       } else {

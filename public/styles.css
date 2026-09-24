@@ -354,6 +354,10 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .seed-row + .seed-row{margin-top:10px;}
 .seed-row .num{font-family:var(--font-display);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);width:44px;flex-shrink:0;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
+.tier-chip{font-family:var(--font-display);font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:var(--radius-full);white-space:nowrap;flex-shrink:0;}
+.tier-chip.gold{color:#B8860B;background:#FBF0D2;border:1px solid #E9CE7C;}
+.tier-chip.silver{color:var(--text-dim);background:var(--panel-2);border:1px solid var(--line);}
+.seed .tier-chip{margin-left:6px;vertical-align:middle;}
 .seed-row-amp{font-family:var(--font-display);color:var(--text-faint);font-size:13px;flex-shrink:0;}
 
 /* Tap-to-pick field, in place of the native <select> above — same flex

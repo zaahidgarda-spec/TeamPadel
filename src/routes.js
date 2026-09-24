@@ -3561,7 +3561,9 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/pair", requ
   const selKey = side === "A" ? "selectionA" : "selectionB";
   const pair = req.body.pair;
   if (!Array.isArray(pair) || pair.length !== 2) return res.status(400).json({ error: "Pick two players for this pairing." });
-  const result = logic.validateRoundPair(f[selKey].pairs, roundIdx, pair, !!req.body.confirmDoubleUp);
+  const myTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamA : f.teamB));
+  const goldIds = myTeam ? new Set(myTeam.players.filter((p) => p.gold).map((p) => p.id)) : null;
+  const result = logic.validateRoundPair(f[selKey].pairs, roundIdx, pair, !!req.body.confirmDoubleUp, round.tier, goldIds);
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
   f[selKey].pairs[roundIdx] = pair;
   if (f[selKey].pairs.every((p) => p[0] && p[1])) f[selKey].submitted = true;
@@ -5544,15 +5546,29 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   const expectedSeeds = f[selKey].pairs.length;
   if (!Array.isArray(pairs) || pairs.length !== expectedSeeds) return res.status(400).json({ error: `Send exactly ${expectedSeeds} seed pair${expectedSeeds === 1 ? "" : "s"}.` });
   const singlesIdx = league.singlesDecider && league.format !== "pairs" && expectedSeeds === 5 ? 4 : null;
-  const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp, singlesIdx);
+  const teamA = league.teams.find((t) => t.id === f.teamA);
+  const teamB = league.teams.find((t) => t.id === f.teamB);
+  const myTeam = side === "A" ? teamA : teamB;
+  // A seed's gold/silver tier is normally fixed by position (Seed 1..N are
+  // gold), but if this fixture's pair-toss ceremony already tossed a tier
+  // for that seed, that decision is the real one and wins — the ceremony
+  // can hand "gold" to any of the 4 pairings, not just the first.
+  const goldTierCount = Math.max(0, Math.min(4, league.goldTierCount || 0));
+  const goldRule = league.tieringEnabled && league.format !== "pairs" && myTeam
+    ? {
+        goldIds: new Set(myTeam.players.filter((p) => p.gold).map((p) => p.id)),
+        isGoldSeed: (i) => {
+          const tossed = f.pairToss && f.pairToss[i] && f.pairToss[i].tier;
+          return tossed ? tossed === "gold" : i < goldTierCount;
+        },
+      }
+    : null;
+  const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp, singlesIdx, goldRule);
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
 
   const isFirstSubmit = !f[selKey].submitted;
   f[selKey] = { submitted: true, pairs };
   const label = fixtureLabel(league, f);
-  const teamA = league.teams.find((t) => t.id === f.teamA);
-  const teamB = league.teams.find((t) => t.id === f.teamB);
-  const myTeam = side === "A" ? teamA : teamB;
   const oppTeamId = side === "A" ? f.teamB : f.teamA;
   if (f.selectionA.submitted && f.selectionB.submitted) {
     notify(league, f.teamA, "selection", `Line-ups revealed for ${label}: ${teamA ? teamA.name : "?"} vs ${teamB ? teamB.name : "?"}.`);
