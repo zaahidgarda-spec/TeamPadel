@@ -8778,7 +8778,11 @@ function needsTiebreakClient(r) {
 }
 function fixtureScoreClient(f) {
   let winsA = 0, winsB = 0, decided = 0;
-  f.rubbers.slice(0, 4).forEach((r) => { const w = rubberWinnerClient(r); if (w) { decided++; if (w === "A") winsA++; else winsB++; } });
+  f.rubbers.slice(0, 4).forEach((r) => {
+    const w = rubberWinnerClient(r);
+    if (w) { decided++; if (w === "A") winsA++; else winsB++; }
+    else if (r.forfeited === "double") decided++;
+  });
   return { winsA, winsB, decided };
 }
 // e.g. "6-3, 6-4" or "6-4, 3-6, [10-7]" for a team split needing a super
@@ -8786,6 +8790,10 @@ function fixtureScoreClient(f) {
 // 7-5, or 7-6" notation used everywhere else. Blank/unplayed sets (a
 // pairs draw's skipped 3rd set) are left out rather than shown as "?-?".
 function rubberScoreText(r) {
+  // A double forfeit has no real score at all (neither side ever took the
+  // court) — say so plainly instead of falling through to "" and reading
+  // as "not played yet" next to a finalized result.
+  if (r.forfeited === "double") return "Double forfeit";
   const setText = (s) => (s[0] !== null && s[0] !== "" && s[1] !== null && s[1] !== "") ? s[0] + "-" + s[1] : null;
   // Ormonde rules' Super Tie seed: the tie-break IS the whole match, so it
   // shows as a bare score ("10-7"), not bracketed after a set list.
@@ -9145,13 +9153,19 @@ function resultsCard(f) {
     bindPlayerLinks(pairADisplay); bindPlayerLinks(pairBDisplay);
 
     const scores = document.createElement("div"); scores.className = "score-summary-wrap";
-    const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
+    const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner || rubber.forfeited ? " done" : "");
     scoreText.textContent = rubberScoreText(rubber) || "Not played yet";
     scores.appendChild(scoreText);
     // Visible to anyone (not just admin) — the score itself already reads
     // as a real 6-0, 6-0 win, so this is the only thing on screen telling
-    // a captain it was a walkover, not an actual beatdown.
-    if (rubber.forfeited) {
+    // a captain it was a walkover, not an actual beatdown. A double forfeit
+    // has no synthetic score to disguise — the tag is the only place this
+    // shows at all, since rubberScoreText already reads "Double forfeit".
+    if (rubber.forfeited === "double") {
+      const tag = document.createElement("span"); tag.className = "tag"; tag.style.marginLeft = "6px";
+      tag.textContent = "Both sides forfeited — no points either way";
+      scores.appendChild(tag);
+    } else if (rubber.forfeited) {
       const winnerTeam = rubber.forfeited === "A" ? teamA : teamB;
       const tag = document.createElement("span"); tag.className = "tag"; tag.style.marginLeft = "6px";
       tag.textContent = "Forfeit — " + (winnerTeam ? winnerTeam.name : "?") + " awarded the win";
@@ -9198,6 +9212,19 @@ function resultsCard(f) {
           };
           picker.appendChild(btn);
         });
+        // Neither side made it — no walkover to award, just a settled
+        // no-result that still counts as played (both give up the points
+        // they'd have gotten, rather than the match just sitting open).
+        const doubleBtn = document.createElement("button"); doubleBtn.className = "danger";
+        doubleBtn.textContent = "Both teams forfeit";
+        doubleBtn.onclick = async () => {
+          if (!confirm(`Neither ${teamA.name} nor ${teamB.name} played this — marks it a double forfeit. It counts as played but neither side gets any points for it. Continue?`)) return;
+          try {
+            await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${idx}/forfeit`, { method: "POST", body: { winner: "double" } });
+            await refreshLeague(); renderAll();
+          } catch (e) { alert(e.message); }
+        };
+        picker.appendChild(doubleBtn);
         const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
         cancelBtn.onclick = () => { picker.remove(); forfeitBtn.style.display = ""; };
         picker.appendChild(cancelBtn);
@@ -11510,7 +11537,13 @@ function standingsBeforeRoundClient(beforeRound) {
       const { winsA, winsB } = fixtureScoreClient(f);
       const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
       rubbersWon += myWins; rubbersLost += oppWins;
-      if (myWins > oppWins) nightsWon++; else if (myWins === oppWins) nightsDrawn++;
+      // See computeStandingsClient's isDoubleForfeitNight — 0-0 from a
+      // double-forfeited pairs match isn't a real draw and shouldn't score
+      // as one.
+      const isDoubleForfeitNight = isPairs && f.rubbers[0] && f.rubbers[0].forfeited === "double";
+      if (!isDoubleForfeitNight) {
+        if (myWins > oppWins) nightsWon++; else if (myWins === oppWins) nightsDrawn++;
+      }
       if (isPairs) {
         f.rubbers[0].sets.forEach((s) => {
           const w = setWinnerClient(s);
@@ -11552,7 +11585,14 @@ function computeStandingsClient() {
       const { winsA, winsB } = fixtureScoreClient(f);
       const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
       played++; rubbersWon += myWins; rubbersLost += oppWins;
-      if (myWins > oppWins) nightsWon++; else if (myWins < oppWins) nightsLost++; else nightsDrawn++;
+      // A pairs fixture is exactly one rubber, so a double forfeit on it
+      // means the whole night is 0-0 decided-nothing — without this check
+      // that reads as a genuine draw (myWins === oppWins) and quietly
+      // hands both sides a point they were meant to give up.
+      const isDoubleForfeitNight = isPairs && f.rubbers[0] && f.rubbers[0].forfeited === "double";
+      if (!isDoubleForfeitNight) {
+        if (myWins > oppWins) nightsWon++; else if (myWins < oppWins) nightsLost++; else nightsDrawn++;
+      }
       // A pairs match is decided over real sets (2-0 vs 2-1 both count as
       // one win in the table), so the tiebreaker needs the actual set
       // score, not just "won this match or not".
@@ -11967,13 +12007,17 @@ function archivedFixtureCard(seasonId, f, teams) {
     const pairBDisplay = document.createElement("div"); pairBDisplay.className = "pair" + (winner === "B" ? " won" : ""); pairBDisplay.innerHTML = isDecider ? escapeHtml(teamB.name) : pairNamesClickableHtml(teamB, f.selectionB.pairs[idx], f.selectionB);
     bindPlayerLinks(pairADisplay); bindPlayerLinks(pairBDisplay);
     const scores = document.createElement("div"); scores.className = "score-summary-wrap";
-    const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner ? " done" : "");
+    const scoreText = document.createElement("div"); scoreText.className = "score-summary-text" + (winner || rubber.forfeited ? " done" : "");
     scoreText.textContent = rubberScoreText(rubber) || "Not played";
     scores.appendChild(scoreText);
     // A forfeit caught (or corrected) after the season's already archived
     // is just as real as one caught during it — same tag/trigger pattern
     // as the live Results tab, pointed at the archived-season route.
-    if (rubber.forfeited) {
+    if (rubber.forfeited === "double") {
+      const tag = document.createElement("span"); tag.className = "tag"; tag.style.marginLeft = "6px";
+      tag.textContent = "Both sides forfeited — no points either way";
+      scores.appendChild(tag);
+    } else if (rubber.forfeited) {
       const winnerTeam = rubber.forfeited === "A" ? teamA : teamB;
       const tag = document.createElement("span"); tag.className = "tag"; tag.style.marginLeft = "6px";
       tag.textContent = "Forfeit — " + (winnerTeam ? winnerTeam.name : "?") + " awarded the win";
@@ -12008,6 +12052,16 @@ function archivedFixtureCard(seasonId, f, teams) {
           };
           picker.appendChild(btn);
         });
+        const doubleBtn = document.createElement("button"); doubleBtn.className = "danger";
+        doubleBtn.textContent = "Both teams forfeit";
+        doubleBtn.onclick = async () => {
+          if (!confirm(`Neither ${teamA.name} nor ${teamB.name} played this — marks it a double forfeit in the archived standings. It counts as played but neither side gets any points for it. Continue?`)) return;
+          try {
+            await api(`/leagues/${currentLeagueId}/season-history/${seasonId}/fixtures/${f.id}/rubbers/${idx}/forfeit`, { method: "POST", body: { winner: "double" } });
+            openArchivedSeason(seasonId);
+          } catch (e) { alert(e.message); }
+        };
+        picker.appendChild(doubleBtn);
         const cancelBtn = document.createElement("button"); cancelBtn.className = "secondary"; cancelBtn.textContent = "Cancel";
         cancelBtn.onclick = () => { picker.remove(); forfeitBtn.style.display = ""; };
         picker.appendChild(cancelBtn);

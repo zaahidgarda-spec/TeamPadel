@@ -157,6 +157,10 @@ function needsTiebreak(rubber) {
 // (which may be looking at this from side B) needs its own score to lead,
 // or a line marked "W" would read with the smaller number first.
 function rubberScoreText(rubber, flip) {
+  // A double forfeit has no real score at all (neither side ever took the
+  // court) — say so plainly instead of falling through to "" and reading
+  // as "not played yet" next to a finalized result.
+  if (rubber.forfeited === "double") return "Double forfeit";
   const setText = (s) => {
     if (s[0] === null || s[0] === "" || s[1] === null || s[1] === "") return null;
     return flip ? s[1] + "-" + s[0] : s[0] + "-" + s[1];
@@ -179,6 +183,10 @@ function fixtureScore(f) {
       decided++;
       if (w === "A") winsA++;
       else winsB++;
+    } else if (r.forfeited === "double") {
+      // Both sides no-showed — settled (counts toward "has this fixture
+      // been decided"), but nobody's win tally moves either way.
+      decided++;
     }
   });
   return { winsA, winsB, decided };
@@ -194,7 +202,7 @@ function requiredRubbersOk(f, allowDraw, regulationOverride) {
   // knockout decider (only ever appended to team fixtures) sits beyond that,
   // so this stays correct for both without needing the league's format here.
   const regulation = regulationOverride || (f.rubbers.length > 4 ? 4 : f.rubbers.length);
-  const decided = f.rubbers.slice(0, regulation).filter((r) => rubberWinner(r) !== null).length;
+  const decided = f.rubbers.slice(0, regulation).filter((r) => rubberWinner(r) !== null || r.forfeited === "double").length;
   if (decided < regulation) {
     // A Vibora (pairs) match that splits its first two sets is allowed to
     // stand as a draw instead of being forced to a decider — playing the
@@ -264,9 +272,16 @@ function computeStandings(league, includeFixture) {
         played++;
         rubbersWon += myWins;
         rubbersLost += oppWins;
-        if (myWins > oppWins) nightsWon++;
-        else if (myWins < oppWins) nightsLost++;
-        else nightsDrawn++;
+        // A pairs fixture is exactly one rubber, so a double forfeit on it
+        // means the whole night is 0-0 decided-nothing — without this check
+        // that reads as a genuine draw (myWins === oppWins) and quietly
+        // hands both sides a point they were meant to give up.
+        const isDoubleForfeitNight = isPairs && f.rubbers[0] && f.rubbers[0].forfeited === "double";
+        if (!isDoubleForfeitNight) {
+          if (myWins > oppWins) nightsWon++;
+          else if (myWins < oppWins) nightsLost++;
+          else nightsDrawn++;
+        }
         // A pairs match is decided over real sets (2-0 vs 2-1 both count as
         // one win in the table), so the table's tiebreaker needs the actual
         // set score, not just "won this match or not".

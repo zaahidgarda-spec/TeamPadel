@@ -979,8 +979,11 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
       // it is, the card shows that result instead of a bare "vs".
       const rubber = f.rubbers[i];
       const winner = rubber ? logic.rubberWinner(rubber) : null;
-      // No point predicting a seed that's already been played.
-      const prediction = winner ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf, seedContext(league, f, i));
+      // A double forfeit is also already decided (just with no winning
+      // side) — don't predict it, and don't leave it looking like a bare
+      // "vs" that's still to be played.
+      const decided = winner || (rubber && rubber.forfeited);
+      const prediction = decided ? null : logic.predictSeed(league, pairA, pairB, ratingsData, identityOf, seedContext(league, f, i));
       if (!byLeague.has(league.id)) byLeague.set(league.id, []);
       byLeague.get(league.id).push({
         leagueId: league.id,
@@ -996,7 +999,7 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
         time: sched.time || "",
         venue: sched.venue || league.defaultVenue || "",
         winner,
-        score: winner ? logic.rubberScoreText(rubber) : null,
+        score: decided ? logic.rubberScoreText(rubber) : null,
         prediction,
         hasCourtPhoto: !!league.courtPhoto,
       });
@@ -1121,6 +1124,10 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
         if (!pairA || !pairB || pairA.some((x) => !x) || pairB.some((x) => !x)) return;
         const rubber = f.rubbers[i];
         const winner = rubber ? logic.rubberWinner(rubber) : null;
+        // A double forfeit is decided too (just with no winning side and no
+        // Elo delta on record for it, same as any other forfeit) — treat it
+        // like a played seed, not a still-live one.
+        const decided = winner || (rubber && rubber.forfeited);
         const refA = (id) => { const p = teamA.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; };
         const refB = (id) => { const p = teamB.players.find((p) => p.id === id); return p ? { id: p.id, name: p.name } : null; };
         // A decided seed still gets a prediction — not the current one
@@ -1132,7 +1139,7 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
         // the actual result instead of the prediction just vanishing once
         // a seed is played.
         let prediction;
-        if (winner) {
+        if (decided) {
           // What the same model said before this match (stored as the
           // ratings were replayed); plain Elo from the pre-match ratings for
           // a pairs league, which has no seeds to blend.
@@ -1156,7 +1163,7 @@ router.get("/leagues/:leagueId/predictions", (req, res) => {
           pairA: pairA.map(refA).filter(Boolean),
           pairB: pairB.map(refB).filter(Boolean),
           winner,
-          score: winner ? logic.rubberScoreText(rubber) : null,
+          score: decided ? logic.rubberScoreText(rubber) : null,
           prediction,
         });
       });
@@ -4020,26 +4027,26 @@ router.post("/leagues/:leagueId/season-history/:seasonId/fixtures/:fixtureId/rub
   const idx = Number(req.params.idx);
   if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
   const winner = req.body && req.body.winner;
-  if (winner !== "A" && winner !== "B") return res.status(400).json({ error: "Say which side gets the walkover." });
+  if (winner !== "A" && winner !== "B" && winner !== "double") return res.status(400).json({ error: "Say which side gets the walkover, or that both sides forfeited." });
 
   const rubber = f.rubbers[idx];
-  // Ormonde rules' Super Tie seed has no sets at all — its walkover is a
-  // synthetic 10-0 tie-break instead of a synthetic 6-0, 6-0.
-  if (rubber.sets.length === 0) {
-    rubber.tb = winner === "A" ? [10, 0] : [0, 10];
-  } else {
-    rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
-    rubber.tb = [null, null];
+  // See the live-fixture forfeit route above for why "double" leaves the
+  // score untouched instead of writing a synthetic walkover.
+  if (winner !== "double") {
+    // Ormonde rules' Super Tie seed has no sets at all — its walkover is a
+    // synthetic 10-0 tie-break instead of a synthetic 6-0, 6-0.
+    if (rubber.sets.length === 0) {
+      rubber.tb = winner === "A" ? [10, 0] : [0, 10];
+    } else {
+      rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
+      rubber.tb = [null, null];
+    }
   }
   rubber.forfeited = winner;
   rubber.startedAt = Date.now();
   rubber.completedAt = rubber.startedAt;
 
-  const teamA = snapshot.teams.find((t) => t.id === f.teamA);
-  const teamB = snapshot.teams.find((t) => t.id === f.teamB);
-  const winnerName = winner === "A" ? (teamA ? teamA.name : "?") : (teamB ? teamB.name : "?");
-  const loserName = winner === "A" ? (teamB ? teamB.name : "?") : (teamA ? teamA.name : "?");
-  logAudit(league, req, f, "forfeit", { seedIdx: idx, winner, winnerName, loserName, season: snapshot.season, seasonLabel: snapshot.label });
+  logAudit(league, req, f, "forfeit", { seedIdx: idx, winner, season: snapshot.season, seasonLabel: snapshot.label });
   store.saveLeague(league.id, league);
   res.json({ ok: true, rubber });
 });
@@ -5125,13 +5132,17 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
                 pairB: isKnockoutDecider ? teamB.name : pairNamesText(teamB, f.selectionB.pairs[idx]),
                 scoreText: logic.rubberScoreText(rubber) || null,
                 wonSide: winner,
+                // A double forfeit has no winning side but is still fully
+                // settled — distinct from wonSide so "everything's decided"
+                // doesn't wrongly stay true just because nobody won.
+                decided: !!(winner || rubber.forfeited),
               };
             })
         : [];
       // Nothing left to enter — every match already has a settled result,
       // it's only waiting to be finalized — so it isn't "due" any more and
       // shouldn't sit at the top of the profile.
-      if (lineupsSubmitted && rubbers.length && rubbers.every((r) => r.wonSide)) return;
+      if (lineupsSubmitted && rubbers.length && rubbers.every((r) => r.decided)) return;
       out.push({
         leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
         fixtureId: f.id, label: fixtureLabel(league, f),
@@ -5763,18 +5774,26 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requi
   const idx = Number(req.params.idx);
   if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
   const winner = req.body && req.body.winner;
-  if (winner !== "A" && winner !== "B") return res.status(400).json({ error: "Say which side gets the walkover." });
+  if (winner !== "A" && winner !== "B" && winner !== "double") return res.status(400).json({ error: "Say which side gets the walkover, or that both sides forfeited." });
   if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
   if (f.finalized) return res.status(400).json({ error: "This fixture is already finalized — unlock it first." });
 
   const rubber = f.rubbers[idx];
-  // Ormonde rules' Super Tie seed has no sets at all — its walkover is a
-  // synthetic 10-0 tie-break instead of a synthetic 6-0, 6-0.
-  if (rubber.sets.length === 0) {
-    rubber.tb = winner === "A" ? [10, 0] : [0, 10];
-  } else {
-    rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
-    rubber.tb = [null, null];
+  // A double forfeit has no real (or synthetic walkover) score at all —
+  // neither side showed up, so there's nothing to award. Leave sets/tb
+  // untouched; rubberWinner already reads an all-null rubber as "no
+  // winner", and rubberScoreText/fixtureScore/requiredRubbersOk/
+  // computeStandings all special-case rubber.forfeited === "double" to
+  // still treat it as settled.
+  if (winner !== "double") {
+    // Ormonde rules' Super Tie seed has no sets at all — its walkover is a
+    // synthetic 10-0 tie-break instead of a synthetic 6-0, 6-0.
+    if (rubber.sets.length === 0) {
+      rubber.tb = winner === "A" ? [10, 0] : [0, 10];
+    } else {
+      rubber.sets = rubber.sets.map((_, si) => (si < 2 ? (winner === "A" ? [6, 0] : [0, 6]) : [null, null]));
+      rubber.tb = [null, null];
+    }
   }
   rubber.forfeited = winner;
   // Matches how a real completion reads everywhere that checks these two
@@ -5787,15 +5806,19 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requi
   const teamA = league.teams.find((t) => t.id === f.teamA);
   const teamB = league.teams.find((t) => t.id === f.teamB);
   const label = fixtureLabel(league, f);
-  const winnerName = winner === "A" ? (teamA ? teamA.name : "?") : (teamB ? teamB.name : "?");
-  const loserName = winner === "A" ? (teamB ? teamB.name : "?") : (teamA ? teamA.name : "?");
   const isSuperTieSeed = idx === 4 && f.selectionA.pairs.length === 5;
   const seedLabel = f.rubbers.length === 1 ? "The match" : isSuperTieSeed ? "The Super Tie" : "Seed " + (idx + 1);
-  const walkoverScore = rubber.sets.length === 0 ? "10-0" : "6-0, 6-0";
-  const msg = `${seedLabel} for ${label} was forfeited — ${winnerName} awarded a ${walkoverScore} walkover over ${loserName}.`;
+  const msg = winner === "double"
+    ? `${seedLabel} for ${label} was forfeited by both sides — no result, no points to either team.`
+    : (() => {
+      const winnerName = winner === "A" ? (teamA ? teamA.name : "?") : (teamB ? teamB.name : "?");
+      const loserName = winner === "A" ? (teamB ? teamB.name : "?") : (teamA ? teamA.name : "?");
+      const walkoverScore = rubber.sets.length === 0 ? "10-0" : "6-0, 6-0";
+      return `${seedLabel} for ${label} was forfeited — ${winnerName} awarded a ${walkoverScore} walkover over ${loserName}.`;
+    })();
   notify(league, f.teamA, "forfeit", msg, { round: f.round });
   notify(league, f.teamB, "forfeit", msg, { round: f.round });
-  logAudit(league, req, f, "forfeit", { seedIdx: idx, winner, winnerName, loserName });
+  logAudit(league, req, f, "forfeit", { seedIdx: idx, winner });
   store.saveLeague(league.id, league);
   res.json({ ok: true, rubber });
 });
