@@ -3018,9 +3018,11 @@ function renderAccountAvatar(cards) {
   const withPhoto = cards.find((c) => c.isTeamOwner && c.photo) || cards.find((c) => c.isTeamOwner)
     || cards.find((c) => c.photo) || cards[0];
   btn.style.display = "block";
-  btn.innerHTML = withPhoto.photo
+  const badge = `<span class="pd-avatar-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>`;
+  btn.innerHTML = (withPhoto.photo
     ? `<img src="${withPhoto.photo}" alt="">`
-    : `<span class="fallback">${escapeHtml(playerInitials(playerAccount.name))}</span>`;
+    : `<span class="fallback">${escapeHtml(playerInitials(playerAccount.name))}</span>`) + badge;
+  btn.title = withPhoto.photo ? "Change photo" : "Add profile photo";
   btn.onclick = () => openPlayerHistory(withPhoto.leagueId, withPhoto.playerId);
 }
 // The real deadline is 24h before kickoff, not kickoff itself — "due
