@@ -12948,6 +12948,12 @@ async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
         await api(`/leagues/${leagueId}/teams/${data.teamId}/players/${playerId}/photo`, { method: "PUT", body: { photo: dataUrl } }).catch((e) => alert(e.message));
         photoInput.value = "";
         await loadPlayerHistoryTab(leagueId, playerId);
+        // The modal's own view just refreshed above, but My Profile's avatar
+        // button (what's actually visible once this closes) reads from a
+        // separate fetch taken when that page last rendered — without this,
+        // uploading your own photo here left the avatar back on My Profile
+        // showing plain initials until the next full page load.
+        if (playerAccount) await renderAccountProfile();
       });
     };
   }
