@@ -352,6 +352,10 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
    selects with no visual grouping. */
 .seed-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow-sm);}
 .seed-row + .seed-row{margin-top:10px;}
+/* A gold seed's own row gets a warm tint and an accent bar, so it reads at
+   a glance before you reach the chip text — inset shadow instead of a real
+   border so the accent respects the row's rounded corners. */
+.seed-row.tier-gold{background:#FFFBF0;border-color:#E9CE7C;box-shadow:inset 4px 0 0 0 #C9A24B,var(--shadow-sm);}
 .seed-row .num{font-family:var(--font-display);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);width:44px;flex-shrink:0;}
 .seed-row select{flex:1;font-size:13px;padding:8px;}
 .tier-chip{font-family:var(--font-display);font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:var(--radius-full);white-space:nowrap;flex-shrink:0;}

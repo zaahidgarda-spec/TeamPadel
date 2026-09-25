@@ -164,6 +164,13 @@ function effectiveSeedTier(f, seedIdx) {
   if (tossed) return tossed;
   return seedIdx < (league.goldMatchCount || 0) ? "gold" : "silver";
 }
+// A tinted background + accent bar on a gold seed's own row — so it reads
+// at a glance before a captain even reaches the chip/label text. Silver
+// rows stay plain; there's nothing to call out there.
+function seedRowTierClass(f, seedIdx, isRestrictedSeed) {
+  if (!league.tieringEnabled || league.format === "pairs" || !isRestrictedSeed) return "";
+  return effectiveSeedTier(f, seedIdx) === "gold" ? " tier-gold" : "";
+}
 function tierChipHtml(f, seedIdx, isRestrictedSeed) {
   // In "flat" mode the tier is already the whole label (seedLabelText below
   // says "Gold match"/"Silver match" outright) — showing this chip too
@@ -7338,7 +7345,8 @@ function selectionReveal(f, team, sel, side) {
     const isRestrictedSeed = sel.pairs.length > 1 && !isSuperTie;
     const seedNum = isSuperTie ? "Singles" : seedLabelText(f, i, isRestrictedSeed);
     const chip = tierChipHtml(f, i, isRestrictedSeed);
-    html += `<div class="seed-row"><span class="num">${seedNum}</span>${chip}<span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
+    const tierClass = seedRowTierClass(f, i, isRestrictedSeed);
+    html += `<div class="seed-row${tierClass}"><span class="num">${seedNum}</span>${chip}<span class="pair" style="flex:1;">${pairNamesClickableHtml(team, pair, sel)}</span></div>`;
   });
   div.innerHTML = html;
   bindPlayerLinks(div);
@@ -7544,6 +7552,7 @@ function selectionForm(f, team, side) {
     const isSingles = localPairs.length === 5 && i === 4;
     const isRestrictedSeed = localPairs.length > 1 && !isSingles;
     const chip = tierChipHtml(f, i, isRestrictedSeed);
+    row.className += seedRowTierClass(f, i, isRestrictedSeed);
     row.innerHTML = `<span class="num">${localPairs.length === 1 ? "Match" : isSingles ? "Singles" : seedLabelText(f, i, isRestrictedSeed)}</span>${chip}`;
     const seedIdx = i;
     const goldBlockedSeed = league.tieringEnabled && league.format !== "pairs" && !isSingles && effectiveSeedTier(f, seedIdx) === "silver";
