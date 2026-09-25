@@ -3594,6 +3594,7 @@ function renderAccountLeaguesList(cards) {
       if (act === "find") return showPanel("claim-panel", "account-search-input");
       if (act === "code") return showPanel("captain-panel", "account-captain-code");
       if (act === "unlink") {
+        if (!confirm(`Unlink your record for ${sel.teamName} (${sel.leagueName})? You'll need to find and claim it again to get your matches, results, and Season Wrapped back here.`)) return;
         await api(`/players/claims/${sel.leagueId}/${sel.teamId}/${sel.playerId}`, { method: "DELETE" });
         await markPlayerIndexClaimed(sel.playerId, false);
         accountLeagueSel = null;
