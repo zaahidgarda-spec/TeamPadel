@@ -6505,6 +6505,16 @@ router.get("/leagues/:leagueId/players/:playerId/wrapped", (req, res) => {
   const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
   const player = team && team.players.find((p) => p.id === req.params.playerId);
   if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  // A personal recap, not a public profile stat — only the account that
+  // actually claimed this exact record gets to see it, same ownership
+  // check the photo upload uses. A 404, not a 403: the wrapped route
+  // shouldn't confirm to a stranger that a player record exists at all.
+  let isOwnProfile = false;
+  if (req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    isOwnProfile = !!(account && (account.claims || []).some((c) => c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
+  }
+  if (!isOwnProfile) return res.status(404).json({ error: "Not found." });
   const seasons = logic.allSeasonsOf(league);
   // Only offer a season this player actually played a match in — no point
   // showing a recap of a season they never featured in at all.

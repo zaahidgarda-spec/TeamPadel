@@ -3543,6 +3543,7 @@ function renderAccountLeaguesList(cards) {
       <div class="al-detail-team">${escapeHtml(sel.teamName)}${sel.seed ? " · Seed " + escapeHtml(sel.seed) : ""}</div>${role}
       <div class="al-actions">
         <button type="button" class="primary" data-act="open">Open ${escapeHtml(sel.leagueName)}</button>
+        ${sel.playerId ? '<button type="button" class="secondary" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
         ${sel.playerId ? '<button type="button" class="al-danger" data-act="unlink">Unlink my record</button>' : ""}
         ${sel.isCaptain ? '<button type="button" class="al-danger" data-act="stepdown">Stop being captain</button>' : ""}
       </div></div>`;
@@ -3563,6 +3564,7 @@ function renderAccountLeaguesList(cards) {
     btn.onclick = async () => {
       const act = btn.dataset.act;
       if (act === "open") return openLeague(sel.leagueId);
+      if (act === "wrapped") return openWrappedModal(sel.leagueId, sel.playerId);
       if (act === "find") return showPanel("claim-panel", "account-search-input");
       if (act === "code") return showPanel("captain-panel", "account-captain-code");
       if (act === "unlink") {
@@ -13228,12 +13230,6 @@ async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
   // initials) as the main avatar, so badging it again here would just be
   // the same team shown twice for no reason.
   el("player-modal-team-badge").innerHTML = data.photo ? avatarHtml({ logo: data.teamLogo, name: data.teamName }) : "";
-  // Scoped to whichever league tab is actually open right now, not
-  // "wherever they've ever played" — the record and stats behind it are
-  // this specific league's own, so a tab switch (see the league tabs
-  // below) needs to change what this button opens too.
-  el("player-modal-wrapped-row").style.display = (data.rows || []).length > 0 ? "block" : "none";
-  el("player-modal-wrapped-btn").onclick = () => openWrappedModal(data.leagueId, data.playerId);
   // One tag per league won, not per tab open — a title belongs to the
   // person, so it shows here regardless of which of their leagues you
   // happen to be looking at (see allChampionships, aggregated server-side
