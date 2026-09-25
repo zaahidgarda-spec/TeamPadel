@@ -2068,6 +2068,14 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .al-chip span:last-child{display:block;font-size:10px;color:var(--text-dim,#64748B);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .al-crest{border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;flex:none;}
 .al-ring.al-add{border:2px dashed #C5D3EE;background:transparent;color:var(--accent);font-size:26px;line-height:1;}
+/* A season just wrapped and this chip hasn't been opened since — flashes
+   until it's tapped (see markWrappedSeen), same one-time-nudge idea as an
+   unread badge rather than a permanent decoration. */
+@keyframes al-wrapped-pulse{0%,100%{box-shadow:0 0 0 3px rgba(255,209,25,.9);}50%{box-shadow:0 0 0 3px rgba(255,209,25,.2);}}
+.al-ring.wrapped-ready{border-color:#FFD119;animation:al-wrapped-pulse 1.4s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){.al-ring.wrapped-ready{animation:none;box-shadow:0 0 0 3px rgba(255,209,25,.6);}}
+button.al-wrapped-btn{background:linear-gradient(135deg,#E0339A,#6C1B8C);border:none;color:#fff;font-size:13px;font-weight:600;padding:9px 16px;border-radius:var(--radius-sm);cursor:pointer;}
+button.al-wrapped-btn:hover:not(:disabled){background:linear-gradient(135deg,#EA4DAD,#7C2B9C);}
 .al-detail{position:relative;text-align:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px 14px;margin-top:2px;}
 .al-detail .al-crest{margin-bottom:6px;}
 .al-detail-name{font-family:var(--font-display);font-size:18px;letter-spacing:.04em;text-transform:uppercase;}

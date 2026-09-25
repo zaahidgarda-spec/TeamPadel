@@ -3506,6 +3506,21 @@ function mostCommonCardSeed(card) {
 // + at the end adds another (find your record, or enter a team code). Only
 // one thing is open at a time; a second tap on the same logo closes it.
 let accountLeagueSel = null; // "leagueId:teamId" of the open logo, "add", or null
+// Which "leagueId:teamId" chips have already had their flashing Wrapped
+// ring dismissed — per-device, not per-account (same tradeoff as the
+// player/avatars index caches above): good enough for a one-time visual
+// nudge, and nothing is lost if it resets on a new device.
+const WRAPPED_SEEN_STORAGE_KEY = "padel-wrapped-seen-v1";
+function wrappedSeenSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(WRAPPED_SEEN_STORAGE_KEY) || "[]")); } catch { return new Set(); }
+}
+function markWrappedSeen(key) {
+  try {
+    const s = wrappedSeenSet();
+    s.add(key);
+    localStorage.setItem(WRAPPED_SEEN_STORAGE_KEY, JSON.stringify([...s]));
+  } catch { /* storage full/private mode — the ring just won't stay dismissed */ }
+}
 function renderAccountLeaguesList(cards) {
   const seen = new Set();
   const uniq = cards.filter((c) => (seen.has(c.leagueId) ? false : (seen.add(c.leagueId), true)));
@@ -3523,16 +3538,18 @@ function renderAccountLeaguesList(cards) {
     key: card.leagueId + ":" + card.teamId, leagueId: card.leagueId, teamId: card.teamId, leagueName: card.leagueName,
     teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, seed: mostCommonCardSeed(card),
     isCaptain: captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId),
+    wrappedAvailable: !!card.wrappedAvailable,
   })).concat(extraCaptaincies.map((cap) => ({
     key: cap.leagueId + ":" + cap.teamId, leagueId: cap.leagueId, teamId: cap.teamId, leagueName: cap.leagueName,
-    teamName: cap.teamName, teamLogo: cap.teamLogo, playerId: null, seed: null, isCaptain: true,
+    teamName: cap.teamName, teamLogo: cap.teamLogo, playerId: null, seed: null, isCaptain: true, wrappedAvailable: false,
   })));
   if (accountLeagueSel && accountLeagueSel !== "add" && !items.some((i) => i.key === accountLeagueSel)) accountLeagueSel = null;
   const crestHtml = (logo, name, size) => logo
     ? `<img class="al-crest" style="width:${size}px;height:${size}px;" src="${logo}" alt="">`
     : `<span class="al-crest avatar-fb" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
+  const wrappedSeen = wrappedSeenSet();
   const chips = items.map((i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
-      <span class="al-ring">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}</span></button>`).join("")
+      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}</span></button>`).join("")
     + `<button type="button" class="al-chip${accountLeagueSel === "add" ? " on" : ""}" data-key="add" aria-label="Add a league"><span class="al-ring al-add">+</span><b>Add</b><span>league</span></button>`;
   let detail = "";
   const sel = items.find((i) => i.key === accountLeagueSel);
@@ -3543,7 +3560,7 @@ function renderAccountLeaguesList(cards) {
       <div class="al-detail-team">${escapeHtml(sel.teamName)}${sel.seed ? " · Seed " + escapeHtml(sel.seed) : ""}</div>${role}
       <div class="al-actions">
         <button type="button" class="primary" data-act="open">Open ${escapeHtml(sel.leagueName)}</button>
-        ${sel.playerId ? '<button type="button" class="secondary" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
+        ${sel.playerId ? '<button type="button" class="al-wrapped-btn" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
         ${sel.playerId ? '<button type="button" class="al-danger" data-act="unlink">Unlink my record</button>' : ""}
         ${sel.isCaptain ? '<button type="button" class="al-danger" data-act="stepdown">Stop being captain</button>' : ""}
       </div></div>`;
@@ -3557,7 +3574,16 @@ function renderAccountLeaguesList(cards) {
   }
   c.innerHTML = `<div class="al-strip">${chips}</div>${detail}`;
   c.querySelectorAll(".al-chip").forEach((chip) => {
-    chip.onclick = () => { accountLeagueSel = accountLeagueSel === chip.dataset.key ? null : chip.dataset.key; renderAccountLeaguesList(cards); };
+    chip.onclick = () => {
+      // The flashing ring is a "you've got a new Wrapped" nudge, not a
+      // permanent decoration — opening the chip is what it's nudging
+      // toward, so that's also what dismisses it, whether or not they go
+      // on to actually tap the Wrapped button inside.
+      const item = items.find((i) => i.key === chip.dataset.key);
+      if (item && item.wrappedAvailable) markWrappedSeen(item.key);
+      accountLeagueSel = accountLeagueSel === chip.dataset.key ? null : chip.dataset.key;
+      renderAccountLeaguesList(cards);
+    };
   });
   const showPanel = (id, focusId) => { const panel = el(id); panel.style.display = "block"; el(focusId).focus(); panel.scrollIntoView({ behavior: "smooth", block: "center" }); if (id === "claim-panel") { loadPlayerIndex(); loadAvatarsIndex(); } };
   c.querySelectorAll("[data-act]").forEach((btn) => {

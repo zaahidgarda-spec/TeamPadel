@@ -2223,6 +2223,12 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
         return { season: snap.season || (league.seasonHistory.length - idx), label: snap.label };
       })
       .filter(Boolean);
+    // Whether this card's own "View your Season Wrapped" button has
+    // anything to show yet — same rule the /wrapped route itself enforces
+    // (an ended season with at least one match), computed here too so the
+    // "Your leagues" chip can flag it without a separate round trip per
+    // league.
+    const wrappedAvailable = (league.seasonHistory || []).some((snap) => logic.playerMatchHistory(snap, claim.playerId).length > 0);
     const ratingEntry = ratingsData.players.get(identityOf(league.id, claim.playerId));
     // A compact "your tables" preview — the top of the table (capped) plus
     // your own row pinned below if you've dropped out of that range.
@@ -2288,6 +2294,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       bestStreak,
       bagelCount,
       unbeatenSeasons,
+      wrappedAvailable,
       rating: ratingEntry ? ratingEntry.rating : null,
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
