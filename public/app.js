@@ -658,6 +658,19 @@ function kitShareTeamCard(team, leagueData) {
   };
   const frontBadges = badgeHtml("teamPadelLogo", "/images/logo-dark.png") + badgeHtml("mainSponsor", kit.sponsors.mainSponsor) + badgeHtml("secondarySponsor", kit.sponsors.secondarySponsor) + badgeHtml("logo", kit.logo) + badgeHtml("sleeveLeft", kit.sponsors.sleeveLeft) + badgeHtml("sleeveRight", kit.sponsors.sleeveRight);
   const backBadges = badgeHtml("backSponsor1", kit.sponsors.backSponsor1) + badgeHtml("backSponsor2", kit.sponsors.backSponsor2) + badgeHtml("backSponsor3", kit.sponsors.backSponsor3);
+  // With both photos on file there's something worth animating — one frame
+  // that crossfades front/back on a loop, product-carousel style, instead
+  // of two static columns. Either photo missing falls back to the plain
+  // side-by-side layout (photoHtml above): nothing to flip to.
+  const photosHtml = (kit.front && kit.back)
+    ? `<div class="kit-flip-frame" data-kit-flip>
+         <div class="kit-flip-face front"><img class="kit-photo-img" src="${kit.front}" alt="">${frontBadges}</div>
+         <div class="kit-flip-face back"><img class="kit-photo-img" src="${kit.back}" alt="">${backBadges}<div class="kit-name-preview">PLAYER NAME</div></div>
+       </div>`
+    : `<div class="kit-photos-row">
+         <div class="kit-photo-col">${photoHtml("front", frontBadges)}</div>
+         <div class="kit-photo-col">${photoHtml("back", backBadges)}</div>
+       </div>`;
   const orders = kit.orders || [];
   const ordersHtml = orders.length
     ? orders.map((o) => `<div class="kit-order-row"><span style="flex:1;">${escapeHtml(o.name)}</span><span class="note">${escapeHtml(o.size || "—")}</span><span class="kit-sheet-slot" data-order-id="${escapeHtml(o.id)}"></span></div>`).join("")
@@ -666,15 +679,17 @@ function kitShareTeamCard(team, leagueData) {
 
   card.innerHTML = `
     <h2 class="section-title">${escapeHtml(team.name)}</h2>
-    <div class="kit-photos-row" style="margin-bottom:14px;">
-      <div class="kit-photo-col">${photoHtml("front", frontBadges)}</div>
-      <div class="kit-photo-col">${photoHtml("back", backBadges)}</div>
-    </div>
+    <div style="margin-bottom:14px;">${photosHtml}</div>
     ${notesHtml}
     <div class="kit-download-slots" style="margin-bottom:14px;margin-top:14px;"></div>
     <h3 style="margin:0 0 8px;font-size:14px;">Who's ordering</h3>
     <div>${ordersHtml}</div>
   `;
+
+  // Front 3s, back 3s, repeat — the crossfade itself is CSS's own
+  // transition (1.1s), this just toggles which face is "on".
+  const flipFrame = card.querySelector("[data-kit-flip]");
+  if (flipFrame) kitFlipIntervals.push(setInterval(() => flipFrame.classList.toggle("show-back"), 3000));
 
   const downloadables = [
     ["Front of kit", kit.front, team.name + "-front.jpg"],
@@ -737,7 +752,14 @@ function kitShareLeagueSponsorsCard(data) {
   });
   return card;
 }
+// One flip-frame interval per team card on the kit-share page — cleared
+// and rebuilt each time the page (re)loads so revisiting it (or a stale
+// link retried) never stacks up duplicate timers still animating in the
+// background.
+let kitFlipIntervals = [];
 async function openKitSharePage(leagueId, token) {
+  kitFlipIntervals.forEach(clearInterval);
+  kitFlipIntervals = [];
   el("view-hub").style.display = "none";
   el("view-league").style.display = "none";
   el("view-kit-share").style.display = "block";
