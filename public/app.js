@@ -924,6 +924,12 @@ setInterval(async () => {
     // visibly flashed the whole table on a perfectly quiet round — only
     // do it when something in the schedule/scores actually changed.
     if (liveCourtSnapshot() !== lastLiveCourtSnapshot || (liveCourtView === "timeline" && Math.floor(Date.now() / 60000) !== liveTimelineMinute)) renderLiveCourtControl();
+  } else if (activeBtn && activeBtn.dataset.view === "table") {
+    // Same idea as Live Court Control above, scoped to just this tab's own
+    // render — someone watching the table while a match is still on court
+    // shouldn't have to reload to see a score change move the standings.
+    await refreshLeague();
+    if (tableSnapshot() !== lastTableSnapshot) renderTable();
   }
 }, 30000);
 // Which of the 5 learned-duration buckets a closeness score falls into —
@@ -9540,16 +9546,20 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
         renderSuperTie();
       };
       // A super tie-break runs to 10+ (first to 10, win by 2), so one digit
-      // isn't always finished. Move on once two digits are in — or once a
-      // single digit can only be the losing score (the other side already
-      // has 10 or more).
+      // isn't always finished — only auto-advance once a second digit
+      // actually lands (maxLength already stops it at two); a single-digit
+      // finishing score still commits fine on blur via onchange above. This
+      // used to also auto-advance the moment the OTHER side already had a
+      // 10+, on the assumption a low single digit here could only be a
+      // losing score — but a losing score in a super tie-break can just as
+      // easily BE 10 or 11 (e.g. a real 13-11), and that second digit was
+      // getting cut off the instant the first one landed.
       inp.oninput = () => {
         const digits = inp.value.replace(/\D/g, "");
         if (!digits) return;
         const side = Number(inp.dataset.tb);
         state.tb[side] = parseInt(digits, 10);
-        const done = digits.length >= 2 || state.tb[1 - side] >= 10;
-        if (!done) return;
+        if (digits.length < 2) return;
         inp.onchange = null;
         renderSuperTie();
         if (side === 0) { const c = body.querySelector('.score-cell-input[data-tb="1"]'); if (c) { c.focus(); c.select(); } }
@@ -9635,17 +9645,21 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
         render();
       };
       // A super tie-break runs to 10+ (first to 10, win by 2), so one digit
-      // isn't always finished. Move on once two digits are in — or once a
-      // single digit can only be the losing score (the other side already
-      // has 10 or more).
+      // isn't always finished — only auto-advance once a second digit
+      // actually lands (maxLength already stops it at two); a single-digit
+      // finishing score still commits fine on blur via onchange above. This
+      // used to also auto-advance the moment the OTHER side already had a
+      // 10+, on the assumption a low single digit here could only be a
+      // losing score — but a losing score in a super tie-break can just as
+      // easily BE 10 or 11 (e.g. a real 13-11), and that second digit was
+      // getting cut off the instant the first one landed.
       inp.oninput = () => {
         const digits = inp.value.replace(/\D/g, "");
         if (!digits) return;
         const side = Number(inp.dataset.tb);
         const n = parseInt(digits, 10);
         state.tb[side] = n;
-        const done = digits.length >= 2 || state.tb[1 - side] >= 10;
-        if (!done) return;
+        if (digits.length < 2) return;
         inp.onchange = null;
         render();
         focusNextCell("tb", 0, side);
@@ -10460,7 +10474,11 @@ async function generateCourtSchedulePosterCanvas(theme) {
 }
 async function generateTablePosterCanvas(theme) {
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
-  const rows = computeStandingsClient();
+  // Official only — a shared, downloaded poster is a snapshot people keep
+  // and send around, not a live view; showing a table position that a
+  // still-in-progress match could flip back the other way a minute later
+  // would make the poster wrong the moment it's shared.
+  const rows = computeStandingsClient(false);
   const sponsors = (league.sponsors || []).slice(0, 5);
   const W = 1080, H = 1920;
   const topY = 300, footerH = 70;
@@ -12133,14 +12151,22 @@ function priorRankMapClient() {
   standingsBeforeRoundClient(lcr).forEach((r, i) => { map[r.id] = i; });
   return map;
 }
-function computeStandingsClient() {
+// `live` (default true) also counts a fixture that's on court right now
+// but not finalized yet — anything with at least one decided rubber —
+// same "official vs live" split the /players/profile route's own Your
+// Tables preview already uses server-side. Pass false for anything that
+// must only ever look at settled results (super tie eligibility, "is the
+// regular season actually done" checks) — those call their own
+// finalized-only filters directly rather than through here.
+function computeStandingsClient(live) {
+  if (live === undefined) live = true;
   const isPairs = league.format === "pairs";
   const singlesOn = !isPairs && !!league.singlesDecider;
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
   const rows = scopedTeams.map((t) => {
     let played = 0, nightsWon = 0, nightsDrawn = 0, nightsLost = 0, rubbersWon = 0, rubbersLost = 0;
     let setsWon = 0, setsLost = 0, points = 0;
-    league.fixtures.filter((f) => f.finalized && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
+    league.fixtures.filter((f) => (f.finalized || (live && fixtureScoreClient(f).decided > 0)) && (f.teamA === t.id || f.teamB === t.id) && roundCountsToTable(f.round)).forEach((f) => {
       const isA = f.teamA === t.id;
       const { winsA, winsB } = fixtureScoreClient(f);
       const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
@@ -12274,10 +12300,26 @@ function renderPlayoffPreview() {
   html += `</div>`;
   card.innerHTML = html;
 }
+// Whether the table on screen right now is counting a match that's still
+// actually on court (see computeStandingsClient's live param) — drives
+// the LIVE badge next to "League table", so a still-moving position never
+// looks like a settled one with no indication it can still change.
+function tableIsLiveClient() {
+  return league.fixtures.some((f) => !f.finalized && roundCountsToTable(f.round) && fixtureScoreClient(f).decided > 0);
+}
+// Everything the table's own numbers actually depend on — the 30s poll
+// (see the setInterval near the top of this file) compares this against
+// the last render so a perfectly quiet round never re-renders for nothing.
+let lastTableSnapshot = null;
+function tableSnapshot() {
+  return league ? JSON.stringify(league.fixtures.map((f) => [f.id, f.finalized, fixtureScoreClient(f).decided])) : null;
+}
 function renderTable() {
+  lastTableSnapshot = tableSnapshot();
   renderPlayoffPreview();
   const rows = computeStandingsClient();
   const c = el("log-container");
+  el("table-live-badge").style.display = tableIsLiveClient() ? "inline-flex" : "none";
   const canPoster = league.format === "pairs" ? league.teams.length > 0 : myRole === "admin" && league.teams.length > 0;
   el("table-poster-row").style.display = canPoster ? "flex" : "none";
   const stWinnerId = superTieWinnerClient();
