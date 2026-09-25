@@ -6515,25 +6515,30 @@ router.get("/leagues/:leagueId/players/:playerId/wrapped", (req, res) => {
     isOwnProfile = !!(account && (account.claims || []).some((c) => c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
   }
   if (!isOwnProfile) return res.status(404).json({ error: "Not found." });
-  const seasons = logic.allSeasonsOf(league);
+  // Ended seasons only — a season still being played hasn't finished
+  // deciding what it's a recap OF yet (the final table position keeps
+  // moving, a title isn't a title until Hall of Fame actually records it).
+  // allSeasonsOf's own live league entry (no `.season` field) never gets
+  // this far.
+  const seasons = logic.allSeasonsOf(league).filter((s) => s.season !== undefined);
   // Only offer a season this player actually played a match in — no point
   // showing a recap of a season they never featured in at all.
   const available = seasons
     .map((s) => ({
-      season: s.season !== undefined ? s.season : "live",
-      label: s.season !== undefined ? (s.label || `Season ${s.season}`) : "This season",
+      season: s.season,
+      label: s.label || `Season ${s.season}`,
       played: logic.playerMatchHistory(s, player.id).length,
     }))
     .filter((entry) => entry.played > 0);
-  if (!available.length) return res.status(404).json({ error: "No matches played yet — nothing to wrap up." });
+  if (!available.length) return res.status(404).json({ error: "Nothing to wrap up yet — check back once your season ends." });
   const wanted = req.query.season;
-  const season = wanted && wanted !== "live" ? seasons.find((s) => String(s.season) === String(wanted)) : seasons[seasons.length - 1];
+  const season = wanted ? seasons.find((s) => String(s.season) === String(wanted)) : seasons[seasons.length - 1];
   if (!season) return res.status(404).json({ error: "That season wasn't found." });
   const { ratingsData } = loadGlobalRatings();
   const stats = logic.seasonWrappedStats(league, season, player.id, ratingsData);
   res.json({
     ...stats,
-    season: season.season !== undefined ? season.season : "live",
+    season: season.season,
     leagueId: league.id,
     teamId: team.id,
     playerId: player.id,
