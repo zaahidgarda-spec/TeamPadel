@@ -1,0 +1,22 @@
+name: CI
+
+# Runs on every push and every PR — this is what actually makes the test
+# suite and linter protect the site, rather than just existing as scripts
+# nobody remembers to run. A red X on the commit/PR is the whole point.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
