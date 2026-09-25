@@ -2071,8 +2071,12 @@ nav.tabs::-webkit-scrollbar{display:none;}
 /* A season just wrapped and this chip hasn't been opened since — flashes
    until it's tapped (see markWrappedSeen), same one-time-nudge idea as an
    unread badge rather than a permanent decoration. */
-@keyframes al-wrapped-pulse{0%,100%{box-shadow:0 0 0 3px rgba(255,209,25,.9);}50%{box-shadow:0 0 0 3px rgba(255,209,25,.2);}}
-.al-ring.wrapped-ready{border-color:#FFD119;animation:al-wrapped-pulse 1.4s ease-in-out infinite;}
+@keyframes al-wrapped-pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,209,25,.7),0 0 0 3px #FFD119;}
+  70%{box-shadow:0 0 0 9px rgba(255,209,25,0),0 0 0 3px #FFD119;}
+  100%{box-shadow:0 0 0 0 rgba(255,209,25,0),0 0 0 3px #FFD119;}
+}
+.al-ring.wrapped-ready{border-color:#FFD119;animation:al-wrapped-pulse 1.6s ease-out infinite;}
 @media (prefers-reduced-motion: reduce){.al-ring.wrapped-ready{animation:none;box-shadow:0 0 0 3px rgba(255,209,25,.6);}}
 button.al-wrapped-btn{background:linear-gradient(135deg,#E0339A,#6C1B8C);border:none;color:#fff;font-size:13px;font-weight:600;padding:9px 16px;border-radius:var(--radius-sm);cursor:pointer;}
 button.al-wrapped-btn:hover:not(:disabled){background:linear-gradient(135deg,#EA4DAD,#7C2B9C);}
