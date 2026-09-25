@@ -2070,14 +2070,16 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .al-ring.al-add{border:2px dashed #C5D3EE;background:transparent;color:var(--accent);font-size:26px;line-height:1;}
 /* A season just wrapped and this chip hasn't been opened since — flashes
    until it's tapped (see markWrappedSeen), same one-time-nudge idea as an
-   unread badge rather than a permanent decoration. */
+   unread badge rather than a permanent decoration. Pink to match the
+   Wrapped button/cover slide's own Neon Wrapped color, so the ring reads
+   as "this is what's new" rather than a generic alert. */
 @keyframes al-wrapped-pulse{
-  0%{box-shadow:0 0 0 0 rgba(255,209,25,.7),0 0 0 3px #FFD119;}
-  70%{box-shadow:0 0 0 9px rgba(255,209,25,0),0 0 0 3px #FFD119;}
-  100%{box-shadow:0 0 0 0 rgba(255,209,25,0),0 0 0 3px #FFD119;}
+  0%{box-shadow:0 0 0 0 rgba(224,51,154,.7),0 0 0 3px #E0339A;}
+  70%{box-shadow:0 0 0 9px rgba(224,51,154,0),0 0 0 3px #E0339A;}
+  100%{box-shadow:0 0 0 0 rgba(224,51,154,0),0 0 0 3px #E0339A;}
 }
-.al-ring.wrapped-ready{border-color:#FFD119;animation:al-wrapped-pulse 1.6s ease-out infinite;}
-@media (prefers-reduced-motion: reduce){.al-ring.wrapped-ready{animation:none;box-shadow:0 0 0 3px rgba(255,209,25,.6);}}
+.al-ring.wrapped-ready{border-color:#E0339A;animation:al-wrapped-pulse 1.6s ease-out infinite;}
+@media (prefers-reduced-motion: reduce){.al-ring.wrapped-ready{animation:none;box-shadow:0 0 0 3px rgba(224,51,154,.6);}}
 button.al-wrapped-btn{background:linear-gradient(135deg,#E0339A,#6C1B8C);border:none;color:#fff;font-size:13px;font-weight:600;padding:9px 16px;border-radius:var(--radius-sm);cursor:pointer;}
 button.al-wrapped-btn:hover:not(:disabled){background:linear-gradient(135deg,#EA4DAD,#7C2B9C);}
 .al-detail{position:relative;text-align:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 14px 14px;margin-top:2px;}
