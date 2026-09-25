@@ -1220,9 +1220,12 @@ function seasonWrappedStats(league, season, playerId, ratingsData) {
   const draws = rows.filter((r) => r.result === "D").length;
   const matches = rows.length;
 
-  // Best partner / toughest opponent — grouped by name, same tolerance
-  // computeLeagueStats' own partnerships/topScorers already have for two
-  // different people who happen to share a name.
+  // Best partner — grouped by name, same tolerance computeLeagueStats' own
+  // partnerships/topScorers already have for two different people who
+  // happen to share a name. There's no "toughest opponent" alongside this:
+  // a season's fixtures face each opposing team once, so a repeat meeting
+  // with the same individual opponent (the sample size a stat like that
+  // would need to mean anything) essentially never happens.
   const tallyByName = (names) => {
     const map = new Map();
     names.forEach(({ name, result }) => {
@@ -1238,10 +1241,6 @@ function seasonWrappedStats(league, season, playerId, ratingsData) {
   const MIN_SAMPLE = 2;
   const partners = tallyByName(rows.filter((r) => r.partner).map((r) => ({ name: r.partner, result: r.result })));
   const bestPartner = partners.filter((p) => p.played >= MIN_SAMPLE).sort((a, b) => (b.wins / b.played) - (a.wins / a.played) || b.played - a.played)[0] || null;
-  const opponentRows = [];
-  rows.forEach((r) => (r.opponentPlayers || []).forEach((name) => opponentRows.push({ name, result: r.result })));
-  const opponents = tallyByName(opponentRows);
-  const toughestOpponent = opponents.filter((o) => o.played >= MIN_SAMPLE).sort((a, b) => (a.wins / a.played) - (b.wins / b.played) || b.played - a.played)[0] || null;
 
   // Favourite court — the one join nothing else does today: which
   // {fixtureId, seed} this player's own rubbers were, then where the court
@@ -1290,6 +1289,12 @@ function seasonWrappedStats(league, season, playerId, ratingsData) {
       if ((e.winnerRoster || []).some((p) => p.id === playerId)) trophies.push({ type: "champion", label: e.label });
       if ((e.runnerUpRoster || []).some((p) => p.id === playerId)) trophies.push({ type: "runnerUp", label: e.label });
     });
+    // Same rule (and same minimum-matches floor, so a two-game season can't
+    // trivially claim it) as the Trophy Room's own unbeatenSeasonsIn in
+    // routes.js — only an archived, fully finished season can be "unbeaten",
+    // never a live one still in progress.
+    const MIN_UNBEATEN_MATCHES = 3;
+    if (matches >= MIN_UNBEATEN_MATCHES && losses === 0) trophies.push({ type: "unbeaten", label: "Unbeaten season" });
   }
   const roundsThisSeason = [...new Set(season.fixtures.map((f) => f.round))];
   roundsThisSeason.forEach((r) => {
@@ -1323,9 +1328,9 @@ function seasonWrappedStats(league, season, playerId, ratingsData) {
     winPct: matches ? Math.round((wins / matches) * 100) : 0,
     finish,
     bestPartner,
-    toughestOpponent,
     favouriteCourt,
     trophies,
+    seasonEnded: season.season !== undefined,
     ratingChange,
     bestStreak,
     bagelCount,

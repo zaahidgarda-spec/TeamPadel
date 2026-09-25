@@ -1690,7 +1690,7 @@ function allPlayersFlat() {
         results.push({
           leagueId: league.id, leagueName: league.name,
           teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
-          playerId: p.id, playerName: p.name,
+          playerId: p.id, playerName: p.name, photo: p.photo || "",
           claimedByUserId: p.claimedByUserId || null,
         });
       });
@@ -1780,6 +1780,22 @@ router.get("/players/search-index", requirePlayerUser, (req, res) => {
     leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
     playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
   })));
+});
+
+// A player's own photo, or failing that their team's badge, for every row
+// the search index above can produce — kept as a second, separately
+// cached fetch (see loadAvatarsIndex in app.js) rather than folded into
+// search-index itself, so the always-hot text search never has to carry
+// image bytes. Deduplicated by team/player id instead of one logo per
+// player row, since teammates would otherwise each embed their own copy
+// of the exact same badge.
+router.get("/players/avatars-index", requirePlayerUser, (req, res) => {
+  const teamLogos = {}, playerPhotos = {};
+  allPlayersFlat().forEach((p) => {
+    if (p.teamLogo && !teamLogos[p.teamId]) teamLogos[p.teamId] = p.teamLogo;
+    if (p.photo) playerPhotos[p.playerId] = p.photo;
+  });
+  res.json({ teamLogos, playerPhotos });
 });
 
 // Links one player record to one user account — used both by a player

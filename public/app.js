@@ -1640,7 +1640,7 @@ function switchHubTab(name) {
   // Warm the player index the moment this tab opens, not the moment
   // someone starts typing — by the time they've typed anything it's
   // often already in hand. loadPlayerIndex is a no-op if already loading.
-  if (name === "search" && playerAccount) { loadPlayerIndex(); renderPlayerAround(); }
+  if (name === "search" && playerAccount) { loadPlayerIndex(); loadAvatarsIndex(); renderPlayerAround(); }
   if (name !== "leagues") hideGuestWall();
 }
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
@@ -2669,7 +2669,7 @@ async function refreshAccountStatus() {
   // Warmed the moment someone's known to be signed in — well before they
   // open either search box — and dropped on sign-out so a shared device
   // never keeps the list around for the next person.
-  if (playerAccount) { renderAccountNews(); loadPlayerIndex(); } else clearPlayerIndexCache();
+  if (playerAccount) { renderAccountNews(); loadPlayerIndex(); loadAvatarsIndex(); } else clearPlayerIndexCache();
   if (resetTokenInUrl) {
     switchHubTab("account");
     el("account-signed-out-card").style.display = "none";
@@ -2701,6 +2701,7 @@ function positionClaimPanel(prominent) {
       panel.style.marginTop = "";
       el("toggle-claim-panel").style.display = "none";
       loadPlayerIndex();
+      loadAvatarsIndex();
     }
   } else if (isHero) {
     el("account-utility-row").insertAdjacentElement("afterend", panel);
@@ -2713,7 +2714,7 @@ function positionClaimPanel(prominent) {
 function openClaimPanel() {
   const panel = el("claim-panel");
   panel.style.display = panel.style.display === "none" ? "block" : "none";
-  if (panel.style.display === "block") { el("account-search-input").focus(); loadPlayerIndex(); }
+  if (panel.style.display === "block") { el("account-search-input").focus(); loadPlayerIndex(); loadAvatarsIndex(); }
 }
 el("toggle-claim-panel").onclick = openClaimPanel;
 el("toggle-captain-panel").onclick = () => {
@@ -2794,9 +2795,13 @@ if (resetTokenInUrl) {
 // "Search players" tab below) so a result reads as a person's profile,
 // not a list item. `actionHtml` is whatever goes on the right (a claim
 // button, a "View profile" button, an "Already claimed" tag, ...).
-function playerSearchRowHtml(r, actionHtml) {
+// `avatars` (see loadAvatarsIndex) is optional — a player's own photo
+// wins when set, otherwise their team's badge, otherwise the plain
+// initials avatarHtml already falls back to on its own.
+function playerSearchRowHtml(r, actionHtml, avatars) {
+  const logo = (avatars && (avatars.playerPhotos[r.playerId] || avatars.teamLogos[r.teamId])) || r.teamLogo || "";
   return `<div class="player-search-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}">
-    ${avatarHtml({ logo: r.teamLogo, name: r.playerName })}
+    ${avatarHtml({ logo, name: r.playerName })}
     <div class="info"><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
     ${actionHtml}
   </div>`;
@@ -2822,7 +2827,8 @@ function writePlayerIndexCache(data) {
 }
 function clearPlayerIndexCache() {
   playerIndexPromise = null; playerIndexReady = false;
-  try { localStorage.removeItem(PLAYER_INDEX_STORAGE_KEY); } catch { /* nothing to clear */ }
+  avatarsIndexPromise = null;
+  try { localStorage.removeItem(PLAYER_INDEX_STORAGE_KEY); localStorage.removeItem(AVATARS_INDEX_STORAGE_KEY); } catch { /* nothing to clear */ }
 }
 // Stale-while-revalidate: a copy from the last visit answers searches
 // instantly, while a fresh one is fetched behind it and swapped in. An
@@ -2846,6 +2852,35 @@ function loadPlayerIndex() {
     playerIndexPromise = fresh.catch(() => { playerIndexPromise = null; return []; });
   }
   return playerIndexPromise;
+}
+// A second, separately cached fetch for the images search rows want (a
+// player's own photo, or their team's badge) — same stale-while-revalidate
+// shape as loadPlayerIndex, kept apart so the always-hot text index above
+// never has to carry image bytes on the request every search screen waits
+// on first. An empty {teamLogos:{},playerPhotos:{}} on failure just means
+// every row falls back to its plain initials avatar, not a broken search.
+let avatarsIndexPromise = null;
+const AVATARS_INDEX_STORAGE_KEY = "padel-avatars-index-v1";
+function readAvatarsIndexCache() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(AVATARS_INDEX_STORAGE_KEY) || "null");
+    return stored && stored.data && stored.data.teamLogos ? stored.data : null;
+  } catch { return null; }
+}
+function writeAvatarsIndexCache(data) {
+  try { localStorage.setItem(AVATARS_INDEX_STORAGE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* storage full/private mode — just skip caching */ }
+}
+function loadAvatarsIndex() {
+  if (avatarsIndexPromise) return avatarsIndexPromise;
+  const fresh = api("/players/avatars-index").then((data) => { writeAvatarsIndexCache(data); return data; });
+  const cached = readAvatarsIndexCache();
+  if (cached) {
+    avatarsIndexPromise = Promise.resolve(cached);
+    fresh.then((data) => { avatarsIndexPromise = Promise.resolve(data); }).catch(() => {});
+  } else {
+    avatarsIndexPromise = fresh.catch(() => { avatarsIndexPromise = null; return { teamLogos: {}, playerPhotos: {} }; });
+  }
+  return avatarsIndexPromise;
 }
 // Claiming or unclaiming a record only changes that one row's `claimed`
 // flag — patching it in place in the already-loaded index avoids either
@@ -2879,12 +2914,12 @@ function filterPlayerIndex(all, qRaw) {
 const playerLookupSeq = {};
 async function runPlayerLookup(resultsId, qRaw, actionFor, wire) {
   const seq = playerLookupSeq[resultsId] = (playerLookupSeq[resultsId] || 0) + 1;
-  const all = await loadPlayerIndex();
+  const [all, avatars] = await Promise.all([loadPlayerIndex(), loadAvatarsIndex()]);
   if (seq !== playerLookupSeq[resultsId]) return; // a newer keystroke has taken over
   const results = filterPlayerIndex(all, qRaw);
   const c = el(resultsId);
   if (results.length === 0) { c.innerHTML = '<p class="empty">No matching players found.</p>'; return; }
-  c.innerHTML = results.map((r) => playerSearchRowHtml(r, actionFor(r))).join("")
+  c.innerHTML = results.map((r) => playerSearchRowHtml(r, actionFor(r), avatars)).join("")
     + (results.length === PLAYER_SEARCH_MAX_ROWS ? `<p class="note" style="margin-top:8px;">Showing the first ${PLAYER_SEARCH_MAX_ROWS} — keep typing to narrow it down.</p>` : "");
   wire(c, results);
 }
@@ -2943,6 +2978,7 @@ async function renderPlayerAround() {
   if (!wrap) return;
   if (!playerAccount || !accountAroundData) { wrap.innerHTML = ""; return; }
   const { cards, fixtureCards } = accountAroundData;
+  const avatars = await loadAvatarsIndex();
   const mine = new Set(cards.map((c) => c.playerId));
   const byName = (a, b) => a.playerName.localeCompare(b.playerName);
   // Rows are the same shape the search results use, so opening a profile
@@ -2951,7 +2987,7 @@ async function renderPlayerAround() {
   // fall back to that list.
   const rowsOf = (leagueId, teamId, teamName, leagueName, players) => players
     .filter((p) => !mine.has(p.id)).map((p) => ({ leagueId, leagueName, teamId, teamName, playerId: p.id, playerName: p.name })).sort(byName);
-  const row = (r, tag) => playerSearchRowHtml(r, `<span class="tag">${tag}</span>`);
+  const row = (r, tag) => playerSearchRowHtml(r, `<span class="tag">${tag}</span>`, avatars);
   const leagueNameOf = (id) => { const c = cards.find((x) => x.leagueId === id) || fixtureCards.find((x) => x.leagueId === id); return c ? c.leagueName : ""; };
   let html = "";
   const shown = [];
@@ -3522,7 +3558,7 @@ function renderAccountLeaguesList(cards) {
   c.querySelectorAll(".al-chip").forEach((chip) => {
     chip.onclick = () => { accountLeagueSel = accountLeagueSel === chip.dataset.key ? null : chip.dataset.key; renderAccountLeaguesList(cards); };
   });
-  const showPanel = (id, focusId) => { const panel = el(id); panel.style.display = "block"; el(focusId).focus(); panel.scrollIntoView({ behavior: "smooth", block: "center" }); if (id === "claim-panel") loadPlayerIndex(); };
+  const showPanel = (id, focusId) => { const panel = el(id); panel.style.display = "block"; el(focusId).focus(); panel.scrollIntoView({ behavior: "smooth", block: "center" }); if (id === "claim-panel") { loadPlayerIndex(); loadAvatarsIndex(); } };
   c.querySelectorAll("[data-act]").forEach((btn) => {
     btn.onclick = async () => {
       const act = btn.dataset.act;
@@ -10910,24 +10946,42 @@ async function generateWrappedSlideCanvas(stats, slideIndex, sponsors) {
       stats.bestPartner ? stats.bestPartner.name : "Still finding your favourite",
       stats.bestPartner ? `${stats.bestPartner.wins}–${stats.bestPartner.losses} together` : "Play a few more with the same partner"
     );
-    card(
-      "TOUGHEST OPPONENT",
-      stats.toughestOpponent ? stats.toughestOpponent.name : "No repeat rivals yet",
-      stats.toughestOpponent ? `${stats.toughestOpponent.wins}–${stats.toughestOpponent.losses} head to head` : "Nobody's beaten you twice"
-    );
-
-    const halfW = (cardW - 24) / 2;
+    // The one thing a season recap can't leave vague: every real badge
+    // earned this season, stacked and named outright — never a bare
+    // trophy count standing in for what was actually won. A team can be
+    // champion AND unbeaten AND pick up Pair of the Week in the same
+    // season, so this lists everything rather than picking just one.
+    const champion = stats.trophies.some((t) => t.type === "champion");
+    const runnerUp = stats.trophies.some((t) => t.type === "runnerUp");
+    const unbeaten = stats.trophies.some((t) => t.type === "unbeaten");
+    const potwCount = stats.trophies.filter((t) => t.type === "potw").length;
+    const badges = [];
+    if (champion) badges.push("🏆 Champions");
+    else if (runnerUp) badges.push("🥈 Runner-up");
+    if (unbeaten) badges.push("🥇 Unbeaten season");
+    if (potwCount) badges.push(`⭐ Pair of the Week${potwCount > 1 ? ` ×${potwCount}` : ""}`);
+    if (!badges.length) badges.push(stats.seasonEnded ? "No silverware this time" : "Next season");
+    const badgeLineH = 52, trophyCardH = 80 + badges.length * badgeLineH;
     ctx.fillStyle = "rgba(255,255,255,.14)";
-    roundRectPath(ctx, x, y, halfW, 150, 22); ctx.fill();
-    roundRectPath(ctx, x + halfW + 24, y, halfW, 150, 22); ctx.fill();
+    roundRectPath(ctx, x, y, cardW, trophyCardH, 22);
+    ctx.fill();
+    ctx.fillStyle = LIME;
+    ctx.font = "700 24px Inter, sans-serif";
+    ctx.fillText("THIS SEASON", x + 34, y + 52);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "700 32px Inter, sans-serif";
+    badges.forEach((b, i) => {
+      ctx.fillText(fitText(ctx, b, cardW - 68, 32, "700", "Inter, sans-serif", 24), x + 34, y + 96 + i * badgeLineH);
+    });
+    y += trophyCardH + 26;
+
+    ctx.textAlign = "center";
     ctx.fillStyle = LIME;
     ctx.font = "700 22px Inter, sans-serif";
-    ctx.fillText("HOME COURT", x + 30, y + 46);
-    ctx.fillText("TROPHIES", x + halfW + 24 + 30, y + 46);
+    ctx.fillText("HOME COURT", W / 2, y + 6);
     ctx.fillStyle = "#FFFFFF";
-    ctx.font = "700 38px Inter, sans-serif";
-    ctx.fillText(stats.favouriteCourt ? stats.favouriteCourt.label : "Varies", x + 30, y + 98);
-    ctx.fillText(stats.trophies.length ? `🏆 ×${stats.trophies.length}` : "Next season", x + halfW + 24 + 30, y + 98);
+    ctx.font = "700 36px Inter, sans-serif";
+    ctx.fillText(stats.favouriteCourt ? stats.favouriteCourt.label : "Varies", W / 2, y + 50);
 
     if (sponsors && sponsors.length) {
       const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
