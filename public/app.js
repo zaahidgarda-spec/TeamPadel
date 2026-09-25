@@ -8543,11 +8543,22 @@ function liveTileHtml(s, c, oneFixture) {
   const { info } = t, sides = liveSides(t, false);
   const isSuperTie = rubberSlot4Kind(t.f, t.cell.seed) === "singles";
   const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b>${isSuperTie ? "" : `<b>${escapeHtml(sd.players[1])}</b>`}</div>`;
-  // The two teams' badges sit once in the court's header when the court
-  // hosts a single fixture; a court that mixes fixtures has no one pair of
-  // teams to name up there, so each tile carries its own little badges.
-  const mid = oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`;
-  const teams = `${lines(sides[0])}<div class="lc-vs">${mid}</div>${lines(sides[1])}`;
+  // Once this rubber's decided, the winning side's own crest takes over
+  // the middle divider instead of the plain "v" — a result visible at a
+  // glance across the whole court grid, not just once the tile's tapped
+  // open. Falls back to the usual divider whenever there's no team object
+  // to show a crest for (a bye, a still-undecided rubber, or the rare case
+  // neither side actually won — see rubberWinnerClient).
+  const winnerSide = info.state === "done" ? rubberWinnerClient(info.rubber) : null;
+  const winnerTeam = winnerSide === "A" ? sides[0].team : winnerSide === "B" ? sides[1].team : null;
+  // The two teams' badges otherwise sit once in the court's header when the
+  // court hosts a single fixture; a court that mixes fixtures has no one
+  // pair of teams to name up there, so each tile carries its own little
+  // badges.
+  const mid = winnerTeam
+    ? `<div class="lc-vs lc-vs-winner">${avatarHtml(winnerTeam)}</div>`
+    : `<div class="lc-vs">${oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`}</div>`;
+  const teams = `${lines(sides[0])}${mid}${lines(sides[1])}`;
   const label = isSuperTie ? "Singles" : seedLabelText(t.f, t.cell.seed, true);
   let foot;
   if (info.state === "live") {
