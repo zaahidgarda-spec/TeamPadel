@@ -10800,6 +10800,160 @@ async function generateTrophyPosterCanvas(data, theme) {
 
   return canvas;
 }
+
+/* ---------- Season Wrapped ---------- */
+
+// Three slides, one radial-gradient mood each — cover, headline numbers,
+// then the highlight reel (best partner / toughest opponent / court /
+// trophies). Every stat that can genuinely be missing (not enough matches
+// yet for a "best partner", a season still in progress with no finish)
+// gets its own honest placeholder instead of drawing a blank or a zero
+// that reads as a real result.
+async function generateWrappedSlideCanvas(stats, slideIndex, sponsors) {
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const W = 1080, H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const MOODS = [
+    { cx: W * 0.22, cy: 0, stops: ["#E0339A", "#6C1B8C", "#230A38"] },
+    { cx: W * 0.82, cy: 0, stops: ["#3D6BFF", "#1B2E8C", "#0A0F38"] },
+    { cx: W * 0.2, cy: H, stops: ["#FF7A3D", "#8C2E1B", "#380F0A"] },
+  ];
+  const mood = MOODS[slideIndex];
+  const bg = ctx.createRadialGradient(mood.cx, mood.cy, 0, mood.cx, mood.cy, H * 1.05);
+  bg.addColorStop(0, mood.stops[0]); bg.addColorStop(0.45, mood.stops[1]); bg.addColorStop(1, mood.stops[2]);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Story-style progress dots, top — which of the 3 slides this is.
+  const dotY = 56, dotGap = 18, dotW = (W - 96 - dotGap * 2) / 3;
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i === slideIndex ? "#FFFFFF" : "rgba(255,255,255,.3)";
+    roundRectPath(ctx, 48 + i * (dotW + dotGap), dotY, dotW, 6, 3);
+    ctx.fill();
+  }
+
+  const LIME = "#C6FF3D";
+  ctx.textAlign = "center";
+
+  if (slideIndex === 0) {
+    ctx.fillStyle = LIME;
+    ctx.font = "700 30px Inter, sans-serif";
+    ctx.fillText("SEASON WRAPPED", W / 2, H * 0.42);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "900 96px 'Archivo Black', sans-serif";
+    const name = fitText(ctx, stats.playerName + "'s", W - 140, 96, "900", "'Archivo Black', sans-serif", 56);
+    ctx.fillText(name, W / 2, H * 0.42 + 100);
+    ctx.font = "900 96px 'Archivo Black', sans-serif";
+    ctx.fillText(stats.seasonLabel, W / 2, H * 0.42 + 200);
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = "500 30px Inter, sans-serif";
+    ctx.fillText(`${stats.leagueName} · ${stats.teamName}`, W / 2, H * 0.42 + 260);
+  } else if (slideIndex === 1) {
+    ctx.textAlign = "left";
+    const x = 90;
+    let y = H * 0.36;
+    ctx.fillStyle = LIME;
+    ctx.font = "900 150px 'Archivo Black', sans-serif";
+    ctx.fillText(String(stats.matches), x, y);
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = "600 28px Inter, sans-serif";
+    ctx.fillText("MATCHES PLAYED", x, y + 44);
+
+    y += 220;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "900 150px 'Archivo Black', sans-serif";
+    ctx.fillText(String(stats.wins), x, y);
+    const winsW = ctx.measureText(String(stats.wins)).width;
+    ctx.fillStyle = "rgba(255,255,255,.5)";
+    ctx.font = "900 60px 'Archivo Black', sans-serif";
+    ctx.fillText(` / ${stats.matches}`, x + winsW, y);
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = "600 28px Inter, sans-serif";
+    ctx.fillText(`WINS — A ${stats.winPct}% SEASON`, x, y + 44);
+
+    y += 200;
+    ctx.fillStyle = LIME;
+    ctx.font = "900 90px 'Archivo Black', sans-serif";
+    const finishText = stats.finish ? ordinal(stats.finish.position) : "—";
+    ctx.fillText(finishText, x, y);
+    const finishW = ctx.measureText(finishText).width;
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.font = "600 26px Inter, sans-serif";
+    ctx.fillText(
+      stats.finish ? `PLACE OF ${stats.finish.totalTeams}, ${stats.teamName.toUpperCase()}` : "SEASON STILL IN PROGRESS",
+      x + finishW + 20, y - 6
+    );
+  } else {
+    ctx.textAlign = "left";
+    const x = 80, cardW = W - 160;
+    let y = H * 0.28;
+    const card = (label, title, sub) => {
+      ctx.fillStyle = "rgba(255,255,255,.14)";
+      roundRectPath(ctx, x, y, cardW, 190, 22);
+      ctx.fill();
+      ctx.fillStyle = LIME;
+      ctx.font = "700 24px Inter, sans-serif";
+      ctx.fillText(label, x + 34, y + 52);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "700 46px Inter, sans-serif";
+      ctx.fillText(fitText(ctx, title, cardW - 68, 46, "700", "Inter, sans-serif", 30), x + 34, y + 112);
+      ctx.fillStyle = "rgba(255,255,255,.7)";
+      ctx.font = "500 26px Inter, sans-serif";
+      ctx.fillText(sub, x + 34, y + 152);
+      y += 190 + 26;
+    };
+    card(
+      "BEST PARTNER",
+      stats.bestPartner ? stats.bestPartner.name : "Still finding your favourite",
+      stats.bestPartner ? `${stats.bestPartner.wins}–${stats.bestPartner.losses} together` : "Play a few more with the same partner"
+    );
+    card(
+      "TOUGHEST OPPONENT",
+      stats.toughestOpponent ? stats.toughestOpponent.name : "No repeat rivals yet",
+      stats.toughestOpponent ? `${stats.toughestOpponent.wins}–${stats.toughestOpponent.losses} head to head` : "Nobody's beaten you twice"
+    );
+
+    const halfW = (cardW - 24) / 2;
+    ctx.fillStyle = "rgba(255,255,255,.14)";
+    roundRectPath(ctx, x, y, halfW, 150, 22); ctx.fill();
+    roundRectPath(ctx, x + halfW + 24, y, halfW, 150, 22); ctx.fill();
+    ctx.fillStyle = LIME;
+    ctx.font = "700 22px Inter, sans-serif";
+    ctx.fillText("HOME COURT", x + 30, y + 46);
+    ctx.fillText("TROPHIES", x + halfW + 24 + 30, y + 46);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "700 38px Inter, sans-serif";
+    ctx.fillText(stats.favouriteCourt ? stats.favouriteCourt.label : "Varies", x + 30, y + 98);
+    ctx.fillText(stats.trophies.length ? `🏆 ×${stats.trophies.length}` : "Next season", x + halfW + 24 + 30, y + 98);
+
+    if (sponsors && sponsors.length) {
+      const loadedLogos = (await Promise.all(sponsors.map((s) => loadImageAsync(s.image)))).filter(Boolean);
+      if (loadedLogos.length) {
+        const sponsorY = H - 190;
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(255,255,255,.55)";
+        ctx.font = "600 20px Inter, sans-serif";
+        ctx.fillText("SPONSORED BY", W / 2, sponsorY);
+        const maxRowWidth = W - 160, gap = 32;
+        let logoH = 64;
+        let widths = loadedLogos.map((img) => (logoH / img.height) * img.width);
+        let totalW = widths.reduce((a, b) => a + b, 0) + gap * (loadedLogos.length - 1);
+        if (totalW > maxRowWidth) { logoH *= maxRowWidth / totalW; widths = widths.map((w) => w * (maxRowWidth / totalW)); totalW = maxRowWidth; }
+        let lx = W / 2 - totalW / 2;
+        loadedLogos.forEach((img, i) => {
+          ctx.drawImage(img, lx, sponsorY + 20, widths[i], logoH);
+          lx += widths[i] + gap;
+        });
+      }
+    }
+  }
+
+  await drawPosterLogoFooter(ctx, W, H);
+  return canvas;
+}
 /* ---------- Team kit (captain-managed) ---------- */
 
 // Which team's kit is on screen — implicit (their own) for a captain,
@@ -11561,6 +11715,63 @@ async function openPosterModal(mode, extraData) {
     a.remove();
   };
 }
+// Season Wrapped modal — one small state bag (which slide, which season,
+// the fetched stats, a per-slide canvas cache so flipping back to a slide
+// already drawn doesn't redraw it) rather than threading all of that
+// through every handler separately.
+let wrappedState = null;
+async function openWrappedModal(leagueId, playerId) {
+  el("wrapped-modal-backdrop").classList.add("open");
+  el("wrapped-modal-loading").style.display = "block";
+  el("wrapped-modal-loading").textContent = "Building your season…";
+  el("wrapped-slide-wrap").style.display = "none";
+  el("wrapped-download-btn").style.display = "none";
+  el("wrapped-season-select").innerHTML = "";
+  wrappedState = { leagueId, playerId, slide: 0, stats: null, canvasCache: {} };
+  await fetchWrappedSeason(null);
+}
+async function fetchWrappedSeason(season) {
+  const { leagueId, playerId } = wrappedState;
+  const q = season != null ? `?season=${encodeURIComponent(season)}` : "";
+  const data = await api(`/leagues/${leagueId}/players/${playerId}/wrapped${q}`).catch((e) => ({ error: e.message }));
+  if (data.error) { el("wrapped-modal-loading").textContent = data.error; return; }
+  wrappedState.stats = data;
+  wrappedState.slide = 0;
+  wrappedState.canvasCache = {};
+  const sel = el("wrapped-season-select");
+  sel.innerHTML = data.available.map((a) => `<option value="${escapeHtml(String(a.season))}">${escapeHtml(a.label)}</option>`).join("");
+  sel.value = String(data.season);
+  await renderWrappedSlide();
+}
+async function renderWrappedSlide() {
+  const { stats, slide } = wrappedState;
+  el("wrapped-modal-loading").style.display = "block";
+  el("wrapped-modal-loading").textContent = "Drawing…";
+  el("wrapped-slide-wrap").style.display = "none";
+  let canvas = wrappedState.canvasCache[slide];
+  if (!canvas) {
+    canvas = await generateWrappedSlideCanvas(stats, slide, slide === 2 ? stats.sponsors : []);
+    wrappedState.canvasCache[slide] = canvas;
+  }
+  el("wrapped-slide-img").src = canvas.toDataURL("image/png");
+  el("wrapped-modal-loading").style.display = "none";
+  el("wrapped-slide-wrap").style.display = "block";
+  el("wrapped-download-btn").style.display = "inline-block";
+  el("wrapped-prev-btn").style.visibility = slide === 0 ? "hidden" : "visible";
+  el("wrapped-next-btn").style.visibility = slide === 2 ? "hidden" : "visible";
+}
+el("wrapped-modal-close").onclick = () => el("wrapped-modal-backdrop").classList.remove("open");
+el("wrapped-prev-btn").onclick = () => { if (wrappedState && wrappedState.slide > 0) { wrappedState.slide--; renderWrappedSlide(); } };
+el("wrapped-next-btn").onclick = () => { if (wrappedState && wrappedState.slide < 2) { wrappedState.slide++; renderWrappedSlide(); } };
+el("wrapped-season-select").onchange = (e) => fetchWrappedSeason(e.target.value);
+el("wrapped-download-btn").onclick = () => {
+  if (!wrappedState) return;
+  const canvas = wrappedState.canvasCache[wrappedState.slide];
+  if (!canvas) return;
+  const names = ["cover", "numbers", "highlights"];
+  const who = (wrappedState.stats.playerName || "wrapped").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  kitDownloadDataUrl(canvas.toDataURL("image/png"), `${who}-wrapped-${names[wrappedState.slide]}.png`);
+};
 el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.remove("open");
 el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
 el("generate-results-poster-btn").onclick = () => openPosterModal("results");
@@ -12926,6 +13137,12 @@ async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
   // initials) as the main avatar, so badging it again here would just be
   // the same team shown twice for no reason.
   el("player-modal-team-badge").innerHTML = data.photo ? avatarHtml({ logo: data.teamLogo, name: data.teamName }) : "";
+  // Scoped to whichever league tab is actually open right now, not
+  // "wherever they've ever played" — the record and stats behind it are
+  // this specific league's own, so a tab switch (see the league tabs
+  // below) needs to change what this button opens too.
+  el("player-modal-wrapped-row").style.display = (data.rows || []).length > 0 ? "block" : "none";
+  el("player-modal-wrapped-btn").onclick = () => openWrappedModal(data.leagueId, data.playerId);
   // One tag per league won, not per tab open — a title belongs to the
   // person, so it shows here regardless of which of their leagues you
   // happen to be looking at (see allChampionships, aggregated server-side

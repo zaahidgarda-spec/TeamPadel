@@ -37,7 +37,7 @@
 <meta name="apple-mobile-web-app-title" content="Team Padel">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Archivo+Black&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="role-guest">
@@ -1364,6 +1364,9 @@
           </div>
         </div>
         <div id="player-modal-stats" class="p-stats"></div>
+        <div class="p-content-pad" id="player-modal-wrapped-row" style="display:none;">
+          <button class="secondary" id="player-modal-wrapped-btn" style="width:100%;">&#127881; View your Season Wrapped</button>
+        </div>
         <div class="p-content-pad" id="player-modal-trophy-section" style="display:none;">
           <div class="row" style="justify-content:space-between;align-items:center;">
             <p class="p-section-label" style="margin:0;">Trophy Room</p>
@@ -1378,6 +1381,23 @@
     <!-- Global — a direct child of #app (not nested inside view-league or
          any single tab) so it can open from My Profile's Trophy Room poster
          button too, not just from inside a league's own admin tabs. -->
+    <div id="wrapped-modal-backdrop" class="modal-backdrop">
+      <div class="modal-box" style="max-width:380px;text-align:center;">
+        <button class="modal-close" id="wrapped-modal-close" aria-label="Close">&times;</button>
+        <h3 class="modal-title">Season Wrapped</h3>
+        <select id="wrapped-season-select" style="margin-bottom:10px;max-width:100%;"></select>
+        <div id="wrapped-modal-loading" class="note">Building your season&hellip;</div>
+        <div id="wrapped-slide-wrap" style="position:relative;display:none;">
+          <img id="wrapped-slide-img" style="max-width:100%;border-radius:16px;display:block;">
+          <button type="button" id="wrapped-prev-btn" class="ghost" aria-label="Previous slide" style="position:absolute;left:-4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;background:rgba(18,32,58,.55);color:#fff;border:none;font-size:16px;">&larr;</button>
+          <button type="button" id="wrapped-next-btn" class="ghost" aria-label="Next slide" style="position:absolute;right:-4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;background:rgba(18,32,58,.55);color:#fff;border:none;font-size:16px;">&rarr;</button>
+        </div>
+        <div class="row" style="margin-top:14px;justify-content:center;">
+          <button class="primary" id="wrapped-download-btn" style="display:none;">Download this slide</button>
+        </div>
+      </div>
+    </div>
+
     <div id="poster-modal-backdrop" class="modal-backdrop">
       <div class="modal-box" style="max-width:460px;text-align:center;">
         <button class="modal-close" id="poster-modal-close" aria-label="Close">&times;</button>

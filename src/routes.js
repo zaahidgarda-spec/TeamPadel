@@ -6477,6 +6477,47 @@ router.get("/leagues/:leagueId/admin/ratings-preview", requireAdmin, (req, res) 
 // plays in" tabs able to switch leagues without navigating away: each
 // tab is just another call to this same route with a different
 // leagueId/playerId, re-rendered from scratch).
+// Season Wrapped — a Spotify-Wrapped-style recap of one season for one
+// player. `season` query param picks which one: omit it (or "live") for
+// the current season, or pass an archived season's own `season` number
+// (see logic.allSeasonsOf) for one that's already ended — so someone who
+// finished their season last month gets exactly the same recap someone
+// mid-season gets right now, just with the numbers already final.
+router.get("/leagues/:leagueId/players/:playerId/wrapped", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Not found." });
+  const team = league.teams.find((t) => t.players.some((p) => p.id === req.params.playerId));
+  const player = team && team.players.find((p) => p.id === req.params.playerId);
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  const seasons = logic.allSeasonsOf(league);
+  // Only offer a season this player actually played a match in — no point
+  // showing a recap of a season they never featured in at all.
+  const available = seasons
+    .map((s) => ({
+      season: s.season !== undefined ? s.season : "live",
+      label: s.season !== undefined ? (s.label || `Season ${s.season}`) : "This season",
+      played: logic.playerMatchHistory(s, player.id).length,
+    }))
+    .filter((entry) => entry.played > 0);
+  if (!available.length) return res.status(404).json({ error: "No matches played yet — nothing to wrap up." });
+  const wanted = req.query.season;
+  const season = wanted && wanted !== "live" ? seasons.find((s) => String(s.season) === String(wanted)) : seasons[seasons.length - 1];
+  if (!season) return res.status(404).json({ error: "That season wasn't found." });
+  const { ratingsData } = loadGlobalRatings();
+  const stats = logic.seasonWrappedStats(league, season, player.id, ratingsData);
+  res.json({
+    ...stats,
+    season: season.season !== undefined ? season.season : "live",
+    leagueId: league.id,
+    teamId: team.id,
+    playerId: player.id,
+    available: available.map(({ season: s, label }) => ({ season: s, label })),
+    // The live league's own sponsors, not the archived snapshot's — a
+    // sponsor relationship is current, not a historical fact worth
+    // freezing into an old season's recap.
+    sponsors: (league.sponsors || []).slice(0, 5),
+  });
+});
 router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "Not found." });

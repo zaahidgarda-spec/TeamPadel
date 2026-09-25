@@ -1194,6 +1194,144 @@ function playerMatchHistory(league, playerId, ratingsData) {
   return rows;
 }
 
+// "Season Wrapped" — one season's highlight reel for one player. `season`
+// is a single element of allSeasonsOf(league) (the live league itself, or
+// one archived seasonHistory snapshot) — same shape either way, so this
+// works identically for a season still in progress and one that's long
+// since ended. `league` (the parent, not the snapshot) is only needed for
+// hallOfFame, which lives on the top-level league object and is matched
+// back to this specific season via its own `season` number — the same
+// pattern hallOfFameTitlesFor/unbeatenSeasonsIn already use.
+//
+// Nothing here needed new storage: matches/wins/partners/opponents reuse
+// playerMatchHistory's own scan, the rating swing is just this season's
+// slice of ratingsData.deltas (already computed for every rubber ever
+// played), and "favourite court" is the one genuinely new join — between
+// a played rubber's {fixtureId, seed} and courtSchedule, which nothing
+// previously connected.
+function seasonWrappedStats(league, season, playerId, ratingsData) {
+  const team = season.teams.find((t) => t.players.some((p) => p.id === playerId));
+  if (!team) return null;
+  const player = team.players.find((p) => p.id === playerId);
+  const rows = playerMatchHistory(season, playerId, ratingsData);
+
+  const wins = rows.filter((r) => r.result === "W").length;
+  const losses = rows.filter((r) => r.result === "L").length;
+  const draws = rows.filter((r) => r.result === "D").length;
+  const matches = rows.length;
+
+  // Best partner / toughest opponent — grouped by name, same tolerance
+  // computeLeagueStats' own partnerships/topScorers already have for two
+  // different people who happen to share a name.
+  const tallyByName = (names) => {
+    const map = new Map();
+    names.forEach(({ name, result }) => {
+      if (!map.has(name)) map.set(name, { name, wins: 0, losses: 0, draws: 0, played: 0 });
+      const e = map.get(name);
+      e.played++;
+      if (result === "W") e.wins++;
+      else if (result === "L") e.losses++;
+      else e.draws++;
+    });
+    return [...map.values()];
+  };
+  const MIN_SAMPLE = 2;
+  const partners = tallyByName(rows.filter((r) => r.partner).map((r) => ({ name: r.partner, result: r.result })));
+  const bestPartner = partners.filter((p) => p.played >= MIN_SAMPLE).sort((a, b) => (b.wins / b.played) - (a.wins / a.played) || b.played - a.played)[0] || null;
+  const opponentRows = [];
+  rows.forEach((r) => (r.opponentPlayers || []).forEach((name) => opponentRows.push({ name, result: r.result })));
+  const opponents = tallyByName(opponentRows);
+  const toughestOpponent = opponents.filter((o) => o.played >= MIN_SAMPLE).sort((a, b) => (a.wins / a.played) - (b.wins / b.played) || b.played - a.played)[0] || null;
+
+  // Favourite court — the one join nothing else does today: which
+  // {fixtureId, seed} this player's own rubbers were, then where the court
+  // schedule actually placed each one. A round with no schedule saved yet
+  // (or a fixture never assigned a court) just doesn't count toward any
+  // court's tally, rather than crashing on a missing grid.
+  const myFixtureSeeds = new Set();
+  allFixturesOf(season).forEach((f) => {
+    if (!f.finalized || (f.teamA !== team.id && f.teamB !== team.id)) return;
+    const mySel = f.teamA === team.id ? f.selectionA : f.selectionB;
+    mySel.pairs.forEach((pair, idx) => { if (pair.includes(playerId)) myFixtureSeeds.add(`${f.id}:${idx}`); });
+  });
+  const courtCounts = new Map();
+  Object.values(season.courtSchedule || {}).forEach((grid) => {
+    (grid || []).forEach((row) => {
+      (row || []).forEach((cell, courtIdx) => {
+        if (cell && myFixtureSeeds.has(`${cell.fixtureId}:${cell.seed}`)) {
+          courtCounts.set(courtIdx, (courtCounts.get(courtIdx) || 0) + 1);
+        }
+      });
+    });
+  });
+  let favouriteCourt = null;
+  if (courtCounts.size) {
+    const [courtIdx, count] = [...courtCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    favouriteCourt = { label: (season.courtNames && season.courtNames[courtIdx]) || `Court ${courtIdx + 1}`, count };
+  }
+
+  // League finish — this season's own standings, not the league's current
+  // one if `season` is an archived snapshot (computeStandings works on
+  // either shape identically).
+  let finish = null;
+  if (season.format !== "pairs" || season.teams.length) {
+    const standingsRows = computeStandings(season, (f) => f.finalized);
+    const idx = standingsRows.findIndex((r) => r.id === team.id);
+    if (idx !== -1) finish = { position: idx + 1, totalTeams: standingsRows.length };
+  }
+
+  // Trophies actually earned in THIS season — hallOfFame entries are only
+  // ever created when a season ends (see POST /hall-of-fame), so a live,
+  // still-in-progress season simply has none yet, which is correct: the
+  // title isn't decided until it is.
+  const trophies = [];
+  if (season.season !== undefined) {
+    (league.hallOfFame || []).filter((e) => e.season === season.season).forEach((e) => {
+      if ((e.winnerRoster || []).some((p) => p.id === playerId)) trophies.push({ type: "champion", label: e.label });
+      if ((e.runnerUpRoster || []).some((p) => p.id === playerId)) trophies.push({ type: "runnerUp", label: e.label });
+    });
+  }
+  const roundsThisSeason = [...new Set(season.fixtures.map((f) => f.round))];
+  roundsThisSeason.forEach((r) => {
+    const { winners } = potwTallyForRound(season, r);
+    if (winners.some((w) => w.playerAId === playerId || w.playerBId === playerId)) trophies.push({ type: "potw", label: "Pair of the Week" });
+  });
+
+  // Net rating movement this season — the sum of every delta already
+  // computed for this player's rubbers in this season, not a separately
+  // tracked trend line. Null (not 0) when ratings aren't on for this
+  // league at all, so the caller can tell "no movement" from "not tracked".
+  let ratingChange = null;
+  if (ratingsData) {
+    ratingChange = 0;
+    rows.forEach((r) => { if (r.ratingDelta !== null && r.ratingDelta !== undefined) ratingChange += r.ratingDelta; });
+  }
+
+  let bestStreak = 0, streak = 0, bagelCount = 0;
+  rows.forEach((r) => {
+    if (r.result === "W") { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0;
+    if ((r.score || "").split(", ").includes("6-0")) bagelCount++;
+  });
+
+  return {
+    playerName: player.name,
+    teamName: team.name,
+    teamLogo: team.logo || "",
+    leagueName: league.name,
+    seasonLabel: season.season !== undefined ? (season.label || `Season ${season.season}`) : "This season",
+    matches, wins, losses, draws,
+    winPct: matches ? Math.round((wins / matches) * 100) : 0,
+    finish,
+    bestPartner,
+    toughestOpponent,
+    favouriteCourt,
+    trophies,
+    ratingChange,
+    bestStreak,
+    bagelCount,
+  };
+}
+
 // Shared scan behind headToHead/partnerRecord below — walks every finalized,
 // decided rubber where the two given players share a side (sameSide) or
 // face each other (!sameSide), hands each one to the callback already
@@ -1487,6 +1625,7 @@ module.exports = {
   validateSelection,
   validateRoundPair,
   playerMatchHistory,
+  seasonWrappedStats,
   headToHead,
   partnerRecord,
   computeGlobalRatings,
