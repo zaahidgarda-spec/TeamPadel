@@ -11743,6 +11743,23 @@ async function fetchWrappedSeason(season) {
   sel.value = String(data.season);
   await renderWrappedSlide();
 }
+function wrappedSlideFilename() {
+  const names = ["cover", "numbers", "highlights"];
+  const who = (wrappedState.stats.playerName || "wrapped").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return `${who}-wrapped-${names[wrappedState.slide]}.png`;
+}
+// Feature-detected once against a throwaway file rather than trusting
+// `navigator.share` alone — some browsers have text/url share but not
+// file share, and only a real canShare({files}) call tells them apart.
+let wrappedFileShareSupported = null;
+function wrappedSupportsFileShare() {
+  if (wrappedFileShareSupported !== null) return wrappedFileShareSupported;
+  try {
+    const testFile = new File([new Blob(["x"], { type: "image/png" })], "t.png", { type: "image/png" });
+    wrappedFileShareSupported = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [testFile] }));
+  } catch (e) { wrappedFileShareSupported = false; }
+  return wrappedFileShareSupported;
+}
 async function renderWrappedSlide() {
   const { stats, slide } = wrappedState;
   el("wrapped-modal-loading").style.display = "block";
@@ -11756,7 +11773,15 @@ async function renderWrappedSlide() {
   el("wrapped-slide-img").src = canvas.toDataURL("image/png");
   el("wrapped-modal-loading").style.display = "none";
   el("wrapped-slide-wrap").style.display = "block";
+  // On a phone, "Share to Instagram" (the OS share sheet, where Instagram
+  // — including Stories — shows up as a target) is the main action and
+  // Download is the fallback; on desktop, where file sharing isn't
+  // available at all, Download is the only option and carries the
+  // primary styling instead.
+  const canShare = wrappedSupportsFileShare();
+  el("wrapped-share-btn").style.display = canShare ? "inline-block" : "none";
   el("wrapped-download-btn").style.display = "inline-block";
+  el("wrapped-download-btn").className = canShare ? "ghost" : "primary";
   el("wrapped-prev-btn").style.visibility = slide === 0 ? "hidden" : "visible";
   el("wrapped-next-btn").style.visibility = slide === 2 ? "hidden" : "visible";
 }
@@ -11768,9 +11793,21 @@ el("wrapped-download-btn").onclick = () => {
   if (!wrappedState) return;
   const canvas = wrappedState.canvasCache[wrappedState.slide];
   if (!canvas) return;
-  const names = ["cover", "numbers", "highlights"];
-  const who = (wrappedState.stats.playerName || "wrapped").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  kitDownloadDataUrl(canvas.toDataURL("image/png"), `${who}-wrapped-${names[wrappedState.slide]}.png`);
+  kitDownloadDataUrl(canvas.toDataURL("image/png"), wrappedSlideFilename());
+};
+el("wrapped-share-btn").onclick = () => {
+  if (!wrappedState) return;
+  const canvas = wrappedState.canvasCache[wrappedState.slide];
+  if (!canvas) return;
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], wrappedSlideFilename(), { type: "image/png" });
+    try {
+      await navigator.share({ files: [file], title: "My Season Wrapped" });
+    } catch (e) {
+      if (e.name !== "AbortError") alert("Couldn't open the share sheet — try Download instead.");
+    }
+  }, "image/png");
 };
 el("poster-modal-close").onclick = () => el("poster-modal-backdrop").classList.remove("open");
 el("generate-fixtures-poster-btn").onclick = () => openPosterModal("fixtures");
