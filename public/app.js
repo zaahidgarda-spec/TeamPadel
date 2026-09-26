@@ -8755,11 +8755,19 @@ function renderLiveTimeline(wrap) {
   const tMax = Math.max(now + 30 * MIN, ...rows.map((r) => r.end)) + 6 * MIN;
   const span = tMax - t0;
   const pct = (ms) => ((ms - t0) / span) * 100;
-  const step = span > 3.2 * 60 * MIN ? 60 * MIN : 30 * MIN;
+  // A fixed half-hour grid, not a step that widens to hourly once the round
+  // runs long — a guide line every 30 minutes is the whole point of asking
+  // for one; the busier (longer) nights are exactly when it matters most.
+  const step = 30 * MIN;
   const ticks = [];
   for (let m = Math.ceil(t0 / step) * step; m < tMax; m += step) ticks.push(m);
   const axis = `<div class="lc-tl-ax"><span class="now" style="left:${pct(now)}%">NOW ${escapeHtml(clockTimeOnly(now))}</span>${ticks.filter((m) => Math.abs(pct(m) - pct(now)) > 9).map((m) => `<span style="left:${pct(m)}%">${escapeHtml(clockTimeOnly(m))}</span>`).join("")}</div>`;
-  const body = rows.map((r) => `<div class="lc-tl-row"><div class="lc-tl-c">${escapeHtml(b.courtLabel(r.c))}</div><div class="lc-tl-track"><div class="lc-tl-now" style="left:${pct(now)}%"></div>${r.bars.map((x) => {
+  // Real guide lines at those same 30-min marks, drawn straight through
+  // every court's track — not the track's own decorative background
+  // pattern (a fixed 4-way division that drifted out of sync with the
+  // actual half-hour marks the axis above was already labeling).
+  const gridlines = ticks.map((m) => `<div class="lc-tl-grid" style="left:${pct(m)}%"></div>`).join("");
+  const body = rows.map((r) => `<div class="lc-tl-row"><div class="lc-tl-c">${escapeHtml(b.courtLabel(r.c))}</div><div class="lc-tl-track">${gridlines}<div class="lc-tl-now" style="left:${pct(now)}%"></div>${r.bars.map((x) => {
     const n = liveNames(x.t);
     const sub = x.info.state === "live" ? "LIVE" : x.info.state === "done" ? "&#10003;" : (x.info.pace ? "&#9998;" : "");
     // Short codes — a bar can be narrow on a phone; the full names are on hover

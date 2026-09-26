@@ -1053,11 +1053,12 @@ body.lc-fs-on{overflow:hidden;}
 .lc-tl-ax span.now{color:#FF6B5A;font-family:var(--font-display);letter-spacing:.06em;font-weight:600;}
 .lc-tl-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
 .lc-tl-c{width:54px;flex:none;font-family:var(--font-display);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:#B7C5EA;line-height:1.2;}
-.lc-tl-track{position:relative;flex:1;height:58px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 1px,transparent 1px 25%);border-radius:8px;}
+.lc-tl-track{position:relative;flex:1;height:58px;background:rgba(255,255,255,.03);border-radius:8px;overflow:hidden;}
 .lc-tl-bar{position:absolute;top:4px;bottom:4px;min-height:0;padding:0 8px;overflow:hidden;justify-content:center;border-radius:8px;}
 .lc-tl-bar .a{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .lc-tl-bar .b{font-size:10px;opacity:.85;font-family:var(--font-display);}
 .lc-tl-now{position:absolute;top:-4px;bottom:-4px;width:2px;background:#E2432F;z-index:2;}
+.lc-tl-grid{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.12);z-index:1;}
 .lc-tl-fin{margin-top:14px;background:#101A36;border-radius:12px;padding:11px 13px;font-size:12px;color:#B7C5EA;line-height:1.55;}
 .lc-tl-fin b{color:#fff;font-family:var(--font-display);font-size:15px;}
 
