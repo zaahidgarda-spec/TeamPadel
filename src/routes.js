@@ -6000,6 +6000,47 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requ
   res.json({ ok: true, completedAt: rubber.completedAt });
 });
 
+// Undo an accidental "Mark complete" — Live Court Control's own "Start
+// again". Puts the rubber back to live (clock resumes from its original
+// startedAt) or, if it was completed without ever really being started
+// (a score entered straight from Results, which synthesizes startedAt ===
+// completedAt — see completeRubberNow), back to upcoming instead. Also
+// rolls back whatever that completion recorded in courtDurationStats/
+// courtMatchLog, so a genuine completion later isn't shadowed by a
+// mistaken one's numbers.
+router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/reopen", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  const rubber = f.rubbers[idx];
+  if (!rubber.completedAt) return res.status(400).json({ error: "This match isn't marked complete." });
+  const completedAt = rubber.completedAt;
+  const wasSyntheticStart = rubber.startedAt === completedAt;
+  rubber.completedAt = null;
+  if (wasSyntheticStart) rubber.startedAt = null;
+  else {
+    const { ratingsData, identityOf } = loadGlobalRatings();
+    const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
+    if (pred && league.courtDurationStats) {
+      const bucket = closenessBucket(pred.predictedCloseness);
+      const stat = league.courtDurationStats[bucket];
+      if (stat && stat.count > 0) {
+        stat.count -= 1;
+        stat.totalMinutes = Math.max(0, stat.totalMinutes - (completedAt - rubber.startedAt) / 60000);
+      }
+    }
+    if (league.courtMatchLog) {
+      const i = league.courtMatchLog.findIndex((e) => e.fixtureId === f.id && e.seed === idx && e.completedAt === completedAt);
+      if (i !== -1) league.courtMatchLog.splice(i, 1);
+    }
+  }
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
 router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const f = findFixture(league, req.params.fixtureId);

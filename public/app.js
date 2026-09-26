@@ -8796,7 +8796,7 @@ function renderLiveSheet() {
     if (better !== null) html += `<div class="nudge"><span><b>${escapeHtml(b.courtLabel(better))}</b> is lighter tonight — would even out the load.</span><button type="button" data-moveto="${better}">Move</button></div>`;
     html += `<div class="row2"><button type="button" class="p" data-start>Start</button><button type="button" data-startmove>Move / swap</button></div>`;
   } else {
-    html += `<div class="row2"><button type="button" class="p" data-score>Score</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-x>Close</button>'}</div>`;
+    html += `<div class="row2"><button type="button" class="p" data-score>Score</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-reopen>Start again</button>'}</div>`;
   }
   showLiveSheet(html);
   const sheet = el("lc-sheet");
@@ -8851,6 +8851,13 @@ function renderLiveSheet() {
   if (completeBtn) completeBtn.onclick = async () => {
     try {
       await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/complete`, { method: "POST" });
+      closeLiveSheet(); await refreshLeague(); renderAll();
+    } catch (e) { alert(e.message); }
+  };
+  const reopenBtn = sheet.querySelector("[data-reopen]");
+  if (reopenBtn) reopenBtn.onclick = async () => {
+    try {
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}/reopen`, { method: "POST" });
       closeLiveSheet(); await refreshLeague(); renderAll();
     } catch (e) { alert(e.message); }
   };
