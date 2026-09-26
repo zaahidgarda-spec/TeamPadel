@@ -13091,20 +13091,21 @@ function bracketMatchBoxSvg(x, y, teamA, teamB, f) {
   // hasScore precedent) rather than showing a slightly misleading "0".
   const hasScore = f && (winsA > 0 || winsB > 0 || f.finalized);
   const winner = f ? matchWinnerClient(f) : null;
-  const nameA = escapeHtml(teamA ? teamA.name : "TBD"), nameB = escapeHtml(teamB ? teamB.name : "TBD");
+  const nameA = escapeHtml((teamA ? teamA.name : "TBD").toUpperCase()), nameB = escapeHtml((teamB ? teamB.name : "TBD").toUpperCase());
   const initialA = escapeHtml(teamA ? teamA.name.charAt(0).toUpperCase() : "?");
   const initialB = escapeHtml(teamB ? teamB.name.charAt(0).toUpperCase() : "?");
   const aWon = winner === "A", bWon = winner === "B";
+  const WIN_GREEN = "#34D399";
   const rowSvg = (ry, name, initial, won, score, logo) => `
-    <circle cx="${x + 22}" cy="${ry + 23}" r="13" fill="${won ? "#178A4C" : "#EEF2F9"}"/>
+    <circle cx="${x + 22}" cy="${ry + 23}" r="13" fill="${won ? WIN_GREEN : "rgba(255,255,255,.12)"}"/>
     ${logo ? `<clipPath id="clip-${x}-${ry}"><circle cx="${x + 22}" cy="${ry + 23}" r="13"/></clipPath><image href="${logo}" x="${x + 9}" y="${ry + 10}" width="26" height="26" clip-path="url(#clip-${x}-${ry})" preserveAspectRatio="xMidYMid slice"/>`
-      : `<text x="${x + 22}" y="${ry + 27}" text-anchor="middle" class="disp" font-size="11" font-weight="700" fill="${won ? "#FFFFFF" : "#64748B"}">${initial}</text>`}
-    <text x="${x + 42}" y="${ry + 22}" class="disp" font-size="13" font-weight="${won ? 700 : 600}" fill="${won ? "#178A4C" : "#12203A"}">${name}</text>
-    <text x="${x + 220}" y="${ry + 27}" text-anchor="end" class="disp" font-size="16" font-weight="700" fill="${won ? "#178A4C" : "#94A3B8"}">${score}</text>`;
+      : `<text x="${x + 22}" y="${ry + 27}" text-anchor="middle" class="disp" font-size="11" font-weight="700" fill="${won ? "#0A1020" : "rgba(255,255,255,.6)"}">${initial}</text>`}
+    <text x="${x + 42}" y="${ry + 22}" class="disp" font-size="13" font-weight="${won ? 700 : 600}" fill="${won ? WIN_GREEN : "#FFFFFF"}">${name}</text>
+    <text x="${x + 220}" y="${ry + 27}" text-anchor="end" class="disp" font-size="16" font-weight="700" fill="${won ? WIN_GREEN : "rgba(255,255,255,.5)"}">${score}</text>`;
   return `
-    <rect x="${x}" y="${y}" width="240" height="94" rx="8" fill="#FFFFFF" stroke="${f && f.finalized ? "#2563EB" : "#DCE3F0"}" stroke-width="1.5"/>
+    <rect x="${x}" y="${y}" width="240" height="94" rx="8" fill="rgba(255,255,255,.06)" stroke="${f && f.finalized ? "#C6FF3D" : "rgba(255,255,255,.14)"}" stroke-width="1.5"/>
     ${rowSvg(y + 6, nameA, initialA, aWon, hasScore ? winsA : "", teamA && teamA.logo)}
-    <line x1="${x + 14}" y1="${y + 47}" x2="${x + 226}" y2="${y + 47}" stroke="#EEF2F9" stroke-width="1"/>
+    <line x1="${x + 14}" y1="${y + 47}" x2="${x + 226}" y2="${y + 47}" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
     ${rowSvg(y + 52, nameB, initialB, bWon, hasScore ? winsB : "", teamB && teamB.logo)}`;
 }
 // A super tie-break is a per-seed thing (one pairing's rubber going to a
@@ -13126,7 +13127,7 @@ function stbCaptionSvg(x, y, teamA, teamB, f) {
   // Each line already went through escapeHtml() individually above —
   // escaping the joined string again would double-escape the "&" inside
   // it (renders as the literal text "&amp;" instead of "&").
-  return `<text x="${x}" y="${y}" font-size="10" fill="#E2432F">${lines.join("  &#183;  ")}</text>`;
+  return `<text x="${x}" y="${y}" font-size="10" fill="#FF6B5A">${lines.join("  &#183;  ")}</text>`;
 }
 // teams/schedule/defaultVenue default to the live league so every existing
 // call site keeps working unchanged — the season-history archive view is
@@ -13147,32 +13148,43 @@ function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
   return `<svg viewBox="0 0 780 470" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%;height:auto;font-family:Inter,sans-serif;">
 <title>Knockout stage bracket</title>
 <style>.disp{font-family:'Oswald',sans-serif;}</style>
-<rect x="0" y="0" width="780" height="470" rx="16" fill="#F7F9FC"/>
+<defs>
+<linearGradient id="ko-bg" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0%" stop-color="#0A1020"/>
+  <stop offset="100%" stop-color="#111C36"/>
+</linearGradient>
+<radialGradient id="ko-glow" cx="50%" cy="50%" r="50%">
+  <stop offset="0%" stop-color="#C6FF3D" stop-opacity=".35"/>
+  <stop offset="100%" stop-color="#C6FF3D" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect x="0" y="0" width="780" height="470" rx="16" fill="url(#ko-bg)"/>
 
-<circle cx="390" cy="235" r="40" fill="#EEF2F9" stroke="#DCE3F0"/>
-<path d="M376 221 h28 v13 a14 14 0 0 1 -28 0 z" fill="none" stroke="#2563EB" stroke-width="2.2"/>
-<path d="M376 225 h-7 v5 a7 7 0 0 0 7 5" fill="none" stroke="#2563EB" stroke-width="2.2"/>
-<path d="M404 225 h7 v5 a7 7 0 0 1 -7 5" fill="none" stroke="#2563EB" stroke-width="2.2"/>
-<rect x="386" y="248" width="8" height="9" fill="#2563EB"/>
-<rect x="379" y="257" width="22" height="4.5" rx="2" fill="#2563EB"/>
+<circle cx="390" cy="235" r="62" fill="url(#ko-glow)"/>
+<circle cx="390" cy="235" r="40" fill="rgba(198,255,61,.12)"/>
+<path d="M376 221 h28 v13 a14 14 0 0 1 -28 0 z" fill="none" stroke="#C6FF3D" stroke-width="2.2"/>
+<path d="M376 225 h-7 v5 a7 7 0 0 0 7 5" fill="none" stroke="#C6FF3D" stroke-width="2.2"/>
+<path d="M404 225 h7 v5 a7 7 0 0 1 -7 5" fill="none" stroke="#C6FF3D" stroke-width="2.2"/>
+<rect x="386" y="248" width="8" height="9" fill="#C6FF3D"/>
+<rect x="379" y="257" width="22" height="4.5" rx="2" fill="#C6FF3D"/>
 
-<text x="40" y="34" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#64748B">SEMI FINAL</text>
-${semisSub ? `<text x="40" y="48" font-size="9.5" fill="#94A3B8">${escapeHtml(semisSub)}</text>` : ""}
+<text x="40" y="34" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
+${semisSub ? `<text x="40" y="48" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
 ${bracketMatchBoxSvg(20, 58, s0A, s0B, s0)}
 ${stbCaptionSvg(20, 168, s0A, s0B, s0)}
 
 ${bracketMatchBoxSvg(20, 190, s1A, s1B, s1)}
 ${stbCaptionSvg(20, 300, s1A, s1B, s1)}
 
-<path d="M260 105 h30 v108 h230" fill="none" stroke="#93C5FD" stroke-width="2"/>
-<path d="M260 237 h30 v23 h230" fill="none" stroke="#93C5FD" stroke-width="2"/>
+<path d="M260 105 h30 v108 h230" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".55"/>
+<path d="M260 237 h30 v23 h230" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".55"/>
 
-<text x="740" y="34" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#64748B">FINAL</text>
-${finalSub ? `<text x="740" y="48" text-anchor="end" font-size="9.5" fill="#94A3B8">${escapeHtml(finalSub)}</text>` : ""}
+<text x="740" y="34" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">FINAL</text>
+${finalSub ? `<text x="740" y="48" text-anchor="end" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(finalSub)}</text>` : ""}
 ${bracketMatchBoxSvg(520, 190, finA, finB, fin.teamA && fin.teamB ? fin : null)}
 ${stbCaptionSvg(520, 300, finA, finB, fin)}
 
-${champion ? `<rect x="520" y="330" width="240" height="34" rx="8" fill="#EEF2F9"/><text x="640" y="352" text-anchor="middle" font-size="11" font-weight="700" fill="#178A4C">${escapeHtml(champion.name)} — CHAMPIONS</text>` : ""}
+${champion ? `<rect x="520" y="330" width="240" height="34" rx="8" fill="rgba(198,255,61,.12)" stroke="#C6FF3D" stroke-width="1"/><text x="640" y="352" text-anchor="middle" font-size="11" font-weight="700" fill="#C6FF3D">${escapeHtml(champion.name.toUpperCase())} — CHAMPIONS</text>` : ""}
 </svg>`;
 }
 function matchCardHtml(label, teamAId, teamBId, f) {
