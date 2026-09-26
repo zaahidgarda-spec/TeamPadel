@@ -1177,32 +1177,15 @@ html.has-admin-bar .wrap{padding-top:76px;}
 .pd-table-card{position:relative;flex:0 0 auto;width:240px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm);}
 .pd-table-card .league-tag{margin-bottom:0;}
 .pd-table-content{position:relative;z-index:1;}
-/* The venue photo behind the table — grayscale and blurred so it reads as
-   atmosphere, not something competing with the numbers for attention. A
-   dedicated absolutely-positioned layer carries the filter (inset beyond
-   the card's own edge so the blur never shows a sharp, unblurred rim)
-   rather than the card itself, since a CSS filter blurs everything in its
-   own subtree — including the text sitting on top of it. */
-.pd-table-card.has-photo{overflow:hidden;color:#fff;border-color:rgba(255,255,255,.25);}
-.pd-table-bg{position:absolute;inset:-8px;background-size:cover;background-position:center;filter:grayscale(1) blur(3px);}
-.pd-table-card.has-photo::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(6,10,20,.2) 0%,rgba(6,10,20,.55) 55%,rgba(6,10,20,.85) 100%);}
-.pd-table-card.has-photo .pd-table-rank{color:rgba(255,255,255,.75);}
-.pd-table-card.has-photo .pd-table-name{color:#fff;}
-.pd-table-card.has-photo .pd-table-pts{color:#fff;}
-.pd-table-card.has-photo .pd-table-row.mine{background:rgba(255,255,255,.16);}
-.pd-table-card.has-photo .pd-table-row.mine .pd-table-rank,
-.pd-table-card.has-photo .pd-table-row.mine .pd-table-name,
-.pd-table-card.has-photo .pd-table-row.mine .pd-table-pts{color:#fff;}
-.pd-table-card.has-photo .pd-table-you{background:rgba(255,255,255,.25);color:#fff;}
-.pd-table-card.has-photo .pd-table-more{color:#fff;text-decoration-color:rgba(255,255,255,.5);}
-.pd-table-card.has-photo .pd-table-divider{border-top-color:rgba(255,255,255,.3);}
-.pd-table-card.has-photo .pd-table-note{color:rgba(255,255,255,.75);border-top-color:rgba(255,255,255,.25);}
-.pd-table-card.has-photo .pd-table-cutoff::before,
-.pd-table-card.has-photo .pd-table-cutoff::after{border-top-color:rgba(255,255,255,.5);}
-.pd-table-card.has-photo .pd-table-cutoff span{color:#fff;}
-.pd-table-card.has-photo .league-tag{background:rgba(255,255,255,.18);color:#fff;}
-.pd-table-card.has-photo .avatar,.pd-table-card.has-photo .avatar-fb{border-color:rgba(255,255,255,.5);}
-.pd-table-card.has-photo .avatar-fb{background:rgba(255,255,255,.2);color:#fff;}
+/* The venue photo confined to a header band, in full colour — the table
+   itself stays plain white underneath so the standings (and the rank
+   move arrows, which read poorly against anything darker than a plain
+   background) stay just as legible as a card with no photo at all. */
+.pd-table-card.has-photo{padding-top:0;overflow:hidden;}
+.pd-table-photo{position:relative;margin:0 -14px 10px;height:64px;background-size:cover;background-position:center;}
+.pd-table-photo .league-tag{position:absolute;top:8px;left:10px;margin:0;background:rgba(0,0,0,.4);color:#fff;}
+.pd-table-venue-pill{position:absolute;bottom:8px;left:10px;display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--text);background:#fff;padding:3px 9px;border-radius:var(--radius-full);box-shadow:0 1px 3px rgba(0,0,0,.25);}
+.pd-table-head.only-badge{justify-content:flex-end;}
 .pd-table-head{display:flex;align-items:center;gap:6px;margin-bottom:12px;}
 .pd-table-row{display:flex;align-items:center;gap:8px;padding:6px 0;position:relative;cursor:pointer;}
 .pd-table-row.mine{padding:6px;margin:0 -6px;background:var(--accent-soft);border-radius:var(--radius-sm);}

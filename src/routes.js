@@ -2299,6 +2299,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       // claimed record touches, so embedding the actual image here would
       // repeat the exact payload-size problem that flag was built to avoid.
       hasCourtPhoto: !!league.courtPhoto,
+      venueName: league.defaultVenue || "",
       standings,
       results,
       awards,

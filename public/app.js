@@ -3669,17 +3669,25 @@ function renderAccountTables(cards) {
     const myRowHtml = s.myRow ? `<div class="pd-table-divider">${rowHtml(s.myRow, false)}</div>` : "";
     const liveBadge = s.live ? '<span class="tag badge-live">Live</span>' : "";
     const note = s.live ? '<div class="pd-table-note">Includes scores live on court or entered but not yet finalized.</div>' : "";
-    // A venue photo behind the table, same lazy-fetch pattern as the
-    // leagues hub's own cards (see observeLeagueCardPhotos) — grayscale
-    // and blurred rather than shown plain, so it reads as atmosphere
-    // behind the standings rather than competing with them for attention,
-    // with a dedicated layer for the filter so it never blurs the text
-    // sitting on top of it.
-    const bgHtml = card.hasCourtPhoto ? `<div class="pd-table-bg" data-needs-photo="1" data-id="${card.leagueId}"></div>` : "";
+    // A venue photo confined to its own header band, in full colour, same
+    // lazy-fetch pattern as the leagues hub's own cards (see
+    // observeLeagueCardPhotos) — the league tag and venue name sit on top
+    // of it, the table itself stays plain white underneath so the
+    // standings (and the rank move arrows especially) stay just as
+    // legible as a card with no photo at all.
+    const photoHtml = card.hasCourtPhoto
+      ? `<div class="pd-table-photo" data-needs-photo="1" data-id="${card.leagueId}">
+          <span class="league-tag">${escapeHtml(card.leagueName)}</span>
+          ${card.venueName ? `<span class="pd-table-venue-pill">&#128205; ${escapeHtml(card.venueName)}</span>` : ""}
+        </div>`
+      : "";
+    const headHtml = card.hasCourtPhoto
+      ? (liveBadge ? `<div class="pd-table-head only-badge">${liveBadge}</div>` : "")
+      : `<div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>`;
     return `<div class="pd-table-card${card.hasCourtPhoto ? " has-photo" : ""}" data-league="${card.leagueId}">
-      ${bgHtml}
+      ${photoHtml}
       <div class="pd-table-content">
-        <div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>
+        ${headHtml}
         ${topRowsHtml}
         ${moreHtml}
         ${myRowHtml}
