@@ -800,6 +800,20 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mc-court-banner{display:flex;align-items:center;justify-content:center;gap:8px;width:fit-content;margin:0 auto 12px;background:var(--accent);color:var(--accent-ink);border-radius:var(--radius-full);padding:8px 20px;box-shadow:0 6px 16px rgba(37,99,235,.3);}
 .mc-court-banner .ic{width:18px;height:18px;flex-shrink:0;}
 .mc-court-label{font-family:var(--font-display);font-size:19px;font-weight:700;letter-spacing:.01em;text-transform:uppercase;white-space:nowrap;}
+/* The next-match hero's own crest-vs-crest layout — only used here, not the
+   shared .mc-pairing/.mc-pair idiom the site-wide Next Matches carousel and
+   Your Tables' tonight card use, since this card wanted a bigger, more
+   "team card" feel for its two sides. */
+.mc-duel{display:flex;align-items:center;justify-content:center;gap:14px;margin:14px 0 4px;}
+.mc-duel-side{display:flex;flex-direction:column;align-items:center;gap:6px;width:112px;}
+.mc-duel-crest{width:44px;height:44px;border-radius:12px;background:var(--panel-2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;}
+.mc-duel-crest.favorite{background:var(--accent-soft);border:1.5px solid var(--accent);}
+.mc-duel-crest-img{width:100%;height:100%;object-fit:cover;}
+.mc-duel-crest-fb{font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--text-dim);}
+.mc-duel-crest.favorite .mc-duel-crest-fb{color:var(--accent);}
+.mc-duel-name{font-size:11.5px;font-weight:600;color:var(--text);text-align:center;line-height:1.25;}
+.mc-duel-name.favorite{color:var(--accent);font-weight:700;}
+.mc-duel-vs{font-size:11px;font-weight:700;color:var(--text-faint);flex-shrink:0;}
 /* Win% bar for an undecided seed — same expectation the rating engine
    itself uses, shown ahead of the actual result rather than after it. */
 .mc-predict{width:100%;max-width:260px;margin:10px auto 0;}
@@ -808,13 +822,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .mc-predict-bar .b{background:var(--text-faint);}
 .mc-predict-pcts{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-dim);margin-top:3px;font-variant-numeric:tabular-nums;}
 .mc-predict-note{font-size:10px;color:var(--text-faint);margin-top:3px;}
-.mc-predict-solo{font-size:12.5px;font-weight:600;color:var(--accent);margin-top:9px;text-align:center;}
-.mc-predict-solo .note{font-weight:400;color:var(--text-faint);}
 .floodlit.urgent .mc-predict-bar{background:rgba(255,255,255,.12);}
 .floodlit.urgent .mc-predict-bar .a{background:#7FA8FF;}
 .floodlit.urgent .mc-predict-bar .b{background:rgba(255,255,255,.25);}
 .floodlit.urgent .mc-predict-pcts,.floodlit.urgent .mc-predict-note{color:#7C8CB0;}
-.floodlit.urgent .mc-predict-solo{color:#8FB4FF;}
 .mc-predict-powered{display:block;text-align:center;margin-top:6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;color:var(--text-faint);text-decoration:none;}
 .mc-predict-powered:hover{text-decoration:underline;}
 .floodlit.urgent .mc-predict-powered{color:#7C8CB0;}

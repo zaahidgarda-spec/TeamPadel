@@ -1112,17 +1112,6 @@ function predictionBarHtml(prediction, forceShow) {
     ${powered}
   </div>`;
 }
-// Same idea, but for a personal "your side" view — one number, not a bar
-// with two teams, since the player only cares about their own chances here.
-// `forceShow` mirrors predictionBarHtml's — used on My Profile's own
-// upcoming-match cards, which (like the site-wide Next Matches square)
-// should show the sister site's prediction regardless of whether this
-// site's own ratings UI is enabled.
-function personalPredictionHtml(prediction, forceShow) {
-  if ((!RATINGS_ENABLED && !forceShow) || !prediction) return "";
-  const powered = forceShow ? '<a class="mc-predict-powered" href="https://elopadelratings.com" target="_blank" rel="noopener">Powered by Elo Padel Ratings</a>' : "";
-  return `<div class="mc-predict-solo">${shownPct(prediction.winPct)[0]}% chance to win${prediction.provisional ? " <span class=\"note\">· early prediction</span>" : ""}</div>${powered}`;
-}
 async function renderNextMatches() {
   const card = el("next-matches-card");
   if (nextMatchesTimer) { clearInterval(nextMatchesTimer); nextMatchesTimer = null; }
@@ -3854,23 +3843,39 @@ function renderAccountNextMatch(cards) {
   // riding along in this line — once it's assigned, it's the single
   // most useful thing on the card (where do I physically go).
   const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
-  const logoHtml = (logo, name) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "";
+  // A crest box, not the circular .avatar used elsewhere — this duel layout
+  // reads as two "team cards" facing off, and a rounded square gives each
+  // one more visual weight than the small circular logos used in tighter
+  // rows (Your Tables, the search directory).
+  const duelCrestHtml = (logo, name) => logo
+    ? `<img class="mc-duel-crest-img" src="${logo}" alt="">`
+    : `<span class="mc-duel-crest-fb">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
   // Same "favorite" edge as the Predictions tab (>=60% either way) — just
   // mapped onto the single personal winPct instead of a two-side split.
-  const favTag = '<span class="predictions-favorite-tag">Favorite</span>';
   const favMine = m.prediction && m.prediction.winPct >= 60;
   const favOpp = m.prediction && m.prediction.winPct <= 40;
   const mySideRefs = [{ id: m.playerId, name: m.playerName }, m.partnerId ? { id: m.partnerId, name: m.partner } : null].filter(Boolean);
   const courtBannerHtml = m.court ? `<div class="mc-court-banner"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="mc-court-label">${escapeHtml(m.court)}</span></div>` : "";
+  // Reuses the existing two-sided bar (predictionBarHtml/.mc-predict-bar),
+  // same idiom the Fixtures/Predictions tabs already use — just handed a
+  // {winPctA} shaped from this personal single-sided {winPct}, rather than
+  // inventing a second, near-identical bar just for this card.
+  const meterHtml = predictionBarHtml(m.prediction ? { winPctA: m.prediction.winPct, provisional: m.prediction.provisional } : null, true);
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
     ${courtBannerHtml}
-    <div class="mc-pairing">
-      <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair${favMine ? " favorite" : ""}">${pairRefsLinksHtml(m.leagueId, mySideRefs)}</span>${favMine ? favTag : ""}</span>
-      <span class="vs">vs</span>
-      <span class="mc-pair-row">${logoHtml(m.opponentLogo, m.opponentTeam)}<span class="mc-pair${favOpp ? " favorite" : ""}">${m.opponentPlayerRefs && m.opponentPlayerRefs.length ? pairRefsLinksHtml(m.leagueId, m.opponentPlayerRefs) : "?"}</span>${favOpp ? favTag : ""}</span>
+    <div class="mc-duel">
+      <div class="mc-duel-side">
+        <span class="mc-duel-crest${favMine ? " favorite" : ""}">${duelCrestHtml(m.teamLogo, m.teamName)}</span>
+        <span class="mc-duel-name${favMine ? " favorite" : ""}">${pairRefsLinksHtml(m.leagueId, mySideRefs)}</span>
+      </div>
+      <span class="mc-duel-vs">VS</span>
+      <div class="mc-duel-side">
+        <span class="mc-duel-crest${favOpp ? " favorite" : ""}">${duelCrestHtml(m.opponentLogo, m.opponentTeam)}</span>
+        <span class="mc-duel-name${favOpp ? " favorite" : ""}">${m.opponentPlayerRefs && m.opponentPlayerRefs.length ? pairRefsLinksHtml(m.leagueId, m.opponentPlayerRefs) : "?"}</span>
+      </div>
     </div>
-    ${personalPredictionHtml(m.prediction, true)}
+    ${meterHtml}
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   bindNewsPlayerLinks(el("account-next-match-slide"));
