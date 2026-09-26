@@ -1664,6 +1664,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-tag.crown{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.35);color:#8A6300;}
 .p-tag.trophy{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.4);color:#8A6300;}
 .p-tag.owner{background:transparent;border:1.5px solid #B8860B;color:#B8860B;}
+.p-tag.club-combined{background:var(--accent-soft);color:var(--accent);}
 /* A team owner's avatar gets a soft gold ring — reads as a real
    distinction at a glance, before you even reach the tags below it.
    Sits behind the photo (z-index -1) so the photo's own white border
@@ -1707,6 +1708,13 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-stat .n{font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;}
 .p-stat .lbl{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
 .p-body{padding:18px 20px 20px;}
+/* A team that shares a Club ID with another league's team — its own record
+   above stays scoped to the league you're actually looking at, this is
+   just the "also playing in" rundown underneath. */
+.club-league-list{display:flex;flex-direction:column;gap:8px;}
+.club-league-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;}
+.club-league-name{font-size:13px;font-weight:600;color:var(--text);}
+.club-league-rec{font-size:11.5px;color:var(--text-dim);white-space:nowrap;}
 
 /* Team page hero — a deep blue gradient banner behind the crest, with the
    stat row floating on its own card that overlaps the bottom edge. Scoped
@@ -1717,6 +1725,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .team-hero .p-hero-row{position:relative;}
 .team-hero .p-name{color:#fff;}
 .team-hero .team-rank-tag{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);color:#fff;}
+.team-hero .club-combined{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);color:#fff;}
 .team-stats-float{margin:-22px 20px 0;position:relative;z-index:1;background:var(--panel);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;}
 .team-stats-float .p-stats{border-bottom:none;margin-top:0;}
 

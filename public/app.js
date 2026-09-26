@@ -5733,6 +5733,28 @@ function adminRosterBlock(t) {
   const sel1 = buildOwnerSelect(1);
   ownerRow.appendChild(sel0); ownerRow.appendChild(sel1);
   nameWrap.appendChild(ownerRow);
+  // Same club, different league (an A team here, a B team over there) —
+  // give both the same Club ID and their records combine on the team page.
+  // Free text, not a picker, since the other team can be in a league this
+  // admin doesn't even manage; matched purely by this string being equal.
+  const clubRow = document.createElement("div");
+  clubRow.style.cssText = "margin-top:6px;display:flex;align-items:center;gap:5px;";
+  const clubLabel = document.createElement("span");
+  clubLabel.className = "note"; clubLabel.textContent = "Club ID:";
+  const clubInput = document.createElement("input");
+  clubInput.type = "text"; clubInput.className = "inline-edit"; clubInput.style.cssText = "min-width:110px;";
+  clubInput.value = t.clubId || "";
+  clubInput.placeholder = "optional";
+  clubInput.title = "Give two teams in different leagues the same Club ID to combine their records on the team page.";
+  clubInput.onkeydown = (e) => { if (e.key === "Enter") clubInput.blur(); };
+  clubInput.onblur = async () => {
+    const val = clubInput.value.trim();
+    if (val === (t.clubId || "")) return;
+    try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { clubId: val } }); await refreshLeague(); renderAdminRoster(); }
+    catch (e) { alert(e.message); clubInput.value = t.clubId || ""; }
+  };
+  clubRow.appendChild(clubLabel); clubRow.appendChild(clubInput);
+  nameWrap.appendChild(clubRow);
   if (league.tieringEnabled) {
     const goldCount = t.players.filter((p) => p.gold).length;
     const goldTag = document.createElement("div");
@@ -12652,6 +12674,29 @@ function openTeamModal(teamId) {
   const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
   const ownerTag = ownerNames.length ? `<span class="p-tag owner">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
   el("team-modal-tags").innerHTML = rankTag + ownerTag;
+  // Fetched separately (not part of the already-loaded league payload) since
+  // it can reach into OTHER leagues this client has no data for at all —
+  // fired off without blocking the rest of the modal, which renders
+  // immediately from data already in memory. Cleared up front so a stale
+  // "Playing in" list from whichever team was open last doesn't flash
+  // before this fetch resolves (or linger if this team has no clubId).
+  el("team-modal-club-section").style.display = "none";
+  el("team-modal-club-section").innerHTML = "";
+  if (team.clubId) {
+    api(`/leagues/${currentLeagueId}/teams/${teamId}/club`).then((data) => {
+      if (!data || !data.combined) return;
+      el("team-modal-tags").innerHTML += `<span class="p-tag club-combined">Combined · ${data.leagues.length} leagues</span>`;
+      el("team-modal-club-section").innerHTML = `
+        <p class="p-section-label">Combined record</p>
+        <p class="note" style="margin:-4px 0 10px;">${data.totals.played} played &middot; ${data.totals.won} won &middot; ${data.totals.lost} lost across ${data.leagues.length} leagues</p>
+        <div class="club-league-list">${data.leagues.map((e) => `
+          <div class="club-league-row">
+            <span class="club-league-name">${escapeHtml(e.leagueName)}</span>
+            <span class="club-league-rec">${ordinal(e.rank)} of ${e.teamCount} &middot; ${e.points} pts</span>
+          </div>`).join("")}</div>`;
+      el("team-modal-club-section").style.display = "block";
+    }).catch(() => {});
+  }
   el("team-modal-stats").innerHTML = row
     ? [
         { n: row.points, l: "Pts" },

@@ -2892,8 +2892,54 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
       return res.status(400).json({ error: "That player isn't on this team's roster." });
     team.ownerIds = ids;
   }
+  // An arbitrary, admin-chosen string shared across leagues — not matched
+  // by name, since two unrelated teams called "Aces" would otherwise get
+  // merged by accident. Give the same club fielding two squads (an A team
+  // in one league, a B team in another) the same clubId and their records
+  // combine on the team page; leave it blank and nothing changes.
+  if (req.body.clubId !== undefined) {
+    team.clubId = String(req.body.clubId || "").trim().slice(0, 60) || null;
+  }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+// Cross-league combined record for a team that shares a clubId with a team
+// in another league — the only place team data crosses a league boundary,
+// mirroring how a claimed player's identity already crosses leagues via
+// claimedByUserId. Every OTHER league scanned here is filtered to non-hidden
+// (a hidden league's existence/data shouldn't leak into a public team page
+// just because its admin also set a matching clubId), but the league this
+// request is already scoped to is always included even if it's hidden —
+// the caller is already looking straight at it.
+router.get("/leagues/:leagueId/teams/:teamId/club", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!team.clubId) return res.json({ combined: false });
+
+  const entries = [];
+  store.getIndex().filter((entry) => !entry.hidden || entry.id === league.id).forEach((entry) => {
+    const lg = entry.id === league.id ? league : store.getLeague(entry.id);
+    if (!lg) return;
+    (lg.teams || []).forEach((t) => {
+      if (t.clubId !== team.clubId) return;
+      const rows = logic.computeStandings(lg);
+      const idx = rows.findIndex((r) => r.id === t.id);
+      if (idx === -1) return;
+      const row = rows[idx];
+      entries.push({
+        leagueId: lg.id, leagueName: lg.name, teamId: t.id, teamName: t.name,
+        rank: idx + 1, teamCount: rows.length,
+        played: row.played, won: row.nightsWon, lost: row.nightsLost, points: row.points,
+      });
+    });
+  });
+  // Only this one team, nobody else shares its clubId — nothing to combine.
+  if (entries.length < 2) return res.json({ combined: false });
+  const totals = entries.reduce((acc, e) => ({ played: acc.played + e.played, won: acc.won + e.won, lost: acc.lost + e.lost }), { played: 0, won: 0, lost: 0 });
+  entries.sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  res.json({ combined: true, totals, leagues: entries });
 });
 
 /* ---------- Team kit (captain-managed — upload the kit design, place
