@@ -571,6 +571,12 @@ table.court-schedule-table td.cs-swap-target{outline:2px dashed var(--accent);ou
   #court-schedule-grid{position:relative;}
   #court-schedule-grid::after{content:"Swipe to see all courts →";display:block;text-align:right;font-size:11px;color:var(--text-dim);margin-top:6px;}
 }
+/* Same "there's more, keep going" cue as the court schedule grid above —
+   Tonight's Matches is the one other horizontally-scrolling strip on My
+   Profile with no edge-fade or other affordance at all, so a card cut off
+   mid-width had no visual signal it wasn't the last one. */
+#account-tonight-section{position:relative;}
+#account-tonight-section::after{content:"Swipe for more →";display:block;text-align:right;font-size:11px;color:var(--text-dim);margin-top:2px;}
 
 table.log{width:100%;min-width:520px;border-collapse:collapse;font-size:15px;}
 table.log th{text-align:left;font-family:var(--font-display);text-transform:uppercase;font-size:12px;color:var(--text-dim);padding:10px 8px;border-bottom:2px dashed var(--line);}

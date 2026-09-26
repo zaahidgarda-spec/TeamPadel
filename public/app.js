@@ -3490,9 +3490,13 @@ async function renderAccountStats(cards) {
   const seenLeagues = new Set(cards.map((c) => c.leagueId));
   const totalAwards = cards.reduce((sum, card) => sum + card.awards.length, 0);
   const captaincies = playerAccount.captaincies || [];
+  // No placeholder tile when there's nothing to show — most accounts never
+  // captain a team, and "Not a captain yet" read like a nag toward a
+  // promotion most players have no interest in. Same "omit entirely"
+  // convention the owner/rating tiles below already follow.
   const captainTile = captaincies.length
     ? `<div class="stat-tile"><div class="stat-num" style="font-size:19px;">${escapeHtml(captaincies[0].teamName)}</div><div class="stat-lbl">Captain of<span class="tag">${escapeHtml(captaincies[0].leagueName)}</span>${captaincies.length > 1 ? ` +${captaincies.length - 1} more` : ""}</div></div>`
-    : `<div class="stat-tile"><div class="stat-num">—</div><div class="stat-lbl">Not a captain yet</div></div>`;
+    : "";
   // Owner status lives on the team (team.ownerIds), not the account, so it's
   // read off whichever claimed cards are flagged isTeamOwner rather than a
   // separate playerAccount field the way captaincies are. Only rendered when
@@ -4560,8 +4564,12 @@ function renderAll() {
     const pairNames = t && t.players.length ? t.players.map((p) => p.name).join(" & ") : "your pair";
     auth.textContent = league.format === "pairs" ? "Signed in as " + pairNames : "Signed in as " + (t ? t.name : "captain") + " captain";
   }
-  else auth.textContent = "Viewing only — log in to enter scores";
-  el("auth-toggle").textContent = myRole === "guest" ? "Log in" : "Log out";
+  // A claimed player already signed in via My Profile is still a "guest"
+  // for THIS league specifically — captain/admin is a separate, per-league
+  // team-code session. Plain "Log in" here read as "you're not logged in"
+  // to someone who very much already is, elsewhere on the same page.
+  else auth.textContent = playerAccount ? "Viewing only — enter your team code to enter scores" : "Viewing only — log in to enter scores";
+  el("auth-toggle").textContent = myRole !== "guest" ? "Log out" : playerAccount ? "Team login" : "Log in";
 
   renderPendingScoreBanner();
   renderPushPromptBanner();
@@ -9470,9 +9478,16 @@ function renderPairsResults() {
   finals.forEach((f) => c.appendChild(resultsCard(f)));
 }
 function renderResults() {
-  el("results-scoring-note").textContent = league.format === "pairs"
-    ? "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 and leave it there for a draw, or play a 3rd set to decide it."
-    : "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).";
+  // Score-format guidance for whoever actually enters scores — dead
+  // instructional text for a plain viewer who has no score-entry controls
+  // to apply it to at all.
+  const canEnterScores = myRole === "admin" || myRole === "captain";
+  el("results-scoring-note-card").style.display = canEnterScores ? "block" : "none";
+  if (canEnterScores) {
+    el("results-scoring-note").textContent = league.format === "pairs"
+      ? "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 and leave it there for a draw, or play a 3rd set to decide it."
+      : "Real padel set scores only (6-0 to 6-4, 7-5, or 7-6). Split 1-1 needs a super tie-break (first to 10, win by 2).";
+  }
   el("results-poster-row").style.display = "none";
   if (league.format === "pairs") {
     el("round-nav-results").style.display = "none";
