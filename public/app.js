@@ -8539,8 +8539,23 @@ function liveSides(t, full) {
 }
 function liveTileHtml(s, c, oneFixture) {
   const t = liveTileInfo(s, c);
-  if (!t) return `<div class="lc-slot" data-s="${s}" data-c="${c}"><div class="lc-tile lc-empty">&mdash;</div></div>`;
+  const b = liveBoard;
+  if (!t) {
+    // Is this empty slot the suggested destination for some other court's
+    // overloaded match in this same slot? If so it flashes the same amber
+    // as that match's own tile below — the pairing reads at a glance
+    // across the whole board, not just once a tile's tapped open.
+    let isSuggestedTarget = false;
+    if (b) {
+      for (let c0 = 0; c0 < b.courts; c0++) {
+        const other = b.cellInfo[s] && b.cellInfo[s][c0];
+        if (other && other.state === "upcoming" && b.suggestBetterCourt(s, c0) === c) { isSuggestedTarget = true; break; }
+      }
+    }
+    return `<div class="lc-slot" data-s="${s}" data-c="${c}"><div class="lc-tile lc-empty${isSuggestedTarget ? " lc-rebalance" : ""}">&mdash;</div></div>`;
+  }
   const { info } = t, sides = liveSides(t, false);
+  const suggestedElsewhere = info.state === "upcoming" && b && b.suggestBetterCourt(s, c) !== null;
   const isSuperTie = rubberSlot4Kind(t.f, t.cell.seed) === "singles";
   const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b>${isSuperTie ? "" : `<b>${escapeHtml(sd.players[1])}</b>`}</div>`;
   // Once this rubber's decided, the winning side's own crest takes over
@@ -8569,7 +8584,7 @@ function liveTileHtml(s, c, oneFixture) {
     foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span>${info.pace ? '<span class="lc-tile-pen" title="Set by you">&#9998;</span>' : ""}</div>`;
   }
   const draggable = info.state === "upcoming" ? ' draggable="true" title="Drag to move to another court"' : "";
-  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}" data-open="1"><div>${teams}</div>${foot}</button></div>`;
+  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}${suggestedElsewhere ? " lc-rebalance" : ""}" data-open="1"><div>${teams}</div>${foot}</button></div>`;
 }
 // Tap-to-move: pick a match up from its sheet, then tap wherever it should
 // go — an empty spot moves it, another upcoming match swaps with it. The

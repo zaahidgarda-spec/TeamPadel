@@ -1029,6 +1029,14 @@ body.lc-fs-on{overflow:hidden;}
 .lc-tile.lc-live{background:#0F1B38;box-shadow:inset 0 0 0 2px #E2432F;}
 .lc-tile.lc-done{background:#18223F;color:#7C8CB0;}
 .lc-tile.lc-empty{background:none;border:1.5px dashed rgba(255,255,255,.14);color:#4E5D82;align-items:center;justify-content:center;cursor:default;}
+/* A suggested rebalance move — the overloaded upcoming match and the
+   lighter empty court suggestBetterCourt points it toward — flash the
+   same amber so the pairing reads at a glance across the whole board,
+   not just once a tile's tapped open (see the "lighter tonight" nudge
+   inside the sheet). */
+@keyframes lc-rebalance-pulse{0%,100%{box-shadow:inset 0 0 0 2px #EF9F27;}50%{box-shadow:inset 0 0 0 2px transparent;}}
+.lc-tile.lc-rebalance{animation:lc-rebalance-pulse 1.1s ease-in-out infinite;}
+@media (prefers-reduced-motion: reduce){.lc-tile.lc-rebalance{animation:none;box-shadow:inset 0 0 0 2px #EF9F27;}}
 .lc-livebadge{display:inline-flex;align-items:center;gap:4px;background:#E2432F;color:#fff;font-family:var(--font-display);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;}
 .lc-livebadge i{width:5px;height:5px;background:#fff;border-radius:50%;animation:league-live-pulse 1.4s ease-in-out infinite;}
 .lc-tile-tag{font-family:var(--font-display);font-size:10px;letter-spacing:.05em;text-transform:uppercase;opacity:.9;}
