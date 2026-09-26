@@ -13092,6 +13092,12 @@ function positionMatchLabel(i) {
 // One box per side of a match, with the aggregate rubber score and (if any
 // seed needed one) a super tie-break caption — used inside the SVG bracket
 // below, not the plain matchCardHtml grid the "position" format still uses.
+// Crest-led, name-free rows (an "everyone recognizes the badge" broadcast
+// convention, not ours to spell out in text) — BRACKET_ROW_H is the one
+// number knockoutBracketSvg's layout (box height, label offsets, connector
+// centering) is built around, so it's kept alongside this function rather
+// than re-derived elsewhere.
+const BRACKET_CREST = 64, BRACKET_ROW_H = 90, BRACKET_BOX_H = BRACKET_ROW_H * 2;
 function bracketMatchBoxSvg(x, y, teamA, teamB, f) {
   const { winsA, winsB } = f ? fixtureScoreClient(f) : { winsA: 0, winsB: 0 };
   // Nothing decided yet and not finalized — a real "hasn't started" match,
@@ -13099,22 +13105,25 @@ function bracketMatchBoxSvg(x, y, teamA, teamB, f) {
   // hasScore precedent) rather than showing a slightly misleading "0".
   const hasScore = f && (winsA > 0 || winsB > 0 || f.finalized);
   const winner = f ? matchWinnerClient(f) : null;
-  const nameA = escapeHtml((teamA ? teamA.name : "TBD").toUpperCase()), nameB = escapeHtml((teamB ? teamB.name : "TBD").toUpperCase());
   const initialA = escapeHtml(teamA ? teamA.name.charAt(0).toUpperCase() : "?");
   const initialB = escapeHtml(teamB ? teamB.name.charAt(0).toUpperCase() : "?");
   const aWon = winner === "A", bWon = winner === "B";
   const WIN_GREEN = "#34D399";
-  const rowSvg = (ry, name, initial, won, score, logo) => `
-    <circle cx="${x + 22}" cy="${ry + 23}" r="13" fill="${won ? WIN_GREEN : "rgba(255,255,255,.12)"}"/>
-    ${logo ? `<clipPath id="clip-${x}-${ry}"><circle cx="${x + 22}" cy="${ry + 23}" r="13"/></clipPath><image href="${logo}" x="${x + 9}" y="${ry + 10}" width="26" height="26" clip-path="url(#clip-${x}-${ry})" preserveAspectRatio="xMidYMid slice"/>`
-      : `<text x="${x + 22}" y="${ry + 27}" text-anchor="middle" class="disp" font-size="11" font-weight="700" fill="${won ? "#0A1020" : "rgba(255,255,255,.6)"}">${initial}</text>`}
-    <text x="${x + 42}" y="${ry + 22}" class="disp" font-size="13" font-weight="${won ? 700 : 600}" fill="${won ? WIN_GREEN : "#FFFFFF"}">${name}</text>
-    <text x="${x + 220}" y="${ry + 27}" text-anchor="end" class="disp" font-size="16" font-weight="700" fill="${won ? WIN_GREEN : "rgba(255,255,255,.5)"}">${score}</text>`;
+  const rowSvg = (rowTop, initial, won, score, logo) => {
+    const cy = rowTop + 8;
+    const lineY = cy + BRACKET_CREST + 6;
+    const textY = cy + BRACKET_CREST / 2 + 9;
+    return `
+    <rect x="${x + 18}" y="${cy}" width="${BRACKET_CREST}" height="${BRACKET_CREST}" rx="12" fill="${won ? "rgba(52,211,153,.16)" : "rgba(255,255,255,.06)"}" stroke="${won ? WIN_GREEN : "rgba(255,255,255,.18)"}" stroke-width="1.5"/>
+    ${logo ? `<clipPath id="clip-${x}-${rowTop}"><rect x="${x + 18}" y="${cy}" width="${BRACKET_CREST}" height="${BRACKET_CREST}" rx="12"/></clipPath><image href="${logo}" x="${x + 18}" y="${cy}" width="${BRACKET_CREST}" height="${BRACKET_CREST}" clip-path="url(#clip-${x}-${rowTop})" preserveAspectRatio="xMidYMid slice"/>`
+      : `<text x="${x + 18 + BRACKET_CREST / 2}" y="${cy + BRACKET_CREST / 2 + 8}" text-anchor="middle" class="disp" font-size="24" font-weight="700" fill="${won ? WIN_GREEN : "rgba(255,255,255,.55)"}">${initial}</text>`}
+    <rect x="${x + 18}" y="${lineY}" width="${BRACKET_CREST}" height="3" rx="1.5" fill="${won ? WIN_GREEN : "rgba(255,255,255,.16)"}"/>
+    <text x="${x + 222}" y="${textY}" text-anchor="end" class="disp" font-size="27" font-weight="700" fill="${won ? WIN_GREEN : "rgba(255,255,255,.55)"}">${score}</text>`;
+  };
   return `
-    <rect x="${x}" y="${y}" width="240" height="94" rx="8" fill="rgba(255,255,255,.06)" stroke="${f && f.finalized ? "#C6FF3D" : "rgba(255,255,255,.14)"}" stroke-width="1.5"/>
-    ${rowSvg(y + 6, nameA, initialA, aWon, hasScore ? winsA : "", teamA && teamA.logo)}
-    <line x1="${x + 14}" y1="${y + 47}" x2="${x + 226}" y2="${y + 47}" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
-    ${rowSvg(y + 52, nameB, initialB, bWon, hasScore ? winsB : "", teamB && teamB.logo)}`;
+    <rect x="${x}" y="${y}" width="240" height="${BRACKET_BOX_H}" rx="12" fill="rgba(255,255,255,.06)" stroke="${f && f.finalized ? "#C6FF3D" : "rgba(255,255,255,.14)"}" stroke-width="1.5"/>
+    ${rowSvg(y, initialA, aWon, hasScore ? winsA : "", teamA && teamA.logo)}
+    ${rowSvg(y + BRACKET_ROW_H, initialB, bWon, hasScore ? winsB : "", teamB && teamB.logo)}`;
 }
 // A super tie-break is a per-seed thing (one pairing's rubber going to a
 // match tie-break, not the whole tie) — this pulls out which seed(s) it
@@ -13191,15 +13200,15 @@ function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
   <line x1="660" y1="530" x2="1020" y2="-20"/>
 </g>
 
-<text x="40" y="168" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
-${semisSub ? `<text x="40" y="182" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
-${bracketMatchBoxSvg(20, 188, s0A, s0B, s0)}
-${stbCaptionSvg(20, 302, s0A, s0B, s0)}
+<text x="40" y="105" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
+${semisSub ? `<text x="40" y="119" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
+${bracketMatchBoxSvg(20, 235 - BRACKET_BOX_H / 2, s0A, s0B, s0)}
+${stbCaptionSvg(20, 235 + BRACKET_BOX_H / 2 + 20, s0A, s0B, s0)}
 
-<text x="740" y="168" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
-${semisSub ? `<text x="740" y="182" text-anchor="end" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
-${bracketMatchBoxSvg(520, 188, s1A, s1B, s1)}
-${stbCaptionSvg(520, 302, s1A, s1B, s1)}
+<text x="740" y="105" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
+${semisSub ? `<text x="740" y="119" text-anchor="end" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
+${bracketMatchBoxSvg(520, 235 - BRACKET_BOX_H / 2, s1A, s1B, s1)}
+${stbCaptionSvg(520, 235 + BRACKET_BOX_H / 2 + 20, s1A, s1B, s1)}
 
 <path d="M260 235 H300 V100 H330" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".6"/>
 <path d="M520 235 H480 V310 H450" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".6"/>
