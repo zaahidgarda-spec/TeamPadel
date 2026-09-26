@@ -8563,21 +8563,22 @@ function liveTileHtml(s, c, oneFixture) {
   const suggestedElsewhere = info.state === "upcoming" && b && b.suggestBetterCourt(s, c) !== null;
   const isSuperTie = rubberSlot4Kind(t.f, t.cell.seed) === "singles";
   const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b>${isSuperTie ? "" : `<b>${escapeHtml(sd.players[1])}</b>`}</div>`;
-  // Once this rubber's decided, the winning side's own crest takes over
-  // the middle divider instead of the plain "v" — a result visible at a
-  // glance across the whole court grid, not just once the tile's tapped
-  // open. Falls back to the usual divider whenever there's no team object
-  // to show a crest for (a bye, a still-undecided rubber, or the rare case
+  // Once this rubber's decided, the winning side's own crest pins to the
+  // tile's corner like a medal — visible at a glance across the whole
+  // court grid, not just once the tile's tapped open, without disturbing
+  // the "v" divider or the footer's score (tried both — a crest replacing
+  // the divider loses that structural cue, and one crowding the footer
+  // fights the score for space). Empty whenever there's no team object to
+  // show a crest for (a bye, a still-undecided rubber, or the rare case
   // neither side actually won — see rubberWinnerClient).
   const winnerSide = info.state === "done" ? rubberWinnerClient(info.rubber) : null;
   const winnerTeam = winnerSide === "A" ? sides[0].team : winnerSide === "B" ? sides[1].team : null;
+  const winnerBadge = winnerTeam ? `<span class="lc-winner-badge">${avatarHtml(winnerTeam)}</span>` : "";
   // The two teams' badges otherwise sit once in the court's header when the
   // court hosts a single fixture; a court that mixes fixtures has no one
   // pair of teams to name up there, so each tile carries its own little
   // badges.
-  const mid = winnerTeam
-    ? `<div class="lc-vs lc-vs-winner">${avatarHtml(winnerTeam)}</div>`
-    : `<div class="lc-vs">${oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`}</div>`;
+  const mid = `<div class="lc-vs">${oneFixture ? "v" : `<span class="lc-mini">${sides[0].team ? avatarHtml(sides[0].team) : ""}${sides[1].team ? avatarHtml(sides[1].team) : ""}</span>`}</div>`;
   const teams = `${lines(sides[0])}${mid}${lines(sides[1])}`;
   const label = isSuperTie ? "Singles" : seedLabelText(t.f, t.cell.seed, true);
   let foot;
@@ -8589,7 +8590,7 @@ function liveTileHtml(s, c, oneFixture) {
     foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span>${info.pace ? '<span class="lc-tile-pen" title="Set by you">&#9998;</span>' : ""}</div>`;
   }
   const draggable = info.state === "upcoming" ? ' draggable="true" title="Drag to move to another court"' : "";
-  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}${suggestedElsewhere ? " lc-rebalance" : ""}" data-open="1"><div>${teams}</div>${foot}</button></div>`;
+  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}${suggestedElsewhere ? " lc-rebalance" : ""}" data-open="1">${winnerBadge}<div>${teams}</div>${foot}</button></div>`;
 }
 // Tap-to-move: pick a match up from its sheet, then tap wherever it should
 // go — an empty spot moves it, another upcoming match swaps with it. The

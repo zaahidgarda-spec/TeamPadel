@@ -1014,13 +1014,13 @@ body.lc-fs-on{overflow:hidden;}
 .lc-pp{min-width:0;font-size:11px;line-height:1.3;font-weight:600;} .lc-pp b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .lc-vs{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;} .lc-vs:before,.lc-vs:after{content:"";flex:1;height:1px;background:rgba(255,255,255,.25);}
 .lc-mini{display:inline-flex;} .lc-mini .avatar,.lc-mini .avatar-fb{width:16px;height:16px;font-size:7px;margin-left:-4px;border:1px solid rgba(255,255,255,.55);} .lc-mini .avatar:first-child,.lc-mini .avatar-fb:first-child{margin-left:0;}
-/* Once a court's decided, the winner's own crest takes over the middle
-   divider — a clearer "who won this one" than the plain "v" (or, on a
-   court juggling several fixtures, two small badges neither of which
-   says who actually won). */
-.lc-vs.lc-vs-winner{justify-content:center;gap:0;}
-.lc-vs.lc-vs-winner:before,.lc-vs.lc-vs-winner:after{content:none;}
-.lc-vs-winner .avatar,.lc-vs-winner .avatar-fb{width:22px;height:22px;font-size:10px;border:1.5px solid rgba(255,255,255,.7);}
+/* Once a court's decided, the winner's own crest pins to the tile's
+   corner like a medal — a clearer "who won this one" than the plain "v"
+   (or, on a court juggling several fixtures, two small badges neither of
+   which says who actually won), without disturbing the divider or the
+   footer's score. */
+.lc-winner-badge{position:absolute;top:-8px;right:-8px;z-index:5;}
+.lc-winner-badge .avatar,.lc-winner-badge .avatar-fb{width:24px;height:24px;font-size:11px;border:2px solid rgba(255,255,255,.85);}
 .lc-tile .lc-tile-ft{display:flex;justify-content:space-between;align-items:center;gap:4px;margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.18);}
 .lc-tile .lc-tile-mn{font-family:var(--font-display);font-weight:600;font-size:12.5px;letter-spacing:.02em;}
 .lc-tile .lc-tile-right{display:inline-flex;align-items:center;gap:8px;}
