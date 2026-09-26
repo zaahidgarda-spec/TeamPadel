@@ -3277,8 +3277,9 @@ async function renderAccountProfile() {
   positionClaimPanel(!(cards || []).length && !((playerAccount && playerAccount.captaincies) || []).length);
   renderPlayerAround();
   renderAccountAvatar(cards);
-  renderAccountNextMatch(cards);
+  const matchNightNow = renderAccountNextMatch(cards);
   renderAccountTables(cards);
+  positionAccountTablesSection(matchNightNow);
   renderAccountFixtures(fixtureCards || []);
   const due = await api("/players/lineups-due").catch(() => []);
   renderAccountNeedsAttention(cards, due);
@@ -3740,13 +3741,24 @@ function renderAccountFixtures(fixtureCards) {
 // next match," personalized, rather than the generic per-league carousel
 // everyone else sees on the hub. This is the hero of the whole dashboard,
 // so it always gets shown (not just when it's today/tomorrow).
+// Whether tonight's match is actually under way (or its own scheduled
+// start has already arrived, even if no admin's tapped Start yet) —
+// checking where you stand matters most exactly when play is happening,
+// not once it's over or before it's started. Used by renderAccountProfile
+// to decide whether Your Tables belongs at the very top of the profile.
+function matchStartHasArrived(m) {
+  if (!m || !m.date || !m.time) return false;
+  const start = new Date(`${m.date}T${m.time}`);
+  return !isNaN(start) && Date.now() >= start.getTime();
+}
 function renderAccountNextMatch(cards) {
   const rows = [];
   cards.forEach((card) => {
     card.upcoming.forEach((r) => rows.push(Object.assign({ leagueId: card.leagueId, leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, playerName: card.playerName }, r)));
   });
   const wrap = el("account-next-match-card");
-  if (rows.length === 0) { wrap.style.display = "none"; return; }
+  const anyLiveNow = cards.some((c) => c.liveNow);
+  if (rows.length === 0) { wrap.style.display = "none"; return anyLiveNow; }
   rows.sort((a, b) => {
     if (a.date && b.date) return (a.date + " " + a.time).localeCompare(b.date + " " + b.time);
     if (a.date) return -1;
@@ -3760,7 +3772,9 @@ function renderAccountNextMatch(cards) {
   // "Match N," same wording as the shared Next Matches carousel — a
   // player glancing at their own hero card should recognize it as the
   // same numbering, not a different "Seed" label for the same thing.
-  const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
+  // Court only shows once an admin's actually assigned one via Live Court
+  // Control — nothing to say before that.
+  const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.court, m.venue].filter(Boolean).join(" · ");
   const logoHtml = (logo, name) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "";
   // Same "favorite" edge as the Predictions tab (>=60% either way) — just
   // mapped onto the single personal winPct instead of a two-side split.
@@ -3779,6 +3793,28 @@ function renderAccountNextMatch(cards) {
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   bindNewsPlayerLinks(el("account-next-match-slide"));
+  return anyLiveNow || matchStartHasArrived(m);
+}
+// Your Tables jumps to the very top of the profile — above even the
+// "your next match" hero — while tonight's match is actually happening,
+// and settles back to its normal spot (between the hero and Your
+// Fixtures) otherwise. Idempotent either way: insertBefore just moves an
+// already-attached node, so this is safe to call on every render without
+// tracking whatever the last position was.
+function positionAccountTablesSection(matchNightNow) {
+  const tables = el("account-tables-section");
+  if (matchNightNow) {
+    // Right after "Scores to enter" — never above it. A captain with a
+    // pending result to submit needs that first regardless of how live
+    // tonight's own match is; harmless to insert after it even when
+    // that section is hidden (a non-captain, or nothing outstanding),
+    // since a hidden section takes no space either way.
+    const results = el("account-results-section");
+    results.parentElement.insertBefore(tables, results.nextSibling);
+  } else {
+    const fixtures = el("account-fixtures-section");
+    fixtures.parentElement.insertBefore(tables, fixtures);
+  }
 }
 
 async function openLeague(id) {

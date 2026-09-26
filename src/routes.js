@@ -2281,11 +2281,19 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       };
       break;
     }
+    // Which physical court (if the admin's actually assigned one via Live
+    // Court Control) each upcoming match lands on — the same join
+    // findCourtScheduleCell already does for the score-completion side of
+    // things, just read here instead of written.
+    const upcoming = logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf).map((row) => {
+      const cell = findCourtScheduleCell(league, row.fixtureId, row.rubberIdx);
+      return { ...row, court: cell ? ((league.courtNames || [])[cell.court] || `Court ${cell.court + 1}`) : "" };
+    });
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
-      upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
+      upcoming,
       // Same "flag only, fetch lazily" reasoning as the leagues hub's own
       // hasCourtPhoto — this response already carries every league a
       // claimed record touches, so embedding the actual image here would

@@ -870,6 +870,12 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
             partner: partner ? partner.name : null,
             partnerId: partnerId || null,
             seed: idx + 1,
+            // Kept alongside the 1-indexed, display-facing `seed` above —
+            // this is the pair the caller needs to look this row up
+            // against league.courtSchedule (see findCourtScheduleCell),
+            // which keys its cells by fixture id and 0-indexed seed.
+            fixtureId: f.id,
+            rubberIdx: idx,
             date: sched.date || "",
             time: sched.time || "",
             venue: sched.venue || league.defaultVenue || "",
