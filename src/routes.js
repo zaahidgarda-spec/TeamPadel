@@ -6763,6 +6763,29 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     const account = store.getUser(req.session.playerUser.id);
     isOwnProfile = !!(account && (account.claims || []).some((c) => c.leagueId === league.id && c.teamId === team.id && c.playerId === player.id));
   }
+  // If the knockout stage has started and this player's team is in one of
+  // its still-undecided matches (a semi, the final, or a final-spot
+  // playoff), surface which one and against whom — this popup otherwise
+  // only shows results already decided, nothing about what's coming next.
+  // Kept in sync by hand with positionMatchLabel client-side (same "Final"
+  // / "Nth v Nth" labeling, just needed here server-side too).
+  let nextKnockout = null;
+  if (league.playoffs) {
+    const ordinalOf = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+    const matches = league.playoffs.format === "position"
+      ? (league.playoffs.matches || []).map((m, i) => ({ m, label: i === 0 ? "Final" : `${ordinalOf(i * 2 + 1)} v ${ordinalOf(i * 2 + 2)}` }))
+      : [
+        { m: league.playoffs.semis && league.playoffs.semis[0], label: "Semi-final" },
+        { m: league.playoffs.semis && league.playoffs.semis[1], label: "Semi-final" },
+        { m: league.playoffs.final, label: "Final" },
+      ];
+    const mine = matches.find((x) => x.m && !x.m.finalized && (x.m.teamA === team.id || x.m.teamB === team.id));
+    if (mine) {
+      const oppId = mine.m.teamA === team.id ? mine.m.teamB : mine.m.teamA;
+      const oppTeam = oppId ? league.teams.find((t) => t.id === oppId) : null;
+      nextKnockout = { label: mine.label, opponentTeam: oppTeam ? oppTeam.name : "TBD", opponentLogo: oppTeam ? oppTeam.logo || "" : "" };
+    }
+  }
   res.json({
     leagueId: league.id,
     leagueName: league.name,
@@ -6787,6 +6810,7 @@ router.get("/leagues/:leagueId/players/:playerId/history", (req, res) => {
     otherLeagues,
     claimed: !!player.claimedByUserId,
     canEditPhoto: isAdmin || isCaptain || isOwnProfile,
+    nextKnockout,
   });
 });
 

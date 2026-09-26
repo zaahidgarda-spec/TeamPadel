@@ -13470,6 +13470,30 @@ async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
         </div>
       </div>`
     : "";
+  // The knockout stage otherwise only shows up on the league's own Table
+  // tab — surfaced here too so anyone looking at this specific player
+  // sees at a glance that their team's still alive and who's next, not
+  // just their history of matches already decided.
+  el("player-modal-knockout-strip").innerHTML = data.nextKnockout
+    ? `<div class="owner-strip knockout-strip">
+        <div class="owner-strip-icon">${avatarHtml({ logo: data.nextKnockout.opponentLogo, name: data.nextKnockout.opponentTeam })}</div>
+        <div class="owner-strip-text">
+          <div class="owner-strip-title">${escapeHtml(data.nextKnockout.label)}</div>
+          <div class="owner-strip-sub">vs ${escapeHtml(data.nextKnockout.opponentTeam)}</div>
+        </div>
+        <button type="button" class="knockout-strip-btn" id="player-modal-knockout-btn">See the table</button>
+      </div>`
+    : "";
+  if (data.nextKnockout) {
+    // Same "land on the real Table tab" idea as Your Tables' own "Show
+    // full table" — jumping into this league first if it isn't already
+    // the one open, since the bracket itself only ever renders there.
+    el("player-modal-knockout-btn").onclick = async () => {
+      if (currentLeagueId !== leagueId) await openLeague(leagueId);
+      switchTab("table");
+      el("player-modal-backdrop").classList.remove("open");
+    };
+  }
   const editBadge = el("player-modal-photo-edit");
   const photoInput = el("player-modal-photo-input");
   editBadge.style.display = data.canEditPhoto ? "flex" : "none";
