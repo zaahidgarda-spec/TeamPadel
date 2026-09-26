@@ -113,6 +113,22 @@ function avatarHtml(t) {
   const initial = t ? t.name.charAt(0).toUpperCase() : "?";
   return `<span class="avatar-fb">${escapeHtml(initial)}</span>`;
 }
+// Wraps a team's crest (avatarHtml) together with whatever name markup the
+// caller already built (a plain escaped name, or one with its own winner
+// styling) into one clickable unit — every fixture/result/prediction card
+// in a league's own tabs uses this so tapping a team's badge anywhere
+// behaves the same way its row on the Table tab already does. No team (a
+// TBD slot) falls back to the bare name markup, unwrapped — nothing to
+// link to yet.
+function teamBadgeHtml(team, nameHtml) {
+  if (!team) return nameHtml;
+  return `<span class="team-badge-link" data-team-id="${team.id}">${avatarHtml(team)}${nameHtml}</span>`;
+}
+function bindTeamBadgeLinks(root) {
+  root.querySelectorAll(".team-badge-link[data-team-id]").forEach((node) => {
+    node.onclick = (e) => { e.stopPropagation(); openTeamModal(node.dataset.teamId); };
+  });
+}
 // Every "Copy link"-style button that has to fetch/build the text first
 // (a pay link, a league's team codes) used to `await` that fetch and only
 // call navigator.clipboard.writeText() afterwards. Safari requires the
@@ -1615,7 +1631,22 @@ el("admin-bar-btn").onclick = async () => {
 el("admin-bar-tag").onclick = () => {
   if (inLeagueView() && myRole === "admin" && league.format !== "pairs") { switchTab("admin"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
   if (!isOwner) return;
-  showHub();
+  // Not the full showHub() — that also re-fires refreshAccountStatus(),
+  // which (once its /players/me fetch resolves, a beat later) unconditionally
+  // lands a signed-in player back on the "My profile" tab. Since this handler
+  // itself calls switchHubTab("admin") right after, that later-resolving
+  // fetch would silently override it back to My Profile a moment after
+  // landing on Admin — exactly the bug this replaced. Only the bare
+  // "leave the league view" reset is needed here, and only when actually
+  // coming from one — isOwner/playerAccount are already known and current
+  // otherwise, nothing to re-fetch just to switch a tab.
+  if (inLeagueView()) {
+    currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
+    window.location.hash = "";
+    el("view-hub").style.display = "block";
+    el("view-league").style.display = "none";
+    document.body.className = "role-guest";
+  }
   switchHubTab("admin");
 };
 el("back-to-hub").onclick = async () => { leaguesIndex = await api("/leagues").catch(() => leaguesIndex); showHub(); };
@@ -6726,7 +6757,8 @@ function renderToss() {
 function tossCard(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
   const card = document.createElement("div"); card.className = "fixture-card";
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div></div>`;
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml(teamA, escapeHtml(teamA ? teamA.name : "TBD"))} <span class="vs">vs</span> ${teamBadgeHtml(teamB, escapeHtml(teamB ? teamB.name : "TBD"))}</div></div>`;
+  bindTeamBadgeLinks(card);
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
 
   const mySide = myRole === "captain" ? (myTeamId === f.teamA ? "A" : myTeamId === f.teamB ? "B" : null) : null;
@@ -7314,7 +7346,8 @@ function renderSelection() {
 function selectionCard(f) {
   const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
   const card = document.createElement("div"); card.className = "fixture-card";
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div></div>`;
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml(teamA, escapeHtml(teamA ? teamA.name : "TBD"))} <span class="vs">vs</span> ${teamBadgeHtml(teamB, escapeHtml(teamB ? teamB.name : "TBD"))}</div></div>`;
+  bindTeamBadgeLinks(card);
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
   const both = f.selectionA.submitted && f.selectionB.submitted;
   const grid = document.createElement("div"); grid.className = "selection-grid";
@@ -9219,7 +9252,7 @@ function renderFixtures() {
     const outstanding = isFixtureOutstanding(f);
     const badgeCls = f.finalized ? "done" : outstanding ? "outstanding" : "pending";
     const badgeLabel = f.finalized ? "Final" : outstanding ? "Match outstanding" : "Pending";
-    let html = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} ${escapeHtml(teamA ? teamA.name : "TBD")} <span class="vs">vs</span> ${escapeHtml(teamB ? teamB.name : "TBD")} ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${badgeCls}">${badgeLabel}</span></div></div>`;
+    let html = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml(teamA, escapeHtml(teamA ? teamA.name : "TBD"))} <span class="vs">vs</span> ${teamBadgeHtml(teamB, escapeHtml(teamB ? teamB.name : "TBD"))}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${badgeCls}">${badgeLabel}</span></div></div>`;
     const sched = scheduleFor(stageKeyFor(f));
     const venue = effectiveVenue(stageKeyFor(f));
     if (sched.date || sched.time || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${sched.time ? "<span>" + fmtTime(sched.time) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
@@ -9245,6 +9278,7 @@ function renderFixtures() {
     }
     card.innerHTML = html;
     bindPlayerLinks(card);
+    bindTeamBadgeLinks(card);
     // Same drag-and-drop court & playing order panel as Selection Room —
     // shown here too now, so a captain doesn't have to leave Fixtures to
     // rearrange or confirm it. Read-only for anyone who isn't on either
@@ -9515,8 +9549,7 @@ async function renderPredictions() {
 }
 function predictionsFixtureCard(f) {
   const card = document.createElement("div"); card.className = "fixture-card";
-  const logoHtml = (logo, name) => (logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "");
-  let html = `<div class="fixture-head"><div class="fixture-title">${logoHtml(f.teamALogo, f.teamAName)} ${escapeHtml(f.teamAName)} <span class="vs">vs</span> ${escapeHtml(f.teamBName)} ${logoHtml(f.teamBLogo, f.teamBName)}</div></div>`;
+  let html = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml({ id: f.teamAId, logo: f.teamALogo, name: f.teamAName }, escapeHtml(f.teamAName))} <span class="vs">vs</span> ${teamBadgeHtml({ id: f.teamBId, logo: f.teamBLogo, name: f.teamBName }, escapeHtml(f.teamBName))}</div></div>`;
   if (!f.revealed) {
     html += `<p class="note" style="margin-top:8px;">Line-ups not yet revealed — check Selection Room.</p>`;
   } else if (f.seeds.length === 0) {
@@ -9562,6 +9595,7 @@ function predictionsFixtureCard(f) {
   }
   card.innerHTML = html;
   bindNewsPlayerLinks(card);
+  bindTeamBadgeLinks(card);
   return card;
 }
 // Every specific partnership that played this round — one per seed per
@@ -9653,7 +9687,8 @@ function resultsCard(f) {
   const singlesDecided = isSinglesFixture && f.rubbers[4] && rubberWinnerClient(f.rubbers[4]) !== null;
   const statusText = f.finalized ? "Final" : isSingleMatch ? (splitNoDecider ? "1 set each — 3rd set optional" : decided > 0 ? "In progress" : "Pending") : decided + "/4 pairs" + (isSinglesFixture ? (singlesDecided ? " + singles" : "") : "");
   const matchWinner = f.finalized && headline.a !== headline.b ? (headline.a > headline.b ? "A" : "B") : null;
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamA ? avatarHtml(teamA) : ""} <span class="fx-name${matchWinner === "A" ? " winner" : ""}">${escapeHtml(teamA ? teamA.name : "TBD")}</span> <span class="vs">vs</span> <span class="fx-name${matchWinner === "B" ? " winner" : ""}">${escapeHtml(teamB ? teamB.name : "TBD")}</span> ${teamB ? avatarHtml(teamB) : ""}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${statusText}</span></div></div>`;
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml(teamA, `<span class="fx-name${matchWinner === "A" ? " winner" : ""}">${escapeHtml(teamA ? teamA.name : "TBD")}</span>`)} <span class="vs">vs</span> ${teamBadgeHtml(teamB, `<span class="fx-name${matchWinner === "B" ? " winner" : ""}">${escapeHtml(teamB ? teamB.name : "TBD")}</span>`)}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${f.finalized ? "done" : "pending"}">${statusText}</span></div></div>`;
+  bindTeamBadgeLinks(card);
   if (!teamA || !teamB) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting on the semi-final results." })); return card; }
   if (!(f.selectionA.submitted && f.selectionB.submitted)) { card.appendChild(Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for both teams to submit their line-up in Selection Room." })); return card; }
 
@@ -12985,7 +13020,8 @@ function archivedFixtureCard(seasonId, f, teams) {
   const { winsA, winsB } = fixtureScoreClient(f);
   const isSingleMatch = f.rubbers.length === 1;
   const headline = isSingleMatch ? pairMatchSetScore(f.rubbers[0]) : { a: winsA, b: winsB };
-  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${avatarHtml(teamA)} <span class="fx-name">${escapeHtml(teamA.name)}</span> <span class="vs">vs</span> <span class="fx-name">${escapeHtml(teamB.name)}</span> ${avatarHtml(teamB)}</div><div><span class="night-score">${headline.a} - ${headline.b}</span></div></div>`;
+  card.innerHTML = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml(teamA, `<span class="fx-name">${escapeHtml(teamA.name)}</span>`)} <span class="vs">vs</span> ${teamBadgeHtml(teamB, `<span class="fx-name">${escapeHtml(teamB.name)}</span>`)}</div><div><span class="night-score">${headline.a} - ${headline.b}</span></div></div>`;
+  bindTeamBadgeLinks(card);
   // Rare, so tucked away as a small link rather than a prominent button —
   // for when the whole match got attributed to the wrong two teams (not
   // just a wrong score). Keeps the recorded result exactly as-is, just

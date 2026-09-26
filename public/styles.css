@@ -285,6 +285,8 @@ ul.plain li.plain-list-header:first-child{padding-top:2px;}
 .fixture-title{font-family:var(--font-display);font-size:17px;display:flex;align-items:center;gap:10px;}
 .fx-name{transition:color .15s ease;}
 .fx-name.winner{color:var(--success);font-weight:700;}
+.team-badge-link{display:inline-flex;align-items:center;gap:8px;cursor:pointer;}
+.team-badge-link:hover .avatar,.team-badge-link:hover .avatar-fb{filter:brightness(0.9);}
 .vs{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:20px;padding:0 7px;border-radius:var(--radius-full);border:1px solid var(--line);background:var(--panel-2);color:var(--text-dim);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
 .night-score{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:var(--radius-full);display:inline-block;}
 .badge{font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:4px 9px;border-radius:var(--radius-sm);font-family:var(--font-display);font-weight:500;}
