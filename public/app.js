@@ -10089,6 +10089,11 @@ const POSTER_THEMES = [
   { name: "gold", bgTop: "#241A03", bgBottom: "#3D2B08", accent: "#D4AF37", win: "#F5D876" },
   { name: "crimson", bgTop: "#2B0714", bgBottom: "#4A0F26", accent: "#DB2777", win: "#F472B6" },
 ];
+// Fixed, not randomly drawn from POSTER_THEMES — the Playoffs poster is the
+// downloadable companion to the in-app knockout bracket, so it always
+// matches that bracket's deep-violet background and lime/green accents
+// rather than landing on a random unrelated palette.
+const KNOCKOUT_POSTER_THEME = { name: "knockout", bgTop: "#2E2050", bgBottom: "#0A0512", accent: "#C6FF3D", win: "#34D399" };
 let lastPosterThemeIdx = -1;
 function pickPosterTheme() {
   let idx;
@@ -11929,7 +11934,7 @@ async function openPosterModal(mode, extraData) {
   el("poster-preview-img").style.display = "none";
   el("poster-modal-loading").style.display = "block";
   el("poster-modal-backdrop").classList.add("open");
-  const theme = pickPosterTheme();
+  const theme = mode === "playoffs" ? KNOCKOUT_POSTER_THEME : pickPosterTheme();
   const canvas = mode === "court-schedule" ? await generateCourtSchedulePosterCanvas(theme)
     : mode === "table" ? await generateTablePosterCanvas(theme)
     : mode === "trophy" ? await generateTrophyPosterCanvas(extraData, theme)
