@@ -12917,8 +12917,18 @@ async function openTeamProfile(leagueId, teamId, hint) {
   el("team-modal-name").textContent = data.teamName;
   const rankTag = data.rank ? `<span class="p-tag team-rank-tag">${ordinal(data.rank)} place</span>` : "";
   const ownerTag = data.ownerNames.length ? `<span class="p-tag owner">${data.ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(data.ownerNames.join(", "))}</span>` : "";
+  // Trophy count is the one thing that genuinely adds up across leagues —
+  // win/loss records don't (different opponents, different strength), so
+  // there's no combined record summary anymore, just this. Shown for every
+  // team, not only a combined one — totalTrophyCount already equals this
+  // league's own count when there's nothing to combine.
+  const trophyTag = data.totalTrophyCount > 0 ? `<span class="p-tag trophy-count">🏆 ${data.totalTrophyCount}</span>` : "";
+  // This league's own last-completed season, specifically — a combined
+  // team's other league(s) may be mid-season or have a different history,
+  // so this never tries to average or pick one across the tabs.
+  const lastSeasonTag = data.lastSeasonPosition ? `<span class="p-tag last-season-tag">${ordinal(data.lastSeasonPosition.rank)} last season</span>` : "";
   const combinedTag = data.otherLeagues.length ? `<span class="p-tag club-combined">Combined · ${data.otherLeagues.length + 1} leagues</span>` : "";
-  el("team-modal-tags").innerHTML = rankTag + ownerTag + combinedTag;
+  el("team-modal-tags").innerHTML = rankTag + trophyTag + lastSeasonTag + ownerTag + combinedTag;
   el("team-modal-stats").innerHTML = teamStatsGridHtml(data.stats);
 
   if (data.otherLeagues.length) {
@@ -12929,9 +12939,6 @@ async function openTeamProfile(leagueId, teamId, hint) {
     const allLeagues = [{ leagueId: data.leagueId, leagueName: data.leagueName, teamId: data.teamId, teamName: data.teamName, teamLogo: data.teamLogo }]
       .concat(data.otherLeagues)
       .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
-    el("team-modal-combined-summary").textContent = data.combinedTotals
-      ? `${data.combinedTotals.played} played · ${data.combinedTotals.won} won · ${data.combinedTotals.lost} lost across ${allLeagues.length} leagues`
-      : "";
     const tabsEl = el("team-modal-league-tabs");
     tabsEl.innerHTML = allLeagues.map((l) => {
       const isActive = l.leagueId === leagueId && l.teamId === teamId;

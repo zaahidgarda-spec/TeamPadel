@@ -1691,6 +1691,8 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .p-tag.trophy{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.4);color:#8A6300;}
 .p-tag.owner{background:transparent;border:1.5px solid #B8860B;color:#B8860B;}
 .p-tag.club-combined{background:var(--accent-soft);color:var(--accent);}
+.p-tag.trophy-count{background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.4);color:#8A6300;}
+.p-tag.last-season-tag{background:transparent;border:1.5px solid var(--text-faint);color:var(--text-dim);}
 /* A team owner's avatar gets a soft gold ring — reads as a real
    distinction at a glance, before you even reach the tags below it.
    Sits behind the photo (z-index -1) so the photo's own white border
@@ -1764,6 +1766,8 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .team-hero .p-name{color:#fff;}
 .team-hero .team-rank-tag{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);color:#fff;}
 .team-hero .club-combined{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.32);color:#fff;}
+.team-hero .trophy-count{background:rgba(255,255,255,.18);border:1px solid rgba(250,199,117,.6);color:#FAC775;}
+.team-hero .last-season-tag{background:transparent;border:1.5px solid rgba(255,255,255,.4);color:#fff;}
 .team-stats-float{margin:-22px 20px 0;position:relative;z-index:1;background:var(--panel);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;}
 .team-stats-float .p-stats{border-bottom:none;margin-top:0;}
 

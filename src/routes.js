@@ -3043,15 +3043,31 @@ router.get("/leagues/:leagueId/teams/:teamId/profile", (req, res) => {
   const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
   const shared = teamsSharingClub(league, team);
   const otherLeagues = shared.filter((e) => !(e.leagueId === league.id && e.teamId === team.id));
-  // Only worth calling "combined" once a second team actually shares the
-  // Club ID — one team with a clubId nobody else uses is just a team.
-  const combinedTotals = otherLeagues.length ? shared.reduce((acc, e) => {
-    const lg = e.leagueId === league.id ? league : store.getLeague(e.leagueId);
-    if (!lg) return acc;
-    const r = logic.computeStandings(lg).find((x) => x.id === e.teamId);
-    if (!r) return acc;
-    return { played: acc.played + r.rubbersWon + r.rubbersLost, won: acc.won + r.rubbersWon, lost: acc.lost + r.rubbersLost };
-  }, { played: 0, won: 0, lost: 0 }) : null;
+  // Win/loss records don't actually combine well across leagues — different
+  // opponents, different strength — so a combined team no longer gets a
+  // summed played/won/lost line, just the tabs to flip between each
+  // league's own (see otherLeagues above). Trophies are the one thing that
+  // genuinely does add up regardless of league, so that's what the header
+  // aggregates: every "winner" Hall of Fame entry across every linked
+  // league, not just this one.
+  const totalTrophyCount = otherLeagues.length
+    ? shared.reduce((sum, e) => {
+        const lg = e.leagueId === league.id ? league : store.getLeague(e.leagueId);
+        if (!lg) return sum;
+        return sum + teamTrophiesIn(lg, e.teamId).filter((t) => t.role === "winner").length;
+      }, 0)
+    : teamTrophiesIn(league, team.id).filter((t) => t.role === "winner").length;
+  // Last season's finishing position — only once there's a most-recently-
+  // archived season to read it from (see /leagues/:id/season-history,
+  // which treats seasonHistory[0] the same way, newest first). A team
+  // absent from that snapshot (added this season) just gets no position.
+  let lastSeasonPosition = null;
+  if (league.seasonHistory && league.seasonHistory.length) {
+    const snap = league.seasonHistory[0];
+    const snapRows = logic.computeStandings(snap);
+    const snapIdx = snapRows.findIndex((r) => r.id === team.id);
+    if (snapIdx >= 0) lastSeasonPosition = { rank: snapIdx + 1, teamCount: snapRows.length, season: seasonNumberOf(league.seasonHistory, snap), label: snap.label };
+  }
   res.json({
     leagueId: league.id, leagueName: league.name,
     teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
@@ -3061,8 +3077,9 @@ router.get("/leagues/:leagueId/teams/:teamId/profile", (req, res) => {
     roster: team.players.map((p) => ({ id: p.id, name: p.name })),
     matches: teamMatchesIn(league, team.id),
     trophies: teamTrophiesIn(league, team.id),
+    totalTrophyCount,
+    lastSeasonPosition,
     otherLeagues: otherLeagues.sort((a, b) => a.leagueName.localeCompare(b.leagueName)),
-    combinedTotals,
   });
 });
 
