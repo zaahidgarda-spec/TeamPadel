@@ -1703,11 +1703,17 @@ function allPlayersFlat() {
 // the same precedent allPlayersFlat already sets for a claimed player's
 // multiple appearances, so a search across every league stays a flat,
 // predictable list rather than a second grouping rule to reason about).
+// Same exact-name match the client already uses to single out this one
+// real league for its own special-casing (trophy room, Vibora champion
+// logo — see VIBORA_LEAGUE_NAME in app.js). Left out of the directory
+// specifically, not hidden league-wide — its own Table/Fixtures tabs are
+// unaffected.
+const VIBORA_LEAGUE_NAME = "Vibora 50+";
 function allTeamsFlat() {
   const results = [];
   store.getIndex().filter((entry) => !entry.hidden).forEach((entry) => {
     const league = store.getLeague(entry.id);
-    if (!league) return;
+    if (!league || league.name === VIBORA_LEAGUE_NAME) return;
     league.teams.forEach((t) => {
       results.push({
         leagueId: league.id, leagueName: league.name,
