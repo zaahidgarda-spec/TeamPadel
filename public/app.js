@@ -4153,7 +4153,11 @@ function buildTabs() {
   updateLiveCourtTabPulse();
   lastLiveCourtLiveStatus = league ? leagueIsLiveNow(league) : null;
   el("role-flag").style.display = myRole === "guest" ? "none" : "inline-block";
-  el("role-flag").textContent = myRole === "admin" ? "Admin view" : myRole === "captain" ? (league.format === "pairs" ? "Player view" : "Captain view") : "";
+  el("role-flag").textContent = myRole === "admin" ? "Admin" : myRole === "captain" ? (league.format === "pairs" ? "Player view" : "Captain view") : "";
+  // Admin only — a captain has no separate "admin page" for this to jump
+  // to, so the flag stays plain, non-clickable text for them.
+  el("role-flag").classList.toggle("role-flag-link", myRole === "admin");
+  el("role-flag").onclick = myRole === "admin" ? () => switchTab("admin") : null;
   const myTeam = myRole === "captain" ? teamById(myTeamId) : null;
   const logoFlag = el("team-logo-flag");
   if (myTeam && myTeam.logo) {
@@ -5169,9 +5173,40 @@ function renderAdmin() {
   });
 
   renderAdminRoster();
+  renderAdminCombine();
   renderAdminFixtures();
   renderAdminSponsors();
   renderOrphanedPlayers();
+}
+// Its own dedicated card, not buried per-team inside Player rosters — the
+// Club ID field is the whole point of this card, so it gets first billing
+// instead of being one more input among owners/gold/players.
+function renderAdminCombine() {
+  const c = el("admin-combine-list");
+  c.innerHTML = "";
+  if (!league.teams.length) { c.innerHTML = '<p class="empty">Add teams first.</p>'; return; }
+  league.teams.forEach((t) => {
+    const row = document.createElement("div");
+    row.className = "admin-combine-row";
+    row.innerHTML = avatarHtml(t);
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "admin-combine-name";
+    nameSpan.textContent = t.name;
+    const input = document.createElement("input");
+    input.type = "text"; input.className = "inline-edit"; input.placeholder = "Club ID (optional)";
+    input.style.cssText = "flex:1;min-width:120px;";
+    input.value = t.clubId || "";
+    input.onkeydown = (e) => { if (e.key === "Enter") input.blur(); };
+    input.onblur = async () => {
+      const val = input.value.trim();
+      if (val === (t.clubId || "")) return;
+      try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { clubId: val } }); await refreshLeague(); renderAdminCombine(); }
+      catch (e) { alert(e.message); input.value = t.clubId || ""; }
+    };
+    row.appendChild(nameSpan);
+    row.appendChild(input);
+    c.appendChild(row);
+  });
 }
 // Every player id still referenced in a finalized match but missing from
 // the roster — the state a delete-before-the-guard left behind. Team,
@@ -5808,28 +5843,6 @@ function adminRosterBlock(t) {
   const sel1 = buildOwnerSelect(1);
   ownerRow.appendChild(sel0); ownerRow.appendChild(sel1);
   nameWrap.appendChild(ownerRow);
-  // Same club, different league (an A team here, a B team over there) —
-  // give both the same Club ID and their records combine on the team page.
-  // Free text, not a picker, since the other team can be in a league this
-  // admin doesn't even manage; matched purely by this string being equal.
-  const clubRow = document.createElement("div");
-  clubRow.style.cssText = "margin-top:6px;display:flex;align-items:center;gap:5px;";
-  const clubLabel = document.createElement("span");
-  clubLabel.className = "note"; clubLabel.textContent = "Club ID:";
-  const clubInput = document.createElement("input");
-  clubInput.type = "text"; clubInput.className = "inline-edit"; clubInput.style.cssText = "min-width:110px;";
-  clubInput.value = t.clubId || "";
-  clubInput.placeholder = "optional";
-  clubInput.title = "Give two teams in different leagues the same Club ID to combine their records on the team page.";
-  clubInput.onkeydown = (e) => { if (e.key === "Enter") clubInput.blur(); };
-  clubInput.onblur = async () => {
-    const val = clubInput.value.trim();
-    if (val === (t.clubId || "")) return;
-    try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { clubId: val } }); await refreshLeague(); renderAdminRoster(); }
-    catch (e) { alert(e.message); clubInput.value = t.clubId || ""; }
-  };
-  clubRow.appendChild(clubLabel); clubRow.appendChild(clubInput);
-  nameWrap.appendChild(clubRow);
   if (league.tieringEnabled) {
     const goldCount = t.players.filter((p) => p.gold).length;
     const goldTag = document.createElement("div");
@@ -12740,75 +12753,55 @@ function bindTeamRowLinks(root) {
 // server either way. Cleared up front so a stale "Combined record" list
 // from whichever team was open last doesn't flash before this resolves (or
 // linger for a team with nothing to combine).
-function loadTeamClubSection(leagueId, teamId) {
-  el("team-modal-club-section").style.display = "none";
-  el("team-modal-club-section").innerHTML = "";
-  api(`/leagues/${leagueId}/teams/${teamId}/club`).then((data) => {
-    if (!data || !data.combined) return;
-    el("team-modal-tags").innerHTML += `<span class="p-tag club-combined">Combined · ${data.leagues.length} leagues</span>`;
-    el("team-modal-club-section").innerHTML = `
-      <p class="p-section-label">Combined record</p>
-      <p class="note" style="margin:-4px 0 10px;">${data.totals.played} played &middot; ${data.totals.won} won &middot; ${data.totals.lost} lost across ${data.leagues.length} leagues</p>
-      <div class="club-league-list">${data.leagues.map((e) => `
-        <div class="club-league-row">
-          <span class="club-league-name">${escapeHtml(e.leagueName)}</span>
-          <span class="club-league-rec">${ordinal(e.rank)} of ${e.teamCount} &middot; ${e.points} pts</span>
-        </div>`).join("")}</div>`;
-    el("team-modal-club-section").style.display = "block";
-  }).catch(() => {});
-}
-function openTeamModal(teamId) {
-  const team = league.teams.find((t) => t.id === teamId);
-  if (!team) return;
-  const rows = computeStandingsClient();
-  const rank = rows.findIndex((r) => r.id === teamId);
-  const row = rank >= 0 ? rows[rank] : null;
-  el("team-modal-topbar-label").textContent = league.name;
-  el("team-modal-crest-slot").innerHTML = team.logo
-    ? `<img class="p-photo p-photo-team-fallback" src="${team.logo}" alt="">`
-    : `<div class="p-photo-fallback">${escapeHtml(playerInitials(team.name))}</div>`;
-  el("team-modal-name").textContent = team.name;
-  const rankTag = row ? `<span class="p-tag team-rank-tag">${ordinal(rank + 1)} place</span>` : "";
-  const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
-  const ownerTag = ownerNames.length ? `<span class="p-tag owner">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
-  el("team-modal-tags").innerHTML = rankTag + ownerTag;
-  loadTeamClubSection(currentLeagueId, teamId);
-  el("team-modal-stats").innerHTML = row
+function teamStatsGridHtml(stats) {
+  return stats
     ? [
-        { n: row.points, l: "Pts" },
-        { n: row.played, l: "Played" },
-        { n: row.rubbersWon, l: "Won" },
-        { n: (row.diff > 0 ? "+" : "") + row.diff, l: "Diff" },
+        { n: stats.points, l: "Pts" },
+        { n: stats.played, l: "Played" },
+        { n: stats.won, l: "Won" },
+        { n: (stats.diff > 0 ? "+" : "") + stats.diff, l: "Diff" },
       ].map((s) => `<div class="p-stat"><div class="n">${s.n}</div><div class="lbl">${s.l}</div></div>`).join("")
     : "";
-  const rosterEl = el("team-modal-roster");
-  rosterEl.innerHTML = team.players.length
-    ? team.players.map((p, i) => `<div class="team-roster-row"><span class="team-roster-num">${String(i + 1).padStart(2, "0")}</span>${playerLinkHtml(p)}</div>`).join("")
-    : '<p class="empty">No players added yet.</p>';
-  bindPlayerLinks(rosterEl);
-  // A captain looking at their own team gets the same add/rename/remove
-  // controls the Roster tab used to show inline — re-opening this same
-  // modal (not the tab behind it) after every change, so it doesn't
-  // silently close on you mid-edit.
-  if (myRole === "captain" && myTeamId === teamId) {
-    rosterEl.appendChild(ownRosterEditControls(team, () => {
-      // Redraws the modal in place (not just the tile grid behind it, which
-      // is closed right now) — the tile grid's own player count still
-      // needs to catch up too, so it isn't showing a stale number the next
-      // time this modal closes.
-      openTeamModal(teamId);
-      if (el("view-roster").classList.contains("active")) renderRoster();
-    }));
-  }
-  el("team-modal-backdrop").classList.add("open");
 }
-// The cross-league entry point (the Search teams directory) — unlike
-// openTeamModal above, this one has no already-loaded `league` object to
-// read from (the team can belong to a league this client has never opened),
-// so it fetches its own self-contained snapshot instead, the same way
-// openPlayerHistory does for a cross-league player. Read-only: no captain
-// roster-editing controls, since browsing the global directory isn't "your"
-// league context the way opening a team from inside its own Table tab is.
+function teamMatchRowHtml(m) {
+  return `<div class="team-match-row">
+    <span class="team-match-opp">${avatarHtml({ logo: m.opponentLogo, name: m.opponentName })}<span>${escapeHtml(m.opponentName)}</span></span>
+    <span class="team-match-score team-match-${m.result === "W" ? "won" : m.result === "L" ? "lost" : "drawn"}">${escapeHtml(m.score)}</span>
+    <span class="team-match-date">${m.date ? fmtDate(m.date) : ""}</span>
+  </div>`;
+}
+// Same admin-curated source (league.hallOfFame) the player Trophy Room
+// already reads — a "winner" role gets the same trophy emoji, "runnerUp"
+// a medal, so this reads at a glance as the smaller sibling of that grid
+// rather than a whole new visual language for the same idea.
+function teamTrophiesHtml(trophies) {
+  if (!trophies || !trophies.length) return "";
+  return `<p class="p-section-label">Trophies</p><div class="team-trophy-list">${trophies.map((t) => `
+    <div class="team-trophy-row">
+      <span class="team-trophy-icon">${t.role === "winner" ? "🏆" : "🥈"}</span>
+      <span class="team-trophy-label">${escapeHtml(t.label)}</span>
+      <span class="team-trophy-season">Season ${t.season}</span>
+    </div>`).join("")}</div>`;
+}
+function bindTeamSubtabs(root) {
+  root.querySelectorAll(".team-subtab-btn").forEach((btn) => {
+    btn.onclick = () => {
+      root.querySelectorAll(".team-subtab-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      el("team-modal-roster").style.display = btn.dataset.subtab === "roster" ? "block" : "none";
+      el("team-modal-matches").style.display = btn.dataset.subtab === "matches" ? "block" : "none";
+    };
+  });
+}
+// The one loader behind both ways this modal opens — in-league
+// (openTeamModal, below) and the cross-league directory — always fetching
+// its own self-contained snapshot rather than the two of them diverging
+// into a client-data path and a fetch path. That matters now specifically
+// because a Club ID-linked team needs to be able to jump to a DIFFERENT
+// league's own roster/matches/stats via its tabs below, which this client
+// has no data for until it's fetched — the same reason openPlayerHistory
+// always fetches for a cross-league player rather than special-casing "the
+// league you're already in".
 async function openTeamProfile(leagueId, teamId, hint) {
   el("team-modal-topbar-label").textContent = hint ? hint.leagueName : "";
   el("team-modal-crest-slot").innerHTML = hint && hint.teamLogo
@@ -12817,9 +12810,16 @@ async function openTeamProfile(leagueId, teamId, hint) {
   el("team-modal-name").textContent = hint ? hint.teamName : "";
   el("team-modal-tags").innerHTML = "";
   el("team-modal-stats").innerHTML = "";
-  el("team-modal-club-section").style.display = "none";
-  el("team-modal-club-section").innerHTML = "";
+  el("team-modal-leagues-hero").style.display = "none";
+  el("team-modal-trophies").style.display = "none";
   el("team-modal-roster").innerHTML = '<p class="empty">Loading…</p>';
+  el("team-modal-matches").innerHTML = "";
+  // Reset to the Roster subtab on every fresh load — a Matches tab left
+  // open from whichever team/league was open last would otherwise silently
+  // carry over into this one.
+  el("team-modal-subtabs").querySelectorAll(".team-subtab-btn").forEach((b, i) => b.classList.toggle("active", i === 0));
+  el("team-modal-roster").style.display = "block";
+  el("team-modal-matches").style.display = "none";
   el("team-modal-backdrop").classList.add("open");
   const data = await api(`/leagues/${leagueId}/teams/${teamId}/profile`).catch(() => null);
   if (!data) { el("team-modal-roster").innerHTML = '<p class="empty">Couldn\'t load this team.</p>'; return; }
@@ -12830,21 +12830,75 @@ async function openTeamProfile(leagueId, teamId, hint) {
   el("team-modal-name").textContent = data.teamName;
   const rankTag = data.rank ? `<span class="p-tag team-rank-tag">${ordinal(data.rank)} place</span>` : "";
   const ownerTag = data.ownerNames.length ? `<span class="p-tag owner">${data.ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(data.ownerNames.join(", "))}</span>` : "";
-  el("team-modal-tags").innerHTML = rankTag + ownerTag;
-  loadTeamClubSection(leagueId, teamId);
-  el("team-modal-stats").innerHTML = data.stats
-    ? [
-        { n: data.stats.points, l: "Pts" },
-        { n: data.stats.played, l: "Played" },
-        { n: data.stats.won, l: "Won" },
-        { n: (data.stats.diff > 0 ? "+" : "") + data.stats.diff, l: "Diff" },
-      ].map((s) => `<div class="p-stat"><div class="n">${s.n}</div><div class="lbl">${s.l}</div></div>`).join("")
-    : "";
+  const combinedTag = data.otherLeagues.length ? `<span class="p-tag club-combined">Combined · ${data.otherLeagues.length + 1} leagues</span>` : "";
+  el("team-modal-tags").innerHTML = rankTag + ownerTag + combinedTag;
+  el("team-modal-stats").innerHTML = teamStatsGridHtml(data.stats);
+
+  if (data.otherLeagues.length) {
+    // Sorted by name, not "current league first" — the same reasoning as
+    // the player modal's league tabs: otherwise the tab order reshuffles
+    // every time you switch, since whichever one you just picked would
+    // jump to the front.
+    const allLeagues = [{ leagueId: data.leagueId, leagueName: data.leagueName, teamId: data.teamId, teamName: data.teamName, teamLogo: data.teamLogo }]
+      .concat(data.otherLeagues)
+      .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+    el("team-modal-combined-summary").textContent = data.combinedTotals
+      ? `${data.combinedTotals.played} played · ${data.combinedTotals.won} won · ${data.combinedTotals.lost} lost across ${allLeagues.length} leagues`
+      : "";
+    const tabsEl = el("team-modal-league-tabs");
+    tabsEl.innerHTML = allLeagues.map((l) => {
+      const isActive = l.leagueId === leagueId && l.teamId === teamId;
+      return `<button type="button" class="team-league-tab${isActive ? " active" : ""}" data-league="${l.leagueId}" data-team="${l.teamId}" data-name="${escapeHtml(l.teamName)}" data-logo="${escapeHtml(l.teamLogo || "")}">${escapeHtml(l.leagueName)}</button>`;
+    }).join("");
+    tabsEl.querySelectorAll(".team-league-tab").forEach((btn) => {
+      btn.onclick = () => openTeamProfile(btn.dataset.league, btn.dataset.team, { leagueName: btn.textContent, teamName: btn.dataset.name, teamLogo: btn.dataset.logo });
+    });
+    el("team-modal-leagues-hero").style.display = "block";
+  }
+
+  el("team-modal-trophies").innerHTML = teamTrophiesHtml(data.trophies);
+  el("team-modal-trophies").style.display = data.trophies && data.trophies.length ? "block" : "none";
+
   const rosterEl = el("team-modal-roster");
   rosterEl.innerHTML = data.roster.length
     ? data.roster.map((p, i) => `<div class="team-roster-row"><span class="team-roster-num">${String(i + 1).padStart(2, "0")}</span>${newsPlayerLinkHtml(leagueId, p)}</div>`).join("")
     : '<p class="empty">No players added yet.</p>';
   bindNewsPlayerLinks(rosterEl);
+
+  el("team-modal-matches").innerHTML = data.matches.length
+    ? data.matches.map((m) => teamMatchRowHtml(m)).join("")
+    : '<p class="empty">No matches played yet.</p>';
+
+  bindTeamSubtabs(el("team-modal-subtabs"));
+
+  // A captain looking at their own team, from inside its own league (not
+  // browsing the cross-league directory or a different linked league's
+  // tab), gets the same add/rename/remove controls the Roster tab shows
+  // inline — this needs the live, still-mutable team object from the
+  // already-loaded `league`, which only exists when we're genuinely
+  // looking at currentLeagueId.
+  if (leagueId === currentLeagueId && myRole === "captain" && myTeamId === teamId) {
+    const team = league.teams.find((t) => t.id === teamId);
+    if (team) {
+      rosterEl.appendChild(ownRosterEditControls(team, () => {
+        // Redraws the modal in place (not just the tile grid behind it,
+        // which is closed right now) — the tile grid's own player count
+        // still needs to catch up too, so it isn't showing a stale number
+        // the next time this modal closes.
+        openTeamProfile(leagueId, teamId, hint);
+        if (el("view-roster").classList.contains("active")) renderRoster();
+      }));
+    }
+  }
+}
+// The in-league entry point (a standings row, a knockout finalist slot) —
+// just hands off to openTeamProfile with this league's own id and a hint
+// drawn from data already in memory, so the crest/name show up instantly
+// instead of waiting on the fetch that follows.
+function openTeamModal(teamId) {
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team) return;
+  openTeamProfile(currentLeagueId, teamId, { leagueName: league.name, teamName: team.name, teamLogo: team.logo || "" });
 }
 el("team-modal-close").onclick = () => el("team-modal-backdrop").classList.remove("open");
 el("team-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "team-modal-backdrop") el("team-modal-backdrop").classList.remove("open"); });

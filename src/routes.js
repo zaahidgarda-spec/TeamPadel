@@ -2936,47 +2936,62 @@ router.put("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
-// Cross-league combined record for a team that shares a clubId with a team
-// in another league — the only place team data crosses a league boundary,
-// mirroring how a claimed player's identity already crosses leagues via
-// claimedByUserId. Every OTHER league scanned here is filtered to non-hidden
+// Every OTHER league a clubId scan reaches into is filtered to non-hidden
 // (a hidden league's existence/data shouldn't leak into a public team page
 // just because its admin also set a matching clubId), but the league this
 // request is already scoped to is always included even if it's hidden —
 // the caller is already looking straight at it.
-router.get("/leagues/:leagueId/teams/:teamId/club", (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  if (!league) return res.status(404).json({ error: "League not found." });
-  const team = league.teams.find((t) => t.id === req.params.teamId);
-  if (!team) return res.status(404).json({ error: "Team not found." });
-  if (!team.clubId) return res.json({ combined: false });
-
+function teamsSharingClub(league, team) {
+  if (!team.clubId) return [];
   const entries = [];
   store.getIndex().filter((entry) => !entry.hidden || entry.id === league.id).forEach((entry) => {
     const lg = entry.id === league.id ? league : store.getLeague(entry.id);
     if (!lg) return;
     (lg.teams || []).forEach((t) => {
       if (t.clubId !== team.clubId) return;
-      const rows = logic.computeStandings(lg);
-      const idx = rows.findIndex((r) => r.id === t.id);
-      if (idx === -1) return;
-      const row = rows[idx];
-      entries.push({
-        leagueId: lg.id, leagueName: lg.name, teamId: t.id, teamName: t.name,
-        rank: idx + 1, teamCount: rows.length,
-        played: row.played, won: row.nightsWon, lost: row.nightsLost, points: row.points,
-      });
+      entries.push({ leagueId: lg.id, leagueName: lg.name, teamId: t.id, teamName: t.name, teamLogo: t.logo || "" });
     });
   });
-  // Only this one team, nobody else shares its clubId — nothing to combine.
-  if (entries.length < 2) return res.json({ combined: false });
-  const totals = entries.reduce((acc, e) => ({ played: acc.played + e.played, won: acc.won + e.won, lost: acc.lost + e.lost }), { played: 0, won: 0, lost: 0 });
-  entries.sort((a, b) => a.leagueName.localeCompare(b.leagueName));
-  res.json({ combined: true, totals, leagues: entries });
-});
+  return entries;
+}
+// This league's own Hall of Fame entries this team either won or was
+// runner-up in — admin-curated (same source the player Trophy Room reads),
+// matched by the frozen winnerTeamId/runnerUpTeamId rather than a roster
+// lookup, since a team (unlike a player across seasons) keeps the same id.
+function teamTrophiesIn(league, teamId) {
+  return (league.hallOfFame || []).reduce((acc, e) => {
+    if (e.winnerTeamId === teamId) acc.push({ season: e.season, label: e.label, role: "winner" });
+    else if (e.runnerUpTeamId === teamId) acc.push({ season: e.season, label: e.label, role: "runnerUp" });
+    return acc;
+  }, []).sort((a, b) => b.season - a.season);
+}
+// Every finalized fixture this team has played in this league, newest
+// first — the "tab for all matches played" behind the team card's Matches
+// tab. `result` folds in matchWinner's own knockout-decider handling
+// (see matchWinner) rather than a plain score compare, so a playoff tie
+// settled on its 5th rubber shows the right side as the winner.
+function teamMatchesIn(league, teamId) {
+  return logic.allFixturesOf(league)
+    .filter((f) => f.finalized && (f.teamA === teamId || f.teamB === teamId))
+    .map((f) => {
+      const isA = f.teamA === teamId;
+      const opp = league.teams.find((t) => t.id === (isA ? f.teamB : f.teamA));
+      const { winsA, winsB } = logic.fixtureScore(f);
+      const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
+      const winner = logic.matchWinner(f);
+      const result = winner ? (winner === (isA ? "A" : "B") ? "W" : "L") : myWins === oppWins ? "D" : myWins > oppWins ? "W" : "L";
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      return {
+        fixtureId: f.id, opponentName: opp ? opp.name : "TBD", opponentLogo: opp ? opp.logo || "" : "",
+        score: `${myWins}-${oppWins}`, result, date: sched.date || "", venue: sched.venue || "",
+      };
+    })
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
 // A self-contained team snapshot — the cross-league Search teams directory
-// has no already-loaded league payload to read from the way opening a team
-// from inside its own Table tab does (see openTeamModal client-side), so it
+// (and the tab-switcher below, for a Club ID-linked team) has no
+// already-loaded league payload to read from the way opening a team from
+// inside its own Table tab does (see openTeamModal client-side), so it
 // needs everything the team card shows in one fetch, the same role
 // /leagues/:leagueId/players/:playerId/history plays for a player opened
 // from cross-league context.
@@ -2989,13 +3004,28 @@ router.get("/leagues/:leagueId/teams/:teamId/profile", (req, res) => {
   const idx = rows.findIndex((r) => r.id === team.id);
   const row = idx >= 0 ? rows[idx] : null;
   const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
+  const shared = teamsSharingClub(league, team);
+  const otherLeagues = shared.filter((e) => !(e.leagueId === league.id && e.teamId === team.id));
+  // Only worth calling "combined" once a second team actually shares the
+  // Club ID — one team with a clubId nobody else uses is just a team.
+  const combinedTotals = otherLeagues.length ? shared.reduce((acc, e) => {
+    const lg = e.leagueId === league.id ? league : store.getLeague(e.leagueId);
+    if (!lg) return acc;
+    const r = logic.computeStandings(lg).find((x) => x.id === e.teamId);
+    if (!r) return acc;
+    return { played: acc.played + r.rubbersWon + r.rubbersLost, won: acc.won + r.rubbersWon, lost: acc.lost + r.rubbersLost };
+  }, { played: 0, won: 0, lost: 0 }) : null;
   res.json({
     leagueId: league.id, leagueName: league.name,
     teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
-    rank: idx >= 0 ? idx + 1 : null,
-    stats: row ? { points: row.points, played: row.played, won: row.rubbersWon, diff: row.diff } : null,
+    rank: idx >= 0 ? idx + 1 : null, teamCount: rows.length,
+    stats: row ? { points: row.points, played: row.rubbersWon + row.rubbersLost, won: row.rubbersWon, diff: row.diff } : null,
     ownerNames,
     roster: team.players.map((p) => ({ id: p.id, name: p.name })),
+    matches: teamMatchesIn(league, team.id),
+    trophies: teamTrophiesIn(league, team.id),
+    otherLeagues: otherLeagues.sort((a, b) => a.leagueName.localeCompare(b.leagueName)),
+    combinedTotals,
   });
 });
 

@@ -695,6 +695,11 @@
             <button class="secondary" id="bulk-add-btn" style="margin-top:8px;">Add these teams</button>
           </details>
         </div>
+        <div class="card" id="admin-combine-card">
+          <h2 class="section-title">Combine teams across leagues</h2>
+          <p class="note" style="margin-bottom:12px;">Same club, different league — an A team here, a B team over there? Give both the same Club ID and their record combines on the team page, with tabs to flip between each league's own roster and stats.</p>
+          <div id="admin-combine-list"></div>
+        </div>
         <div class="card" id="tiering-card">
           <h2 class="section-title">Player tiering</h2>
           <p class="note">Mark each team's strongest player(s) as Gold — captains will see gold names flagged in the Selection Room to help keep seeding fair.</p>
@@ -1341,9 +1346,18 @@
           <div id="team-modal-stats" class="p-stats"></div>
         </div>
         <div class="p-content-pad" style="padding-top:18px;">
-          <div id="team-modal-club-section" style="display:none;margin-bottom:20px;"></div>
-          <p class="p-section-label">Roster</p>
-          <div id="team-modal-roster"></div>
+          <div class="p-leagues-hero" id="team-modal-leagues-hero" style="display:none;">
+            <div class="p-leagues-hero-top"><span class="p-leagues-dot"></span>Combined record</div>
+            <p class="note" id="team-modal-combined-summary" style="margin:6px 0 0;"></p>
+            <nav class="tabs tabs-sub" id="team-modal-league-tabs"></nav>
+          </div>
+          <div id="team-modal-trophies" style="display:none;margin-bottom:20px;"></div>
+          <nav class="tabs tabs-sub" id="team-modal-subtabs">
+            <button type="button" class="team-subtab-btn active" data-subtab="roster">Roster</button>
+            <button type="button" class="team-subtab-btn" data-subtab="matches">Matches</button>
+          </nav>
+          <div id="team-modal-roster" style="margin-top:14px;"></div>
+          <div id="team-modal-matches" style="display:none;margin-top:14px;"></div>
         </div>
       </div>
     </div>
