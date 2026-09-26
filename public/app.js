@@ -13164,18 +13164,18 @@ function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
   const winnerSide = fin.finalized ? matchWinnerClient(fin) : null;
   const { winsA, winsB } = fin.teamA && fin.teamB ? fixtureScoreClient(fin) : { winsA: 0, winsB: 0 };
   const finalHasScore = fin.teamA && fin.teamB && (winsA > 0 || winsB > 0 || fin.finalized);
-  return `<svg viewBox="0 0 780 470" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%;height:auto;font-family:Inter,sans-serif;">
+  return `<svg viewBox="0 0 780 500" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%;height:auto;font-family:Inter,sans-serif;">
 <title>Knockout stage bracket</title>
 <style>.disp{font-family:'Oswald',sans-serif;}</style>
 <defs>
-<radialGradient id="ko-bg" cx="50%" cy="46%" r="78%">
-  <stop offset="0%" stop-color="#1B2A56"/>
-  <stop offset="55%" stop-color="#0F1830"/>
-  <stop offset="100%" stop-color="#060810"/>
+<radialGradient id="ko-bg" cx="50%" cy="42%" r="80%">
+  <stop offset="0%" stop-color="#3B2860"/>
+  <stop offset="55%" stop-color="#1A1030"/>
+  <stop offset="100%" stop-color="#08050F"/>
 </radialGradient>
-<clipPath id="ko-clip"><rect x="0" y="0" width="780" height="470" rx="16"/></clipPath>
+<clipPath id="ko-clip"><rect x="0" y="0" width="780" height="500" rx="16"/></clipPath>
 </defs>
-<rect x="0" y="0" width="780" height="470" rx="16" fill="url(#ko-bg)"/>
+<rect x="0" y="0" width="780" height="500" rx="16" fill="url(#ko-bg)"/>
 <g clip-path="url(#ko-clip)" opacity=".1" stroke="#C6FF3D" stroke-width="1">
   <line x1="-60" y1="510" x2="280" y2="-60"/>
   <line x1="140" y1="530" x2="520" y2="-60"/>
@@ -13209,6 +13209,7 @@ ${finalHasScore ? `<text x="390" y="298" text-anchor="middle" class="disp" font-
 ${bracketFinalistSlotSvg(390, 310, finB, winnerSide === "B")}
 
 ${fin.finalized ? `<text x="390" y="440" text-anchor="middle" class="disp" font-size="11" font-weight="700" letter-spacing="1" fill="#FAC775">${escapeHtml(((winnerSide === "A" ? finA : finB) || {}).name ? ((winnerSide === "A" ? finA : finB).name.toUpperCase() + " — CHAMPIONS") : "")}</text>` : ""}
+<image href="/images/logo.png" x="332" y="465" width="116" height="26" preserveAspectRatio="xMidYMid meet" opacity=".85"/>
 </svg>`;
 }
 function matchCardHtml(label, teamAId, teamBId, f) {
