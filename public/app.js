@@ -8479,7 +8479,9 @@ async function renderLiveCourtControl(opts) {
   liveBoard = { round, slots, courts, grid, cellInfo, fixtures, options, courtLabel, courtLoadUpcoming, suggestBetterCourt, hasSpread, superTieCourt };
   updateLiveMoveBar();
   updateLiveFocusStrip();
-  if (liveCourtView === "timeline") renderLiveTimeline(wrap); else renderLiveLanes(wrap);
+  if (liveCourtView === "timeline") renderLiveTimeline(wrap);
+  else if (liveCourtView === "table") renderLiveTableView(wrap);
+  else renderLiveLanes(wrap);
   // Keep an open sheet in step with the board it belongs to (or close it if
   // its match has gone from this round).
   if (liveSheetCell) renderLiveSheet();
@@ -8491,7 +8493,10 @@ let liveBoard = null;
 let liveSheetCell = null;
 let liveTimelineMinute = 0;
 let liveCourtView = "board";
-try { if (localStorage.getItem("padel-live-court-view") === "timeline") liveCourtView = "timeline"; } catch { /* storage unavailable — default to the board */ }
+try {
+  const storedView = localStorage.getItem("padel-live-court-view");
+  if (storedView === "timeline" || storedView === "table") liveCourtView = storedView;
+} catch { /* storage unavailable — default to the board */ }
 
 function liveTileInfo(s, c) {
   const b = liveBoard;
@@ -8641,6 +8646,18 @@ function markLiveMoveTargets(root) {
 // visually identical, so the second doesn't need to touch the DOM.
 function liveBoardSignature(view, html) {
   return view + "|" + (liveMoveFrom ? liveMoveFrom.s + "," + liveMoveFrom.c : "-") + "|" + html.replace(/(class="lc-tile-mn lc-timer" data-started="\d+">)[^<]*/g, "$1");
+}
+// Third view alongside Board/Timeline — the live standings, reusing the
+// exact same rows/markup the main Table tab uses (computeStandingsClient
+// already folds in a match still on court, not just finalized ones — see
+// its own `live` param) so a result posted on the Board here moves this
+// the moment this redraws, same as the poll already does for Board/
+// Timeline. Read-only: no tap targets, just something to glance at while
+// running the night.
+function renderLiveTableView(wrap) {
+  if (!league.teams.length) { wrap.innerHTML = '<p class="empty">Add teams to see the table.</p>'; return; }
+  const rows = computeStandingsClient();
+  wrap.innerHTML = standingsRowsHtml(rows, league.format === "pairs", superTieWinnerClient(), priorRankMapClient(), league.playoffFormat);
 }
 function renderLiveLanes(wrap) {
   const b = liveBoard;
@@ -8882,6 +8899,7 @@ function setLiveCourtView(view) {
   try { localStorage.setItem("padel-live-court-view", view); } catch { /* storage unavailable — just don't remember it */ }
   el("lc-view-board").classList.toggle("on", view === "board");
   el("lc-view-timeline").classList.toggle("on", view === "timeline");
+  el("lc-view-table").classList.toggle("on", view === "table");
   if (league) renderLiveCourtControl({ reusePredictions: true });
 }
 // Full screen for the board. The card is lifted over the whole page by CSS
@@ -8930,8 +8948,10 @@ document.addEventListener("fullscreenchange", () => { if (liveFullscreen && !doc
 document.addEventListener("visibilitychange", () => { if (liveFullscreen && document.visibilityState === "visible") acquireLiveWakeLock(); });
 el("lc-view-board").onclick = () => setLiveCourtView("board");
 el("lc-view-timeline").onclick = () => setLiveCourtView("timeline");
+el("lc-view-table").onclick = () => setLiveCourtView("table");
 el("lc-view-board").classList.toggle("on", liveCourtView === "board");
 el("lc-view-timeline").classList.toggle("on", liveCourtView === "timeline");
+el("lc-view-table").classList.toggle("on", liveCourtView === "table");
 function renderFixtures() {
   el("fixtures-signup-banner").style.display = (!playerAccount && !fixturesBannerDismissed) ? "flex" : "none";
   renderRoundNav("round-nav-fixtures");
