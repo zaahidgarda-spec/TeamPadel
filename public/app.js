@@ -13133,6 +13133,24 @@ function stbCaptionSvg(x, y, teamA, teamB, f) {
 // call site keeps working unchanged — the season-history archive view is
 // the only caller that passes its own snapshot's values instead, since an
 // archived season's teams/schedule aren't the live league's anymore.
+// A finalist's own crest+name slot, built into the trophy card itself
+// (see knockoutBracketSvg) rather than floating beside it — empty and
+// muted until that semi's actually decided who fills it. `champion`
+// gilds it gold once the final itself is finalized and this is the side
+// that won.
+function bracketFinalistSlotSvg(cx, y, team, champion) {
+  const size = 44;
+  const label = escapeHtml((team ? team.name : "TBD").toUpperCase());
+  const initial = escapeHtml(team ? team.name.charAt(0).toUpperCase() : "?");
+  const fillColor = champion ? "#FAC775" : team ? "rgba(198,255,61,.16)" : "rgba(255,255,255,.06)";
+  const strokeColor = champion ? "#FAC775" : team ? "#C6FF3D" : "rgba(255,255,255,.18)";
+  const textColor = champion ? "#412402" : team ? "#0A1020" : "rgba(255,255,255,.35)";
+  return `
+    <rect x="${cx - size / 2}" y="${y}" width="${size}" height="${size}" rx="10" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5"/>
+    ${team && team.logo ? `<clipPath id="fin-clip-${y}"><rect x="${cx - size / 2}" y="${y}" width="${size}" height="${size}" rx="10"/></clipPath><image href="${team.logo}" x="${cx - size / 2}" y="${y}" width="${size}" height="${size}" clip-path="url(#fin-clip-${y})" preserveAspectRatio="xMidYMid slice"/>`
+      : `<text x="${cx}" y="${y + size / 2 + 5}" text-anchor="middle" class="disp" font-size="16" font-weight="700" fill="${textColor}">${initial}</text>`}
+    <text x="${cx}" y="${y + size + 17}" text-anchor="middle" class="disp" font-size="11" font-weight="700" fill="${champion ? "#FAC775" : team ? "#FFFFFF" : "rgba(255,255,255,.4)"}">${label}</text>`;
+}
 function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
   teams = teams || league.teams;
   schedule = schedule || league.schedule || {};
@@ -13141,10 +13159,11 @@ function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
   const s0A = s0.teamA ? findTeam(s0.teamA) : null, s0B = s0.teamB ? findTeam(s0.teamB) : null;
   const s1A = s1.teamA ? findTeam(s1.teamA) : null, s1B = s1.teamB ? findTeam(s1.teamB) : null;
   const finA = fin.teamA ? findTeam(fin.teamA) : null, finB = fin.teamB ? findTeam(fin.teamB) : null;
-  const semisSched = schedule.semis || { date: "", venue: "" }, finalSched = schedule.final || { date: "", venue: "" };
+  const semisSched = schedule.semis || { date: "", venue: "" };
   const semisSub = [semisSched.date ? fmtDate(semisSched.date) : "", semisSched.venue || defaultVenue || ""].filter(Boolean).join(" · ");
-  const finalSub = [finalSched.date ? fmtDate(finalSched.date) : "", finalSched.venue || defaultVenue || ""].filter(Boolean).join(" · ");
-  const champion = fin.finalized ? (matchWinnerClient(fin) === "A" ? finA : finB) : null;
+  const winnerSide = fin.finalized ? matchWinnerClient(fin) : null;
+  const { winsA, winsB } = fin.teamA && fin.teamB ? fixtureScoreClient(fin) : { winsA: 0, winsB: 0 };
+  const finalHasScore = fin.teamA && fin.teamB && (winsA > 0 || winsB > 0 || fin.finalized);
   return `<svg viewBox="0 0 780 470" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%;height:auto;font-family:Inter,sans-serif;">
 <title>Knockout stage bracket</title>
 <style>.disp{font-family:'Oswald',sans-serif;}</style>
@@ -13153,38 +13172,35 @@ function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
   <stop offset="0%" stop-color="#0A1020"/>
   <stop offset="100%" stop-color="#111C36"/>
 </linearGradient>
-<radialGradient id="ko-glow" cx="50%" cy="50%" r="50%">
-  <stop offset="0%" stop-color="#C6FF3D" stop-opacity=".35"/>
-  <stop offset="100%" stop-color="#C6FF3D" stop-opacity="0"/>
-</radialGradient>
 </defs>
 <rect x="0" y="0" width="780" height="470" rx="16" fill="url(#ko-bg)"/>
 
-<circle cx="390" cy="235" r="62" fill="url(#ko-glow)"/>
-<circle cx="390" cy="235" r="40" fill="rgba(198,255,61,.12)"/>
+<text x="40" y="168" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
+${semisSub ? `<text x="40" y="182" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
+${bracketMatchBoxSvg(20, 188, s0A, s0B, s0)}
+${stbCaptionSvg(20, 302, s0A, s0B, s0)}
+
+<text x="740" y="168" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
+${semisSub ? `<text x="740" y="182" text-anchor="end" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
+${bracketMatchBoxSvg(520, 188, s1A, s1B, s1)}
+${stbCaptionSvg(520, 302, s1A, s1B, s1)}
+
+<path d="M260 235 H300 V100 H330" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".6"/>
+<path d="M520 235 H480 V310 H450" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".6"/>
+
+<rect x="325" y="55" width="130" height="360" rx="18" fill="rgba(255,255,255,.04)" stroke="rgba(198,255,61,.25)" stroke-width="1.5"/>
+${bracketFinalistSlotSvg(390, 80, finA, winnerSide === "A")}
+<circle cx="390" cy="235" r="46" fill="rgba(198,255,61,.14)"/>
 <path d="M376 221 h28 v13 a14 14 0 0 1 -28 0 z" fill="none" stroke="#C6FF3D" stroke-width="2.2"/>
 <path d="M376 225 h-7 v5 a7 7 0 0 0 7 5" fill="none" stroke="#C6FF3D" stroke-width="2.2"/>
 <path d="M404 225 h7 v5 a7 7 0 0 1 -7 5" fill="none" stroke="#C6FF3D" stroke-width="2.2"/>
 <rect x="386" y="248" width="8" height="9" fill="#C6FF3D"/>
 <rect x="379" y="257" width="22" height="4.5" rx="2" fill="#C6FF3D"/>
+<text x="390" y="284" text-anchor="middle" class="disp" font-size="11" font-weight="700" letter-spacing="1" fill="#C6FF3D">FINAL</text>
+${finalHasScore ? `<text x="390" y="298" text-anchor="middle" class="disp" font-size="13" font-weight="700" fill="#FFFFFF">${winsA} - ${winsB}</text>` : ""}
+${bracketFinalistSlotSvg(390, 310, finB, winnerSide === "B")}
 
-<text x="40" y="34" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
-${semisSub ? `<text x="40" y="48" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
-${bracketMatchBoxSvg(20, 58, s0A, s0B, s0)}
-${stbCaptionSvg(20, 168, s0A, s0B, s0)}
-
-${bracketMatchBoxSvg(20, 190, s1A, s1B, s1)}
-${stbCaptionSvg(20, 300, s1A, s1B, s1)}
-
-<path d="M260 105 h30 v108 h230" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".55"/>
-<path d="M260 237 h30 v23 h230" fill="none" stroke="#C6FF3D" stroke-width="2" opacity=".55"/>
-
-<text x="740" y="34" text-anchor="end" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">FINAL</text>
-${finalSub ? `<text x="740" y="48" text-anchor="end" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(finalSub)}</text>` : ""}
-${bracketMatchBoxSvg(520, 190, finA, finB, fin.teamA && fin.teamB ? fin : null)}
-${stbCaptionSvg(520, 300, finA, finB, fin)}
-
-${champion ? `<rect x="520" y="330" width="240" height="34" rx="8" fill="rgba(198,255,61,.12)" stroke="#C6FF3D" stroke-width="1"/><text x="640" y="352" text-anchor="middle" font-size="11" font-weight="700" fill="#C6FF3D">${escapeHtml(champion.name.toUpperCase())} — CHAMPIONS</text>` : ""}
+${fin.finalized ? `<text x="390" y="440" text-anchor="middle" class="disp" font-size="11" font-weight="700" letter-spacing="1" fill="#FAC775">${escapeHtml(((winnerSide === "A" ? finA : finB) || {}).name ? ((winnerSide === "A" ? finA : finB).name.toUpperCase() + " — CHAMPIONS") : "")}</text>` : ""}
 </svg>`;
 }
 function matchCardHtml(label, teamAId, teamBId, f) {
