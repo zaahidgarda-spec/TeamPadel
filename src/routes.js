@@ -2286,6 +2286,11 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
       upcoming: logic.findPlayerUpcoming(league, claim.playerId, ratingsData, identityOf),
+      // Same "flag only, fetch lazily" reasoning as the leagues hub's own
+      // hasCourtPhoto — this response already carries every league a
+      // claimed record touches, so embedding the actual image here would
+      // repeat the exact payload-size problem that flag was built to avoid.
+      hasCourtPhoto: !!league.courtPhoto,
       standings,
       results,
       awards,

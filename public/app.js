@@ -1478,8 +1478,12 @@ const courtPhotoObserver = ("IntersectionObserver" in window) ? new Intersection
     }).catch(() => {});
   });
 }, { rootMargin: "200px" }) : null;
+// Not just the leagues hub anymore — Your Tables' own photo cards (see
+// renderAccountTables) share this same lazy-fetch/observe pattern, so the
+// selector matches any element carrying data-needs-photo, not just a
+// .league-card specifically.
 function observeLeagueCardPhotos(root) {
-  const cards = root.querySelectorAll(".league-card[data-needs-photo]");
+  const cards = root.querySelectorAll("[data-needs-photo]");
   if (courtPhotoObserver) {
     cards.forEach((card) => courtPhotoObserver.observe(card));
   } else {
@@ -3664,14 +3668,25 @@ function renderAccountTables(cards) {
     const myRowHtml = s.myRow ? `<div class="pd-table-divider">${rowHtml(s.myRow, false)}</div>` : "";
     const liveBadge = s.live ? '<span class="tag badge-live">Live</span>' : "";
     const note = s.live ? '<div class="pd-table-note">Includes scores live on court or entered but not yet finalized.</div>' : "";
-    return `<div class="pd-table-card" data-league="${card.leagueId}">
-      <div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>
-      ${topRowsHtml}
-      ${moreHtml}
-      ${myRowHtml}
-      ${note}
+    // A venue photo behind the table, same lazy-fetch pattern as the
+    // leagues hub's own cards (see observeLeagueCardPhotos) — grayscale
+    // and blurred rather than shown plain, so it reads as atmosphere
+    // behind the standings rather than competing with them for attention,
+    // with a dedicated layer for the filter so it never blurs the text
+    // sitting on top of it.
+    const bgHtml = card.hasCourtPhoto ? `<div class="pd-table-bg" data-needs-photo="1" data-id="${card.leagueId}"></div>` : "";
+    return `<div class="pd-table-card${card.hasCourtPhoto ? " has-photo" : ""}" data-league="${card.leagueId}">
+      ${bgHtml}
+      <div class="pd-table-content">
+        <div class="pd-table-head"><span class="league-tag">${escapeHtml(card.leagueName)}</span>${liveBadge}</div>
+        ${topRowsHtml}
+        ${moreHtml}
+        ${myRowHtml}
+        ${note}
+      </div>
     </div>`;
   }).join("");
+  observeLeagueCardPhotos(el("account-tables-scroll"));
   // Same "land on the same tab" idea as the league switcher — jumping to
   // the real Table tab is the whole point of "show full table", not just
   // dropping the captain onto whatever tab openLeague defaults to.
