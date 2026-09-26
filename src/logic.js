@@ -864,6 +864,7 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
           rows.push({
             label: stageLabel(league, f),
             opponentTeam: oppTeam.name,
+            opponentTeamId: oppTeam.id,
             opponentLogo: oppTeam.logo || "",
             opponentPlayers: oppNames,
             opponentPlayerRefs: oppRefs,

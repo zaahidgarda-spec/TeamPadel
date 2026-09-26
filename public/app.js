@@ -3896,7 +3896,7 @@ function matchStartHasArrived(m) {
 function renderAccountNextMatch(cards) {
   const rows = [];
   cards.forEach((card) => {
-    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueId: card.leagueId, leagueName: card.leagueName, teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, playerName: card.playerName }, r)));
+    card.upcoming.forEach((r) => rows.push(Object.assign({ leagueId: card.leagueId, leagueName: card.leagueName, teamId: card.teamId, teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, playerName: card.playerName }, r)));
   });
   const wrap = el("account-next-match-card");
   const anyLiveNow = cards.some((c) => c.liveNow);
@@ -3941,12 +3941,12 @@ function renderAccountNextMatch(cards) {
     ${courtBannerHtml}
     <div class="mc-duel">
       <div class="mc-duel-side">
-        <span class="mc-duel-crest${favMine ? " favorite" : ""}">${duelCrestHtml(m.teamLogo, m.teamName)}</span>
+        <button type="button" class="mc-duel-crest${favMine ? " favorite" : ""}" data-league="${m.leagueId}" data-team="${m.teamId}" data-name="${escapeHtml(m.teamName)}" data-logo="${escapeHtml(m.teamLogo || "")}">${duelCrestHtml(m.teamLogo, m.teamName)}</button>
         <span class="mc-duel-name${favMine ? " favorite" : ""}">${pairRefsLinksHtml(m.leagueId, mySideRefs)}</span>
       </div>
       <span class="mc-duel-vs">VS</span>
       <div class="mc-duel-side">
-        <span class="mc-duel-crest${favOpp ? " favorite" : ""}">${duelCrestHtml(m.opponentLogo, m.opponentTeam)}</span>
+        <button type="button" class="mc-duel-crest${favOpp ? " favorite" : ""}" data-league="${m.leagueId}" data-team="${m.opponentTeamId || ""}" data-name="${escapeHtml(m.opponentTeam)}" data-logo="${escapeHtml(m.opponentLogo || "")}">${duelCrestHtml(m.opponentLogo, m.opponentTeam)}</button>
         <span class="mc-duel-name${favOpp ? " favorite" : ""}">${m.opponentPlayerRefs && m.opponentPlayerRefs.length ? pairRefsLinksHtml(m.leagueId, m.opponentPlayerRefs) : "?"}</span>
       </div>
     </div>
@@ -3954,6 +3954,14 @@ function renderAccountNextMatch(cards) {
     <div class="mc-meta">${escapeHtml(meta)}</div>
   `;
   bindNewsPlayerLinks(el("account-next-match-slide"));
+  // Both crests open that team's profile — same self-contained fetch the
+  // Teams directory uses, not the client-data-only openTeamModal, since
+  // this card can be showing a league that isn't the one currently open
+  // (or none at all).
+  el("account-next-match-slide").querySelectorAll(".mc-duel-crest").forEach((btn) => {
+    if (!btn.dataset.team) return;
+    btn.onclick = () => openTeamProfile(btn.dataset.league, btn.dataset.team, { leagueName: m.leagueName, teamName: btn.dataset.name, teamLogo: btn.dataset.logo });
+  });
   return anyLiveNow || matchStartHasArrived(m);
 }
 // Your Tables jumps to the very top of the profile — above even the
