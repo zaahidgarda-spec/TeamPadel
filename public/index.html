@@ -3,27 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- Google Analytics (GA4) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-YJ52353W9E"></script>
+<!-- Analytics (GA4 + Microsoft Clarity) — POPIA/cookie-consent gated. Neither
+     script loads at all until the visitor has actively accepted (see the
+     cookie banner wiring in app.js, and window.__loadAnalytics below). A
+     prior "accepted" choice (localStorage) re-loads them on the next visit
+     without asking again; "declined" or no choice yet means neither ever
+     runs. -->
 <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  // This is a single-page app — a hash change (opening a league) never
-  // triggers a real navigation GA would see automatically. The initial
-  // automatic pageview would also always log "/" even when someone lands
-  // directly on a shared league link, before the app knows better — so
-  // it's turned off here in favor of app.js's own trackPageView() calls,
-  // which fire once boot() actually knows which route was requested.
-  gtag('config', 'G-YJ52353W9E', { send_page_view: false });
-</script>
-<!-- Microsoft Clarity -->
-<script type="text/javascript">
+  window.__loadAnalytics = function() {
+    if (window.__analyticsLoaded) return;
+    window.__analyticsLoaded = true;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){dataLayer.push(arguments);};
+    gtag('js', new Date());
+    // This is a single-page app — a hash change (opening a league) never
+    // triggers a real navigation GA would see automatically. The initial
+    // automatic pageview would also always log "/" even when someone lands
+    // directly on a shared league link, before the app knows better — so
+    // it's turned off here in favor of app.js's own trackPageView() calls,
+    // which fire once boot() actually knows which route was requested.
+    gtag('config', 'G-YJ52353W9E', { send_page_view: false });
+    const ga = document.createElement("script");
+    ga.async = true; ga.src = "https://www.googletagmanager.com/gtag/js?id=G-YJ52353W9E";
+    document.head.appendChild(ga);
     (function(c,l,a,r,i,t,y){
         c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
         t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
         y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
     })(window, document, "clarity", "script", "ynkzd2wixg");
+  };
+  try { if (localStorage.getItem("padel-cookie-consent") === "accepted") window.__loadAnalytics(); } catch (e) { /* private mode — just skip */ }
 </script>
 <title>Team Padel</title>
 <meta name="description" content="The home of team padel leagues.">
@@ -41,6 +50,13 @@
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="role-guest">
+<div id="cookie-consent-banner" class="cookie-consent-banner" style="display:none;">
+  <p>This site uses cookies for login sessions (always on, required) and, only with your OK, analytics to help us understand how the app is used. See our <a href="#privacy">Privacy Policy</a>.</p>
+  <div class="cookie-consent-actions">
+    <button type="button" class="secondary" id="cookie-consent-decline">Decline</button>
+    <button type="button" class="primary" id="cookie-consent-accept">Accept</button>
+  </div>
+</div>
 <div class="wrap">
   <div class="admin-bar" id="admin-bar" style="display:none;">
     <button type="button" class="ab-tag" id="admin-bar-tag">Admin</button><span class="ab-sp"></span>
@@ -79,6 +95,49 @@
       </header>
       <div class="card" id="pay-link-card" style="max-width:420px;margin:24px auto;">
         <div id="pay-link-content"></div>
+      </div>
+    </section>
+
+    <section id="view-privacy" style="display:none;">
+      <header class="site-header hub-hero">
+        <a href="/" class="brand-link"><img src="/images/logo-dark.png" alt="Team Padel" class="logo-img"></a>
+      </header>
+      <div class="card" style="max-width:640px;margin:24px auto;">
+        <h2 class="section-title">Privacy Policy</h2>
+        <div class="privacy-content">
+          <p class="note">Last updated: <span id="privacy-updated-date"></span></p>
+
+          <h3>What we collect</h3>
+          <ul>
+            <li><b>Player accounts:</b> your name, email address, and password (stored as a one-way hash, never in plain text) when you sign up on My Profile.</li>
+            <li><b>Team/league admin logins:</b> a team code or admin username, and an email/password for league admins.</li>
+            <li><b>Interest / join-a-league forms:</b> name, contact number, email, and your Playtomic level, if you fill one in.</li>
+            <li><b>Photos:</b> a profile photo if you add one, and your team's kit design photos if a captain uploads them.</li>
+            <li><b>Match data:</b> line-ups, scores, and results entered by captains and admins as part of running the league.</li>
+            <li><b>Push notifications:</b> if you turn these on, your device's browser registers a notification address with us — this isn't linked to your name or email.</li>
+          </ul>
+
+          <h3>Why we collect it</h3>
+          <p>To run the league you're part of: showing fixtures and results, letting you log in and see your own record, sending you match reminders you've opted into, and letting an admin contact you about your team. We don't sell personal information, and we don't use it for anything beyond running the leagues on this site.</p>
+
+          <h3>Who else sees it</h3>
+          <ul>
+            <li><b>Payments:</b> if a captain sends you a payment link, you enter your card/bank details directly on PayFast's own page — we never see or store them.</li>
+            <li><b>Email:</b> account and password-reset emails are sent through our email provider.</li>
+            <li><b>Sign-in with Google/Facebook:</b> only if you choose that option, to confirm your name and email.</li>
+            <li><b>Hosting:</b> your data is stored with our hosting and database providers, who may process it outside South Africa.</li>
+          </ul>
+
+          <h3>Cookies and analytics</h3>
+          <p>We use one essential cookie to keep you logged in — the site can't work without it, and it's not optional. With your separate consent (the banner you saw when you first visited), we also use Google Analytics and Microsoft Clarity to understand how the app is used. Neither loads until you accept, and you can change your mind any time from the link at the bottom of this page.</p>
+          <p><button type="button" class="link" id="privacy-cookie-settings-btn">Cookie settings</button></p>
+
+          <h3>Your rights</h3>
+          <p>You can ask to see, correct, or delete the personal information we hold about you. You can delete your own account (login, email, and photo) yourself from My Profile at any time — match results and team rosters you were part of stay as part of the league's shared record, the same way they would if you'd simply stopped playing, rather than being erased for everyone else who played in those matches. For anything else, contact us at <b>[insert contact email]</b>.</p>
+
+          <h3>Questions</h3>
+          <p>If you have any questions about this policy or how your information is handled, contact <b>[insert contact email]</b>.</p>
+        </div>
       </div>
     </section>
 
@@ -219,6 +278,7 @@
               <input type="text" id="account-signup-name" placeholder="Your name">
               <input type="email" id="account-signup-email" placeholder="Email">
               <input type="password" id="account-signup-password" placeholder="Password (6+ characters)">
+              <p class="note" style="margin:0;">By creating a profile you agree to our <a href="#privacy">Privacy Policy</a>.</p>
               <button class="primary" id="account-signup-btn">Create your profile</button>
               <div class="social-login" style="display:none;">
               <div class="social-or"><span>or</span></div>
@@ -382,6 +442,19 @@
               <button class="primary" id="account-owner-login-btn">Log in</button>
             </div>
             <div class="error" id="account-owner-error"></div>
+          </div>
+          <div class="pd-danger-zone">
+            <h2 class="section-title" style="margin-bottom:6px;">Delete account</h2>
+            <p class="note" style="margin-bottom:10px;">Deletes your login, email, and photo for good. Match results and team rosters you were part of stay as part of the league's shared record — see our <a href="#privacy">Privacy Policy</a> for why. This can't be undone.</p>
+            <button type="button" class="danger" id="account-delete-btn">Delete my account</button>
+            <div id="account-delete-confirm" style="display:none;margin-top:12px;">
+              <p class="note" style="margin-bottom:10px;"><b>Are you sure?</b> This permanently deletes your account — you'll need to sign up again from scratch to use My Profile.</p>
+              <div class="row">
+                <button type="button" class="secondary" id="account-delete-cancel">Cancel</button>
+                <button type="button" class="danger" id="account-delete-confirm-btn">Yes, delete my account</button>
+              </div>
+              <div class="error" id="account-delete-error"></div>
+            </div>
           </div>
         </div>
       </section>

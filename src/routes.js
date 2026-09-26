@@ -1619,6 +1619,34 @@ router.post("/players/logout", (req, res) => {
   req.session.playerUser = null;
   res.json({ ok: true });
 });
+// A real deletion, not just a sign-out — the login itself (email,
+// password hash, name on the account) is gone for good, and so is any
+// photo this person uploaded (that's personal identification, same as
+// the account is). What's deliberately NOT touched: the roster name and
+// match history their claimed records are part of — those are the
+// league's own shared record (other players' results reference them too),
+// exactly as they'd stay if this person had simply stopped playing rather
+// than asked to be forgotten. The privacy policy states this plainly
+// rather than leaving it as a silent implementation choice.
+router.post("/players/delete-account", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  if (!user) return res.status(404).json({ error: "Account not found." });
+  (user.claims || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    if (!league) return;
+    const team = league.teams.find((t) => t.id === c.teamId);
+    const player = team && team.players.find((p) => p.id === c.playerId);
+    if (!player) return;
+    if (player.claimedByUserId === user.id) player.claimedByUserId = null;
+    if (player.photo) player.photo = "";
+    store.saveLeague(league.id, league);
+  });
+  const index = store.getUsersIndex().filter((e) => e.id !== user.id);
+  store.saveUsersIndex(index);
+  store.deleteUser(user.id);
+  req.session.playerUser = null;
+  res.json({ ok: true });
+});
 router.get("/players/me", (req, res) => {
   const pu = req.session.playerUser;
   const user = pu && store.getUser(pu.id);

@@ -412,6 +412,10 @@ async function boot() {
     await openKitSharePage(...kitShareMatch.slice(1));
     return;
   }
+  if (window.location.hash === "#privacy") {
+    openPrivacyPolicy();
+    return;
+  }
   const m = window.location.hash.match(/^#league\/(.+)$/);
   if (m && leaguesIndex.find((l) => l.id === m[1])) {
     await openLeague(m[1]);
@@ -426,6 +430,26 @@ async function boot() {
 function trackPageView(path, title) {
   if (typeof gtag === "function") gtag("event", "page_view", { page_path: path, page_title: title });
 }
+// Cookie/analytics consent — shown once, before GA or Clarity ever load
+// (see window.__loadAnalytics in index.html, which neither script call
+// happens without). "Declined" is remembered just as durably as
+// "accepted" — it must not re-ask on every visit either.
+const COOKIE_CONSENT_KEY = "padel-cookie-consent";
+// Bump this string by hand whenever the policy text actually changes —
+// it's what "Last updated" on the page shows, not today's date on every
+// load, which would claim an edit happened on every single visit.
+const PRIVACY_POLICY_UPDATED = "26 September 2026";
+function readCookieConsent() {
+  try { return localStorage.getItem(COOKIE_CONSENT_KEY); } catch { return null; }
+}
+function setCookieConsent(value) {
+  try { localStorage.setItem(COOKIE_CONSENT_KEY, value); } catch { /* private mode — just skip persisting the choice */ }
+  el("cookie-consent-banner").style.display = "none";
+  if (value === "accepted" && typeof window.__loadAnalytics === "function") window.__loadAnalytics();
+}
+if (!readCookieConsent()) el("cookie-consent-banner").style.display = "flex";
+el("cookie-consent-accept").onclick = () => setCookieConsent("accepted");
+el("cookie-consent-decline").onclick = () => setCookieConsent("declined");
 // A standalone page for someone who isn't signed into anything — a
 // teammate without a player account, paying their own share off a link
 // the captain sent them. Bypasses the hub/league chrome entirely. Hero-
@@ -792,6 +816,23 @@ async function openKitSharePage(leagueId, token) {
   if (sponsorsCard) content.appendChild(sponsorsCard);
   data.teams.forEach((t) => content.appendChild(kitShareTeamCard(t, data)));
 }
+// Static, but still a real route (not a modal) — reachable on its own
+// link (from the cookie banner, an email footer, or shared directly)
+// without needing the hub or a session first, same as the pay-link/
+// kit-share standalone pages above.
+function openPrivacyPolicy() {
+  el("view-hub").style.display = "none";
+  el("view-league").style.display = "none";
+  el("view-kit-share").style.display = "none";
+  el("view-pay-link").style.display = "none";
+  el("view-privacy").style.display = "block";
+  el("privacy-updated-date").textContent = PRIVACY_POLICY_UPDATED;
+  trackPageView("/privacy", "Privacy Policy");
+}
+el("privacy-cookie-settings-btn").onclick = () => {
+  try { localStorage.removeItem(COOKIE_CONSENT_KEY); } catch { /* private mode — nothing to clear */ }
+  el("cookie-consent-banner").style.display = "flex";
+};
 function showHub() {
   hideGuestWall();
   el("view-league").classList.remove("gw-on");
@@ -2865,6 +2906,21 @@ el("account-signup-btn").onclick = async () => {
 el("account-logout-btn").onclick = async () => {
   await api("/players/logout", { method: "POST" });
   await refreshAccountStatus();
+};
+el("account-delete-btn").onclick = () => {
+  el("account-delete-confirm").style.display = "block";
+  el("account-delete-btn").style.display = "none";
+};
+el("account-delete-cancel").onclick = () => {
+  el("account-delete-confirm").style.display = "none";
+  el("account-delete-btn").style.display = "inline-block";
+  el("account-delete-error").textContent = "";
+};
+el("account-delete-confirm-btn").onclick = async () => {
+  try {
+    await api("/players/delete-account", { method: "POST" });
+    await refreshAccountStatus();
+  } catch (e) { el("account-delete-error").textContent = e.message; }
 };
 
 el("show-account-forgot").onclick = () => {
