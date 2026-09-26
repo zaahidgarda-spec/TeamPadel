@@ -13168,12 +13168,20 @@ function knockoutBracketSvg(s0, s1, fin, teams, schedule, defaultVenue) {
 <title>Knockout stage bracket</title>
 <style>.disp{font-family:'Oswald',sans-serif;}</style>
 <defs>
-<linearGradient id="ko-bg" x1="0" y1="0" x2="1" y2="1">
-  <stop offset="0%" stop-color="#0A1020"/>
-  <stop offset="100%" stop-color="#111C36"/>
-</linearGradient>
+<radialGradient id="ko-bg" cx="50%" cy="46%" r="78%">
+  <stop offset="0%" stop-color="#1B2A56"/>
+  <stop offset="55%" stop-color="#0F1830"/>
+  <stop offset="100%" stop-color="#060810"/>
+</radialGradient>
+<clipPath id="ko-clip"><rect x="0" y="0" width="780" height="470" rx="16"/></clipPath>
 </defs>
 <rect x="0" y="0" width="780" height="470" rx="16" fill="url(#ko-bg)"/>
+<g clip-path="url(#ko-clip)" opacity=".1" stroke="#C6FF3D" stroke-width="1">
+  <line x1="-60" y1="510" x2="280" y2="-60"/>
+  <line x1="140" y1="530" x2="520" y2="-60"/>
+  <line x1="520" y1="530" x2="900" y2="-40"/>
+  <line x1="660" y1="530" x2="1020" y2="-20"/>
+</g>
 
 <text x="40" y="168" class="disp" font-size="11" font-weight="700" letter-spacing="1.5" fill="#C6FF3D">SEMI FINAL</text>
 ${semisSub ? `<text x="40" y="182" font-size="9.5" fill="rgba(255,255,255,.5)">${escapeHtml(semisSub)}</text>` : ""}
