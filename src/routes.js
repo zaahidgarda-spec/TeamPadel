@@ -1709,15 +1709,19 @@ function allPlayersFlat() {
 // specifically, not hidden league-wide — its own Table/Fixtures tabs are
 // unaffected.
 const VIBORA_LEAGUE_NAME = "Vibora 50+";
-function allTeamsFlat() {
+// `includeVibora` defaults to false — the public Teams directory leaves
+// Vibora 50+ out entirely (see VIBORA_LEAGUE_NAME above), but that's a
+// directory-display concern, not a reason to also hide it from the
+// owner's own team-combine search below.
+function allTeamsFlat({ includeVibora } = {}) {
   const results = [];
   store.getIndex().filter((entry) => !entry.hidden).forEach((entry) => {
     const league = store.getLeague(entry.id);
-    if (!league || league.name === VIBORA_LEAGUE_NAME) return;
+    if (!league || (!includeVibora && league.name === VIBORA_LEAGUE_NAME)) return;
     league.teams.forEach((t) => {
       results.push({
         leagueId: league.id, leagueName: league.name,
-        teamId: t.id, teamName: t.name, teamLogo: t.logo || "", playerCount: t.players.length,
+        teamId: t.id, teamName: t.name, teamLogo: t.logo || "", playerCount: t.players.length, clubId: t.clubId || null,
       });
     });
   });
@@ -2035,6 +2039,39 @@ router.post("/admin/players/combine", async (req, res) => {
     return res.status(503).json({ error: "Couldn't save just now — try again in a moment." });
   }
   res.json({ ok: true, userId: user.id });
+});
+// Same idea as the player search just above, for the "Combine team
+// profiles" card — a team has no separate account to search by, so this
+// is a plain name search over allTeamsFlat rather than a dedicated index.
+router.get("/admin/teams/search", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const q = ((req.query.q || "") + "").trim().toLowerCase();
+  res.json(q ? allTeamsFlat({ includeVibora: true }).filter((t) => t.teamName.toLowerCase().includes(q)) : []);
+});
+// Owner-only, unlike the PUT /leagues/:leagueId/teams/:teamId route's own
+// clubId field (that one's for a league's own admin editing their own
+// team directly) — combining spans leagues an ordinary league admin has
+// no reason to know about or touch, the same reasoning /admin/players/
+// combine above already applies to a claimed player's records. Generates
+// the clubId itself (a plain uid, never shown or typed anywhere) rather
+// than asking the owner to invent and match a string by hand.
+router.post("/admin/teams/combine", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const { records } = req.body || {};
+  if (!Array.isArray(records) || records.length < 2) return res.status(400).json({ error: "Select at least two teams to combine." });
+  const resolved = [];
+  for (const r of records) {
+    const league = store.getLeague(r.leagueId);
+    const team = league && league.teams.find((t) => t.id === r.teamId);
+    if (!team) return res.status(400).json({ error: "A selected team couldn't be found." });
+    resolved.push({ league, team });
+  }
+  const clubId = logic.uid();
+  resolved.forEach(({ league, team }) => {
+    team.clubId = clubId;
+    store.saveLeague(league.id, league);
+  });
+  res.json({ ok: true });
 });
 // A simple read-back of every player account and what it's linked to —
 // so combining someone isn't a write-only black box for the admin.

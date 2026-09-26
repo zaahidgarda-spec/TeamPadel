@@ -43,7 +43,7 @@
 <body class="role-guest">
 <div class="wrap">
   <div class="admin-bar" id="admin-bar" style="display:none;">
-    <span class="ab-tag">Admin</span><span class="ab-sp"></span>
+    <button type="button" class="ab-tag" id="admin-bar-tag">Admin</button><span class="ab-sp"></span>
     <button type="button" class="ab-btn" id="admin-bar-btn"><span class="ab-dot"></span>Control room<span class="ab-n" id="admin-bar-n" style="display:none;"></span></button>
   </div>
   <div id="install-banner" class="install-banner" style="display:none;">
@@ -539,6 +539,23 @@
             <div class="error" id="combine-error"></div>
           </div>
         </div>
+        <div class="card" id="combine-teams-card" style="display:none;">
+          <h2 class="section-title">Combine team profiles</h2>
+          <p class="note" style="margin-bottom:10px;">Same club fielding a squad in more than one league — an A team here, a B team over there? Search, pick at least two of their team records, and link them into one combined team page with tabs for each league's own roster and stats.</p>
+          <div class="row">
+            <label class="sr-only" for="combine-team-search-input">Search for a team</label>
+            <input type="text" id="combine-team-search-input" placeholder="Search for a team…" style="flex:1;min-width:160px;">
+          </div>
+          <div id="combine-team-search-results"></div>
+          <div id="combine-team-selected-wrap" style="display:none;margin-top:14px;">
+            <p class="modal-subhead">Selected teams</p>
+            <div id="combine-team-selected-list"></div>
+            <div class="row" style="margin-top:10px;">
+              <button class="primary" id="combine-team-submit-btn">Combine</button>
+            </div>
+            <div class="error" id="combine-team-error"></div>
+          </div>
+        </div>
         <div class="card" id="player-accounts-card" style="display:none;">
           <h2 class="section-title">Player accounts<button class="secondary" id="export-accounts-btn" type="button">Export CSV</button></h2>
           <p class="note" style="margin-bottom:12px;">Everyone with an account, grouped: who's on the site now, real sign-ups, records you combined that are waiting for the person to sign up, and test addresses kept out of the way.</p>
@@ -694,11 +711,6 @@
             <textarea id="bulk-team-input" rows="4"></textarea>
             <button class="secondary" id="bulk-add-btn" style="margin-top:8px;">Add these teams</button>
           </details>
-        </div>
-        <div class="card" id="admin-combine-card">
-          <h2 class="section-title">Combine teams across leagues</h2>
-          <p class="note" style="margin-bottom:12px;">Same club, different league — an A team here, a B team over there? Give both the same Club ID and their record combines on the team page, with tabs to flip between each league's own roster and stats.</p>
-          <div id="admin-combine-list"></div>
         </div>
         <div class="card" id="tiering-card">
           <h2 class="section-title">Player tiering</h2>

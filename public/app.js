@@ -1606,6 +1606,18 @@ el("admin-bar-btn").onclick = async () => {
   el("lc-sheet").querySelectorAll("[data-x]").forEach((x) => { x.onclick = closeLiveSheet; });
   el("lc-sheet").querySelectorAll("[data-league]").forEach((btn) => { btn.onclick = () => goToControlRoom(btn.dataset.league); });
 };
+// The plain "Admin" label next to the Control room button — Control room
+// jumps straight to Live Court Control specifically; this instead means
+// "take me to the admin dashboard itself", which is a different page
+// depending on who's looking: a league admin's is that league's own Admin
+// tab, the owner's is the site-wide console (Manage Leagues, Combine
+// profiles, and so on).
+el("admin-bar-tag").onclick = () => {
+  if (inLeagueView() && myRole === "admin" && league.format !== "pairs") { switchTab("admin"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  if (!isOwner) return;
+  showHub();
+  switchHubTab("admin");
+};
 el("back-to-hub").onclick = async () => { leaguesIndex = await api("/leagues").catch(() => leaguesIndex); showHub(); };
 
 /* ---------- "Interested in joining a league?" signup form ---------- */
@@ -1931,6 +1943,7 @@ const ADMIN_SECTIONS = [
   { id: "manage-leagues-card", key: "leagues", title: "Leagues" },
   { id: "player-accounts-card", key: "accounts", title: "Player accounts" },
   { id: "combine-players-card", key: "combine", title: "Combine player profiles" },
+  { id: "combine-teams-card", key: "combineTeams", title: "Combine team profiles" },
   { id: "push-stats-card", key: "push", title: "Push notifications" },
   { id: "push-broadcast-card", key: "announce", title: "Send push announcement" },
   { id: "guest-wall-card", key: "wall", title: "Guest sign-up wall" },
@@ -2045,6 +2058,7 @@ async function refreshOwnerStatus() {
   el("manage-leagues-card").style.display = isOwner ? "block" : "none";
   el("interest-signups-card").style.display = isOwner ? "block" : "none";
   el("combine-players-card").style.display = isOwner ? "block" : "none";
+  el("combine-teams-card").style.display = isOwner ? "block" : "none";
   el("live-count-card").style.display = isOwner ? "block" : "none";
   setupAdminDashboard();
   el("admin-dash-top").style.display = isOwner ? "block" : "none";
@@ -2538,6 +2552,67 @@ el("combine-submit-btn").onclick = async () => {
     renderCombineAccounts();
     renderCombineSuggestions();
   } catch (e) { el("combine-error").textContent = e.message; }
+};
+
+/* ---------- Admin: combine team profiles across leagues ----------
+   Same shape as combining player profiles above, minus the name/email step
+   — a team has no account to create, this just sets a shared, generated
+   Club ID across every selected record (see /admin/teams/combine). */
+let combineTeamSelected = [];
+let combineTeamSearchTimer = null;
+el("combine-team-search-input").addEventListener("input", () => {
+  clearTimeout(combineTeamSearchTimer);
+  const q = el("combine-team-search-input").value.trim();
+  if (!q) { el("combine-team-search-results").innerHTML = ""; return; }
+  combineTeamSearchTimer = setTimeout(() => runCombineTeamSearch(q), 300);
+});
+async function runCombineTeamSearch(q) {
+  const results = await api("/admin/teams/search?q=" + encodeURIComponent(q)).catch(() => []);
+  const c = el("combine-team-search-results");
+  if (results.length === 0) { c.innerHTML = '<p class="empty">No matching teams found.</p>'; return; }
+  c.innerHTML = results.map((r) => {
+    const already = combineTeamSelected.some((s) => s.leagueId === r.leagueId && s.teamId === r.teamId);
+    return `<div class="notif-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-name="${escapeHtml(r.teamName)}" data-league-name="${escapeHtml(r.leagueName)}">
+      <div><strong>${escapeHtml(r.teamName)}</strong><div class="note">${escapeHtml(r.leagueName)}${r.clubId ? " · already combined" : ""}</div></div>
+      <button class="secondary combine-team-select-btn" type="button" ${already ? "disabled" : ""}>${already ? "Selected" : "Select"}</button>
+    </div>`;
+  }).join("");
+  c.querySelectorAll(".combine-team-select-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const row = btn.closest(".notif-row");
+      combineTeamSelected.push({ leagueId: row.dataset.league, teamId: row.dataset.team, teamName: row.dataset.name, leagueName: row.dataset.leagueName });
+      renderCombineTeamSelected();
+      runCombineTeamSearch(q);
+    };
+  });
+}
+function renderCombineTeamSelected() {
+  el("combine-team-selected-wrap").style.display = combineTeamSelected.length ? "block" : "none";
+  el("combine-team-selected-list").innerHTML = combineTeamSelected.map((s, i) => `
+    <div class="notif-row" data-idx="${i}">
+      <div><strong>${escapeHtml(s.teamName)}</strong><div class="note">${escapeHtml(s.leagueName)}</div></div>
+      <button class="link combine-team-remove-btn" type="button">Remove</button>
+    </div>
+  `).join("");
+  el("combine-team-selected-list").querySelectorAll(".combine-team-remove-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const idx = Number(btn.closest(".notif-row").dataset.idx);
+      combineTeamSelected.splice(idx, 1);
+      renderCombineTeamSelected();
+      const q = el("combine-team-search-input").value.trim();
+      if (q) runCombineTeamSearch(q);
+    };
+  });
+}
+el("combine-team-submit-btn").onclick = async () => {
+  if (combineTeamSelected.length < 2) { el("combine-team-error").textContent = "Select at least two teams."; return; }
+  try {
+    await api("/admin/teams/combine", { method: "POST", body: { records: combineTeamSelected.map((s) => ({ leagueId: s.leagueId, teamId: s.teamId })) } });
+    combineTeamSelected = [];
+    el("combine-team-error").textContent = "";
+    el("combine-team-search-input").value = ""; el("combine-team-search-results").innerHTML = "";
+    renderCombineTeamSelected();
+  } catch (e) { el("combine-team-error").textContent = e.message; }
 };
 // The owner's list of every player account, grouped so it's readable at a
 // glance: who's on the site right now (also shown under the live count),
@@ -5173,40 +5248,9 @@ function renderAdmin() {
   });
 
   renderAdminRoster();
-  renderAdminCombine();
   renderAdminFixtures();
   renderAdminSponsors();
   renderOrphanedPlayers();
-}
-// Its own dedicated card, not buried per-team inside Player rosters — the
-// Club ID field is the whole point of this card, so it gets first billing
-// instead of being one more input among owners/gold/players.
-function renderAdminCombine() {
-  const c = el("admin-combine-list");
-  c.innerHTML = "";
-  if (!league.teams.length) { c.innerHTML = '<p class="empty">Add teams first.</p>'; return; }
-  league.teams.forEach((t) => {
-    const row = document.createElement("div");
-    row.className = "admin-combine-row";
-    row.innerHTML = avatarHtml(t);
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "admin-combine-name";
-    nameSpan.textContent = t.name;
-    const input = document.createElement("input");
-    input.type = "text"; input.className = "inline-edit"; input.placeholder = "Club ID (optional)";
-    input.style.cssText = "flex:1;min-width:120px;";
-    input.value = t.clubId || "";
-    input.onkeydown = (e) => { if (e.key === "Enter") input.blur(); };
-    input.onblur = async () => {
-      const val = input.value.trim();
-      if (val === (t.clubId || "")) return;
-      try { await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "PUT", body: { clubId: val } }); await refreshLeague(); renderAdminCombine(); }
-      catch (e) { alert(e.message); input.value = t.clubId || ""; }
-    };
-    row.appendChild(nameSpan);
-    row.appendChild(input);
-    c.appendChild(row);
-  });
 }
 // Every player id still referenced in a finalized match but missing from
 // the roster — the state a delete-before-the-guard left behind. Team,

@@ -1111,7 +1111,8 @@ body.lc-fs-on{overflow:hidden;}
    control room from anywhere, not just from inside a league. */
 .admin-bar{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;gap:10px;padding:8px max(20px,calc((100vw - 1040px) / 2 + 20px));background:#060B18;border-bottom:1px solid #1B2745;}
 html.has-admin-bar .wrap{padding-top:76px;}
-.admin-bar .ab-tag{font-family:var(--font-display);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7C8CB0;}
+.admin-bar .ab-tag{font-family:var(--font-display);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7C8CB0;background:none;border:none;padding:0;cursor:pointer;min-height:0;}
+.admin-bar .ab-tag:hover{color:#B7C4E6;}
 .admin-bar .ab-sp{flex:1;}
 .admin-bar .ab-btn{display:inline-flex;align-items:center;gap:8px;background:#1B2745;border:1px solid #2C3B66;color:#fff;border-radius:var(--radius-full);padding:8px 14px;font-family:var(--font-display);font-size:12.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;min-height:0;}
 .admin-bar .ab-btn:hover{background:#25355F;}
@@ -1373,10 +1374,6 @@ html.has-admin-bar .wrap{padding-top:76px;}
 table.court-schedule-table.timeslot-grid-table{min-width:0;}
 .roster-head{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
 .roster-team{margin-bottom:14px;}
-.admin-combine-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);}
-.admin-combine-row:last-child{border-bottom:none;}
-.admin-combine-row .avatar,.admin-combine-row .avatar-fb{width:28px;height:28px;font-size:12px;flex-shrink:0;}
-.admin-combine-name{font-size:13px;font-weight:600;color:var(--text);width:120px;flex-shrink:0;}
 .logo-label{font-size:12px;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 
 /* The one thing guaranteed to paint before boot()'s API calls resolve —
