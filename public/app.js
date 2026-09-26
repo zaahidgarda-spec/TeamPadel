@@ -1660,6 +1660,7 @@ function switchHubTab(name) {
   // someone starts typing — by the time they've typed anything it's
   // often already in hand. loadPlayerIndex is a no-op if already loading.
   if (name === "search" && playerAccount) { loadPlayerIndex(); loadAvatarsIndex(); renderPlayerAround(); }
+  if (name === "teams" && playerAccount) loadTeamIndex().then(() => runTeamSearch(el("team-search-input").value));
   if (name !== "leagues") hideGuestWall();
 }
 document.querySelectorAll(".hub-tab-btn").forEach((btn) => {
@@ -2683,12 +2684,14 @@ async function refreshAccountStatus() {
   el("account-dashboard-card").style.display = playerAccount ? "block" : "none";
   el("search-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("search-signed-in-card").style.display = playerAccount ? "block" : "none";
+  el("teams-signed-out-card").style.display = playerAccount ? "none" : "block";
+  el("teams-signed-in-card").style.display = playerAccount ? "block" : "none";
   el("news-signed-out-card").style.display = playerAccount ? "none" : "block";
   el("news-signed-in-card").style.display = playerAccount ? "block" : "none";
   // Warmed the moment someone's known to be signed in — well before they
   // open either search box — and dropped on sign-out so a shared device
   // never keeps the list around for the next person.
-  if (playerAccount) { renderAccountNews(); loadPlayerIndex(); loadAvatarsIndex(); } else clearPlayerIndexCache();
+  if (playerAccount) { renderAccountNews(); loadPlayerIndex(); loadAvatarsIndex(); loadTeamIndex().then(() => runTeamSearch(el("team-search-input").value)); } else { clearPlayerIndexCache(); clearTeamIndexCache(); }
   if (resetTokenInUrl) {
     switchHubTab("account");
     el("account-signed-out-card").style.display = "none";
@@ -3079,6 +3082,73 @@ function warmNarrowedProfiles(results) {
   }, 300);
 }
 bindPlayerLookupInput("player-search-input", "player-search-results", runPlayerSearch);
+// Search teams — same stale-while-revalidate index pattern as the player
+// search above, but shown as a browsable crest grid rather than a typed
+// list: the whole point is "all the crests, right there", with the search
+// box narrowing an already-visible directory instead of gating it behind
+// typing something first (see filterTeamIndex — an empty query returns
+// everything, not nothing).
+let teamIndexPromise = null;
+let teamIndexReady = false;
+const TEAM_INDEX_STORAGE_KEY = "padel-team-index-v1";
+function readTeamIndexCache() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TEAM_INDEX_STORAGE_KEY) || "null");
+    return stored && Array.isArray(stored.data) && stored.data.length ? stored.data : null;
+  } catch { return null; }
+}
+function writeTeamIndexCache(data) {
+  try { localStorage.setItem(TEAM_INDEX_STORAGE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* storage full/private mode — just skip caching */ }
+}
+function clearTeamIndexCache() {
+  teamIndexPromise = null; teamIndexReady = false;
+  try { localStorage.removeItem(TEAM_INDEX_STORAGE_KEY); } catch { /* nothing to clear */ }
+}
+function loadTeamIndex() {
+  if (teamIndexPromise) return teamIndexPromise;
+  const fresh = api("/teams/search-index").then((data) => {
+    writeTeamIndexCache(data);
+    teamIndexReady = true;
+    return data;
+  });
+  const cached = readTeamIndexCache();
+  if (cached) {
+    teamIndexReady = true;
+    teamIndexPromise = Promise.resolve(cached);
+    fresh.then((data) => { teamIndexPromise = Promise.resolve(data); }).catch(() => {});
+  } else {
+    teamIndexPromise = fresh.catch(() => { teamIndexPromise = null; return []; });
+  }
+  return teamIndexPromise;
+}
+function filterTeamIndex(all, qRaw) {
+  const q = qRaw.trim().toLowerCase();
+  const rows = q ? all.filter((t) => t.teamName.toLowerCase().includes(q)) : all;
+  return rows.slice().sort((a, b) => a.teamName.localeCompare(b.teamName));
+}
+function teamSearchTileHtml(r) {
+  return `<button type="button" class="team-search-tile" data-league="${r.leagueId}" data-team="${r.teamId}">
+    ${avatarHtml({ logo: r.teamLogo, name: r.teamName })}
+    <span class="team-search-tile-name">${escapeHtml(r.teamName)}</span>
+    <span class="team-search-tile-league">${escapeHtml(r.leagueName)}</span>
+  </button>`;
+}
+async function runTeamSearch(qRaw) {
+  const all = await loadTeamIndex();
+  const results = filterTeamIndex(all, qRaw || "");
+  const c = el("team-search-grid");
+  c.innerHTML = results.length ? results.map((r) => teamSearchTileHtml(r)).join("") : '<p class="empty">No matching teams found.</p>';
+  c.querySelectorAll(".team-search-tile").forEach((btn) => {
+    const r = results.find((x) => x.teamId === btn.dataset.team && x.leagueId === btn.dataset.league);
+    btn.onclick = () => openTeamProfile(btn.dataset.league, btn.dataset.team, r);
+  });
+}
+let teamSearchTimer = null;
+el("team-search-input").addEventListener("input", () => {
+  clearTimeout(teamSearchTimer);
+  if (!teamIndexReady) el("team-search-grid").innerHTML = '<p class="empty">Searching…</p>';
+  teamSearchTimer = setTimeout(() => runTeamSearch(el("team-search-input").value), 90);
+});
 // The photo on a claimed record only used to show up once you clicked into
 // that player's own profile popup — nowhere on My Profile itself. Shows
 // the first claimed record that has one set (an account can hold several,
@@ -12659,6 +12729,29 @@ function bindTeamRowLinks(root) {
 // tab (see renderRoster, every format). Everything here is already sitting
 // in the league object client-side, so unlike the player-history modal
 // this needs no round-trip to the server.
+// Shared by both ways this modal gets opened — in-league (openTeamModal,
+// client data only) and the cross-league directory (openTeamProfile,
+// server-fetched) — since a combined record can only ever come from the
+// server either way. Cleared up front so a stale "Combined record" list
+// from whichever team was open last doesn't flash before this resolves (or
+// linger for a team with nothing to combine).
+function loadTeamClubSection(leagueId, teamId) {
+  el("team-modal-club-section").style.display = "none";
+  el("team-modal-club-section").innerHTML = "";
+  api(`/leagues/${leagueId}/teams/${teamId}/club`).then((data) => {
+    if (!data || !data.combined) return;
+    el("team-modal-tags").innerHTML += `<span class="p-tag club-combined">Combined · ${data.leagues.length} leagues</span>`;
+    el("team-modal-club-section").innerHTML = `
+      <p class="p-section-label">Combined record</p>
+      <p class="note" style="margin:-4px 0 10px;">${data.totals.played} played &middot; ${data.totals.won} won &middot; ${data.totals.lost} lost across ${data.leagues.length} leagues</p>
+      <div class="club-league-list">${data.leagues.map((e) => `
+        <div class="club-league-row">
+          <span class="club-league-name">${escapeHtml(e.leagueName)}</span>
+          <span class="club-league-rec">${ordinal(e.rank)} of ${e.teamCount} &middot; ${e.points} pts</span>
+        </div>`).join("")}</div>`;
+    el("team-modal-club-section").style.display = "block";
+  }).catch(() => {});
+}
 function openTeamModal(teamId) {
   const team = league.teams.find((t) => t.id === teamId);
   if (!team) return;
@@ -12674,29 +12767,7 @@ function openTeamModal(teamId) {
   const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
   const ownerTag = ownerNames.length ? `<span class="p-tag owner">${ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(ownerNames.join(", "))}</span>` : "";
   el("team-modal-tags").innerHTML = rankTag + ownerTag;
-  // Fetched separately (not part of the already-loaded league payload) since
-  // it can reach into OTHER leagues this client has no data for at all —
-  // fired off without blocking the rest of the modal, which renders
-  // immediately from data already in memory. Cleared up front so a stale
-  // "Playing in" list from whichever team was open last doesn't flash
-  // before this fetch resolves (or linger if this team has no clubId).
-  el("team-modal-club-section").style.display = "none";
-  el("team-modal-club-section").innerHTML = "";
-  if (team.clubId) {
-    api(`/leagues/${currentLeagueId}/teams/${teamId}/club`).then((data) => {
-      if (!data || !data.combined) return;
-      el("team-modal-tags").innerHTML += `<span class="p-tag club-combined">Combined · ${data.leagues.length} leagues</span>`;
-      el("team-modal-club-section").innerHTML = `
-        <p class="p-section-label">Combined record</p>
-        <p class="note" style="margin:-4px 0 10px;">${data.totals.played} played &middot; ${data.totals.won} won &middot; ${data.totals.lost} lost across ${data.leagues.length} leagues</p>
-        <div class="club-league-list">${data.leagues.map((e) => `
-          <div class="club-league-row">
-            <span class="club-league-name">${escapeHtml(e.leagueName)}</span>
-            <span class="club-league-rec">${ordinal(e.rank)} of ${e.teamCount} &middot; ${e.points} pts</span>
-          </div>`).join("")}</div>`;
-      el("team-modal-club-section").style.display = "block";
-    }).catch(() => {});
-  }
+  loadTeamClubSection(currentLeagueId, teamId);
   el("team-modal-stats").innerHTML = row
     ? [
         { n: row.points, l: "Pts" },
@@ -12725,6 +12796,50 @@ function openTeamModal(teamId) {
     }));
   }
   el("team-modal-backdrop").classList.add("open");
+}
+// The cross-league entry point (the Search teams directory) — unlike
+// openTeamModal above, this one has no already-loaded `league` object to
+// read from (the team can belong to a league this client has never opened),
+// so it fetches its own self-contained snapshot instead, the same way
+// openPlayerHistory does for a cross-league player. Read-only: no captain
+// roster-editing controls, since browsing the global directory isn't "your"
+// league context the way opening a team from inside its own Table tab is.
+async function openTeamProfile(leagueId, teamId, hint) {
+  el("team-modal-topbar-label").textContent = hint ? hint.leagueName : "";
+  el("team-modal-crest-slot").innerHTML = hint && hint.teamLogo
+    ? `<img class="p-photo p-photo-team-fallback" src="${hint.teamLogo}" alt="">`
+    : `<div class="p-photo-fallback">${escapeHtml(playerInitials(hint ? hint.teamName : "?"))}</div>`;
+  el("team-modal-name").textContent = hint ? hint.teamName : "";
+  el("team-modal-tags").innerHTML = "";
+  el("team-modal-stats").innerHTML = "";
+  el("team-modal-club-section").style.display = "none";
+  el("team-modal-club-section").innerHTML = "";
+  el("team-modal-roster").innerHTML = '<p class="empty">Loading…</p>';
+  el("team-modal-backdrop").classList.add("open");
+  const data = await api(`/leagues/${leagueId}/teams/${teamId}/profile`).catch(() => null);
+  if (!data) { el("team-modal-roster").innerHTML = '<p class="empty">Couldn\'t load this team.</p>'; return; }
+  el("team-modal-topbar-label").textContent = data.leagueName;
+  el("team-modal-crest-slot").innerHTML = data.teamLogo
+    ? `<img class="p-photo p-photo-team-fallback" src="${data.teamLogo}" alt="">`
+    : `<div class="p-photo-fallback">${escapeHtml(playerInitials(data.teamName))}</div>`;
+  el("team-modal-name").textContent = data.teamName;
+  const rankTag = data.rank ? `<span class="p-tag team-rank-tag">${ordinal(data.rank)} place</span>` : "";
+  const ownerTag = data.ownerNames.length ? `<span class="p-tag owner">${data.ownerNames.length > 1 ? "Owners" : "Owner"}: ${escapeHtml(data.ownerNames.join(", "))}</span>` : "";
+  el("team-modal-tags").innerHTML = rankTag + ownerTag;
+  loadTeamClubSection(leagueId, teamId);
+  el("team-modal-stats").innerHTML = data.stats
+    ? [
+        { n: data.stats.points, l: "Pts" },
+        { n: data.stats.played, l: "Played" },
+        { n: data.stats.won, l: "Won" },
+        { n: (data.stats.diff > 0 ? "+" : "") + data.stats.diff, l: "Diff" },
+      ].map((s) => `<div class="p-stat"><div class="n">${s.n}</div><div class="lbl">${s.l}</div></div>`).join("")
+    : "";
+  const rosterEl = el("team-modal-roster");
+  rosterEl.innerHTML = data.roster.length
+    ? data.roster.map((p, i) => `<div class="team-roster-row"><span class="team-roster-num">${String(i + 1).padStart(2, "0")}</span>${newsPlayerLinkHtml(leagueId, p)}</div>`).join("")
+    : '<p class="empty">No players added yet.</p>';
+  bindNewsPlayerLinks(rosterEl);
 }
 el("team-modal-close").onclick = () => el("team-modal-backdrop").classList.remove("open");
 el("team-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "team-modal-backdrop") el("team-modal-backdrop").classList.remove("open"); });

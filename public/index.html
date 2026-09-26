@@ -103,6 +103,7 @@
           <button class="hub-tab-btn" data-hubview="account" id="hub-account-tab-btn">My profile</button>
           <button class="hub-tab-btn active" data-hubview="leagues">Leagues</button>
           <button class="hub-tab-btn" data-hubview="search">Search players</button>
+          <button class="hub-tab-btn" data-hubview="teams">Search teams</button>
           <button class="hub-tab-btn" data-hubview="news">News room</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
         </div>
@@ -398,6 +399,21 @@
           </div>
           <div id="player-around"></div>
           <div id="player-search-results"></div>
+        </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-teams">
+        <div class="card" id="teams-signed-out-card">
+          <h2 class="section-title">Search teams</h2>
+          <p class="note">Log in on the My Profile tab first — then you can browse every team, in any league, here.</p>
+        </div>
+        <div class="card" id="teams-signed-in-card" style="display:none;">
+          <h2 class="section-title">Find a team</h2>
+          <div class="row">
+            <label class="sr-only" for="team-search-input">Search for a team</label>
+            <input type="text" id="team-search-input" placeholder="Search any team, in any league…" style="flex:1;min-width:160px;">
+          </div>
+          <div id="team-search-grid" class="team-search-grid"></div>
         </div>
       </section>
 

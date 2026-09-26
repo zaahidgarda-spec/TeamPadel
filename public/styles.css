@@ -1538,6 +1538,15 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .player-search-row .info strong{font-size:14px;}
 .player-search-row .info .note{margin-top:2px;}
 
+/* All-teams directory — a browsable crest grid (the whole point is "all
+   the crests, right there"), not the player search's typed rows. */
+.team-search-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-top:14px;}
+.team-search-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel);cursor:pointer;font-family:inherit;transition:border-color .15s ease,box-shadow .15s ease;}
+.team-search-tile:hover{border-color:var(--accent);box-shadow:var(--shadow-sm);}
+.team-search-tile .avatar,.team-search-tile .avatar-fb{width:48px;height:48px;font-size:17px;}
+.team-search-tile-name{font-size:12.5px;font-weight:600;color:var(--text);text-align:center;line-height:1.25;}
+.team-search-tile-league{font-size:10px;color:var(--text-dim);text-align:center;line-height:1.2;}
+
 .combine-claim-list{margin-top:6px;}
 .combine-claim-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;}
 .combine-claim-row .note{margin:0;}

@@ -1698,6 +1698,33 @@ function allPlayersFlat() {
   });
   return results;
 }
+// Same idea as allPlayersFlat above, one row per team-in-a-league (a
+// combined club still lists each of its leagues' teams separately here —
+// the same precedent allPlayersFlat already sets for a claimed player's
+// multiple appearances, so a search across every league stays a flat,
+// predictable list rather than a second grouping rule to reason about).
+function allTeamsFlat() {
+  const results = [];
+  store.getIndex().filter((entry) => !entry.hidden).forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    league.teams.forEach((t) => {
+      results.push({
+        leagueId: league.id, leagueName: league.name,
+        teamId: t.id, teamName: t.name, teamLogo: t.logo || "", playerCount: t.players.length,
+      });
+    });
+  });
+  return results;
+}
+// Gated the same way /players/search-index is — a global cross-league
+// directory is a different exposure than any one league's own public Table
+// tab (which already shows every team's crest with no login at all); the
+// login requirement targets the "scrape everything in one shot" case, not
+// per-league visibility.
+router.get("/teams/search-index", requirePlayerUser, (req, res) => {
+  res.json(allTeamsFlat());
+});
 // Shared by the player-facing search (below) and the owner-only admin
 // search used to combine profiles on someone's behalf. Deliberately leaves
 // teamLogo out — a search response embedding a full base64 image per row
@@ -2940,6 +2967,30 @@ router.get("/leagues/:leagueId/teams/:teamId/club", (req, res) => {
   const totals = entries.reduce((acc, e) => ({ played: acc.played + e.played, won: acc.won + e.won, lost: acc.lost + e.lost }), { played: 0, won: 0, lost: 0 });
   entries.sort((a, b) => a.leagueName.localeCompare(b.leagueName));
   res.json({ combined: true, totals, leagues: entries });
+});
+// A self-contained team snapshot — the cross-league Search teams directory
+// has no already-loaded league payload to read from the way opening a team
+// from inside its own Table tab does (see openTeamModal client-side), so it
+// needs everything the team card shows in one fetch, the same role
+// /leagues/:leagueId/players/:playerId/history plays for a player opened
+// from cross-league context.
+router.get("/leagues/:leagueId/teams/:teamId/profile", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const rows = logic.computeStandings(league);
+  const idx = rows.findIndex((r) => r.id === team.id);
+  const row = idx >= 0 ? rows[idx] : null;
+  const ownerNames = (team.ownerIds || []).map((id) => (team.players.find((p) => p.id === id) || {}).name).filter(Boolean);
+  res.json({
+    leagueId: league.id, leagueName: league.name,
+    teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
+    rank: idx >= 0 ? idx + 1 : null,
+    stats: row ? { points: row.points, played: row.played, won: row.rubbersWon, diff: row.diff } : null,
+    ownerNames,
+    roster: team.players.map((p) => ({ id: p.id, name: p.name })),
+  });
 });
 
 /* ---------- Team kit (captain-managed — upload the kit design, place
