@@ -5941,12 +5941,20 @@ function completeRubberNow(league, f, idx) {
   if (!wasStarted) { rubber.startedAt = rubber.completedAt; return true; }
   const { ratingsData, identityOf } = loadGlobalRatings();
   const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
-  if (pred) {
+  const durationMinutes = (rubber.completedAt - rubber.startedAt) / 60000;
+  // A real rubber runs 20-150 min or so — anything outside that almost
+  // certainly means Start was tapped early or Mark complete was forgotten
+  // for hours, not a genuinely long match. Left out of the learned average
+  // entirely (still recorded below in courtMatchLog, for whatever it's
+  // worth) so one forgotten tap can't drag every future estimate in that
+  // bucket toward it — a single outlier otherwise dominates a small count.
+  const REALISTIC_MATCH_MINUTES = { min: 20, max: 150 };
+  if (pred && durationMinutes >= REALISTIC_MATCH_MINUTES.min && durationMinutes <= REALISTIC_MATCH_MINUTES.max) {
     if (!league.courtDurationStats) league.courtDurationStats = {};
     const bucket = closenessBucket(pred.predictedCloseness);
     const stat = league.courtDurationStats[bucket] || (league.courtDurationStats[bucket] = { count: 0, totalMinutes: 0 });
     stat.count += 1;
-    stat.totalMinutes += (rubber.completedAt - rubber.startedAt) / 60000;
+    stat.totalMinutes += durationMinutes;
   }
   // A raw, per-match record alongside the courtDurationStats aggregate —
   // the aggregate can always be recomputed from this, but not the other
@@ -6024,12 +6032,18 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/reopen", requir
   else {
     const { ratingsData, identityOf } = loadGlobalRatings();
     const pred = matchPrediction(league, f, idx, ratingsData, identityOf);
-    if (pred && league.courtDurationStats) {
+    const durationMinutes = (completedAt - rubber.startedAt) / 60000;
+    // Same realistic-range guard completeRubberNow itself uses — an
+    // out-of-range completion was never added to the aggregate in the
+    // first place, so subtracting it here would wrongly dock some other,
+    // legitimately-recorded match's contribution to that bucket.
+    const REALISTIC_MATCH_MINUTES = { min: 20, max: 150 };
+    if (pred && league.courtDurationStats && durationMinutes >= REALISTIC_MATCH_MINUTES.min && durationMinutes <= REALISTIC_MATCH_MINUTES.max) {
       const bucket = closenessBucket(pred.predictedCloseness);
       const stat = league.courtDurationStats[bucket];
       if (stat && stat.count > 0) {
         stat.count -= 1;
-        stat.totalMinutes = Math.max(0, stat.totalMinutes - (completedAt - rubber.startedAt) / 60000);
+        stat.totalMinutes = Math.max(0, stat.totalMinutes - durationMinutes);
       }
     }
     if (league.courtMatchLog) {

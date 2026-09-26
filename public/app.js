@@ -945,10 +945,19 @@ function closenessBucket(closeness) {
 // Real matches run ~65 min on average — a lopsided one still tends to run
 // ~50, a tight one closer to ~80 — so the placeholder spans 50-80 (average
 // 65) rather than the original, much-too-short 18-38 guess.
+// Real matches run 20-150 min or so — clamped so a single forgotten
+// "Mark complete" from hours after a match actually finished (its
+// duration already recorded server-side, see completeRubberNow's own
+// guard) can't make every future estimate in that bucket absurd, even for
+// data recorded before that guard existed.
+const REALISTIC_MATCH_MINUTES = { min: 20, max: 150 };
 function estimateMinutesForCloseness(closeness) {
   const bucket = closenessBucket(closeness);
   const stat = (league.courtDurationStats || {})[bucket];
-  if (stat && stat.count >= 5) return Math.round(stat.totalMinutes / stat.count);
+  if (stat && stat.count >= 5) {
+    const avg = stat.totalMinutes / stat.count;
+    return Math.round(Math.min(REALISTIC_MATCH_MINUTES.max, Math.max(REALISTIC_MATCH_MINUTES.min, avg)));
+  }
   return Math.round(50 + (closeness / 100) * 30);
 }
 // One ticker for every live/finished cell on screen, wherever it is in the
@@ -8753,7 +8762,14 @@ function renderLiveTimeline(wrap) {
     }
     rows.push({ c, bars, end: cursor });
   }
-  const tMax = Math.max(now + 30 * MIN, ...rows.map((r) => r.end)) + 6 * MIN;
+  // A default window scaled to how many teams are actually playing —
+  // roughly 3 hours for 6 teams, 5 for 8 — rather than whatever a full
+  // round's worth of queued matches happens to add up to (which, chained
+  // across every court, could stretch toward a full day). Still just a
+  // floor: real matches genuinely running over still push tMax out past
+  // it below, same as before.
+  const baselineHours = Math.max(3, league.teams.length - 3);
+  const tMax = Math.max(t0 + baselineHours * 60 * MIN, now + 30 * MIN, ...rows.map((r) => r.end)) + 6 * MIN;
   const span = tMax - t0;
   const pct = (ms) => ((ms - t0) / span) * 100;
   // A fixed half-hour grid, not a step that widens to hourly once the round
