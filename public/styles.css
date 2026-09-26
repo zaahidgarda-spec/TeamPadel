@@ -794,6 +794,12 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .floodlit.urgent .mc-pair.won{color:#6EE7A8;}
 .floodlit.urgent .vs.mc-score{color:#6EE7A8;background:rgba(110,231,168,.14);border-color:rgba(110,231,168,.4);}
 .mc-meta{font-size:11.5px;color:var(--text-dim);margin-top:11px;}
+/* The single most actionable fact once a court's assigned — where do I
+   physically go — so it gets real visual weight instead of riding along
+   in the small .mc-meta line with everything else. */
+.mc-court-banner{display:flex;align-items:center;justify-content:center;gap:8px;width:fit-content;margin:0 auto 12px;background:var(--accent);color:var(--accent-ink);border-radius:var(--radius-full);padding:8px 20px;box-shadow:0 6px 16px rgba(37,99,235,.3);}
+.mc-court-banner .ic{width:18px;height:18px;flex-shrink:0;}
+.mc-court-label{font-family:var(--font-display);font-size:19px;font-weight:700;letter-spacing:.01em;text-transform:uppercase;white-space:nowrap;}
 /* Win% bar for an undecided seed — same expectation the rating engine
    itself uses, shown ahead of the actual result rather than after it. */
 .mc-predict{width:100%;max-width:260px;margin:10px auto 0;}

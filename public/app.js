@@ -3780,9 +3780,10 @@ function renderAccountNextMatch(cards) {
   // "Match N," same wording as the shared Next Matches carousel — a
   // player glancing at their own hero card should recognize it as the
   // same numbering, not a different "Seed" label for the same thing.
-  // Court only shows once an admin's actually assigned one via Live Court
-  // Control — nothing to say before that.
-  const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.court, m.venue].filter(Boolean).join(" · ");
+  // Court gets pulled out into its own big banner below instead of
+  // riding along in this line — once it's assigned, it's the single
+  // most useful thing on the card (where do I physically go).
+  const meta = [m.teamName + " vs " + m.opponentTeam, `Match ${m.seed}`, m.venue].filter(Boolean).join(" · ");
   const logoHtml = (logo, name) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(name)}">` : "";
   // Same "favorite" edge as the Predictions tab (>=60% either way) — just
   // mapped onto the single personal winPct instead of a two-side split.
@@ -3790,8 +3791,10 @@ function renderAccountNextMatch(cards) {
   const favMine = m.prediction && m.prediction.winPct >= 60;
   const favOpp = m.prediction && m.prediction.winPct <= 40;
   const mySideRefs = [{ id: m.playerId, name: m.playerName }, m.partnerId ? { id: m.partnerId, name: m.partner } : null].filter(Boolean);
+  const courtBannerHtml = m.court ? `<div class="mc-court-banner"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/></svg><span class="mc-court-label">${escapeHtml(m.court)}</span></div>` : "";
   el("account-next-match-slide").innerHTML = `
     <div class="mc-league">${escapeHtml(m.leagueName)} &middot; ${escapeHtml(m.label)}</div>
+    ${courtBannerHtml}
     <div class="mc-pairing">
       <span class="mc-pair-row">${logoHtml(m.teamLogo, m.teamName)}<span class="mc-pair${favMine ? " favorite" : ""}">${pairRefsLinksHtml(m.leagueId, mySideRefs)}</span>${favMine ? favTag : ""}</span>
       <span class="vs">vs</span>
