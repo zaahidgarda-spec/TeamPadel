@@ -3323,6 +3323,24 @@ function renderAccountAvatar(cards) {
   btn.title = withPhoto.photo ? "Change photo" : "Add profile photo";
   btn.onclick = () => openPlayerHistory(withPhoto.leagueId, withPhoto.playerId);
 }
+// A more visible nudge than the avatar button's own tiny camera badge
+// (easy to miss) — dismissed for good, same durable-dismiss convention as
+// updateKeepTeamStrip, rather than reappearing every visit once someone's
+// actively said no. Gone entirely (no need to dismiss) the moment any
+// claimed record gets a photo.
+function updatePhotoNudge(cards) {
+  const banner = el("photo-nudge-banner");
+  let dismissed = false;
+  try { dismissed = localStorage.getItem("padel-photo-nudge-dismissed") === "1"; } catch { /* storage blocked */ }
+  const withoutPhoto = cards.find((c) => !c.photo);
+  const show = !!withoutPhoto && !cards.some((c) => c.photo) && !dismissed;
+  banner.style.display = show ? "flex" : "none";
+  if (show) el("photo-nudge-cta").onclick = () => openPlayerHistory(withoutPhoto.leagueId, withoutPhoto.playerId);
+}
+el("photo-nudge-dismiss").onclick = () => {
+  try { localStorage.setItem("padel-photo-nudge-dismissed", "1"); } catch { /* not remembered */ }
+  el("photo-nudge-banner").style.display = "none";
+};
 // The real deadline is 24h before kickoff, not kickoff itself — "due
 // tonight" for a Friday match actually means Thursday evening. The
 // progress bar only kicks in once inside a 72h window of that real
@@ -3498,6 +3516,7 @@ async function renderAccountProfile() {
   positionClaimPanel(!(cards || []).length && !((playerAccount && playerAccount.captaincies) || []).length);
   renderPlayerAround();
   renderAccountAvatar(cards);
+  updatePhotoNudge(cards);
   const matchNightNow = renderAccountNextMatch(cards);
   renderAccountTables(cards);
   positionAccountTablesSection(matchNightNow);
