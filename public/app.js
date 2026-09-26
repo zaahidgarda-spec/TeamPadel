@@ -3678,7 +3678,7 @@ function renderAccountTables(cards) {
     const photoHtml = card.hasCourtPhoto
       ? `<div class="pd-table-photo" data-needs-photo="1" data-id="${card.leagueId}">
           <span class="league-tag">${escapeHtml(card.leagueName)}</span>
-          ${card.venueName ? `<span class="pd-table-venue-pill">&#128205; ${escapeHtml(card.venueName)}</span>` : ""}
+          ${card.venueName ? `<span class="pd-table-venue-pill">${escapeHtml(card.venueName)}</span>` : ""}
         </div>`
       : "";
     const headHtml = card.hasCourtPhoto
