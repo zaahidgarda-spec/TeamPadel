@@ -3407,58 +3407,13 @@ function formatDurationShort(ms) {
   if (hours > 0) return `${hours}h`;
   return `${mins}m`;
 }
-// Shared by both renderAccountLineupsDue and renderAccountNeedsAttention —
+// Shared by both renderAccountFixtures and renderAccountNeedsAttention —
 // a lineup item counts as "overdue" the same way in either place, so the
 // deadline math lives in one spot rather than two copies drifting apart.
 function lineupDeadlineInfo(d) {
   const deadlineMs = d.kickoffMs ? d.kickoffMs - LINEUP_DEADLINE_LEAD_MS : null;
   const msUntilDeadline = deadlineMs !== null ? deadlineMs - Date.now() : null;
   return { deadlineMs, msUntilDeadline, overdue: msUntilDeadline !== null && msUntilDeadline < 0 };
-}
-// Every not-yet-submitted line-up across every league this account
-// captains — same cross-league "surface it on the homepage" treatment as
-// "What you owe" gets for outstanding fees. Same in-league reminder this
-// pairs with (see checkLineupReminders server-side) but visible any
-// time, not just once a kickoff is within 36 hours. An item that's gone
-// overdue moves up into "Needs attention" instead (see
-// renderAccountNeedsAttention) rather than showing in both places.
-function renderAccountLineupsDue(due) {
-  const notOverdue = due.filter((d) => !lineupDeadlineInfo(d).overdue);
-  el("account-lineups-section").style.display = notOverdue.length ? "block" : "none";
-  if (!notOverdue.length) return;
-  const list = el("account-lineups-list");
-  list.innerHTML = notOverdue.map((d) => {
-    const meta = `${escapeHtml(d.teamName)} · <span class="league-name">${escapeHtml(d.leagueName)}</span>`;
-    const { deadlineMs, msUntilDeadline } = lineupDeadlineInfo(d);
-    let badge = "", bar = "", sub;
-    if (deadlineMs !== null && msUntilDeadline <= LINEUP_DUE_BAR_WINDOW_MS) {
-      const pct = Math.max(2, Math.min(100, ((LINEUP_DUE_BAR_WINDOW_MS - msUntilDeadline) / LINEUP_DUE_BAR_WINDOW_MS) * 100));
-      // "10h left" on its own could read as time until the match itself —
-      // this pill is about the line-up selection deadline, 24h earlier, so
-      // every duration/date here says so explicitly rather than leaving it
-      // to be inferred.
-      badge = `<span class="lineup-due-timeleft">${escapeHtml(formatDurationShort(msUntilDeadline) + " left")}</span><span class="lineup-due-bar-label">For selection</span>`;
-      bar = `<div class="lineup-due-track"><div class="lineup-due-fill" style="width:${pct}%;"></div></div>`;
-      sub = "Selection due " + fmtDateTime(deadlineMs);
-    } else if (deadlineMs !== null) {
-      sub = "Selection due " + fmtDateTime(deadlineMs);
-    } else {
-      sub = d.date ? (relativeDayLabel(d.date) || fmtDate(d.date)) + (d.time ? " " + fmtTime(d.time) : "") : "Not yet scheduled";
-    }
-    return `
-    <div class="lineup-due-pill" data-league="${d.leagueId}">
-      <div class="lineup-due-top">
-        <div class="lineup-due-name"><strong>${escapeHtml(d.label)} vs ${avatarHtml({ logo: d.opponentLogo, name: d.opponentName })}${escapeHtml(d.opponentName)}</strong><span class="lineup-due-meta">${meta}</span></div>
-        <div class="lineup-due-right">${badge}</div>
-      </div>
-      ${bar}
-      <div class="lineup-due-sub">${escapeHtml(sub)}</div>
-      <div class="lineup-due-cta">Go to Selection Room<span class="lineup-due-chev">&#8250;</span></div>
-    </div>`;
-  }).join("");
-  list.querySelectorAll(".lineup-due-pill").forEach((row) => {
-    row.onclick = () => openLeague(row.dataset.league);
-  });
 }
 // The urgent stuff a captain shouldn't have to scroll past Trophy Room to
 // find: a match of theirs that's live on court right now (from each card's
@@ -3486,10 +3441,10 @@ function renderAccountPotwNudge(cards) {
 }
 // liveNow, set server-side in /players/profile), and any line-up that's
 // gone past its selection deadline (the same /players/lineups-due list
-// renderAccountLineupsDue reads, filtered to just the overdue ones —
-// reusing lineupDeadlineInfo so "overdue" means the same thing in both
-// places). Sits above Lineups Due; hidden entirely when there's nothing
-// in either bucket.
+// renderAccountFixtures reads for its not-yet-overdue ribbon, filtered
+// here to just the overdue ones — reusing lineupDeadlineInfo so
+// "overdue" means the same thing in both places). Hidden entirely when
+// there's nothing in either bucket.
 function renderAccountNeedsAttention(cards, due) {
   const live = cards.filter((c) => c.liveNow);
   const overdue = due.filter((d) => lineupDeadlineInfo(d).overdue);
@@ -3589,11 +3544,10 @@ async function renderAccountProfile() {
   const matchNightNow = renderAccountNextMatch(cards);
   renderAccountTables(cards);
   positionAccountTablesSection(matchNightNow);
-  renderAccountFixtures(fixtureCards || []);
-  renderAccountPotwNudge(cards);
   const due = await api("/players/lineups-due").catch(() => []);
+  renderAccountFixtures(fixtureCards || [], due);
+  renderAccountPotwNudge(cards);
   renderAccountNeedsAttention(cards, due);
-  renderAccountLineupsDue(due);
   renderAccountLeaguesList(cards);
   await renderAccountStats(cards);
   renderAccountPushSection();
@@ -4051,18 +4005,34 @@ function renderAccountTables(cards) {
 // teamNextFixture, straight from the schedule rather than gated on a
 // lineup being submitted) — one card per team so it scales the same way
 // Your Tables does.
-function renderAccountFixtures(fixtureCards) {
+function renderAccountFixtures(fixtureCards, due) {
   const wrap = el("account-fixtures-section");
   if (fixtureCards.length === 0) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
+  // A captain's own not-yet-submitted lineup for this exact fixture, if
+  // any — folded straight into the card it's about instead of a separate
+  // "Lineups due" section elsewhere on the profile. Overdue ones stay in
+  // Needs Attention (see renderAccountNeedsAttention) rather than showing
+  // here too.
+  const dueByFixture = new Map((due || []).map((d) => [d.fixtureId, d]));
   el("account-fixtures-scroll").innerHTML = fixtureCards.map((m) => {
     const whenText = [m.date ? fmtDate(m.date) : "", m.time ? fmtTime(m.time) : ""].filter(Boolean).join(" · ") || "Date TBC";
+    const dueEntry = dueByFixture.get(m.fixtureId);
+    let lineupCta = "";
+    if (dueEntry) {
+      const { msUntilDeadline, overdue } = lineupDeadlineInfo(dueEntry);
+      if (!overdue) {
+        const timeText = msUntilDeadline !== null && msUntilDeadline <= LINEUP_DUE_BAR_WINDOW_MS ? " · " + formatDurationShort(msUntilDeadline) + " left" : "";
+        lineupCta = `<div class="pd-fixture-lineup-cta">Tap to set lineup${escapeHtml(timeText)}</div>`;
+      }
+    }
     return `<div class="pd-fixture-card" data-league="${m.leagueId}">
       <div class="pd-fixture-sides">
         <div class="pd-fixture-side side-mine" data-team-id="${m.teamId}">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
         <span class="pd-fixture-vs">VS</span>
         <div class="pd-fixture-side side-opp"${m.opponentTeamId ? ` data-team-id="${m.opponentTeamId}"` : ""}>${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
       </div>
+      ${lineupCta}
       <div class="pd-fixture-meta"><span class="league-tag" style="margin-bottom:0;">${escapeHtml(m.leagueName)}</span><span>${escapeHtml(whenText)}</span></div>
     </div>`;
   }).join("");
@@ -4074,6 +4044,12 @@ function renderAccountFixtures(fixtureCards) {
       if (currentLeagueId !== leagueId) await openLeague(leagueId);
       openTeamModal(side.dataset.teamId);
     };
+  });
+  // Same destination "Go to Selection Room" already used — a captain's
+  // default landing tab on their own league is Selection Room, so opening
+  // the league is enough, no switchTab needed.
+  el("account-fixtures-scroll").querySelectorAll(".pd-fixture-lineup-cta").forEach((cta) => {
+    cta.onclick = () => openLeague(cta.closest(".pd-fixture-card").dataset.league);
   });
 }
 // The single soonest upcoming match across every claimed record — "your
