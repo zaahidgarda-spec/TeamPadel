@@ -4058,13 +4058,12 @@ function renderAccountFixtures(fixtureCards) {
   el("account-fixtures-scroll").innerHTML = fixtureCards.map((m) => {
     const whenText = [m.date ? fmtDate(m.date) : "", m.time ? fmtTime(m.time) : ""].filter(Boolean).join(" · ") || "Date TBC";
     return `<div class="pd-fixture-card" data-league="${m.leagueId}">
-      <span class="league-tag">${escapeHtml(m.leagueName)}</span>
       <div class="pd-fixture-sides">
-        <div class="pd-fixture-side" data-team-id="${m.teamId}">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
-        <span class="vs">vs</span>
-        <div class="pd-fixture-side"${m.opponentTeamId ? ` data-team-id="${m.opponentTeamId}"` : ""}>${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
+        <div class="pd-fixture-side side-mine" data-team-id="${m.teamId}">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
+        <span class="pd-fixture-vs">VS</span>
+        <div class="pd-fixture-side side-opp"${m.opponentTeamId ? ` data-team-id="${m.opponentTeamId}"` : ""}>${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<div class="pd-fixture-name">${escapeHtml(m.opponentTeam)}</div></div>
       </div>
-      <div class="pd-fixture-meta">${escapeHtml(whenText)}</div>
+      <div class="pd-fixture-meta"><span class="league-tag" style="margin-bottom:0;">${escapeHtml(m.leagueName)}</span><span>${escapeHtml(whenText)}</span></div>
     </div>`;
   }).join("");
   // Same team-roster popup as Your Tables — tap either crest to see that
