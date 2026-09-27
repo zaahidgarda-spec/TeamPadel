@@ -1140,6 +1140,16 @@ function relativeDayLabel(iso) {
   if (diffDays === 1) return "Tomorrow";
   return null;
 }
+// Most fixtures are an evening thing, but not every one is anymore (an
+// early weekend slot, say) — "Tonight's matches" reads wrong next to a
+// 9am kickoff. 5pm is the cutoff; no time at all keeps the original
+// always-evening assumption rather than second-guessing a match that just
+// hasn't been given a time yet.
+function isEveningTime(hhmm) {
+  if (!hhmm) return true;
+  const hour = Number(hhmm.split(":")[0]);
+  return !isNaN(hour) && hour >= 17;
+}
 
 // Predictions are shown to the nearest 5% ("65%", not "64%"), and never as a
 // sure thing: checked against real results, a stated figure is only good to
@@ -3744,6 +3754,10 @@ async function renderAccountTonightMatches() {
   const wrap = el("account-tonight-section");
   if (!matches.length) { wrap.style.display = "none"; return; }
   wrap.style.display = "block";
+  // "Tonight's matches" only when every one of them actually is this
+  // evening — one early match in the mix is enough to make that wording
+  // wrong, so it falls back to the time-neutral "Today's matches" instead.
+  el("account-tonight-title").textContent = matches.every((m) => isEveningTime(m.time)) ? "Tonight's matches" : "Today's matches";
   const logoHtml = (logo, teamName) => logo ? `<img class="mc-team-logo" src="${logo}" alt="${escapeHtml(teamName)}">` : "";
   el("account-tonight-scroll").innerHTML = matches.map((m) => {
     const centerHtml = m.score ? `<span class="vs mc-score">${escapeHtml(m.score)}</span>` : `<span class="vs">vs</span>`;
