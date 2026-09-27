@@ -3550,11 +3550,12 @@ async function renderAccountProfile() {
   const results = cards.flatMap((card) => card.results.map((r) => Object.assign({
     leagueName: card.leagueName, leagueId: card.leagueId, isPairs: card.isPairs,
     mePlayerName: card.playerName, mePhoto: card.photo,
+    meTeamId: card.teamId, meTeamName: card.teamName, meTeamLogo: card.teamLogo,
   }, r)))
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
     .slice(0, 8);
   c.innerHTML = results.length
-    ? results.map((r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto }, { isPairs: r.isPairs, leagueTag: r.leagueName })).join("")
+    ? results.map((r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto, teamId: r.meTeamId, teamName: r.meTeamName, teamLogo: r.meTeamLogo }, { isPairs: r.isPairs, leagueTag: r.leagueName })).join("")
     : '<p class="empty">No results yet.</p>';
   bindMatchCardLinks(c);
 }
@@ -13825,18 +13826,34 @@ function insightRowsHtml(records, leagueId) {
     return `<div class="stat-row">${badgeHtml}<span class="pts">${wl} &middot; ${r.winPct}%</span></div>`;
   }).join("");
 }
-// One match, Playtomic-style: both sides' avatars+names stacked with the
-// score between them and a trophy marking the winning side — shared by
-// the player-profile modal's own "Match history" and My Profile's own
+// Splits a rubberScoreText string ("6-3, 6-4", "6-4, 3-6, [10-8]", or a
+// bare tiebreak-only "10-7") into one {mine, theirs} pair per set — the
+// string is already flipped so "mine" leads each pair, same as the
+// string itself. Null for the one case with no numbers to show at all
+// (a double forfeit).
+function parseScoreParts(score) {
+  if (!score || score === "Double forfeit") return null;
+  return score.split(", ").map((part) => {
+    const bare = part.replace(/^\[|\]$/g, "");
+    const dash = bare.lastIndexOf("-");
+    if (dash < 1) return null;
+    return { mine: bare.slice(0, dash), theirs: bare.slice(dash + 1) };
+  }).filter(Boolean);
+}
+// One match: an opponent-team banner on top, a 2x2 photo grid with a
+// per-set score column (trophy marks the winning row) below it, and
+// "My team vs Their team" as plain text at the foot — shared by the
+// player-profile modal's own "Match history" and My Profile's own
 // "Match history" strip, so the same match looks the same wherever it's
 // seen. `me` is whoever this card's "my side" is — the profile being
 // viewed (the modal), or the signed-in player themselves (My Profile) —
-// {leagueId, name, photo}, since a match row alone has no idea who that
-// is. `opts.leagueTag`, when given, names which league this match belongs
-// to — My Profile's strip spans every league a claimed record plays in;
-// the modal's own list is always one league at a time, so it never passes
-// one. `opts.isPairs` hides the (meaningless, un-seeded) "Seed N" note for
-// a Vibora-style pairs league, same as the rest of this profile.
+// {leagueId, name, photo, teamId, teamName, teamLogo}, since a match row
+// alone has no idea who that is. `opts.leagueTag`, when given, names
+// which league this match belongs to — My Profile's strip spans every
+// league a claimed record plays in; the modal's own list is always one
+// league at a time, so it never passes one. `opts.isPairs` hides the
+// (meaningless, un-seeded) "Seed N" note for a Vibora-style pairs league,
+// same as the rest of this profile.
 function matchHistoryCardHtml(r, me, opts) {
   const { isPairs, leagueTag } = opts || {};
   const dateBits = [r.date ? fmtDate(r.date) : "", r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ");
@@ -13851,27 +13868,35 @@ function matchHistoryCardHtml(r, me, opts) {
   const oppRowsHtml = oppRefs.length
     ? oppRefs.map((ref) => `<div class="mc-player">${avatar(ref.photo, ref.name)}<span class="mc-pname">${ref.id ? newsPlayerLinkHtml(me.leagueId, ref) : escapeHtml(ref.name)}</span></div>`).join("")
     : `<div class="mc-player"><span class="mc-pname">?</span></div>`;
+  const scoreParts = parseScoreParts(r.score);
+  const scoreRowHtml = (nums, isWinner) => `<div class="mc-score-row${isWinner ? " mc-score-win" : ""}"><span class="mc-trophy-slot">${isWinner ? "🏆" : ""}</span>${nums.map((n) => `<span>${escapeHtml(n)}</span>`).join("")}</div>`;
+  const scoreColHtml = scoreParts
+    ? `<div class="mc-score-col">${scoreRowHtml(scoreParts.map((p) => p.mine), r.result === "W")}${scoreRowHtml(scoreParts.map((p) => p.theirs), r.result === "L")}</div>`
+    : `<div class="mc-score-col mc-score-fallback">${escapeHtml(r.score)}</div>`;
   // The self-contained, fetch-based openTeamProfile — not the
   // client-data-only openTeamModal — since this card can be (and for My
   // Profile's own "Match history" strip, always is) showing a league that
   // isn't the one currently loaded, same reasoning as the next-match
-  // card's crests.
-  const oppTeamBadge = oppTeamRef
-    ? `<span class="mc-team mc-team-link" data-league="${me.leagueId}" data-team="${oppTeamRef.id}" data-name="${escapeHtml(r.opponentTeam)}" data-logo="${escapeHtml(r.opponentTeamLogo || "")}">${avatarHtml(oppTeamRef)}<span class="mc-team-name">${escapeHtml(r.opponentTeam)}</span></span>`
-    : `<span class="mc-team">${avatarHtml({ logo: r.opponentTeamLogo, name: r.opponentTeam })}<span class="mc-team-name">${escapeHtml(r.opponentTeam)}</span></span>`;
+  // card's crests. teamLinkHtml is name-only (the foot row); the banner
+  // wraps its own crest+name as one link, same convention teamBadgeHtml
+  // uses elsewhere.
+  const teamLinkHtml = (teamId, teamName, teamLogo) => teamId
+    ? `<span class="mc-team-link" data-league="${me.leagueId}" data-team="${teamId}" data-name="${escapeHtml(teamName || "")}" data-logo="${escapeHtml(teamLogo || "")}">${escapeHtml(teamName || "")}</span>`
+    : escapeHtml(teamName || "");
+  const bannerTeamHtml = oppTeamRef
+    ? `<span class="mc-team-link mc-banner-team" data-league="${me.leagueId}" data-team="${oppTeamRef.id}" data-name="${escapeHtml(r.opponentTeam)}" data-logo="${escapeHtml(r.opponentTeamLogo || "")}">${avatarHtml(oppTeamRef)}<span class="mc-banner-name">${escapeHtml(r.opponentTeam)}</span></span>`
+    : `<span class="mc-banner-team">${avatarHtml({ logo: r.opponentTeamLogo, name: r.opponentTeam })}<span class="mc-banner-name">${escapeHtml(r.opponentTeam)}</span></span>`;
   return `<div class="match-card">
-    <div class="mc-meta"><span class="mc-round">${escapeHtml(r.label)}${seedNote}</span>${dateBits ? `<span class="mc-date">${escapeHtml(dateBits)}</span>` : ""}</div>
-    ${leagueTag ? `<div class="mc-league-tag">${escapeHtml(leagueTag)}</div>` : ""}
-    <div class="mc-side${r.result === "W" ? " mc-win" : ""}">
-      <div class="mc-players">${meRowHtml}${partnerRowHtml}</div>
-      ${r.result === "W" ? '<span class="mc-trophy" title="Won">🏆</span>' : ""}
+    <div class="mc-banner">${bannerTeamHtml}<span class="mc-banner-meta">${escapeHtml(r.label)}${seedNote}</span></div>
+    <div class="mc-body">
+      ${leagueTag ? `<div class="mc-league-tag">${escapeHtml(leagueTag)}</div>` : ""}
+      ${dateBits ? `<div class="mc-date">${escapeHtml(dateBits)}</div>` : ""}
+      <div class="mc-main">
+        <div class="mc-photo-grid">${meRowHtml}${partnerRowHtml}${oppRowsHtml}</div>
+        ${scoreColHtml}${ratingDeltaHtml(r.ratingDelta)}
+      </div>
+      <div class="mc-vs-row">${teamLinkHtml(me.teamId, me.teamName, me.teamLogo)}<span class="mc-vs-sep">vs</span>${teamLinkHtml(r.opponentTeamId, r.opponentTeam, r.opponentTeamLogo)}</div>
     </div>
-    <div class="mc-score">${escapeHtml(r.score)}${ratingDeltaHtml(r.ratingDelta)}</div>
-    <div class="mc-side${r.result === "L" ? " mc-win" : ""}">
-      <div class="mc-players">${oppRowsHtml}</div>
-      ${r.result === "L" ? '<span class="mc-trophy" title="Won">🏆</span>' : (r.result === "D" ? '<span class="mc-draw-note">Draw</span>' : "")}
-    </div>
-    <div class="mc-vs-team">${oppTeamBadge}</div>
   </div>`;
 }
 function bindMatchCardLinks(root) {
@@ -14184,7 +14209,7 @@ function renderPlayerHistoryBody(data, h2h) {
     .slice(0, 3);
   if (opponents.length) html += `<p class="modal-subhead">Head-to-head</p>${insightRowsHtml(opponents, data.leagueId)}`;
 
-  const me = { leagueId: data.leagueId, name: data.playerName, photo: data.photo };
+  const me = { leagueId: data.leagueId, name: data.playerName, photo: data.photo, teamId: data.teamId, teamName: data.teamName, teamLogo: data.teamLogo };
   html += `<p class="modal-subhead">Match history</p><div class="match-card-scroll">${rows.map((r) => matchHistoryCardHtml(r, me, { isPairs })).join("")}</div>`;
   return { statsHtml, bodyHtml: html };
 }
