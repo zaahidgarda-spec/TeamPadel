@@ -13952,14 +13952,14 @@ function matchHistoryCardHtml(r, me, opts) {
     // The real sets keep the big, evenly-spaced fixed-width digits; a
     // bracketed super tiebreak (2 sets split 1-1, decided by a breaker
     // instead of a 3rd set) gets set apart after a thin divider, smaller
-    // and labelled "TB" — reads as "2 sets, then a breaker," not a 3rd
+    // and labelled "STB" — reads as "2 sets, then a breaker," not a 3rd
     // set. A Vibora-style best-of-3 pairs match has no bracketed part at
     // all (3 real sets) and just gets a 3rd fixed-width column same as
     // the first two.
     const sets = scoreParts.filter((p) => !p.tiebreak);
     const tiebreak = scoreParts.find((p) => p.tiebreak);
     const setsHtml = sets.length ? `<div class="mc-score-sets">${scoreRowHtml(sets.map((p) => p.mine), r.result === "W")}${scoreRowHtml(sets.map((p) => p.theirs), r.result === "L")}</div>` : "";
-    const tbHtml = tiebreak ? `<div class="mc-score-divider"></div><div class="mc-tb-col"><span class="mc-tb-num${r.result === "W" ? " mc-score-win" : ""}">${escapeHtml(tiebreak.mine)}</span><span class="mc-tb-num${r.result === "L" ? " mc-score-win" : ""}">${escapeHtml(tiebreak.theirs)}</span><span class="mc-tb-label">TB</span></div>` : "";
+    const tbHtml = tiebreak ? `<div class="mc-score-divider"></div><div class="mc-tb-col"><span class="mc-tb-num${r.result === "W" ? " mc-score-win" : ""}">${escapeHtml(tiebreak.mine)}</span><span class="mc-tb-num${r.result === "L" ? " mc-score-win" : ""}">${escapeHtml(tiebreak.theirs)}</span><span class="mc-tb-label">STB</span></div>` : "";
     scoreColHtml = `<div class="mc-score-col"><div class="mc-score-main">${setsHtml}${tbHtml}</div></div>`;
   } else {
     scoreColHtml = `<div class="mc-score-col mc-score-fallback">${escapeHtml(r.score)}</div>`;

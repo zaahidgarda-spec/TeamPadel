@@ -1824,7 +1824,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .mc-avatar .p-photo,.mc-avatar .p-photo-fallback{width:44px;height:44px;font-size:15px;border-width:2px;box-shadow:none;flex-shrink:0;}
 .mc-pname{display:block;width:100%;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .mc-score-col{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;gap:6px;}
-.mc-score-main{display:flex;align-items:center;gap:8px;}
+.mc-score-main{display:flex;align-items:center;gap:6px;}
 .mc-score-sets{display:flex;flex-direction:column;justify-content:center;gap:8px;}
 /* Both rows the same size — a win isn't told apart by a bigger number,
    just a bolder, darker one; the loser's score stays legible instead of
@@ -1839,12 +1839,14 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .mc-score-num{width:26px;display:inline-block;text-align:center;flex-shrink:0;}
 /* A bracketed super tiebreak (2 sets split 1-1, decided by a breaker
    instead of a 3rd set) gets set apart from the real sets — smaller,
-   past a thin divider, with its own "TB" tag — so it reads as "2 sets,
+   past a thin divider, with its own "STB" tag — so it reads as "2 sets,
    then a breaker," not an equally-weighted 3rd set. A genuine 3-set
    pairs match (no bracket at all) never triggers this; its 3rd set just
    joins .mc-score-sets as another fixed-width column same as the first
-   two (see matchHistoryCardHtml). */
-.mc-score-divider{width:1px;align-self:stretch;background:var(--line);}
+   two (see matchHistoryCardHtml). Tight, even margin on both sides of
+   the divider so it reads as one continuous score group, not two
+   separated chunks. */
+.mc-score-divider{width:1px;align-self:stretch;background:var(--line);margin:0 2px;}
 .mc-tb-col{display:flex;flex-direction:column;align-items:center;gap:3px;}
 .mc-tb-num{font-family:var(--font-display);font-variant-numeric:tabular-nums;font-size:17px;font-weight:400;color:var(--text-faint);}
 .mc-tb-num.mc-score-win{color:var(--text);font-weight:700;}
