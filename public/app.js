@@ -3315,13 +3315,32 @@ el("team-search-input").addEventListener("input", () => {
   if (!teamIndexReady) el("team-search-grid").innerHTML = '<p class="empty">Searching…</p>';
   teamSearchTimer = setTimeout(() => runTeamSearch(el("team-search-input").value), 90);
 });
-// The photo on a claimed record only used to show up once you clicked into
-// that player's own profile popup — nowhere on My Profile itself. Shows
-// the first claimed record that has one set (an account can hold several,
-// one per league); clicking it opens that same profile popup, where the
-// existing edit badge already lets the player change it — no separate
-// upload flow to build here. Hidden entirely if nothing's claimed yet,
-// since there's nothing to click through to.
+// One shared hidden file input for "add/change my own photo" straight
+// from My Profile — the avatar button and the photo-nudge banner used to
+// route through the full profile popup just to reach its own tiny camera
+// badge, three steps for what's really one. This jumps straight to the
+// OS file picker instead: pick a photo, it uploads and My Profile
+// refreshes, done — same resize+upload the profile popup's own control
+// does, just without opening that popup first.
+let pendingPhotoTarget = null;
+el("account-photo-input").onchange = () => {
+  const input = el("account-photo-input");
+  const target = pendingPhotoTarget;
+  if (!input.files[0] || !target) return;
+  resizeImageToDataUrl(input.files[0], 240, async (dataUrl) => {
+    await api(`/leagues/${target.leagueId}/teams/${target.teamId}/players/${target.playerId}/photo`, { method: "PUT", body: { photo: dataUrl } }).catch((e) => alert(e.message));
+    input.value = "";
+    await renderAccountProfile();
+  });
+};
+function triggerAccountPhotoUpload(card) {
+  pendingPhotoTarget = { leagueId: card.leagueId, teamId: card.teamId, playerId: card.playerId };
+  el("account-photo-input").click();
+}
+// Shows the first claimed record that has a photo set (an account can
+// hold several, one per league) — clicking it now jumps straight to the
+// file picker to add or change it. Hidden entirely if nothing's claimed
+// yet, since there's nothing to upload a photo onto.
 function renderAccountAvatar(cards) {
   const btn = el("account-avatar-btn");
   if (!cards.length) { btn.style.display = "none"; return; }
@@ -3336,7 +3355,7 @@ function renderAccountAvatar(cards) {
     ? `<img src="${withPhoto.photo}" alt="">`
     : `<span class="fallback">${escapeHtml(playerInitials(playerAccount.name))}</span>`) + badge;
   btn.title = withPhoto.photo ? "Change photo" : "Add profile photo";
-  btn.onclick = () => openPlayerHistory(withPhoto.leagueId, withPhoto.playerId);
+  btn.onclick = () => triggerAccountPhotoUpload(withPhoto);
 }
 // A more visible nudge than the avatar button's own tiny camera badge
 // (easy to miss) — dismissed for good, same durable-dismiss convention as
@@ -3350,7 +3369,7 @@ function updatePhotoNudge(cards) {
   const withoutPhoto = cards.find((c) => !c.photo);
   const show = !!withoutPhoto && !cards.some((c) => c.photo) && !dismissed;
   banner.style.display = show ? "flex" : "none";
-  if (show) el("photo-nudge-cta").onclick = () => openPlayerHistory(withoutPhoto.leagueId, withoutPhoto.playerId);
+  if (show) el("photo-nudge-cta").onclick = () => triggerAccountPhotoUpload(withoutPhoto);
 }
 el("photo-nudge-dismiss").onclick = () => {
   try { localStorage.setItem("padel-photo-nudge-dismissed", "1"); } catch { /* not remembered */ }
