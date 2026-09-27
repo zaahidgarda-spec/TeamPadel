@@ -13860,13 +13860,22 @@ function matchHistoryCardHtml(r, me, opts) {
   const seedNote = isPairs ? "" : ` · Seed ${r.seed}`;
   const oppTeamRef = r.opponentTeamId ? { id: r.opponentTeamId, logo: r.opponentTeamLogo, name: r.opponentTeam } : null;
   const avatar = (photo, name) => `<span class="mc-avatar">${playerPhotoHtml(photo || "", name)}</span>`;
-  const meRowHtml = `<div class="mc-player">${avatar(me.photo, me.name)}<span class="mc-pname">${escapeHtml(me.name)}</span></div>`;
-  const partnerRowHtml = r.partner
-    ? `<div class="mc-player">${avatar(r.partnerPhoto, r.partner)}<span class="mc-pname">${r.partnerId ? newsPlayerLinkHtml(me.leagueId, { id: r.partnerId, name: r.partner }) : escapeHtml(r.partner)}</span></div>`
-    : "";
+  // Photo and name stacked as one cell — a name next to a 28px avatar in a
+  // ~100px grid cell had barely half the width to itself and ellipsised
+  // constantly; stacked, it gets the whole cell. Linkable ones render as a
+  // single <button class="player-link mc-player">, not a link wrapping a
+  // link, so tapping the photo opens the same profile as tapping the name.
+  const playerCellHtml = (photo, name, pid) => {
+    const inner = `${avatar(photo, name)}<span class="mc-pname">${escapeHtml(name)}</span>`;
+    return pid
+      ? `<button type="button" class="player-link mc-player" data-pid="${pid}" data-lid="${me.leagueId}">${inner}</button>`
+      : `<div class="mc-player">${inner}</div>`;
+  };
+  const meRowHtml = playerCellHtml(me.photo, me.name, null);
+  const partnerRowHtml = r.partner ? playerCellHtml(r.partnerPhoto, r.partner, r.partnerId) : "";
   const oppRefs = (r.opponentPlayerRefs && r.opponentPlayerRefs.length) ? r.opponentPlayerRefs : (r.opponentPlayers || []).map((n) => ({ name: n }));
   const oppRowsHtml = oppRefs.length
-    ? oppRefs.map((ref) => `<div class="mc-player">${avatar(ref.photo, ref.name)}<span class="mc-pname">${ref.id ? newsPlayerLinkHtml(me.leagueId, ref) : escapeHtml(ref.name)}</span></div>`).join("")
+    ? oppRefs.map((ref) => playerCellHtml(ref.photo, ref.name, ref.id)).join("")
     : `<div class="mc-player"><span class="mc-pname">?</span></div>`;
   const scoreParts = parseScoreParts(r.score);
   const scoreRowHtml = (nums, isWinner) => `<div class="mc-score-row${isWinner ? " mc-score-win" : ""}"><span class="mc-trophy-slot">${isWinner ? "🏆" : ""}</span>${nums.map((n) => `<span>${escapeHtml(n)}</span>`).join("")}</div>`;
