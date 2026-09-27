@@ -1163,12 +1163,17 @@ function playerMatchHistory(league, playerId, ratingsData) {
     const mySel = mySide === "A" ? f.selectionA : f.selectionB;
     const oppSel = mySide === "A" ? f.selectionB : f.selectionA;
     const oppTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
+    // Same schedule lookup findPlayerUpcoming uses for its own date/time —
+    // a finalized fixture was scheduled same as any other, so this works
+    // unchanged here.
+    const sched = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
     mySel.pairs.forEach((pair, idx) => {
       if (!pair.includes(playerId)) return;
       const partnerId = pair[0] === playerId ? pair[1] : pair[0];
       const partner = team.players.find((p) => p.id === partnerId);
       const oppPair = oppSel.pairs[idx] || [null, null];
-      const oppNames = oppPair.map((pid) => { const p = oppTeam && oppTeam.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+      const oppRefs = oppPair.map((pid) => { const p = oppTeam && oppTeam.players.find((x) => x.id === pid); return p ? { id: p.id, name: p.name, photo: p.photo || "" } : null; }).filter(Boolean);
+      const oppNames = oppRefs.map((r) => r.name);
       const rubber = f.rubbers[idx];
       const winner = rubberWinner(rubber);
       // A finalized team-league rubber always has a winner (finalize
@@ -1184,7 +1189,10 @@ function playerMatchHistory(league, playerId, ratingsData) {
         opponentTeamId: oppTeam ? oppTeam.id : null,
         opponentTeamLogo: oppTeam ? oppTeam.logo || "" : "",
         opponentPlayers: oppNames,
+        opponentPlayerRefs: oppRefs,
         partner: partner ? partner.name : null,
+        partnerId: partner ? partner.id : null,
+        partnerPhoto: partner ? (partner.photo || "") : "",
         result: winner === null ? "D" : winner === mySide ? "W" : "L",
         // rubberScoreText already handles the split-sets super-tiebreak
         // (and filters out a pairs match's unplayed 3rd set on a draw) —
@@ -1194,6 +1202,8 @@ function playerMatchHistory(league, playerId, ratingsData) {
         // with the smaller (opponent's) number shown first.
         score: rubberScoreText(rubber, mySide === "B"),
         seed: idx + 1,
+        date: sched.date || f.date || "",
+        time: sched.time || "",
         ratingDelta: (deltas.get(`${f.id}:${idx}:${playerId}`) || {}).delta ?? null,
       });
     });

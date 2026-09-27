@@ -2391,6 +2391,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
+      isPairs: league.format === "pairs",
       upcoming,
       // Same "flag only, fetch lazily" reasoning as the leagues hub's own
       // hasCourtPhoto — this response already carries every league a
