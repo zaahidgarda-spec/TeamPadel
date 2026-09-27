@@ -1812,13 +1812,19 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .mc-body{padding:12px;}
 .mc-date{font-size:11px;color:var(--text-dim);margin-bottom:8px;}
 .mc-league-tag{font-family:var(--font-display);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);margin-bottom:6px;}
-.mc-main{display:flex;gap:14px;align-items:center;}
-.mc-photo-grid{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:8px 16px;flex:1;min-width:0;}
+.mc-main{display:flex;gap:14px;align-items:center;justify-content:space-between;}
+/* Fixed-width columns, not 1fr — a flexible column stretches to fill
+   whatever's left in .mc-main and just centers the 44px photo inside that
+   extra width, which is what was reading as "photos far apart". A column
+   sized to the photo itself keeps the pair tight regardless of card width;
+   space-between on .mc-main puts the (correct) gap between the photo
+   pair and the score column instead. */
+.mc-photo-grid{display:grid;grid-template-columns:repeat(2,60px);grid-template-rows:repeat(2,1fr);gap:8px 10px;flex:0 0 auto;min-width:0;}
 .mc-player{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;text-align:center;}
 .mc-avatar .p-photo,.mc-avatar .p-photo-fallback{width:44px;height:44px;font-size:15px;border-width:2px;box-shadow:none;flex-shrink:0;}
 .mc-pname{display:block;width:100%;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .mc-score-col{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;gap:6px;border-left:1px dashed var(--line);padding-left:12px;}
-.mc-score-row{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-faint);}
+.mc-score-row{display:flex;align-items:center;gap:7px;font-family:var(--font-display);font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-faint);}
 .mc-score-row.mc-score-win{color:var(--text);font-weight:700;font-size:14px;}
 .mc-trophy-slot{width:14px;display:inline-flex;justify-content:center;font-size:13px;flex-shrink:0;}
 .mc-score-fallback{font-size:11.5px;color:var(--text-dim);padding:4px 0;}
