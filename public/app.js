@@ -3134,11 +3134,24 @@ function runAccountSearch(qRaw) {
       c.querySelectorAll(".claim-btn").forEach((btn) => {
         btn.onclick = async () => {
           const row = btn.closest(".player-search-row");
+          const target = { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player };
           try {
-            await api("/players/claims", { method: "POST", body: { leagueId: row.dataset.league, teamId: row.dataset.team, playerId: row.dataset.player } });
+            await api("/players/claims", { method: "POST", body: target });
             await markPlayerIndexClaimed(row.dataset.player, true);
-            await runAccountSearch(qRaw);
-            await renderAccountProfile();
+            // Prompt for a photo right here, in the same breath as
+            // claiming — the one moment we know for sure this is someone
+            // new to their own record, before they've even reached My
+            // Profile. Anyone who skips it (or claimed before this
+            // existed) still gets caught by the nudge banner there later.
+            row.innerHTML = `<div class="roster-signup-strip">
+              <span class="icon">📸</span>
+              <div class="txt"><b>Add a profile photo?</b><span>So your teammates and opponents can spot you.</span></div>
+              <button type="button" class="primary claim-photo-add-btn">Add photo</button>
+              <button type="button" class="dismiss claim-photo-skip-btn" aria-label="Skip">&times;</button>
+            </div>`;
+            const finish = () => { runAccountSearch(qRaw); renderAccountProfile(); };
+            row.querySelector(".claim-photo-add-btn").onclick = () => { triggerAccountPhotoUpload(target); finish(); };
+            row.querySelector(".claim-photo-skip-btn").onclick = finish;
           } catch (e) { alert(e.message); }
         };
       });
