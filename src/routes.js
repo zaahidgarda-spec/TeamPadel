@@ -3339,8 +3339,28 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res
   if (!isAdmin && !isCaptain && !isOwnProfile) return res.status(403).json({ error: "Not allowed." });
   if (imageTooLarge(res, req.body.photo)) return;
 
-  player.photo = req.body.photo || "";
-  store.saveLeague(league.id, league);
+  const photo = req.body.photo || "";
+  player.photo = photo;
+  const touchedLeagues = new Map([[league.id, league]]);
+  // A profile photo belongs to the whole person, not just this one
+  // league's roster row — once this record is claimed, the same photo
+  // carries to every other league that account is claimed into too, same
+  // "one person, every claim" idea the ratings engine's identityOf already
+  // uses. An unclaimed record has no account to fan out to, so it just
+  // keeps the plain single-league behavior.
+  if (player.claimedByUserId) {
+    const account = store.getUser(player.claimedByUserId);
+    (account ? account.claims || [] : []).forEach((c) => {
+      const otherLeague = touchedLeagues.get(c.leagueId) || store.getLeague(c.leagueId);
+      if (!otherLeague) return;
+      const otherTeam = otherLeague.teams.find((t) => t.id === c.teamId);
+      const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
+      if (!otherPlayer) return;
+      otherPlayer.photo = photo;
+      touchedLeagues.set(otherLeague.id, otherLeague);
+    });
+  }
+  touchedLeagues.forEach((l) => store.saveLeague(l.id, l));
   res.json({ ok: true });
 });
 

@@ -1201,6 +1201,12 @@ function playerMatchHistory(league, playerId, ratingsData) {
         // so their own score always leads — otherwise a "W" row could read
         // with the smaller (opponent's) number shown first.
         score: rubberScoreText(rubber, mySide === "B"),
+        // A single-side forfeit writes a synthetic 6-0, 6-0 walkover score
+        // (see the admin forfeit route) — reads exactly like a real
+        // blowout win unless the card also carries this flag to say
+        // otherwise. "double" (neither side showed) never reaches here at
+        // all — see the played/winner check above, which skips it.
+        forfeited: rubber.forfeited || null,
         seed: idx + 1,
         date: sched.date || f.date || "",
         time: sched.time || "",

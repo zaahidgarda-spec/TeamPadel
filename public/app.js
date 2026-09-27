@@ -13893,9 +13893,15 @@ function matchHistoryCardHtml(r, me, opts) {
     : `<div class="mc-player"><span class="mc-pname">?</span></div>`;
   const scoreParts = parseScoreParts(r.score);
   const scoreRowHtml = (nums, isWinner) => `<div class="mc-score-row${isWinner ? " mc-score-win" : ""}"><span class="mc-trophy-slot">${isWinner ? "🏆" : ""}</span>${nums.map((n) => `<span>${escapeHtml(n)}</span>`).join("")}</div>`;
-  const scoreColHtml = scoreParts
-    ? `<div class="mc-score-col">${scoreRowHtml(scoreParts.map((p) => p.mine), r.result === "W")}${scoreRowHtml(scoreParts.map((p) => p.theirs), r.result === "L")}</div>`
-    : `<div class="mc-score-col mc-score-fallback">${escapeHtml(r.score)}</div>`;
+  // A single-side forfeit writes a synthetic 6-0, 6-0 walkover score (see
+  // playerMatchHistory) — showing those numbers as if they were a real
+  // scoreline would misrepresent what actually happened, so the trophy
+  // still marks who won but the numbers are swapped for a plain label.
+  const scoreColHtml = r.forfeited
+    ? `<div class="mc-score-col">${scoreRowHtml([], r.result === "W")}${scoreRowHtml([], r.result === "L")}<div class="mc-forfeit-note">Forfeit</div></div>`
+    : scoreParts
+      ? `<div class="mc-score-col">${scoreRowHtml(scoreParts.map((p) => p.mine), r.result === "W")}${scoreRowHtml(scoreParts.map((p) => p.theirs), r.result === "L")}</div>`
+      : `<div class="mc-score-col mc-score-fallback">${escapeHtml(r.score)}</div>`;
   // The self-contained, fetch-based openTeamProfile — not the
   // client-data-only openTeamModal — since this card can be (and for My
   // Profile's own "Match history" strip, always is) showing a league that

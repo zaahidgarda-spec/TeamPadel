@@ -1803,7 +1803,7 @@ nav.tabs::-webkit-scrollbar{display:none;}
    history-row list, on both the player-profile modal and My Profile's
    own "Match history" strip (see matchHistoryCardHtml). */
 .match-card-scroll{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 10px;margin:0 -2px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;}
-.match-card{scroll-snap-align:start;flex:0 0 auto;width:250px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;box-shadow:var(--shadow-sm);}
+.match-card{scroll-snap-align:start;flex:0 0 auto;width:272px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;box-shadow:var(--shadow-sm);}
 .mc-banner{background:var(--text);padding:10px 12px;display:flex;align-items:center;gap:8px;}
 .mc-banner-team{display:inline-flex;align-items:center;gap:8px;min-width:0;flex:1;}
 .mc-banner-team .avatar,.mc-banner-team .avatar-fb{width:24px;height:24px;font-size:10px;border-color:rgba(255,255,255,.3);}
@@ -1812,16 +1812,17 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .mc-body{padding:12px;}
 .mc-date{font-size:11px;color:var(--text-dim);margin-bottom:8px;}
 .mc-league-tag{font-family:var(--font-display);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);margin-bottom:6px;}
-.mc-main{display:flex;gap:10px;align-items:center;}
-.mc-photo-grid{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:8px;flex:1;min-width:0;}
+.mc-main{display:flex;gap:14px;align-items:center;}
+.mc-photo-grid{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:8px 16px;flex:1;min-width:0;}
 .mc-player{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;text-align:center;}
 .mc-avatar .p-photo,.mc-avatar .p-photo-fallback{width:44px;height:44px;font-size:15px;border-width:2px;box-shadow:none;flex-shrink:0;}
 .mc-pname{display:block;width:100%;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-.mc-score-col{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;gap:6px;border-left:1px dashed var(--line);padding-left:10px;}
-.mc-score-row{display:flex;align-items:center;gap:6px;font-family:var(--font-display);font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-faint);}
+.mc-score-col{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;gap:6px;border-left:1px dashed var(--line);padding-left:12px;}
+.mc-score-row{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-faint);}
 .mc-score-row.mc-score-win{color:var(--text);font-weight:700;font-size:14px;}
 .mc-trophy-slot{width:14px;display:inline-flex;justify-content:center;font-size:13px;flex-shrink:0;}
 .mc-score-fallback{font-size:11.5px;color:var(--text-dim);padding:4px 0;}
+.mc-forfeit-note{font-family:var(--font-display);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-faint);text-align:center;margin-top:2px;}
 .mc-vs-row{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:11.5px;color:var(--text-dim);}
 .mc-vs-sep{color:var(--text-faint);margin:0 3px;}
 .mc-team-link{cursor:pointer;}
