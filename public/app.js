@@ -13886,10 +13886,11 @@ function insightRowsHtml(records, leagueId) {
 function parseScoreParts(score) {
   if (!score || score === "Double forfeit") return null;
   return score.split(", ").map((part) => {
+    const tiebreak = part.startsWith("[");
     const bare = part.replace(/^\[|\]$/g, "");
     const dash = bare.lastIndexOf("-");
     if (dash < 1) return null;
-    return { mine: bare.slice(0, dash), theirs: bare.slice(dash + 1) };
+    return { mine: bare.slice(0, dash), theirs: bare.slice(dash + 1), tiebreak };
   }).filter(Boolean);
 }
 // One match: an opponent-team banner on top, a 2x2 photo grid with a
@@ -13930,16 +13931,30 @@ function matchHistoryCardHtml(r, me, opts) {
     ? oppRefs.map((ref) => playerCellHtml(ref.photo, ref.name, ref.id)).join("")
     : `<div class="mc-player"><span class="mc-pname">?</span></div>`;
   const scoreParts = parseScoreParts(r.score);
-  const scoreRowHtml = (nums, isWinner) => `<div class="mc-score-row${isWinner ? " mc-score-win" : ""}"><span class="mc-trophy-slot">${isWinner ? "🏆" : ""}</span>${nums.map((n) => `<span>${escapeHtml(n)}</span>`).join("")}</div>`;
+  const scoreRowHtml = (nums, isWinner) => `<div class="mc-score-row${isWinner ? " mc-score-win" : ""}"><span class="mc-trophy-slot">${isWinner ? "🏆" : ""}</span>${nums.map((n) => `<span class="mc-score-num">${escapeHtml(n)}</span>`).join("")}</div>`;
   // A single-side forfeit writes a synthetic 6-0, 6-0 walkover score (see
   // playerMatchHistory) — showing those numbers as if they were a real
   // scoreline would misrepresent what actually happened, so the trophy
   // still marks who won but the numbers are swapped for a plain label.
-  const scoreColHtml = r.forfeited
-    ? `<div class="mc-score-col">${scoreRowHtml([], r.result === "W")}${scoreRowHtml([], r.result === "L")}<div class="mc-forfeit-note">Forfeit</div></div>`
-    : scoreParts
-      ? `<div class="mc-score-col">${scoreRowHtml(scoreParts.map((p) => p.mine), r.result === "W")}${scoreRowHtml(scoreParts.map((p) => p.theirs), r.result === "L")}</div>`
-      : `<div class="mc-score-col mc-score-fallback">${escapeHtml(r.score)}</div>`;
+  let scoreColHtml;
+  if (r.forfeited) {
+    scoreColHtml = `<div class="mc-score-col"><div class="mc-score-sets">${scoreRowHtml([], r.result === "W")}${scoreRowHtml([], r.result === "L")}</div><div class="mc-forfeit-note">Forfeit</div></div>`;
+  } else if (scoreParts) {
+    // The real sets keep the big, evenly-spaced fixed-width digits; a
+    // bracketed super tiebreak (2 sets split 1-1, decided by a breaker
+    // instead of a 3rd set) gets set apart after a thin divider, smaller
+    // and labelled "TB" — reads as "2 sets, then a breaker," not a 3rd
+    // set. A Vibora-style best-of-3 pairs match has no bracketed part at
+    // all (3 real sets) and just gets a 3rd fixed-width column same as
+    // the first two.
+    const sets = scoreParts.filter((p) => !p.tiebreak);
+    const tiebreak = scoreParts.find((p) => p.tiebreak);
+    const setsHtml = sets.length ? `<div class="mc-score-sets">${scoreRowHtml(sets.map((p) => p.mine), r.result === "W")}${scoreRowHtml(sets.map((p) => p.theirs), r.result === "L")}</div>` : "";
+    const tbHtml = tiebreak ? `<div class="mc-score-divider"></div><div class="mc-tb-col"><span class="mc-tb-num${r.result === "W" ? " mc-score-win" : ""}">${escapeHtml(tiebreak.mine)}</span><span class="mc-tb-num${r.result === "L" ? " mc-score-win" : ""}">${escapeHtml(tiebreak.theirs)}</span><span class="mc-tb-label">TB</span></div>` : "";
+    scoreColHtml = `<div class="mc-score-col"><div class="mc-score-main">${setsHtml}${tbHtml}</div></div>`;
+  } else {
+    scoreColHtml = `<div class="mc-score-col mc-score-fallback">${escapeHtml(r.score)}</div>`;
+  }
   // The self-contained, fetch-based openTeamProfile — not the
   // client-data-only openTeamModal — since this card can be (and for My
   // Profile's own "Match history" strip, always is) showing a league that
