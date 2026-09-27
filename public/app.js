@@ -13827,8 +13827,8 @@ function insightRowsHtml(records, leagueId) {
 }
 // One match, Playtomic-style: both sides' avatars+names stacked with the
 // score between them and a trophy marking the winning side — shared by
-// the player-profile modal's own "Match history" and My Profile's
-// "Recent form" strip, so the same match looks the same wherever it's
+// the player-profile modal's own "Match history" and My Profile's own
+// "Match history" strip, so the same match looks the same wherever it's
 // seen. `me` is whoever this card's "my side" is — the profile being
 // viewed (the modal), or the signed-in player themselves (My Profile) —
 // {leagueId, name, photo}, since a match row alone has no idea who that
@@ -13853,7 +13853,7 @@ function matchHistoryCardHtml(r, me, opts) {
     : `<div class="mc-player"><span class="mc-pname">?</span></div>`;
   // The self-contained, fetch-based openTeamProfile — not the
   // client-data-only openTeamModal — since this card can be (and for My
-  // Profile's own "Recent form" strip, always is) showing a league that
+  // Profile's own "Match history" strip, always is) showing a league that
   // isn't the one currently loaded, same reasoning as the next-match
   // card's crests.
   const oppTeamBadge = oppTeamRef
