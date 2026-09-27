@@ -3557,17 +3557,21 @@ async function renderAccountProfile() {
   // context isn't lost, just no longer segregated. Most recent first, and
   // capped — this is a glance at recent form, not a full archive (every
   // result is still in the roster's own player-history popup).
-  const results = cards.flatMap((card) => card.results.map((r) => Object.assign({
+  const allResults = cards.flatMap((card) => card.results.map((r) => Object.assign({
     leagueName: card.leagueName, leagueId: card.leagueId, isPairs: card.isPairs,
     mePlayerName: card.playerName, mePhoto: card.photo,
     meTeamId: card.teamId, meTeamName: card.teamName, meTeamLogo: card.teamLogo,
   }, r)))
-    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
-    .slice(0, 8);
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const cardHtmlFor = (r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto, teamId: r.meTeamId, teamName: r.meTeamName, teamLogo: r.meTeamLogo }, { isPairs: r.isPairs, leagueTag: r.leagueName });
+  const results = allResults.slice(0, 8);
+  const seeAllBtn = el("account-form-see-all-btn");
   c.innerHTML = results.length
-    ? results.map((r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto, teamId: r.meTeamId, teamName: r.meTeamName, teamLogo: r.meTeamLogo }, { isPairs: r.isPairs, leagueTag: r.leagueName })).join("")
+    ? results.map(cardHtmlFor).join("")
     : '<p class="empty">No results yet.</p>';
   bindMatchCardLinks(c);
+  seeAllBtn.style.display = allResults.length > results.length ? "inline-block" : "none";
+  seeAllBtn.onclick = () => openAllMatchesModal(allResults.map(cardHtmlFor).join(""));
 }
 // The stat strip — season record, how many leagues, a captain badge if
 // they manage a team, and an award count. A glance-able summary of "how's
@@ -4111,8 +4115,11 @@ function positionAccountTablesSection(matchNightNow) {
     const results = el("account-results-section");
     results.parentElement.insertBefore(tables, results.nextSibling);
   } else {
-    const fixtures = el("account-fixtures-section");
-    fixtures.parentElement.insertBefore(tables, fixtures);
+    // Match history sits right after Your Tables (see index.html) —
+    // anchor here too, not Your Fixtures, or this would push Tables past
+    // Match history and undo that order every render.
+    const history = el("account-history-section");
+    history.parentElement.insertBefore(tables, history);
   }
 }
 
@@ -13934,6 +13941,18 @@ function bindMatchCardLinks(root) {
     btn.onclick = (e) => { e.stopPropagation(); openTeamProfile(btn.dataset.league, btn.dataset.team, { teamName: btn.dataset.name, teamLogo: btn.dataset.logo }); };
   });
 }
+// "See all matches" from either strip — the player-profile modal's own
+// list (already unfiltered) or My Profile's capped-at-8 one (the full,
+// uncapped set here instead) — opens the same cards again, just stacked
+// in one scrollable vertical column instead of a horizontal swipe, so
+// there's a way to actually read through the whole history top to bottom.
+function openAllMatchesModal(cardsHtml) {
+  el("all-matches-list").innerHTML = cardsHtml || '<p class="empty">No matches yet.</p>';
+  bindMatchCardLinks(el("all-matches-list"));
+  el("all-matches-modal-backdrop").classList.add("open");
+}
+el("all-matches-modal-close").onclick = () => el("all-matches-modal-backdrop").classList.remove("open");
+el("all-matches-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "all-matches-modal-backdrop") el("all-matches-modal-backdrop").classList.remove("open"); });
 // The modal is one player's record, but that record can span several
 // leagues once claimed (see the player-accounts feature) — a tab per
 // league lets you flip between Sandton's and Killarney's copy of the
@@ -14136,11 +14155,14 @@ async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
     championships: data.allChampionships || [], runnerUps: data.allRunnerUps || [], awards: data.allAwards || [],
     winStreak: data.bestWinStreak, bagelCount: data.bagelCount || 0, unbeatenSeasons: data.allUnbeatenSeasons || [],
   });
-  const { statsHtml, bodyHtml } = renderPlayerHistoryBody(data, h2h);
+  const { statsHtml, bodyHtml, matchCardsHtml } = renderPlayerHistoryBody(data, h2h);
   el("player-modal-stats").innerHTML = statsHtml;
   el("player-modal-stats").style.display = statsHtml ? "grid" : "none";
   el("player-modal-body").innerHTML = bodyHtml;
   bindMatchCardLinks(el("player-modal-body"));
+  el("player-modal-body").querySelectorAll(".mc-see-all-btn").forEach((btn) => {
+    btn.onclick = () => openAllMatchesModal(matchCardsHtml);
+  });
   el("player-modal-body").querySelectorAll(".h2h-toggle").forEach((toggle) => {
     toggle.onclick = () => {
       const box = toggle.parentElement.querySelector(".h2h-results");
@@ -14239,8 +14261,9 @@ function renderPlayerHistoryBody(data, h2h) {
   if (opponents.length) html += `<p class="modal-subhead">Head-to-head</p>${insightRowsHtml(opponents, data.leagueId)}`;
 
   const me = { leagueId: data.leagueId, name: data.playerName, photo: data.photo, teamId: data.teamId, teamName: data.teamName, teamLogo: data.teamLogo };
-  html += `<p class="modal-subhead">Match history</p><div class="match-card-scroll">${rows.map((r) => matchHistoryCardHtml(r, me, { isPairs })).join("")}</div>`;
-  return { statsHtml, bodyHtml: html };
+  const matchCardsHtml = rows.map((r) => matchHistoryCardHtml(r, me, { isPairs })).join("");
+  html += `<p class="modal-subhead">Match history</p><div class="match-card-scroll">${matchCardsHtml}</div><button type="button" class="link mc-see-all-btn">See all matches</button>`;
+  return { statsHtml, bodyHtml: html, matchCardsHtml };
 }
 el("player-modal-close").onclick = () => el("player-modal-backdrop").classList.remove("open");
 el("player-modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "player-modal-backdrop") el("player-modal-backdrop").classList.remove("open"); });

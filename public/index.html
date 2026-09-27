@@ -347,6 +347,12 @@
             <div class="pd-scroll" id="account-tables-scroll"></div>
           </section>
 
+          <section class="pd-section" id="account-history-section">
+            <div class="pd-section-head"><h2>Match history</h2></div>
+            <div class="match-card-scroll" id="account-form-list"></div>
+            <button type="button" class="link" id="account-form-see-all-btn" style="display:none;margin-top:6px;">See all matches</button>
+          </section>
+
           <section class="pd-section" id="account-fixtures-section" style="display:none;">
             <div class="pd-section-head"><h2>Your Fixtures</h2></div>
             <div class="pd-scroll" id="account-fixtures-scroll"></div>
@@ -367,11 +373,6 @@
           <section class="pd-section">
             <div class="pd-section-head"><h2>Your leagues</h2></div>
             <div class="pd-leagues-glass" id="account-leagues-list"></div>
-          </section>
-
-          <section class="pd-section">
-            <div class="pd-section-head"><h2>Match history</h2></div>
-            <div class="match-card-scroll" id="account-form-list"></div>
           </section>
 
           <section class="pd-section" id="account-trophy-section" style="display:none;">
@@ -1494,6 +1495,17 @@
           </div>
           <div id="player-modal-trophy-room"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Global — "See all matches" from either the player-profile modal's
+         own Match history list or My Profile's own strip opens this, so it
+         has to sit outside both rather than nested in either one. -->
+    <div id="all-matches-modal-backdrop" class="modal-backdrop">
+      <div class="modal-box" style="max-width:400px;">
+        <button class="modal-close" id="all-matches-modal-close" aria-label="Close">&times;</button>
+        <h3 class="modal-title">Match history</h3>
+        <div class="match-card-list" id="all-matches-list"></div>
       </div>
     </div>
 
