@@ -2885,6 +2885,11 @@ el("toggle-admin-panel").onclick = () => {
   panel.style.display = panel.style.display === "none" ? "block" : "none";
   if (panel.style.display === "block") el("account-owner-username").focus();
 };
+el("toggle-settings-panel").onclick = () => {
+  const panel = el("settings-panel");
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+  if (panel.style.display === "block") panel.scrollIntoView({ behavior: "smooth", block: "start" });
+};
 el("show-account-signup").onclick = () => {
   el("account-login-form").style.display = "none"; el("account-signup-form").style.display = "block";
   el("account-form-title").textContent = "Sign up"; el("account-auth-error").textContent = "";
@@ -6653,14 +6658,9 @@ el("push-prompt-cta").onclick = async () => {
 // is the surface someone who signed up for a real account and uses My
 // Profile as their main view will actually find, unlike the per-league
 // card above which only shows up inside a specific league's own page.
-// Decided once per signed-in session (null = not decided yet), not
-// recomputed on every render — otherwise the section would jump position
-// mid-visit the moment the "seen" call above resolves. First time this
-// account has ever had it shown, it goes right to the top of My Profile
-// where it can't be missed; every render after that (this visit AND every
-// future one, since the "seen" flag lives on the account) it sits at the
-// very bottom of the dashboard instead, above the utility links.
-let showPushSectionAtTop = null;
+// Lives inside the Settings panel (see toggle-settings-panel) rather than
+// its own spot on the page — a fixed, findable home instead of jumping
+// around the dashboard depending on whether it's been seen before.
 // Emails go to the account's own address automatically for every team the
 // account captains; this row is just the off switch.
 function renderAccountEmailRow() {
@@ -6690,18 +6690,7 @@ async function renderAccountPushSection() {
   const btn = el("account-push-btn");
   const codeRow = el("account-push-code-row");
   const codeError = el("account-push-code-error");
-  if (!playerAccount) { section.style.display = "none"; showPushSectionAtTop = null; return; }
-  if (showPushSectionAtTop === null) {
-    showPushSectionAtTop = !playerAccount.hasSeenPushPrompt;
-    if (showPushSectionAtTop) api("/players/push-prompt-seen", { method: "POST" }).catch(() => {});
-  }
-  const topAnchor = el("account-push-top-anchor");
-  const bottomAnchor = el("account-push-bottom-anchor");
-  if (showPushSectionAtTop) {
-    if (topAnchor && topAnchor.nextElementSibling !== section) topAnchor.insertAdjacentElement("afterend", section);
-  } else if (bottomAnchor && bottomAnchor.previousElementSibling !== section) {
-    bottomAnchor.insertAdjacentElement("beforebegin", section);
-  }
+  if (!playerAccount) { section.style.display = "none"; return; }
   section.style.display = "block";
   codeError.textContent = "";
   const captaincies = playerAccount.captaincies || [];

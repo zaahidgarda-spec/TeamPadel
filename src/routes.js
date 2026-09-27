@@ -1668,7 +1668,7 @@ router.get("/players/me", (req, res) => {
     user.captaincies = captaincies.map((c) => ({ leagueId: c.leagueId, teamId: c.teamId }));
     store.saveUser(user.id, user);
   }
-  res.json({ id: user.id, name: user.name, email: user.email, captaincies, hasSeenPushPrompt: !!user.hasSeenPushPrompt, emailNotifications: user.emailNotifications !== false, emailAvailable: mailConfigured() });
+  res.json({ id: user.id, name: user.name, email: user.email, captaincies, emailNotifications: user.emailNotifications !== false, emailAvailable: mailConfigured() });
 });
 
 // Account-level switch for the emails in emailRecipientsForTeam — on unless
@@ -1682,21 +1682,6 @@ router.put("/players/email-notifications", (req, res) => {
   res.json({ ok: true, emailNotifications: user.emailNotifications });
 });
 
-// One-time flag: the Push notifications section shows at the very top of
-// My Profile until an account has actually seen it once (across any
-// device — this is on the account record, not a per-browser thing), then
-// drops back to its normal spot for every visit after. Called once,
-// client-side, the first time that top placement actually rendered.
-router.post("/players/push-prompt-seen", (req, res) => {
-  const pu = req.session.playerUser;
-  const user = pu && store.getUser(pu.id);
-  if (!user) return res.status(401).json({ error: "Not logged in." });
-  if (!user.hasSeenPushPrompt) {
-    user.hasSeenPushPrompt = true;
-    store.saveUser(user.id, user);
-  }
-  res.json({ ok: true });
-});
 
 // Every player record in the store, flat — any league, any format, any
 // status, since a player record's existence is what matters here, not the
