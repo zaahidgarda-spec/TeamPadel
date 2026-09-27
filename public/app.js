@@ -3975,11 +3975,20 @@ function renderAccountTables(cards) {
   // if it isn't the one already loaded, since the modal reads off the
   // live `league` global rather than taking one as an argument.
   el("account-tables-scroll").querySelectorAll(".pd-table-row[data-team-id]").forEach((row) => {
-    row.onclick = async () => {
+    row.onclick = async (e) => {
+      e.stopPropagation();
       const leagueId = row.closest(".pd-table-card").dataset.league;
       if (currentLeagueId !== leagueId) await openLeague(leagueId);
       openTeamModal(row.dataset.teamId);
     };
+  });
+  // The card itself — tapping anywhere that isn't a team row or "Show full
+  // table" (both already stop the click reaching here) jumps to that
+  // league's real Table tab, same destination "Show full table" already
+  // goes to. A whole card that visibly represents one league was
+  // otherwise dead space to tap outside those two spots.
+  el("account-tables-scroll").querySelectorAll(".pd-table-card").forEach((card) => {
+    card.onclick = async () => { await openLeague(card.dataset.league); switchTab("table"); };
   });
 }
 // The real next fixture for every team this account touches — claimed or

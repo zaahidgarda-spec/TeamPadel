@@ -1204,7 +1204,7 @@ html.has-admin-bar .wrap{padding-top:54px;}
 /* Your Tables — a capped standings preview per league, same idea as the
    real Table tab's rank-row/rank-move but compact enough for a horizontal
    scroll card. */
-.pd-table-card{position:relative;flex:0 0 auto;width:240px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm);}
+.pd-table-card{position:relative;flex:0 0 auto;width:240px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm);cursor:pointer;}
 .pd-table-card .league-tag{margin-bottom:0;}
 .pd-table-content{position:relative;z-index:1;}
 /* The venue photo confined to a header band, in full colour — the table
