@@ -13268,6 +13268,26 @@ function archivedKnockoutEditSection(seasonId, snapshot) {
   });
   return wrap;
 }
+// The "position" playoff format's own edit section — every pairing (1st
+// v 2nd, 3rd v 4th, ...) becomes one final-position slot instead of a
+// single champion, so there's no fixed semis/final shape to key off; this
+// mirrors archivedKnockoutEditSection but walks playoffs.matches instead.
+// Without this, a position-format season's playoff-day results had no
+// admin edit section at all (archivedResultsSection only ever walks
+// snapshot.fixtures, the regular-season rounds) — findArchivedFixture
+// already resolves these server-side, the UI just never offered a way in.
+function archivedPositionPlayoffEditSection(seasonId, snapshot) {
+  const wrap = document.createElement("div"); wrap.className = "card"; wrap.style.marginTop = "16px";
+  wrap.innerHTML = '<h2 class="section-title">Edit playoff scores</h2><p class="note" style="margin-bottom:12px;">Admin only.</p>';
+  (snapshot.playoffs.matches || []).forEach((f, i) => {
+    if (!f || !f.teamA || !f.teamB) return;
+    const heading = document.createElement("div"); heading.className = "note"; heading.style.cssText = "margin:12px 0 6px;font-weight:600;";
+    heading.textContent = positionMatchLabel(i);
+    wrap.appendChild(heading);
+    wrap.appendChild(archivedFixtureCard(seasonId, f, snapshot.teams));
+  });
+  return wrap;
+}
 // A past season's playoff outcome, for anyone — no per-set/per-rubber
 // scores, just who finished where. "semis_final" resolves to one champion;
 // "position" has no single decider (see /rounds/:round for how those
@@ -13353,6 +13373,8 @@ async function openArchivedSeason(seasonId) {
     detail.appendChild(archivedResultsSection(seasonId, snapshot));
     if (snapshot.playoffs && snapshot.playoffs.format === "semis_final") {
       detail.appendChild(archivedKnockoutEditSection(seasonId, snapshot));
+    } else if (snapshot.playoffs && snapshot.playoffs.format === "position") {
+      detail.appendChild(archivedPositionPlayoffEditSection(seasonId, snapshot));
     }
   }
 }
