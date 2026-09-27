@@ -1120,7 +1120,7 @@ body.lc-fs-on{overflow:hidden;}
 /* Admin-only bar across the top of every screen — the way into the
    control room from anywhere, not just from inside a league. */
 .admin-bar{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;gap:10px;padding:8px max(20px,calc((100vw - 1040px) / 2 + 20px));background:#060B18;border-bottom:1px solid #1B2745;}
-html.has-admin-bar .wrap{padding-top:76px;}
+html.has-admin-bar .wrap{padding-top:54px;}
 .admin-bar .ab-tag{font-family:var(--font-display);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#7C8CB0;background:none;border:none;padding:0;cursor:pointer;min-height:0;}
 .admin-bar .ab-tag:hover{color:#B7C4E6;}
 .admin-bar .ab-sp{flex:1;}
