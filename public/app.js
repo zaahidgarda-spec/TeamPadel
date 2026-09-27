@@ -3449,6 +3449,28 @@ function renderAccountLineupsDue(due) {
 }
 // The urgent stuff a captain shouldn't have to scroll past Trophy Room to
 // find: a match of theirs that's live on court right now (from each card's
+// One nudge per claimed league that just had a round finalize, within the
+// match-day + day-after window — potwPrompt is null everywhere else
+// (already voted, already shown once, outside the window, or nothing to
+// vote on), all decided server-side in /players/profile so this is just
+// rendering whatever it hands back. Tapping it jumps into that league's
+// Awards tab, where the actual voting UI already lives.
+function renderAccountPotwNudge(cards) {
+  const prompts = cards.filter((c) => c.potwPrompt);
+  const section = el("account-potw-section");
+  if (!prompts.length) { section.style.display = "none"; return; }
+  section.style.display = "block";
+  el("account-potw-list").innerHTML = prompts.map((c) => `
+    <div class="lineup-due-pill" data-league="${c.potwPrompt.leagueId}">
+      <div class="lineup-due-top">
+        <div class="lineup-due-name"><strong>Round ${c.potwPrompt.round} is in</strong><span class="lineup-due-meta"><span class="league-name">${escapeHtml(c.potwPrompt.leagueName)}</span></span></div>
+      </div>
+      <div class="lineup-due-cta">🏆 Vote for Pair of the Week<span class="lineup-due-chev">&#8250;</span></div>
+    </div>`).join("");
+  el("account-potw-list").querySelectorAll(".lineup-due-pill").forEach((row) => {
+    row.onclick = async () => { await openLeague(row.dataset.league); switchTab("awards"); };
+  });
+}
 // liveNow, set server-side in /players/profile), and any line-up that's
 // gone past its selection deadline (the same /players/lineups-due list
 // renderAccountLineupsDue reads, filtered to just the overdue ones —
@@ -3555,6 +3577,7 @@ async function renderAccountProfile() {
   renderAccountTables(cards);
   positionAccountTablesSection(matchNightNow);
   renderAccountFixtures(fixtureCards || []);
+  renderAccountPotwNudge(cards);
   const due = await api("/players/lineups-due").catch(() => []);
   renderAccountNeedsAttention(cards, due);
   renderAccountLineupsDue(due);
@@ -9746,6 +9769,18 @@ function potwEligiblePairsClient(fixtures) {
   });
   return pairs;
 }
+// Whether the signed-in player account has claimed a roster spot in the
+// currently-loaded league — a plain claimed player (not a captain) can
+// still vote for Pair of the Week, so the vote UI below needs this same
+// check the vote route itself makes server-side.
+function myClaimedPlayerIdHere() {
+  if (!playerAccount || !league) return null;
+  for (const t of league.teams) {
+    const p = t.players.find((pl) => pl.claimedByUserId === playerAccount.id);
+    if (p) return p.id;
+  }
+  return null;
+}
 function renderPotwCard(fixtures) {
   const card = el("potw-card");
   if (!viewingKey || viewingKey.stage !== "regular" || fixtures.length === 0 || !fixtures.every((f) => f.finalized)) {
@@ -9773,7 +9808,7 @@ function renderPotwCard(fixtures) {
   card.innerHTML = html;
   bindPlayerLinks(card);
 
-  if (myRole === "captain" || myRole === "admin") {
+  if (myRole === "captain" || myRole === "admin" || myClaimedPlayerIdHere()) {
     const eligible = potwEligiblePairsClient(fixtures);
     const voteWrap = document.createElement("div");
     voteWrap.className = "row";

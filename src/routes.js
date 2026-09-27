@@ -612,19 +612,26 @@ function sanitize(league, req) {
   }
 
   // Public per-round Pair of the Week tally/winner (for the crown), plus
-  // this viewer's own vote if they're a captain or the admin — raw
-  // per-voter ballots never leave here.
+  // this viewer's own vote if they're a captain, the admin, or have
+  // claimed a player record in this league — raw per-voter ballots never
+  // leave here.
   const rounds = [...new Set(league.fixtures.map((f) => f.round))];
   const potwByRound = {};
   rounds.forEach((r) => { potwByRound[r] = logic.potwTallyForRound(league, r); });
   const potwVoterKey = isAdmin ? "admin" : teamId;
-  const myPotwVote = {};
-  if (potwVoterKey) {
-    rounds.forEach((r) => {
-      const v = league.potwVotes && league.potwVotes[r] && league.potwVotes[r][potwVoterKey];
-      if (v) myPotwVote[r] = v;
-    });
+  let claimedPlayerPotwKey = null;
+  if (req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    const claim = account && (account.claims || []).find((c) => c.leagueId === league.id);
+    if (claim) claimedPlayerPotwKey = `player:${claim.playerId}`;
   }
+  const myPotwVote = {};
+  rounds.forEach((r) => {
+    const votes = league.potwVotes && league.potwVotes[r];
+    if (!votes) return;
+    const v = (potwVoterKey && votes[potwVoterKey]) || (claimedPlayerPotwKey && votes[claimedPlayerPotwKey]);
+    if (v) myPotwVote[r] = v;
+  });
 
   // Past seasons have their own dedicated routes (/season-history) so the
   // main league payload doesn't balloon with every archived fixture/rubber
@@ -2372,11 +2379,42 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       const cell = findCourtScheduleCell(league, row.fixtureId, row.rubberIdx);
       return { ...row, court: cell ? ((league.courtNames || [])[cell.court] || `Court ${cell.court + 1}`) : "" };
     });
+    // Pair of the Week voting nudge — surfaced right here on My Profile
+    // (not a push notification), only within the match-day + the day
+    // after window, and only if this player hasn't already voted
+    // individually or already been shown this exact prompt before. Marked
+    // seen the moment it's returned once, durably on the account, so it
+    // only ever shows once per league+round no matter how many times they
+    // reload the page within that window.
+    let potwPrompt = null;
+    const roundsHere = [...new Set(league.fixtures.map((f) => f.round))];
+    for (const r of roundsHere) {
+      const roundFixtures = league.fixtures.filter((f) => f.round === r);
+      if (!roundFixtures.length || !roundFixtures.every((f) => f.finalized)) continue;
+      const sched = (league.schedule && league.schedule[logic.stageKeyFor(roundFixtures[0])]) || {};
+      if (!sched.date) continue;
+      const matchDate = new Date(sched.date + "T00:00:00");
+      if (isNaN(matchDate)) continue;
+      const windowEnd = new Date(matchDate.getTime() + 2 * 86400000); // exclusive end of "the day after"
+      const now = new Date();
+      if (now < matchDate || now >= windowEnd) continue;
+      const seenKey = `${league.id}:${r}`;
+      if ((user.seenPotwPrompts || []).includes(seenKey)) continue;
+      const alreadyVoted = !!(league.potwVotes && league.potwVotes[r] && league.potwVotes[r][`player:${claim.playerId}`]);
+      if (alreadyVoted) continue;
+      if (!logic.potwEligiblePairs(league, r).length) continue;
+      potwPrompt = { leagueId: league.id, leagueName: league.name, round: r };
+      user.seenPotwPrompts = user.seenPotwPrompts || [];
+      user.seenPotwPrompts.push(seenKey);
+      changed = true;
+      break;
+    }
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
       isPairs: league.format === "pairs",
+      potwPrompt,
       upcoming,
       // Same "flag only, fetch lazily" reasoning as the leagues hub's own
       // hasCourtPhoto — this response already carries every league a
@@ -6352,10 +6390,22 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   const u = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
   const isCaptain = !!(u && u.leagueId === league.id && u.role === "captain");
-  if (!isAdmin && !isCaptain) return res.status(403).json({ error: "Only team captains or the admin can vote." });
+  // Anyone who's claimed a player record in this league gets a vote too,
+  // not just captains/admin — one per claimed identity, same as a
+  // captain's is one per team.
+  let claimedPlayerId = null;
+  if (req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    const claim = account && (account.claims || []).find((c) => c.leagueId === league.id);
+    if (claim) claimedPlayerId = claim.playerId;
+  }
+  if (!isAdmin && !isCaptain && !claimedPlayerId) return res.status(403).json({ error: "Log in as a captain, or claim your player record in this league, to vote." });
   // Admin gets one vote too, same as a team captain, just not tied to any
   // specific team — stored under a fixed "admin" key rather than a teamId.
-  const voterKey = isAdmin ? "admin" : u.teamId;
+  // A captain who has ALSO claimed a player record still votes as their
+  // team (unchanged, backward compatible); everyone else votes under
+  // their own claimed identity instead.
+  const voterKey = isAdmin ? "admin" : isCaptain ? u.teamId : `player:${claimedPlayerId}`;
   const roundFixtures = league.fixtures.filter((f) => f.round === round);
   if (roundFixtures.length === 0) return res.status(404).json({ error: "No fixtures in that round." });
   if (!roundFixtures.every((f) => f.finalized)) return res.status(400).json({ error: "Voting opens once every match in the round is finalized." });
