@@ -13064,8 +13064,17 @@ async function openTeamProfile(leagueId, teamId, hint) {
   el("team-modal-trophies").style.display = data.trophies && data.trophies.length ? "block" : "none";
 
   const rosterEl = el("team-modal-roster");
+  // Not isGoldPlayer/goldNameHtml — those read the currently-loaded
+  // `league` global, which this modal can't assume matches (it can show a
+  // team from a league that isn't the one currently open, or none at
+  // all). data.tieringEnabled and each roster entry's own `gold` flag
+  // came from the server for this exact team's own league instead.
+  const rosterNameHtml = (p) => {
+    const nameHtml = newsPlayerLinkHtml(leagueId, p);
+    return data.tieringEnabled && p.gold ? `<span class="gold-name">★ ${nameHtml}</span>` : nameHtml;
+  };
   rosterEl.innerHTML = data.roster.length
-    ? data.roster.map((p, i) => `<div class="team-roster-row"><span class="team-roster-num">${String(i + 1).padStart(2, "0")}</span>${newsPlayerLinkHtml(leagueId, p)}</div>`).join("")
+    ? data.roster.map((p, i) => `<div class="team-roster-row"><span class="team-roster-num">${String(i + 1).padStart(2, "0")}</span>${rosterNameHtml(p)}</div>`).join("")
     : '<p class="empty">No players added yet.</p>';
   bindNewsPlayerLinks(rosterEl);
 
