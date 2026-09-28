@@ -2231,6 +2231,42 @@ function teamNextFixture(league, team) {
     });
   return upcoming[0] || null;
 }
+// A semi-final or final this team is actually in, on the day before or the
+// day of — the only two days My Profile takes over with the playoff
+// poster. Both sides need to be settled (a semi whose opponent isn't known
+// yet has nothing to show), and it goes away the moment the match is
+// finalized or the day has passed.
+function teamPlayoffSplash(league, team, isCaptain) {
+  const now = new Date();
+  for (const f of logic.allFixturesOf(league)) {
+    if ((f.stage !== "semi" && f.stage !== "final") || f.finalized || !f.teamA || !f.teamB) continue;
+    if (f.teamA !== team.id && f.teamB !== team.id) continue;
+    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    if (!sched.date) continue;
+    const matchDate = new Date(sched.date + "T00:00:00");
+    if (isNaN(matchDate)) continue;
+    const dayBefore = new Date(matchDate.getTime() - 86400000);
+    const windowEnd = new Date(matchDate.getTime() + 86400000);
+    if (now < dayBefore || now >= windowEnd) continue;
+    const opp = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
+    if (!opp) continue;
+    const meeting = league.fixtures.find((x) => x.finalized && ((x.teamA === team.id && x.teamB === opp.id) || (x.teamA === opp.id && x.teamB === team.id)));
+    let lastMeeting = null;
+    if (meeting) {
+      const sc = logic.fixtureScore(meeting);
+      lastMeeting = meeting.teamA === team.id ? { mine: sc.winsA, theirs: sc.winsB } : { mine: sc.winsB, theirs: sc.winsA };
+      lastMeeting.label = fixtureLabel(league, meeting);
+    }
+    return {
+      fixtureId: f.id, stage: f.stage, leagueId: league.id, leagueName: league.name,
+      teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
+      opponentTeam: opp.name, opponentLogo: opp.logo || "",
+      date: sched.date, time: sched.time || "", venue: sched.venue || league.defaultVenue || "",
+      matchDay: now >= matchDate, isCaptain: !!isCaptain, lastMeeting,
+    };
+  }
+  return null;
+}
 router.get("/players/profile", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   const cards = [];
@@ -2240,11 +2276,14 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
   // show up here. Deduped by team so a claimed-and-captained team only
   // contributes one fixture card.
   const fixtureCards = [];
+  const playoffSplash = [];
   const fixtureTeamKeys = new Set();
   const addFixtureTeam = (league, team) => {
     const key = league.id + ":" + team.id;
     if (fixtureTeamKeys.has(key)) return;
     fixtureTeamKeys.add(key);
+    const splash = teamPlayoffSplash(league, team, (user.captaincies || []).some((c) => c.leagueId === league.id && c.teamId === team.id));
+    if (splash) playoffSplash.push(splash);
     const next = teamNextFixture(league, team);
     if (next) fixtureCards.push(Object.assign({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "", teamPlayers: team.players.map((p) => ({ id: p.id, name: p.name })) }, next));
   };
@@ -2452,7 +2491,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     return 0;
   });
   if (changed) store.saveUser(user.id, user);
-  res.json({ name: user.name, cards, fixtureCards });
+  res.json({ name: user.name, cards, fixtureCards, playoffSplash });
 });
 
 // News Room, aggregated across every league this account has a claimed

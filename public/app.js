@@ -3535,11 +3535,12 @@ async function renderAccountPendingResults() {
   });
 }
 async function renderAccountProfile() {
-  const { cards, fixtureCards } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [] }));
+  const { cards, fixtureCards, playoffSplash } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [], playoffSplash: [] }));
   accountAroundData = { cards: cards || [], fixtureCards: fixtureCards || [] };
   positionClaimPanel(!(cards || []).length && !((playerAccount && playerAccount.captaincies) || []).length);
   renderPlayerAround();
   renderAccountAvatar(cards);
+  renderAccountPlayoffSplash(playoffSplash);
   updatePhotoNudge(cards);
   const matchNightNow = renderAccountNextMatch(cards);
   renderAccountTables(cards);
@@ -4053,6 +4054,40 @@ function renderAccountFixtures(fixtureCards, due) {
       const card = cta.closest(".pd-fixture-card");
       const m = fixtureCards.find((x) => x.fixtureId === card.dataset.fixture);
       return enterSelectionRoom(card.dataset.league, m);
+    };
+  });
+}
+// The playoff poster at the very top of My Profile: shown for every team
+// this account plays for (claimed or captained) that's in a semi-final or
+// final tomorrow or today — the server decides the window (see
+// teamPlayoffSplash). Same navy-vs-clay split as the fixture cards, blown
+// up. Captains get the Selection Room doors; players just open the league.
+function renderAccountPlayoffSplash(list) {
+  const wrap = el("account-playoff-list");
+  wrap.innerHTML = (list || []).map((p, i) => {
+    const isFinal = p.stage === "final";
+    const kickoff = [fmtDate(p.date), p.time ? fmtTime(p.time) : ""].filter(Boolean).join(" · ");
+    const meeting = p.lastMeeting ? `<div class="po-row"><span>Met earlier · ${escapeHtml(p.lastMeeting.label)}</span><b>${p.lastMeeting.mine} – ${p.lastMeeting.theirs}${p.lastMeeting.mine === p.lastMeeting.theirs ? "" : p.lastMeeting.mine > p.lastMeeting.theirs ? " to you" : " to them"}</b></div>` : "";
+    return `<div class="po-card" data-i="${i}">
+      <div class="po-a"></div><div class="po-b"></div>
+      <div class="po-word">${isFinal ? "FINAL" : "SEMI"}</div>
+      <div class="po-top">${escapeHtml(p.leagueName)} &middot; ${p.matchDay ? "MATCHDAY" : "TOMORROW"}</div>
+      <div class="po-tm po-t1">${avatarHtml({ logo: p.teamLogo, name: p.teamName })}<span>${escapeHtml(p.teamName)}</span></div>
+      <div class="po-tm po-t2">${avatarHtml({ logo: p.opponentLogo, name: p.opponentTeam })}<span>${escapeHtml(p.opponentTeam)}</span></div>
+      <div class="po-badge">VS</div>
+      <div class="po-bot">
+        <div class="po-kind">${isFinal ? "The Final" : "Semi-final"}</div>
+        ${meeting}
+        <div class="po-row"><span>Kick-off</span><b>${escapeHtml(kickoff || "Time TBC")}</b></div>
+        <button type="button" class="po-btn">${p.isCaptain ? "Open Selection Room" : "View match"}</button>
+      </div>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll(".po-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const p = list[Number(btn.closest(".po-card").dataset.i)];
+      if (!p.isCaptain) return openLeague(p.leagueId);
+      return enterSelectionRoom(p.leagueId, p);
     };
   });
 }

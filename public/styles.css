@@ -1290,6 +1290,26 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .sr-splash.out .sr-l{transform:translateX(-101%);}
 .sr-splash.out .sr-r{transform:translateX(101%);}
 .sr-splash.out .sr-vs{transform:scale(0);transition-delay:0s;transition-duration:.2s;}
+/* Playoff poster — top of My Profile the day before and day of a semi-final
+   or final. The fixture card's navy-vs-clay split blown up, with a ghosted
+   stage word behind it. */
+.po-card{position:relative;height:420px;max-width:440px;margin:0 auto 18px;border-radius:var(--radius);overflow:hidden;color:#fff;background:#0a1428;box-shadow:var(--shadow-sm);}
+.po-a,.po-b{position:absolute;inset:0;}
+.po-a{background:linear-gradient(160deg,#2c3a2a,#12203A);clip-path:polygon(0 0,62% 0,38% 100%,0 100%);}
+.po-b{background:linear-gradient(200deg,#E2432F,#7a170e);clip-path:polygon(62% 0,100% 0,100% 100%,38% 100%);}
+.po-word{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%) rotate(-90deg);font-family:var(--font-display);font-size:150px;font-weight:700;line-height:.8;color:rgba(255,255,255,.1);white-space:nowrap;pointer-events:none;}
+.po-top{position:absolute;top:16px;left:0;right:0;text-align:center;font-family:var(--font-display);font-size:11px;letter-spacing:.3em;color:#E8B34C;text-transform:uppercase;padding:0 12px;}
+.po-tm{position:absolute;display:flex;flex-direction:column;align-items:center;gap:8px;width:120px;text-align:center;font-family:var(--font-display);font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.po-tm span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.po-t1{left:16px;top:44px;}
+.po-t2{right:16px;top:118px;}
+.po-tm .avatar,.po-tm .avatar-fb{width:72px;height:72px;font-size:24px;border-width:2px;border-color:rgba(255,255,255,.6);background:rgba(255,255,255,.18);box-shadow:none;}
+.po-badge{position:absolute;left:50%;top:132px;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px rgba(232,179,76,.28);}
+.po-bot{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(10,20,40,.84);backdrop-filter:blur(6px);border-radius:16px;padding:14px;}
+.po-kind{font-family:var(--font-display);font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:#E8B34C;margin-bottom:8px;}
+.po-row{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:rgba(255,255,255,.6);margin-bottom:8px;}
+.po-row b{color:#fff;font-weight:600;text-align:right;}
+.po-btn{width:100%;margin-top:4px;border:0;border-radius:12px;background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-size:14px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:12px;cursor:pointer;}
 .pd-fixture-lineup-cta{background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;text-align:center;padding:8px 10px;cursor:pointer;}
 
 /* Trophy Room — a locked/unlocked achievement grid, on a signed-in
