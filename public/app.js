@@ -4125,6 +4125,34 @@ function tintTeamHalves(mineEl, oppEl, mineLogo, oppLogo) {
     if (b) oppEl.style.setProperty("--tc", tintGradient(b, 200));
   });
 }
+// Full-screen "the clash" intro the first time a semi-final/final poster
+// shows up on this device for a given day (once the day before, once on
+// matchday) — not on every visit, the poster itself stays put. Tap to skip;
+// never plays for reduced-motion.
+function playPlayoffSplash(p) {
+  if (document.querySelector(".ps-splash") || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const key = `padel-playoff-splash:${p.fixtureId}:${p.matchDay ? "day" : "eve"}`;
+  try {
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+  } catch { /* seen-state not remembered — playing anyway is harmless */ }
+  const kickoff = p.time ? " · KICK-OFF " + fmtTime(p.time).toUpperCase() : "";
+  const splash = document.createElement("div");
+  splash.className = "ps-splash";
+  splash.innerHTML = `<div class="ps-in">
+    <div class="ps-l"></div><div class="ps-r"></div>
+    <div class="ps-word">${p.stage === "final" ? "FINAL" : "SEMI"}</div>
+    <div class="ps-t ps-t1">${avatarHtml({ logo: p.teamLogo, name: p.teamName })}<span>${escapeHtml(p.teamName)}</span></div>
+    <div class="ps-t ps-t2">${avatarHtml({ logo: p.opponentLogo, name: p.opponentTeam })}<span>${escapeHtml(p.opponentTeam)}</span></div>
+    <div class="ps-vs">VS</div>
+    <div class="ps-bar">${p.matchDay ? "MATCHDAY" : "TOMORROW"}${escapeHtml(kickoff)}</div>
+  </div>`;
+  document.body.appendChild(splash);
+  tintTeamHalves(splash.querySelector(".ps-l"), splash.querySelector(".ps-r"), p.teamLogo, p.opponentLogo);
+  const done = () => { clearTimeout(timer); splash.remove(); };
+  const timer = setTimeout(done, 3600);
+  splash.onclick = done;
+}
 // The playoff poster at the very top of My Profile: shown for every team
 // this account plays for (claimed or captained) that's in a semi-final or
 // final tomorrow or today — the server decides the window (see
@@ -4155,6 +4183,8 @@ function renderAccountPlayoffSplash(list) {
     const p = list[Number(card.dataset.i)];
     tintTeamHalves(card.querySelector(".po-a"), card.querySelector(".po-b"), p.teamLogo, p.opponentLogo);
   });
+  const profileShowing = el("account-dashboard-card").offsetParent !== null;
+  if (profileShowing && list && list.length) playPlayoffSplash(list[0]);
   wrap.querySelectorAll(".po-btn").forEach((btn) => {
     btn.onclick = () => {
       const p = list[Number(btn.closest(".po-card").dataset.i)];
