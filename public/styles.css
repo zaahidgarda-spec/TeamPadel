@@ -1272,8 +1272,8 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .pd-fixture-card{flex:0 0 auto;width:240px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm);}
 .pd-fixture-sides{display:flex;position:relative;}
 .pd-fixture-side{flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px 8px 20px;}
-.pd-fixture-side.side-mine{background:linear-gradient(160deg,#2c3a2a,#12203A);}
-.pd-fixture-side.side-opp{background:linear-gradient(200deg,#E2432F,#8f1f13);}
+.pd-fixture-side.side-mine{background:var(--tc,linear-gradient(160deg,#2c3a2a,#12203A));}
+.pd-fixture-side.side-opp{background:var(--tc,linear-gradient(200deg,#E2432F,#8f1f13));}
 .pd-fixture-side .avatar,.pd-fixture-side .avatar-fb{width:52px;height:52px;font-size:16px;border-width:2px;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.18);box-shadow:none;}
 .pd-fixture-name{font-family:var(--font-body);font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .pd-fixture-vs{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;border-radius:50%;background:var(--panel);color:var(--text);font-family:var(--font-display);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(18,32,58,.2);border:3px solid var(--bg);z-index:1;}
@@ -1281,8 +1281,8 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .sr-splash{position:fixed;inset:0;z-index:9000;overflow:hidden;cursor:pointer;}
 .sr-door{position:absolute;top:0;bottom:0;width:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;font-family:var(--font-display);font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;transition:transform .35s cubic-bezier(.5,0,.2,1);}
 .sr-door span{max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.sr-l{left:0;background:linear-gradient(160deg,#2c3a2a,#12203A);transform:translateX(-101%);}
-.sr-r{right:0;background:linear-gradient(200deg,#E2432F,#8f1f13);transform:translateX(101%);}
+.sr-l{left:0;background:var(--tc,linear-gradient(160deg,#2c3a2a,#12203A));transform:translateX(-101%);}
+.sr-r{right:0;background:var(--tc,linear-gradient(200deg,#E2432F,#8f1f13));transform:translateX(101%);}
 .sr-door .avatar,.sr-door .avatar-fb{width:68px;height:68px;font-size:22px;border-width:2px;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.16);box-shadow:none;}
 .sr-vs{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;background:#fff;color:#12203A;font-family:var(--font-display);font-weight:700;font-size:20px;display:flex;align-items:center;justify-content:center;transform:scale(0);z-index:1;box-shadow:0 4px 14px rgba(0,0,0,.35);transition:transform .3s cubic-bezier(.3,1.5,.5,1) .3s;}
 .sr-splash.in .sr-door{transform:none;}
@@ -1295,8 +1295,8 @@ html.has-admin-bar .wrap{padding-top:54px;}
    stage word behind it. */
 .po-card{position:relative;height:420px;max-width:440px;margin:0 auto 18px;border-radius:var(--radius);overflow:hidden;color:#fff;background:#0a1428;box-shadow:var(--shadow-sm);}
 .po-a,.po-b{position:absolute;inset:0;}
-.po-a{background:linear-gradient(160deg,#2c3a2a,#12203A);clip-path:polygon(0 0,62% 0,38% 100%,0 100%);}
-.po-b{background:linear-gradient(200deg,#E2432F,#7a170e);clip-path:polygon(62% 0,100% 0,100% 100%,38% 100%);}
+.po-a{background:var(--tc,linear-gradient(160deg,#2c3a2a,#12203A));clip-path:polygon(0 0,62% 0,38% 100%,0 100%);}
+.po-b{background:var(--tc,linear-gradient(200deg,#E2432F,#7a170e));clip-path:polygon(62% 0,100% 0,100% 100%,38% 100%);}
 .po-word{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%) rotate(-90deg);font-family:var(--font-display);font-size:150px;font-weight:700;line-height:.8;color:rgba(255,255,255,.1);white-space:nowrap;pointer-events:none;}
 .po-top{position:absolute;top:16px;left:0;right:0;text-align:center;font-family:var(--font-display);font-size:11px;letter-spacing:.3em;color:#E8B34C;text-transform:uppercase;padding:0 12px;}
 .po-tm{position:absolute;display:flex;flex-direction:column;align-items:center;gap:8px;width:120px;text-align:center;font-family:var(--font-display);font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}

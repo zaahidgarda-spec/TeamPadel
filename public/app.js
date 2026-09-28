@@ -4037,6 +4037,10 @@ function renderAccountFixtures(fixtureCards, due) {
       <div class="pd-fixture-meta"><span class="league-tag" style="margin-bottom:0;">${escapeHtml(m.leagueName)}</span><span>${escapeHtml(whenText)}</span></div>
     </div>`;
   }).join("");
+  el("account-fixtures-scroll").querySelectorAll(".pd-fixture-card").forEach((card) => {
+    const m = fixtureCards.find((x) => x.fixtureId === card.dataset.fixture);
+    if (m) tintTeamHalves(card.querySelector(".side-mine"), card.querySelector(".side-opp"), m.teamLogo, m.opponentLogo);
+  });
   // Same team-roster popup as Your Tables — tap either crest to see that
   // team, jumping into its league first if it isn't already loaded.
   el("account-fixtures-scroll").querySelectorAll(".pd-fixture-side[data-team-id]").forEach((side) => {
@@ -4055,6 +4059,70 @@ function renderAccountFixtures(fixtureCards, due) {
       const m = fixtureCards.find((x) => x.fixtureId === card.dataset.fixture);
       return enterSelectionRoom(card.dataset.league, m);
     };
+  });
+}
+// Team colours, read from each team's logo — the app doesn't store any, so
+// the fixture cards, playoff poster and Selection Room doors tint each half
+// from whatever the crest is mostly made of. No logo, or nothing colourful
+// in it (all white/black/grey), leaves that half on the default navy/red.
+const logoHueCache = new Map();
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (d === 0) return [0, 0, l];
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+function logoHue(src) {
+  if (!src) return Promise.resolve(null);
+  if (logoHueCache.has(src)) return logoHueCache.get(src);
+  const p = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const size = 40;
+        const c = document.createElement("canvas");
+        c.width = c.height = size;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, size, size);
+        const d = ctx.getImageData(0, 0, size, size).data;
+        const buckets = Array.from({ length: 24 }, () => ({ n: 0, w: 0, hs: 0, ss: 0 }));
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 200) continue;
+          const [h, s, l] = rgbToHsl(d[i], d[i + 1], d[i + 2]);
+          if (l > 0.88 || l < 0.1 || s < 0.2) continue;
+          const b = buckets[Math.floor(h / 15) % 24];
+          b.n++; b.w += s; b.hs += h * s; b.ss += s * s;
+        }
+        const best = buckets.reduce((a, b) => (b.w > a.w ? b : a));
+        resolve(best.n >= size * size * 0.04 ? { h: best.hs / best.w, s: best.ss / best.w } : null);
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+  logoHueCache.set(src, p);
+  return p;
+}
+function hueGap(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+function tintGradient(c, angle) {
+  const sat = Math.round(Math.min(0.8, Math.max(0.35, c.s)) * 100);
+  return `linear-gradient(${angle}deg,hsl(${Math.round(c.h)} ${sat}% 34%),hsl(${Math.round(c.h)} ${sat}% 17%))`;
+}
+// Sets --tc on each half's element (the CSS falls back to the default
+// navy/red when it's unset). Two teams whose logos land on near-identical
+// hues would read as one solid block, and a logo close to the OTHER side's
+// default would too, so the clashing half is left on its default.
+const DEFAULT_MINE_HUE = 215, DEFAULT_OPP_HUE = 6;
+function tintTeamHalves(mineEl, oppEl, mineLogo, oppLogo) {
+  if (!mineEl || !oppEl) return;
+  Promise.all([logoHue(mineLogo), logoHue(oppLogo)]).then(([a, b]) => {
+    if (a && b && hueGap(a.h, b.h) < 35) b = null;
+    if (a && !b && hueGap(a.h, DEFAULT_OPP_HUE) < 25) a = null;
+    if (b && !a && hueGap(b.h, DEFAULT_MINE_HUE) < 25) b = null;
+    if (a) mineEl.style.setProperty("--tc", tintGradient(a, 160));
+    if (b) oppEl.style.setProperty("--tc", tintGradient(b, 200));
   });
 }
 // The playoff poster at the very top of My Profile: shown for every team
@@ -4083,6 +4151,10 @@ function renderAccountPlayoffSplash(list) {
       </div>
     </div>`;
   }).join("");
+  wrap.querySelectorAll(".po-card").forEach((card) => {
+    const p = list[Number(card.dataset.i)];
+    tintTeamHalves(card.querySelector(".po-a"), card.querySelector(".po-b"), p.teamLogo, p.opponentLogo);
+  });
   wrap.querySelectorAll(".po-btn").forEach((btn) => {
     btn.onclick = () => {
       const p = list[Number(btn.closest(".po-card").dataset.i)];
@@ -4105,6 +4177,7 @@ function enterSelectionRoom(leagueId, m) {
     <div class="sr-door sr-r">${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<span>${escapeHtml(m.opponentTeam)}</span></div>
     <div class="sr-vs">VS</div>`;
   document.body.appendChild(splash);
+  tintTeamHalves(splash.querySelector(".sr-l"), splash.querySelector(".sr-r"), m.teamLogo, m.opponentLogo);
   void splash.offsetWidth;
   splash.classList.add("in");
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
