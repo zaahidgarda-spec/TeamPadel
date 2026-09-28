@@ -1278,6 +1278,18 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .pd-fixture-name{font-family:var(--font-body);font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .pd-fixture-vs{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;border-radius:50%;background:var(--panel);color:var(--text);font-family:var(--font-display);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(18,32,58,.2);border:3px solid var(--bg);z-index:1;}
 .pd-fixture-meta{font-size:11px;color:var(--text-dim);padding:12px 15px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.sr-splash{position:fixed;inset:0;z-index:9000;overflow:hidden;cursor:pointer;}
+.sr-door{position:absolute;top:0;bottom:0;width:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;font-family:var(--font-display);font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;transition:transform .35s cubic-bezier(.5,0,.2,1);}
+.sr-door span{max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sr-l{left:0;background:linear-gradient(160deg,#2c3a2a,#12203A);transform:translateX(-101%);}
+.sr-r{right:0;background:linear-gradient(200deg,#E2432F,#8f1f13);transform:translateX(101%);}
+.sr-door .avatar,.sr-door .avatar-fb{width:68px;height:68px;font-size:22px;border-width:2px;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.16);box-shadow:none;}
+.sr-vs{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;background:#fff;color:#12203A;font-family:var(--font-display);font-weight:700;font-size:20px;display:flex;align-items:center;justify-content:center;transform:scale(0);z-index:1;box-shadow:0 4px 14px rgba(0,0,0,.35);transition:transform .3s cubic-bezier(.3,1.5,.5,1) .3s;}
+.sr-splash.in .sr-door{transform:none;}
+.sr-splash.in .sr-vs{transform:scale(1);}
+.sr-splash.out .sr-l{transform:translateX(-101%);}
+.sr-splash.out .sr-r{transform:translateX(101%);}
+.sr-splash.out .sr-vs{transform:scale(0);transition-delay:0s;transition-duration:.2s;}
 .pd-fixture-lineup-cta{background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;text-align:center;padding:8px 10px;cursor:pointer;}
 
 /* Trophy Room — a locked/unlocked achievement grid, on a signed-in

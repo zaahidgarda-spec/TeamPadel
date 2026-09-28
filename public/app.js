@@ -4026,7 +4026,7 @@ function renderAccountFixtures(fixtureCards, due) {
         lineupCta = `<div class="pd-fixture-lineup-cta">Tap to set lineup${escapeHtml(timeText)}</div>`;
       }
     }
-    return `<div class="pd-fixture-card" data-league="${m.leagueId}">
+    return `<div class="pd-fixture-card" data-league="${m.leagueId}" data-fixture="${m.fixtureId}">
       <div class="pd-fixture-sides">
         <div class="pd-fixture-side side-mine" data-team-id="${m.teamId}">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<div class="pd-fixture-name">${escapeHtml(m.teamName)}</div></div>
         <span class="pd-fixture-vs">VS</span>
@@ -4049,7 +4049,36 @@ function renderAccountFixtures(fixtureCards, due) {
   // default landing tab on their own league is Selection Room, so opening
   // the league is enough, no switchTab needed.
   el("account-fixtures-scroll").querySelectorAll(".pd-fixture-lineup-cta").forEach((cta) => {
-    cta.onclick = () => openLeague(cta.closest(".pd-fixture-card").dataset.league);
+    cta.onclick = () => {
+      const card = cta.closest(".pd-fixture-card");
+      const m = fixtureCards.find((x) => x.fixtureId === card.dataset.fixture);
+      return enterSelectionRoom(card.dataset.league, m);
+    };
+  });
+}
+// The two poster halves from the fixture card slam together over the
+// profile, the league loads underneath, then they swing open onto the
+// Selection Room. Held closed until the league has actually loaded (never
+// opens onto a blank screen), tap anywhere to skip the hold, and skipped
+// entirely for reduced-motion.
+function enterSelectionRoom(leagueId, m) {
+  if (document.querySelector(".sr-splash")) return Promise.resolve();
+  if (!m || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return openLeague(leagueId);
+  const splash = document.createElement("div");
+  splash.className = "sr-splash";
+  splash.innerHTML = `<div class="sr-door sr-l">${avatarHtml({ logo: m.teamLogo, name: m.teamName })}<span>${escapeHtml(m.teamName)}</span></div>
+    <div class="sr-door sr-r">${avatarHtml({ logo: m.opponentLogo, name: m.opponentTeam })}<span>${escapeHtml(m.opponentTeam)}</span></div>
+    <div class="sr-vs">VS</div>`;
+  document.body.appendChild(splash);
+  void splash.offsetWidth;
+  splash.classList.add("in");
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const minHold = Promise.race([wait(950), new Promise((r) => splash.addEventListener("click", r, { once: true }))]);
+  const loaded = Promise.resolve(openLeague(leagueId)).catch(() => {});
+  return Promise.all([loaded, minHold]).then(async () => {
+    splash.classList.add("out");
+    await wait(480);
+    splash.remove();
   });
 }
 // The single soonest upcoming match across every claimed record — "your
