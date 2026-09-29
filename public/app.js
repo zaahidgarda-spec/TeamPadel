@@ -1738,7 +1738,7 @@ function switchHubTab(name) {
   el("hub-view-" + name).classList.add("active");
   // A glance-at stat, not a live dashboard — refreshed on entering the tab
   // rather than polled continuously in the background.
-  if (name === "admin" && isOwner) renderLiveCount();
+  if (name === "admin" && isOwner) { renderLiveCount(); renderLoginsToday(); }
   // Warm the player index the moment this tab opens, not the moment
   // someone starts typing — by the time they've typed anything it's
   // often already in hand. loadPlayerIndex is a no-op if already loading.
@@ -2142,6 +2142,7 @@ async function refreshOwnerStatus() {
   el("combine-players-card").style.display = isOwner ? "block" : "none";
   el("combine-teams-card").style.display = isOwner ? "block" : "none";
   el("live-count-card").style.display = isOwner ? "block" : "none";
+  el("logins-today-card").style.display = isOwner ? "block" : "none";
   setupAdminDashboard();
   el("admin-dash-top").style.display = isOwner ? "block" : "none";
   updateAdminBar();
@@ -2153,7 +2154,7 @@ async function refreshOwnerStatus() {
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
   el("pay-link-finder-card").style.display = isOwner ? "block" : "none";
-  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
+  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
 // Cross-league "find a player's pay link" tool — pick a league (each
@@ -2329,6 +2330,21 @@ async function renderLiveCount() {
   if (accounts) renderOnlineNames(accounts);
   const signedIn = accounts ? accounts.filter((a) => a.online).length : 0;
   setAdminInfo("online", { n: data ? data.count : null, sub: data ? `${signedIn} signed in · ${Math.max(0, data.count - signedIn)} guest${data.count - signedIn === 1 ? "" : "s"}` : "" });
+}
+// Owner-only — every account that's actually used the app today, most
+// recent first. Wider than the "online now" list above (last 90s): this
+// answers "who was logged in today" over the whole day, not just this
+// instant.
+async function renderLoginsToday() {
+  const rows = await api("/admin/logins-today").catch(() => null);
+  const body = el("logins-today-body");
+  if (!rows) { body.innerHTML = '<p class="empty">Couldn’t load this.</p>'; return; }
+  if (!rows.length) { body.innerHTML = '<p class="empty">Nobody’s logged in yet today.</p>'; return; }
+  body.innerHTML = `<div class="note" style="margin-bottom:8px;">${rows.length} account${rows.length === 1 ? "" : "s"} today</div>` + rows.map((r) => `
+    <div class="row" style="justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);">
+      <span title="${escapeHtml(r.email)}">${escapeHtml(r.name)}</span>
+      <span class="note">${escapeHtml(fmtTime(new Date(r.lastSeenAt).toTimeString().slice(0, 5)))}</span>
+    </div>`).join("");
 }
 // The owner's full list of every league — including hidden/incognito
 // ones, which drop out of every other list on the site the moment they're

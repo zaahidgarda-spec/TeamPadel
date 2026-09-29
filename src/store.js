@@ -95,10 +95,44 @@ const PRESENCE_TTL_SECONDS = 90;
 // anonymous — just counted). Without Redis (local runs) the same thing is
 // kept in memory.
 const localPresence = new Map(); // visitorId -> { t, userId }
+// "YYYY-MM-DD" in local time — matches how a match's own schedule.date is
+// read elsewhere (new Date(sched.date+"T00:00:00")), so "today" means the
+// same calendar day throughout the app.
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+// Stamps the account with today's date the first time it pings today —
+// every later ping that same day is a no-op, so an active user costs one
+// write a day here, not one every ~60s. This is what answers "who was
+// logged in today" on the owner Admin page (see getUsersLoggedInOn); it's
+// a courtesy indicator, not durable data, so an occasional missed write on
+// a restart mid-cache-flush is fine.
+function markSeenToday(userId) {
+  if (!userId) return;
+  const user = getUser(userId);
+  if (!user) return;
+  const today = todayStr();
+  if (user.lastSeenDate === today) return;
+  user.lastSeenDate = today;
+  user.lastSeenAt = Date.now();
+  saveUser(userId, user);
+}
 async function touchPresence(visitorId, userId) {
   if (!visitorId) return;
+  markSeenToday(userId);
   if (!useRedis) { localPresence.set(visitorId, { t: Date.now(), userId: userId || null }); return; }
   await redis.set("presence:" + visitorId, { t: Date.now(), userId: userId || null }, { ex: PRESENCE_TTL_SECONDS }).catch((e) => console.error("Failed to touch presence:", e.message));
+}
+// Every account that's pinged at least once today, most recent first —
+// the "logged in today" list on the owner Admin page. A wider net than
+// "online now" (last 90s): this is anyone who's actually used the app
+// today with an authenticated session, not just this exact moment.
+function getUsersLoggedInOn(dateStr) {
+  return getUsersIndex()
+    .map((entry) => getUser(entry.id))
+    .filter((u) => u && u.lastSeenDate === dateStr)
+    .sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0));
 }
 function livePresence() {
   const cutoff = Date.now() - PRESENCE_TTL_SECONDS * 1000;
@@ -366,6 +400,8 @@ module.exports = {
   touchPresence,
   getLiveVisitorCount,
   getOnlinePlayerUserIds,
+  getUsersLoggedInOn,
+  todayStr,
   getSignups,
   saveSignups,
   getHomepageExtras,

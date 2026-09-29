@@ -1046,6 +1046,15 @@ router.get("/admin/live-count", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   res.json({ count: await store.getLiveVisitorCount() });
 });
+// Every account that's actually used the app today — a wider, calmer
+// companion to "On the app right now" above (which only ever shows this
+// exact moment). See store.markSeenToday: stamped once per account per
+// day off the same presence ping, not a separate tracking mechanism.
+router.get("/admin/logins-today", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const rows = store.getUsersLoggedInOn(store.todayStr()).map((u) => ({ id: u.id, name: u.name, email: u.email, lastSeenAt: u.lastSeenAt }));
+  res.json(rows);
+});
 
 router.get("/next-matches", (req, res) => {
   const myLeagueId = req.session.user && req.session.user.leagueId;
