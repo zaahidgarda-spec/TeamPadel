@@ -9046,24 +9046,51 @@ async function renderLiveCourtControl(opts) {
     ci.guess = !ci.pred || !hasSpread ? "n" : ci.predictedCloseness < medianCloseness ? "g" : ci.predictedCloseness > medianCloseness ? "r" : "n";
     ci.tone = ci.pace === "quick" ? "g" : ci.pace === "long" ? "r" : ci.guess;
   }
-  // A move suggestion only ever points at a court that's actually free in
-  // this same time slot (no swap needed to act on it) and only when it's
-  // meaningfully lighter — a 2-minute difference isn't worth interrupting
-  // someone for.
+  // A suggestion prefers a court that's actually free in this same time
+  // slot — a straight move, nothing else to rearrange — but if none of
+  // those is meaningfully lighter, it falls back to the lightest court
+  // that already has another still-upcoming match on it, which
+  // performCourtSwap turns into a swap instead of a move. Either way,
+  // only when it's meaningfully lighter — a 2-minute difference isn't
+  // worth interrupting someone for.
   const SUGGEST_THRESHOLD_MINS = 8;
   // Ormonde rules reserves the last court for the Super Tie — never suggest
   // moving a pairs match there, or the Super Tie onto a pairs court; the
   // server would just reject it (see court-schedule/:round/assign).
   const superTieCourt = league.singlesDecider && league.format !== "pairs" && courts > 1 ? courts - 1 : null;
   function suggestBetterCourt(s, currentCourt) {
-    let best = -1, bestLoad = Infinity;
+    let bestFree = -1, bestFreeLoad = Infinity;
+    // A swap only actually helps if it narrows the gap between the two
+    // courts' totals — unlike a move onto a free court, swapping two
+    // occupied slots can't be judged by "the other court's total is
+    // lower": with only one match apiece, swapping just relabels which
+    // court holds which duration, leaving the two totals (and the gap
+    // between them) exactly as they were, and would suggest swapping
+    // straight back forever. Simulating both totals after the swap and
+    // requiring a real improvement is what stops that.
+    let bestOccupied = -1, bestImprovement = -Infinity;
+    const curInfo = cellInfo[s][currentCourt];
+    const curMins = curInfo ? curInfo.estMins : 0;
     for (let c = 0; c < courts; c++) {
-      if (c === currentCourt || grid[s][c]) continue;
+      if (c === currentCourt) continue;
       if (superTieCourt !== null && (c === superTieCourt) !== (currentCourt === superTieCourt)) continue;
-      if (courtLoadUpcoming[c] < bestLoad) { bestLoad = courtLoadUpcoming[c]; best = c; }
+      if (grid[s][c]) {
+        // Only swappable with another match that hasn't started yet — the
+        // server rejects a swap into a live/finished rubber anyway (see
+        // rubberIsStarted in court-schedule/:round/assign), so there's no
+        // point ever suggesting one.
+        const occ = cellInfo[s][c];
+        if (!occ || occ.state !== "upcoming") continue;
+        const gapBefore = Math.abs(courtLoadUpcoming[currentCourt] - courtLoadUpcoming[c]);
+        const newCur = courtLoadUpcoming[currentCourt] - curMins + occ.estMins;
+        const newC = courtLoadUpcoming[c] - occ.estMins + curMins;
+        const improvement = gapBefore - Math.abs(newCur - newC);
+        if (improvement > bestImprovement) { bestImprovement = improvement; bestOccupied = c; }
+      } else if (courtLoadUpcoming[c] < bestFreeLoad) { bestFreeLoad = courtLoadUpcoming[c]; bestFree = c; }
     }
-    if (best === -1 || courtLoadUpcoming[currentCourt] - bestLoad < SUGGEST_THRESHOLD_MINS) return null;
-    return best;
+    if (bestFree !== -1 && courtLoadUpcoming[currentCourt] - bestFreeLoad >= SUGGEST_THRESHOLD_MINS) return bestFree;
+    if (bestOccupied !== -1 && bestImprovement >= SUGGEST_THRESHOLD_MINS) return bestOccupied;
+    return null;
   }
 
   const courtNames = league.courtNames || [];
@@ -9155,6 +9182,18 @@ function liveTileHtml(s, c, oneFixture) {
   }
   const { info } = t, sides = liveSides(t, false);
   const suggestedElsewhere = info.state === "upcoming" && b && b.suggestBetterCourt(s, c) !== null;
+  // This tile can also be the OTHER half of a suggested swap — some other
+  // overloaded match in this same slot pointing here — same amber either
+  // way, so the pairing still reads as one at a glance even when the
+  // lighter court isn't empty.
+  let isSwapTarget = false;
+  if (!suggestedElsewhere && info.state === "upcoming" && b) {
+    for (let c0 = 0; c0 < b.courts; c0++) {
+      if (c0 === c) continue;
+      const other = b.cellInfo[s] && b.cellInfo[s][c0];
+      if (other && other.state === "upcoming" && b.suggestBetterCourt(s, c0) === c) { isSwapTarget = true; break; }
+    }
+  }
   const isSuperTie = rubberSlot4Kind(t.f, t.cell.seed) === "singles";
   const lines = (sd) => `<div class="lc-pp"><b>${escapeHtml(sd.players[0])}</b>${isSuperTie ? "" : `<b>${escapeHtml(sd.players[1])}</b>`}</div>`;
   // Once this rubber's decided, the winning side's own crest pins to the
@@ -9184,7 +9223,7 @@ function liveTileHtml(s, c, oneFixture) {
     foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span>${info.pace ? '<span class="lc-tile-pen" title="Set by you">&#9998;</span>' : ""}</div>`;
   }
   const draggable = info.state === "upcoming" ? ' draggable="true" title="Drag to move to another court"' : "";
-  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}${suggestedElsewhere ? " lc-rebalance" : ""}" data-open="1">${winnerBadge}<div>${teams}</div>${foot}</button></div>`;
+  return `<div class="lc-slot" data-s="${s}" data-c="${c}"${draggable}><button type="button" class="lc-tile ${liveTileClass(info)}${suggestedElsewhere || isSwapTarget ? " lc-rebalance" : ""}" data-open="1">${winnerBadge}<div>${teams}</div>${foot}</button></div>`;
 }
 // Tap-to-move: pick a match up from its sheet, then tap wherever it should
 // go — an empty spot moves it, another upcoming match swaps with it. The
@@ -9435,7 +9474,10 @@ function renderLiveSheet() {
     const relative = info.guess === "g" ? "quicker than most tonight" : info.guess === "r" ? "longer than most tonight" : b.hasSpread ? "about average tonight" : "nothing separates tonight's matches";
     html += `<div class="why">${info.pace ? `App suggested ${escapeHtml(PACE_WORD[info.guess])} &middot; ` : ""}${escapeHtml(favPct === null ? "No prediction yet" : `${favPct}% favourite · ${relative}`)}</div>`;
     const better = b.suggestBetterCourt(s, c);
-    if (better !== null) html += `<div class="nudge"><span><b>${escapeHtml(b.courtLabel(better))}</b> is lighter tonight — would even out the load.</span><button type="button" data-moveto="${better}">Move</button></div>`;
+    if (better !== null) {
+      const betterIsSwap = !!(b.cellInfo[s] && b.cellInfo[s][better]);
+      html += `<div class="nudge"><span><b>${escapeHtml(b.courtLabel(better))}</b> is lighter tonight — ${betterIsSwap ? "swapping" : "moving here"} would even out the load.</span><button type="button" data-moveto="${better}">${betterIsSwap ? "Swap" : "Move"}</button></div>`;
+    }
     html += `<div class="row2"><button type="button" class="p" data-start>Start</button><button type="button" data-startmove>Move / swap</button></div>`;
   } else {
     html += `<div class="row2"><button type="button" class="p" data-score>Score</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-reopen>Start again</button>'}</div>`;
