@@ -2231,13 +2231,15 @@ function teamNextFixture(league, team) {
     });
   return upcoming[0] || null;
 }
-// A semi-final or final this team is actually in, on the day before or the
-// day of — the only two days My Profile takes over with the playoff
-// poster. Both sides need to be settled (a semi whose opponent isn't known
-// yet has nothing to show), and it goes away the moment the match is
-// finalized or the day has passed.
+// A semi-final or final this team is actually in, from three days out
+// through the day of — the window My Profile takes over with the playoff
+// poster (and, the first time each day, the full-screen splash). Both
+// sides need to be settled (a semi whose opponent isn't known yet has
+// nothing to show), and it goes away the moment the match is finalized or
+// the day has passed.
 function teamPlayoffSplash(league, team, isCaptain) {
-  const now = new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   for (const f of logic.allFixturesOf(league)) {
     if ((f.stage !== "semi" && f.stage !== "final") || f.finalized || !f.teamA || !f.teamB) continue;
     if (f.teamA !== team.id && f.teamB !== team.id) continue;
@@ -2245,9 +2247,8 @@ function teamPlayoffSplash(league, team, isCaptain) {
     if (!sched.date) continue;
     const matchDate = new Date(sched.date + "T00:00:00");
     if (isNaN(matchDate)) continue;
-    const dayBefore = new Date(matchDate.getTime() - 86400000);
-    const windowEnd = new Date(matchDate.getTime() + 86400000);
-    if (now < dayBefore || now >= windowEnd) continue;
+    const daysOut = Math.round((matchDate.getTime() - today.getTime()) / 86400000);
+    if (daysOut < 0 || daysOut > 3) continue;
     const opp = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
     if (!opp) continue;
     const meeting = league.fixtures.find((x) => x.finalized && ((x.teamA === team.id && x.teamB === opp.id) || (x.teamA === opp.id && x.teamB === team.id)));
@@ -2262,7 +2263,7 @@ function teamPlayoffSplash(league, team, isCaptain) {
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       opponentTeam: opp.name, opponentLogo: opp.logo || "",
       date: sched.date, time: sched.time || "", venue: sched.venue || league.defaultVenue || "",
-      matchDay: now >= matchDate, isCaptain: !!isCaptain, lastMeeting,
+      daysOut, matchDay: daysOut === 0, isCaptain: !!isCaptain, lastMeeting,
     };
   }
   return null;

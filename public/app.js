@@ -4125,13 +4125,24 @@ function tintTeamHalves(mineEl, oppEl, mineLogo, oppLogo) {
     if (b) oppEl.style.setProperty("--tc", tintGradient(b, 200));
   });
 }
+// "MATCHDAY" the day of, "TOMORROW" the day before, "IN n DAYS" further out
+// — the label both the splash and the poster show, from the same daysOut
+// the server already worked out (see teamPlayoffSplash).
+function playoffDaysOutLabel(p) {
+  return p.daysOut === 0 ? "MATCHDAY" : p.daysOut === 1 ? "TOMORROW" : `IN ${p.daysOut} DAYS`;
+}
 // Full-screen "the clash" intro the first time a semi-final/final poster
-// shows up on this device for a given day (once the day before, once on
-// matchday) — not on every visit, the poster itself stays put. Tap to skip;
-// never plays for reduced-motion.
+// shows up on this device on a given day (two days out, the day before, and
+// on matchday each get their own one-time play) — not on every visit, the
+// poster itself stays put. Fires whenever this account's data resolves
+// with a live playoffSplash entry — regardless of which hub tab happens to
+// be showing, since this is a full-screen overlay over everything — not
+// just the moment someone taps into My Profile, so it can't get stuck
+// waiting for a tab visit that never comes. Tap to skip; never plays for
+// reduced-motion.
 function playPlayoffSplash(p) {
   if (document.querySelector(".ps-splash") || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const key = `padel-playoff-splash:${p.fixtureId}:${p.matchDay ? "day" : "eve"}`;
+  const key = `padel-playoff-splash:${p.fixtureId}:${p.daysOut}`;
   try {
     if (localStorage.getItem(key)) return;
     localStorage.setItem(key, "1");
@@ -4145,7 +4156,7 @@ function playPlayoffSplash(p) {
     <div class="ps-t ps-t1">${avatarHtml({ logo: p.teamLogo, name: p.teamName })}<span>${escapeHtml(p.teamName)}</span></div>
     <div class="ps-t ps-t2">${avatarHtml({ logo: p.opponentLogo, name: p.opponentTeam })}<span>${escapeHtml(p.opponentTeam)}</span></div>
     <div class="ps-vs">VS</div>
-    <div class="ps-bar">${p.matchDay ? "MATCHDAY" : "TOMORROW"}${escapeHtml(kickoff)}</div>
+    <div class="ps-bar">${playoffDaysOutLabel(p)}${escapeHtml(kickoff)}</div>
   </div>`;
   document.body.appendChild(splash);
   tintTeamHalves(splash.querySelector(".ps-l"), splash.querySelector(".ps-r"), p.teamLogo, p.opponentLogo);
@@ -4155,7 +4166,7 @@ function playPlayoffSplash(p) {
 }
 // The playoff poster at the very top of My Profile: shown for every team
 // this account plays for (claimed or captained) that's in a semi-final or
-// final tomorrow or today — the server decides the window (see
+// final within the next two days — the server decides the window (see
 // teamPlayoffSplash). Same navy-vs-clay split as the fixture cards, blown
 // up. Captains get the Selection Room doors; players just open the league.
 function renderAccountPlayoffSplash(list) {
@@ -4167,7 +4178,7 @@ function renderAccountPlayoffSplash(list) {
     return `<div class="po-card" data-i="${i}">
       <div class="po-a"></div><div class="po-b"></div>
       <div class="po-word">${isFinal ? "FINAL" : "SEMI"}</div>
-      <div class="po-top">${escapeHtml(p.leagueName)} &middot; ${p.matchDay ? "MATCHDAY" : "TOMORROW"}</div>
+      <div class="po-top">${escapeHtml(p.leagueName)} &middot; ${playoffDaysOutLabel(p)}</div>
       <div class="po-tm po-t1">${avatarHtml({ logo: p.teamLogo, name: p.teamName })}<span>${escapeHtml(p.teamName)}</span></div>
       <div class="po-tm po-t2">${avatarHtml({ logo: p.opponentLogo, name: p.opponentTeam })}<span>${escapeHtml(p.opponentTeam)}</span></div>
       <div class="po-badge">VS</div>
@@ -4183,8 +4194,7 @@ function renderAccountPlayoffSplash(list) {
     const p = list[Number(card.dataset.i)];
     tintTeamHalves(card.querySelector(".po-a"), card.querySelector(".po-b"), p.teamLogo, p.opponentLogo);
   });
-  const profileShowing = el("account-dashboard-card").offsetParent !== null;
-  if (profileShowing && list && list.length) playPlayoffSplash(list[0]);
+  if (list && list.length) playPlayoffSplash(list[0]);
   wrap.querySelectorAll(".po-btn").forEach((btn) => {
     btn.onclick = () => {
       const p = list[Number(btn.closest(".po-card").dataset.i)];

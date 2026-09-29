@@ -1313,9 +1313,9 @@ html.has-admin-bar .wrap{padding-top:54px;}
 @keyframes psRing{0%{box-shadow:0 0 0 0 rgba(232,179,76,.6);}100%{box-shadow:0 0 0 60px rgba(232,179,76,0);}}
 .ps-bar{position:absolute;left:0;right:0;bottom:36px;text-align:center;font-family:var(--font-display);letter-spacing:.22em;font-size:13px;color:#E8B34C;transform:translateY(60px);opacity:0;animation:psBar .5s 1.7s ease-out forwards;}
 @keyframes psBar{to{transform:none;opacity:1;}}
-/* Playoff poster — top of My Profile the day before and day of a semi-final
-   or final. The fixture card's navy-vs-clay split blown up, with a ghosted
-   stage word behind it. */
+/* Playoff poster — top of My Profile from three days out through the day
+   of a semi-final or final. The fixture card's navy-vs-clay split blown
+   up, with a ghosted stage word behind it. */
 .po-card{position:relative;height:420px;max-width:440px;margin:0 auto 18px;border-radius:var(--radius);overflow:hidden;color:#fff;background:#0a1428;box-shadow:var(--shadow-sm);}
 .po-a,.po-b{position:absolute;inset:0;}
 .po-a{background:var(--tc,linear-gradient(160deg,#2c3a2a,#12203A));clip-path:polygon(0 0,62% 0,38% 100%,0 100%);}
