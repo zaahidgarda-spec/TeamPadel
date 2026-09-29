@@ -5687,8 +5687,13 @@ router.post("/leagues/:leagueId/court-schedule/:round/assign", (req, res) => {
     // "double-up" at selection time) physically can't play both if this
     // placement would put them in the same time slot on two different
     // courts — reject before creating that conflict, whether it comes
-    // from a drag, a tap-swap, or the empty-cell picker.
-    const conflict = (grid[slot] || []).some((cell, c) => c !== court && cell && cell.fixtureId === fixtureId && cell.seed !== seed && seedsSharePlayer(f, cell.seed, seed));
+    // from a drag, a tap-swap, or the empty-cell picker. The reserved
+    // singles court is exempt on both sides of that check: its slot number
+    // is just where it happens to sit in the grid, not a real simultaneous
+    // time, so a player down for both a doubles seed and the Super Tie
+    // never gets treated as double-booked, and neither placement should be
+    // blocked because of the other.
+    const conflict = seed !== 4 && (grid[slot] || []).some((cell, c) => c !== court && c !== superTieCourt && cell && cell.fixtureId === fixtureId && cell.seed !== seed && seedsSharePlayer(f, cell.seed, seed));
     if (conflict) return res.status(400).json({ error: "That would put the same player on two courts at once in this time slot." });
     // A given fixture+seed can only be scheduled once — clear it from
     // wherever it was before, so moving it never leaves a duplicate behind.
