@@ -2019,6 +2019,7 @@ async function renderGuestWallCard() {
 // remembered on this device.
 const ADMIN_SECTIONS = [
   { id: "live-count-card", key: "online", title: "On the app now" },
+  { id: "logins-today-card", key: "loginsToday", title: "Logged in today" },
   { id: "hub-claim-requests-card", key: "claims", title: "Claim requests", alert: true },
   { id: "interest-signups-card", key: "signups", title: "League interest signups", alert: true },
   { id: "pay-link-finder-card", key: "paylink", title: "Find a player's pay link" },
@@ -2338,9 +2339,10 @@ async function renderLiveCount() {
 async function renderLoginsToday() {
   const rows = await api("/admin/logins-today").catch(() => null);
   const body = el("logins-today-body");
+  setAdminInfo("loginsToday", { n: rows ? rows.length : null });
   if (!rows) { body.innerHTML = '<p class="empty">Couldn’t load this.</p>'; return; }
   if (!rows.length) { body.innerHTML = '<p class="empty">Nobody’s logged in yet today.</p>'; return; }
-  body.innerHTML = `<div class="note" style="margin-bottom:8px;">${rows.length} account${rows.length === 1 ? "" : "s"} today</div>` + rows.map((r) => `
+  body.innerHTML = rows.map((r) => `
     <div class="row" style="justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);">
       <span title="${escapeHtml(r.email)}">${escapeHtml(r.name)}</span>
       <span class="note">${escapeHtml(fmtTime(new Date(r.lastSeenAt).toTimeString().slice(0, 5)))}</span>
