@@ -1299,6 +1299,15 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .ps-l{background:var(--tc,linear-gradient(160deg,#2c3a2a,#12203A));clip-path:polygon(0 0,62% 0,38% 100%,0 100%);transform:translateX(-105%);animation:psIn .55s .1s cubic-bezier(.2,.8,.2,1) forwards;}
 .ps-r{background:var(--tc,linear-gradient(200deg,#E2432F,#7a170e));clip-path:polygon(62% 0,100% 0,100% 100%,38% 100%);transform:translateX(105%);animation:psIn .55s .1s cubic-bezier(.2,.8,.2,1) forwards;}
 @keyframes psIn{to{transform:none;}}
+/* The final's own backdrop (see playPlayoffSplash's isFinal branch) —
+   near-black instead of the semi's team-colour diagonal, with a huge
+   barely-there trophy watermark and a gold foil sheen that sweeps
+   through once as the splash opens. */
+.ps-final-bg{position:absolute;inset:0;background:#060606;}
+.ps-foil{position:absolute;inset:-20%;background:linear-gradient(115deg,transparent 42%,rgba(232,179,76,.28) 50%,transparent 58%);transform:translateX(-40%);opacity:0;animation:psFoil .9s .15s cubic-bezier(.2,.8,.2,1) forwards;}
+@keyframes psFoil{0%{transform:translateX(-40%);opacity:0;}30%{opacity:1;}100%{transform:translateX(40%);opacity:0;}}
+.ps-trophy{position:absolute;left:50%;top:50%;width:min(70vw,420px);height:min(70vw,420px);fill:#fff;opacity:0;transform:translate(-50%,-46%) scale(1.4);animation:psTrophyIn .5s .5s cubic-bezier(.2,.9,.3,1.1) forwards;}
+@keyframes psTrophyIn{to{opacity:.09;transform:translate(-50%,-46%) scale(1);}}
 .ps-word{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%) rotate(-90deg);font-family:var(--font-display);font-size:min(260px,32vh);font-weight:700;line-height:.8;color:rgba(255,255,255,.13);white-space:nowrap;opacity:0;animation:psWord .4s .7s cubic-bezier(.2,.9,.3,1.1) forwards;}
 @keyframes psWord{0%{opacity:0;transform:translate(-50%,-50%) rotate(-90deg) scale(2.8);}100%{opacity:1;transform:translate(-50%,-50%) rotate(-90deg) scale(1);}}
 .ps-t{position:absolute;display:flex;flex-direction:column;align-items:center;gap:10px;width:min(160px,40vw);text-align:center;color:#fff;font-family:var(--font-display);font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:0;}

@@ -4390,11 +4390,18 @@ function playPlayoffSplash(p) {
   // each pair's names already shortened server-side (see
   // shortPairNamesText) so a full pairing fits a fifth of the screen.
   const chipsHtml = p.lineups ? `<div class="ps-chips">${p.lineups.map((l) => `<div class="ps-chip"><b>${l.isSingles ? "SGL" : "S" + l.seed}</b><span>${escapeHtml(l.mine)}</span><span>v ${escapeHtml(l.theirs)}</span></div>`).join("")}</div>` : "";
+  // The final gets its own backdrop — near-black with a huge faint trophy
+  // watermark and a gold foil sheen sweeping through once — instead of
+  // the semi's team-colour diagonal, so it reads as the bigger occasion.
+  const isFinal = p.stage === "final";
+  const bgHtml = isFinal
+    ? `<div class="ps-final-bg"></div><div class="ps-foil"></div><svg class="ps-trophy" viewBox="0 0 100 100"><path d="M30 8h40v10c0 14-8 22-18 24v10h8v8H40v-8h8V42C38 40 30 32 30 18V8zm-14 6h10v6c0 8 4 13 10 15v4c-12-2-20-11-20-21v-4zm74 0h-10v6c0 8-4 13-10 15v4c12-2 20-11 20-21v-4z"/></svg>`
+    : `<div class="ps-l"></div><div class="ps-r"></div>`;
   const splash = document.createElement("div");
-  splash.className = "ps-splash";
+  splash.className = "ps-splash" + (isFinal ? " ps-is-final" : "");
   splash.innerHTML = `<div class="ps-in">
-    <div class="ps-l"></div><div class="ps-r"></div>
-    <div class="ps-word">${p.stage === "final" ? "FINAL" : "SEMI"}</div>
+    ${bgHtml}
+    <div class="ps-word">${isFinal ? "FINAL" : "SEMI"}</div>
     <div class="ps-t ps-t1">${avatarHtml({ logo: p.teamLogo, name: p.teamName })}<span>${escapeHtml(p.teamName)}</span></div>
     <div class="ps-t ps-t2">${avatarHtml({ logo: p.opponentLogo, name: p.opponentTeam })}<span>${escapeHtml(p.opponentTeam)}</span></div>
     <div class="ps-vs">VS</div>
@@ -4402,7 +4409,7 @@ function playPlayoffSplash(p) {
     <div class="ps-bar">${playoffDaysOutLabel(p)}${escapeHtml(kickoff)}</div>
   </div>`;
   document.body.appendChild(splash);
-  tintTeamHalves(splash.querySelector(".ps-l"), splash.querySelector(".ps-r"), p.teamLogo, p.opponentLogo);
+  if (!isFinal) tintTeamHalves(splash.querySelector(".ps-l"), splash.querySelector(".ps-r"), p.teamLogo, p.opponentLogo);
   const done = () => { clearTimeout(timer); splash.remove(); };
   const timer = setTimeout(done, 3600);
   splash.onclick = done;
