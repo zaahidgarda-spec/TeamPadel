@@ -2964,6 +2964,7 @@ el("account-signup-btn").onclick = async () => {
     await api("/players/signup", { method: "POST", body: { name, email, password } });
     el("account-signup-name").value = ""; el("account-signup-email").value = ""; el("account-signup-password").value = ""; el("account-auth-error").textContent = "";
     await refreshAccountStatus();
+    openRegWizard();
   } catch (e) { el("account-auth-error").textContent = e.message; }
 };
 // Player login itself now happens through the unified box (see
@@ -3217,6 +3218,166 @@ function runAccountSearch(qRaw) {
     });
 }
 bindPlayerLookupInput("account-search-input", "account-search-results", runAccountSearch);
+
+/* ---------- First-time registration wizard: league, then club, then you ----------
+   Opened once, right after a brand-new signup (see the account-signup-btn
+   handler below) — not on every login, and not for someone who already has
+   an account. Reuses the exact same search-index/claim/claim-request
+   machinery as the "Find your player record" panel, just walked through
+   as three scoped steps instead of one open-ended name search, since a
+   fresh sign-up doesn't yet know that typing their own name is even an
+   option. */
+let regWiz = null;
+function closeRegWizard() {
+  el("reg-wizard-backdrop").classList.remove("open");
+  regWiz = null;
+}
+function openRegWizard() {
+  regWiz = { stage: "league", leagueId: null, leagueName: null, teamId: null, teamName: null, claimedName: null };
+  el("rw-search").oninput = null;
+  el("reg-wizard-backdrop").classList.add("open");
+  el("rw-back-btn").style.display = "";
+  el("rw-skip-btn").style.display = "";
+  el("rw-add-another-btn").style.display = "none";
+  el("rw-continue-btn").style.display = "none";
+  renderRegWizardStep1();
+}
+el("reg-wizard-close").onclick = closeRegWizard;
+el("rw-skip-btn").onclick = closeRegWizard;
+el("rw-back-btn").onclick = () => {
+  if (regWiz.stage === "team") renderRegWizardStep1();
+  else if (regWiz.stage === "player") renderRegWizardStep2();
+};
+function rwSetProgress(pct) { el("rw-bar-fill").style.width = pct + "%"; }
+async function renderRegWizardStep1() {
+  regWiz.stage = "league"; regWiz.teamId = null; regWiz.teamName = null;
+  el("rw-title").textContent = "Your league";
+  el("rw-sub").textContent = "Which league do you play in?";
+  rwSetProgress(33);
+  el("rw-back-btn").disabled = true;
+  el("rw-body").innerHTML = '<p class="rw-empty">Loading leagues…</p>';
+  const all = await loadPlayerIndex();
+  if (!regWiz || regWiz.stage !== "league") return; // closed/moved on while this was loading
+  const byLeague = new Map();
+  all.forEach((p) => {
+    if (!byLeague.has(p.leagueId)) byLeague.set(p.leagueId, { leagueId: p.leagueId, leagueName: p.leagueName, teamIds: new Set() });
+    byLeague.get(p.leagueId).teamIds.add(p.teamId);
+  });
+  const leagues = [...byLeague.values()].sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  const search = el("rw-search");
+  search.style.display = leagues.length > 8 ? "block" : "none";
+  search.value = "";
+  search.placeholder = "Search leagues…";
+  const draw = (list) => {
+    el("rw-body").innerHTML = list.length
+      ? `<div class="rw-grid">${list.map((l) => `<button type="button" class="rw-card" data-id="${l.leagueId}">${avatarHtml({ name: l.leagueName })}<b>${escapeHtml(l.leagueName)}</b><span>${l.teamIds.size} team${l.teamIds.size === 1 ? "" : "s"}</span></button>`).join("")}</div>`
+      : '<p class="rw-empty">No leagues match that search.</p>';
+    el("rw-body").querySelectorAll(".rw-card").forEach((btn) => {
+      btn.onclick = () => {
+        const found = leagues.find((l) => l.leagueId === btn.dataset.id);
+        regWiz.leagueId = found.leagueId; regWiz.leagueName = found.leagueName;
+        renderRegWizardStep2();
+      };
+    });
+  };
+  draw(leagues);
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+    draw(q ? leagues.filter((l) => l.leagueName.toLowerCase().includes(q)) : leagues);
+  };
+}
+async function renderRegWizardStep2() {
+  regWiz.stage = "team";
+  el("rw-title").textContent = "Your club";
+  el("rw-sub").textContent = `Which team do you play for in ${regWiz.leagueName}?`;
+  rwSetProgress(66);
+  el("rw-back-btn").disabled = false;
+  el("rw-search").style.display = "none";
+  el("rw-body").innerHTML = '<p class="rw-empty">Loading teams…</p>';
+  const [all, avatars] = await Promise.all([loadPlayerIndex(), loadAvatarsIndex()]);
+  if (!regWiz || regWiz.stage !== "team") return;
+  const rows = all.filter((p) => p.leagueId === regWiz.leagueId);
+  const byTeam = new Map();
+  rows.forEach((p) => {
+    if (!byTeam.has(p.teamId)) byTeam.set(p.teamId, { teamId: p.teamId, teamName: p.teamName, count: 0 });
+    byTeam.get(p.teamId).count++;
+  });
+  const teams = [...byTeam.values()].sort((a, b) => a.teamName.localeCompare(b.teamName));
+  el("rw-body").innerHTML = teams.length
+    ? `<div class="rw-grid">${teams.map((t) => `<button type="button" class="rw-card" data-id="${t.teamId}">${avatarHtml({ logo: avatars.teamLogos[t.teamId], name: t.teamName })}<b>${escapeHtml(t.teamName)}</b><span>${t.count} player${t.count === 1 ? "" : "s"}</span></button>`).join("")}</div>`
+    : '<p class="rw-empty">No teams in this league yet.</p>';
+  el("rw-body").querySelectorAll(".rw-card").forEach((btn) => {
+    btn.onclick = () => {
+      const found = teams.find((t) => t.teamId === btn.dataset.id);
+      regWiz.teamId = found.teamId; regWiz.teamName = found.teamName;
+      renderRegWizardStep3();
+    };
+  });
+}
+async function renderRegWizardStep3() {
+  regWiz.stage = "player";
+  el("rw-title").textContent = "You're one of these";
+  el("rw-sub").textContent = `Tap your name on the ${regWiz.teamName} roster.`;
+  rwSetProgress(100);
+  el("rw-back-btn").disabled = false;
+  el("rw-search").style.display = "none";
+  el("rw-body").innerHTML = '<p class="rw-empty">Loading roster…</p>';
+  const [all, avatars] = await Promise.all([loadPlayerIndex(), loadAvatarsIndex()]);
+  if (!regWiz || regWiz.stage !== "player") return;
+  const rows = all.filter((p) => p.teamId === regWiz.teamId).sort((a, b) => a.playerName.localeCompare(b.playerName));
+  el("rw-body").innerHTML = rows.length
+    ? `<div class="rw-list">${rows.map((r) => `<div class="rw-row" data-player="${r.playerId}">${avatarHtml({ logo: avatars.playerPhotos[r.playerId] || avatars.teamLogos[r.teamId], name: r.playerName })}<b>${escapeHtml(r.playerName)}</b>${r.claimed ? '<button type="button" class="secondary rw-request-btn">Request</button>' : '<button type="button" class="primary rw-claim-btn">This is me</button>'}</div>`).join("")}</div>`
+    : '<p class="rw-empty">No players on this roster yet.</p>';
+  el("rw-body").querySelectorAll(".rw-claim-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest(".rw-row");
+      const r = rows.find((x) => x.playerId === row.dataset.player);
+      btn.disabled = true; btn.textContent = "Claiming…";
+      try {
+        await api("/players/claims", { method: "POST", body: { leagueId: regWiz.leagueId, teamId: regWiz.teamId, playerId: r.playerId } });
+        await markPlayerIndexClaimed(r.playerId, true);
+        regWiz.claimedName = r.playerName;
+        renderRegWizardDone();
+      } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = "This is me"; }
+    };
+  });
+  el("rw-body").querySelectorAll(".rw-request-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const row = btn.closest(".rw-row");
+      const r = rows.find((x) => x.playerId === row.dataset.player);
+      btn.disabled = true;
+      try {
+        await api("/players/claim-requests", { method: "POST", body: { leagueId: regWiz.leagueId, teamId: regWiz.teamId, playerId: r.playerId } });
+        btn.replaceWith(Object.assign(document.createElement("span"), { className: "tag", textContent: "Request sent" }));
+      } catch (e) { alert(e.message); btn.disabled = false; }
+    };
+  });
+}
+function renderRegWizardDone() {
+  regWiz.stage = "done";
+  el("rw-title").textContent = "You're all set";
+  el("rw-sub").textContent = "";
+  el("rw-search").style.display = "none";
+  rwSetProgress(100);
+  el("rw-back-btn").style.display = "none";
+  el("rw-skip-btn").style.display = "none";
+  el("rw-add-another-btn").style.display = "";
+  el("rw-continue-btn").style.display = "";
+  el("rw-body").innerHTML = `<div class="rw-done">
+    <div class="rw-done-ring">&#10003;</div>
+    <h4>Linked to My Profile</h4>
+    <p>You're linked as <b>${escapeHtml(regWiz.claimedName)}</b>. Your fixtures, results and rating start showing on My Profile right away.</p>
+    <div class="rw-done-card">${avatarHtml({ name: regWiz.teamName })}<div><b>${escapeHtml(regWiz.leagueName)} &middot; ${escapeHtml(regWiz.teamName)}</b><span>${escapeHtml(regWiz.claimedName)}</span></div></div>
+  </div>`;
+}
+el("rw-add-another-btn").onclick = () => {
+  el("rw-back-btn").style.display = "";
+  el("rw-skip-btn").style.display = "";
+  el("rw-add-another-btn").style.display = "none";
+  el("rw-continue-btn").style.display = "none";
+  renderRegWizardStep1();
+};
+el("rw-continue-btn").onclick = async () => { closeRegWizard(); await renderAccountProfile(); };
 
 // The people a player actually looks up most — who they're playing next and
 // who's on their team — shown before anything is typed. Built from what the

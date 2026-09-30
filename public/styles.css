@@ -1713,6 +1713,40 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .modal-close:hover{color:var(--clay);border-color:var(--clay);}
 .modal-title{font-family:var(--font-display);font-size:18px;text-transform:uppercase;margin:0 0 4px;padding-right:30px;}
 
+/* Registration wizard — league, then team, then yourself, right after
+   signup. Reuses the standard modal chrome above; everything from here
+   down is specific to its own three-step flow. */
+.rw-box{max-width:400px;display:flex;flex-direction:column;max-height:82vh;}
+.rw-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.rw-head .modal-title{margin:0;}
+.rw-step{flex:none;padding-top:3px;}
+.rw-bar{width:64px;height:5px;border-radius:999px;background:var(--panel-2);overflow:hidden;}
+.rw-bar i{display:block;height:100%;width:33%;background:var(--accent);border-radius:999px;transition:width .2s ease;}
+.rw-search{border:1px solid var(--line);background:var(--panel);border-radius:var(--radius-sm);padding:10px 12px;font:inherit;font-size:14px;margin-bottom:10px;width:100%;}
+.rw-body{overflow-y:auto;flex:1;min-height:140px;}
+.rw-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.rw-card{border:1.5px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;text-align:center;font:inherit;color:inherit;}
+.rw-card:hover{border-color:var(--accent);}
+.rw-card .avatar,.rw-card .avatar-fb{width:40px;height:40px;font-size:14px;}
+.rw-card b{font-size:13px;font-weight:600;line-height:1.2;}
+.rw-card span{font-size:11px;color:var(--text-faint);}
+.rw-list{display:flex;flex-direction:column;gap:8px;}
+.rw-row{border:1.5px solid var(--line);background:var(--panel);border-radius:var(--radius);padding:10px 12px;display:flex;align-items:center;gap:10px;}
+.rw-row .avatar,.rw-row .avatar-fb{width:30px;height:30px;font-size:11px;flex-shrink:0;}
+.rw-row b{font-size:13.5px;font-weight:600;flex:1;min-width:0;}
+.rw-row button{flex:none;}
+.rw-empty{text-align:center;color:var(--text-dim);font-size:13px;padding:20px 10px;}
+.rw-done{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:8px 4px 4px;}
+.rw-done-ring{width:56px;height:56px;border-radius:50%;background:var(--accent-soft);border:2px solid var(--accent);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:24px;}
+.rw-done h4{font-family:var(--font-display);font-size:16px;text-transform:uppercase;margin:0;}
+.rw-done p{font-size:13px;color:var(--text-dim);line-height:1.5;margin:0;max-width:280px;}
+.rw-done-card{width:100%;border:1px solid var(--line);border-radius:var(--radius);padding:12px;display:flex;align-items:center;gap:10px;text-align:left;background:var(--panel-2);}
+.rw-done-card .avatar,.rw-done-card .avatar-fb{width:36px;height:36px;font-size:13px;flex-shrink:0;}
+.rw-done-card b{display:block;font-size:13px;}
+.rw-done-card span{font-size:11.5px;color:var(--text-dim);}
+.rw-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;}
+.rw-foot #rw-back-btn[disabled]{visibility:hidden;}
+
 /* ---------- Player profile — a full page, not a small dialog. Every
    other modal in the app is a quick, single action (a score, a sub, a
    photo) that makes sense floating over whatever you were doing; a
