@@ -375,8 +375,35 @@ async function boot() {
   PAYFAST_SANDBOX = config.payfastSandbox !== false;
   leaguesIndex = await api("/leagues").catch(() => []);
   startPresencePing();
+  // The entry gate — a signed-out visitor opening the app fresh (no deep
+  // link, no password-reset link mid-flow) sees this instead of the
+  // loading bar just fading straight into the hub. Never shown for an
+  // already-signed-in session, or for anyone arriving via a specific
+  // league/pay/kit link — those have to work standalone, same reasoning
+  // the routes below already give for skipping the hub entirely.
+  let entryChoice = null;
+  const isHomeEntry = (!window.location.hash || window.location.hash === "#") && !resetTokenInUrl;
+  if (isHomeEntry) {
+    const me = await api("/players/me").catch(() => null);
+    if (!me) {
+      el("loading-bar-track").style.display = "none";
+      el("loading-caption").style.display = "none";
+      const gate = el("entry-gate");
+      gate.style.display = "flex";
+      entryChoice = await new Promise((resolve) => {
+        el("entry-create-btn").onclick = () => resolve("create");
+        el("entry-login-btn").onclick = () => resolve("login");
+        el("entry-guest-btn").onclick = () => resolve("guest");
+      });
+      gate.style.display = "none";
+    }
+  }
   el("loading").style.display = "none";
   el("app").style.display = "block";
+  if (entryChoice === "create" || entryChoice === "login") {
+    switchHubTab("account");
+    if (entryChoice === "create") el("show-account-signup").click();
+  }
   // Black while the splash/loading screen is up (matches it exactly, no
   // blue status-bar strip on top of a black screen) — back to the site's
   // own blue now that the real app is actually on screen.

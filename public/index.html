@@ -82,9 +82,17 @@
   </div>
 
   <div id="loading" class="loading">
+    <div class="entry-glow"></div>
     <img src="/images/logo.png" alt="Team Padel" class="loading-logo">
-    <div class="loading-bar-track"><div class="loading-bar-fill"></div></div>
+    <div class="loading-bar-track" id="loading-bar-track"><div class="loading-bar-fill"></div></div>
     <span id="loading-caption" class="loading-caption">Loading…</span>
+    <div id="entry-gate" class="entry-gate" style="display:none;">
+      <div class="entry-rule"></div>
+      <p class="entry-tag">Leagues &middot; Scores &middot; Results</p>
+      <button type="button" class="entry-btn-primary" id="entry-create-btn">Create account</button>
+      <button type="button" class="entry-btn-ghost" id="entry-login-btn">Log in</button>
+      <button type="button" class="entry-guest" id="entry-guest-btn">Just browsing? <b>Continue as Guest</b></button>
+    </div>
   </div>
 
   <div id="app" style="display:none;">
