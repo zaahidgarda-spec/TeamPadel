@@ -1768,10 +1768,10 @@ el("interest-submit-btn").onclick = async () => {
    rather than building a settings screen for something that happens a
    couple of times a year. */
 const AUCTION_EVENT = {
-  id: "premier-league-auction-2026-11",
+  id: "premier-league-auction-2026-10",
   title: "Premier League Auction",
-  dateLabel: "Sat 14 Nov, 6:00 PM",
-  cutoff: "2026-11-14T18:00:00",
+  dateLabel: "October",
+  cutoff: "2026-10-31T23:59:59",
 };
 function auctionIsLive() { return Date.now() < new Date(AUCTION_EVENT.cutoff).getTime(); }
 function auctionAlreadyRegistered() {
@@ -1789,19 +1789,21 @@ function renderAuctionBanner() {
   banner.style.display = "flex";
 }
 // My Profile's callout — shown exactly once, ever, per browser: the seen
-// flag is set the moment it renders, not on dismiss or registration, so
-// a player who never even notices it still only gets one shot at it,
-// same "once and done" reasoning as the league-wide final splash.
+// flag is set the moment it renders (so a player who never even notices
+// it still only gets one shot at it, same reasoning as the league-wide
+// final splash) AND again explicitly on dismiss below, so clicking the ×
+// is never dependent on that first flag alone — either way, it's gone
+// for good on this browser.
+function auctionCalloutSeenKey() { return "padel-auction-callout-seen:" + AUCTION_EVENT.id; }
 function renderAuctionCallout() {
   const callout = el("auction-callout");
-  const seenKey = "padel-auction-callout-seen:" + AUCTION_EVENT.id;
   let seen = false;
-  try { seen = localStorage.getItem(seenKey) === "1"; } catch { /* private mode — show it, harmless either way */ }
+  try { seen = localStorage.getItem(auctionCalloutSeenKey()) === "1"; } catch { /* private mode — show it, harmless either way */ }
   if (!auctionIsLive() || auctionAlreadyRegistered() || seen) { callout.style.display = "none"; return; }
   el("auction-callout-title").textContent = AUCTION_EVENT.title;
-  el("auction-callout-sub").textContent = AUCTION_EVENT.dateLabel + " — register before teams start bidding.";
+  el("auction-callout-sub").textContent = "Happening in " + AUCTION_EVENT.dateLabel + " — register before teams start bidding.";
   callout.style.display = "block";
-  try { localStorage.setItem(seenKey, "1"); } catch { /* not remembered — it'll just show again next visit */ }
+  try { localStorage.setItem(auctionCalloutSeenKey(), "1"); } catch { /* not remembered — it'll just show again next visit */ }
 }
 let auctionPhotoDataUrl = "";
 function openAuctionModal() {
@@ -1821,7 +1823,10 @@ function openAuctionModal() {
 function closeAuctionModal() { el("auction-modal-backdrop").classList.remove("open"); }
 el("auction-banner").onclick = openAuctionModal;
 el("auction-callout-btn").onclick = openAuctionModal;
-el("auction-callout-dismiss").onclick = () => { el("auction-callout").style.display = "none"; };
+el("auction-callout-dismiss").onclick = () => {
+  el("auction-callout").style.display = "none";
+  try { localStorage.setItem(auctionCalloutSeenKey(), "1"); } catch { /* not remembered — it'll just show again next visit */ }
+};
 el("auction-modal-close").onclick = closeAuctionModal;
 el("auction-modal-backdrop").onclick = (e) => { if (e.target === el("auction-modal-backdrop")) closeAuctionModal(); };
 el("auction-photo-btn").onclick = () => el("auction-photo-input").click();
@@ -2648,11 +2653,14 @@ async function renderInterestSignups() {
   if (signups.length === 0) { c.innerHTML = '<p class="empty">No signups yet.</p>'; return; }
   c.innerHTML = signups.map((s) => `
     <div class="notif-row" data-id="${s.id}">
-      <div>
-        <strong>${escapeHtml(s.name)}</strong> — ${s.context === "event" ? "🏆 " + escapeHtml(s.event || "Event") : (s.joinAs === "team" ? "Full team" : "Individual player") + (s.league ? " · " + escapeHtml(s.league) : "")}
-        <div class="note">${escapeHtml(s.contactNumber || "—")} · ${escapeHtml(s.email || "—")}${s.playtomicLevel ? " · Playtomic " + escapeHtml(s.playtomicLevel) : ""}</div>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        ${s.photo ? `<img class="avatar" src="${s.photo}" alt="">` : ""}
+        <div style="min-width:0;">
+          <strong>${escapeHtml(s.name)}</strong> — ${s.context === "event" ? "🏆 " + escapeHtml(s.event || "Event") : (s.joinAs === "team" ? "Full team" : "Individual player") + (s.league ? " · " + escapeHtml(s.league) : "")}
+          <div class="note">${escapeHtml(s.contactNumber || "—")} · ${escapeHtml(s.email || "—")}${s.playtomicLevel ? " · Playtomic " + escapeHtml(s.playtomicLevel) : ""}</div>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
         <time class="notif-time">${new Date(s.createdAt).toLocaleString()}</time>
         <button class="link interest-remove-btn" type="button">Remove</button>
       </div>
