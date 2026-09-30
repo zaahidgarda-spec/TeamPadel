@@ -1293,7 +1293,7 @@ router.get("/homepage/highlights", (req, res) => {
       const photo = newsPostPhoto(p, league);
       if (!photo) return;
       const { headline, body } = newsPostHeadline(p);
-      heroCandidates.push({ title: headline, body, photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name, round: p.auto ? p.round : null });
+      heroCandidates.push({ title: headline, body, photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name, round: p.auto ? p.round : null, pinned: !!p.pinned });
     });
 
     const latest = (league.news || [])
@@ -1321,7 +1321,12 @@ router.get("/homepage/highlights", (req, res) => {
   const manualHighlights = (extras.manual || []).slice().sort((a, b) => b.createdAt - a.createdAt)
     .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id, photo: m.photo || "" }));
   heroCandidates.sort((a, b) => b.createdAt - a.createdAt);
-  const heroNews = heroCandidates[0] || null;
+  // A pinned post (see the news pin route) wins the Leagues-tab hero slot
+  // too, same "an admin's explicit pick beats the automatic sort" idea as
+  // sortNewsPosts — across every league, not just its own, since this
+  // hero is already site-wide. Falls back to newest-with-a-photo as before
+  // when nothing's pinned.
+  const heroNews = heroCandidates.find((c) => c.pinned) || heroCandidates[0] || null;
   // That same round's bigwin/rough-night/table cards would otherwise repeat
   // right below it — once a round is the hero, its own highlights drop out
   // of "Interesting this week" rather than saying the same thing twice.

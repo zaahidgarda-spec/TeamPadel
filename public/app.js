@@ -1455,7 +1455,7 @@ async function renderHomepageHighlights() {
     heroEl.style.backgroundImage = `url('${heroNews.photo}')`;
     heroEl.innerHTML = `
       <div class="week-hero-content">
-        <div class="nr-hero-top"><span class="nr-round-eyebrow">${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
+        <div class="nr-hero-top"><span class="nr-round-eyebrow">${heroNews.pinned ? "📌 Pinned · " : ""}${escapeHtml(heroNews.leagueName)}</span><span class="nr-round-date">${dateText}</span></div>
         <div class="nr-potw-names" style="margin-top:10px;">${escapeHtml(heroNews.title)}</div>
         ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}
       </div>`;
