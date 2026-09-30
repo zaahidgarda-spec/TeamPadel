@@ -252,6 +252,30 @@ async function saveLeaguePhotoField(leagueId, mutate) {
   mutate(photos);
   await redis.set(leaguePhotosKey(leagueId), photos).catch((e) => console.error("Failed to save league photos:", e.message));
 }
+// Safety net for saveLeague, below — a league can still be carrying
+// legacy photo bytes on its in-memory object that were never captured by
+// a dedicated upload call (savePlayerPhoto etc.), either because they
+// predate this split existing at all, or because some other code path
+// set player.photo/team logo/sponsor image directly. Stripping those for
+// the Redis write without ALSO folding them into the split store first
+// would silently delete them the moment this league next gets saved for
+// any unrelated reason (a score entry, say) — which is exactly what
+// happened to a real player's profile photo before this existed. Skipped
+// entirely (no extra Redis round trip) for the common case of a league
+// with no photos on it at all. Merges rather than replaces, so it can
+// never undo an explicit deletion (savePlayerPhoto(...,"") already
+// updated the split store directly, and this only ever adds keys the
+// in-memory object still has bytes for).
+async function migrateLegacyLeaguePhotos(id, league) {
+  const players = {}, sponsors = {};
+  (league.teams || []).forEach((t) => (t.players || []).forEach((p) => { if (p.photo) players[p.id] = p.photo; }));
+  (league.sponsors || []).forEach((s) => { if (s.image) sponsors[s.id] = s.image; });
+  const court = league.courtPhoto || "";
+  if (!Object.keys(players).length && !Object.keys(sponsors).length && !court) return;
+  const existing = await getLeaguePhotosBlob(id);
+  const merged = { players: { ...existing.players, ...players }, sponsors: { ...existing.sponsors, ...sponsors }, court: court || existing.court };
+  await redis.set(leaguePhotosKey(id), merged).catch((e) => console.error("Failed to migrate legacy league photos for " + id + ":", e.message));
+}
 // Called by the player-photo upload route (and its cross-league fan-out,
 // and account deletion's cleanup) right alongside the ordinary
 // `player.photo = photo` — a no-op locally, since local mode still just
@@ -271,6 +295,7 @@ async function saveLeagueCourtPhoto(leagueId, dataUrl) {
 function saveLeague(id, league) {
   if (useRedis) {
     cache.set("league-" + id, league);
+    migrateLegacyLeaguePhotos(id, league);
     persist("league-" + id, stripLeaguePhotosForWrite(league));
     return;
   }
@@ -409,9 +434,22 @@ async function saveSignupPhoto(id, dataUrl) {
   if (dataUrl) await redis.set(signupPhotoKey(id), dataUrl).catch((e) => console.error("Failed to save signup photo:", e.message));
   else await redis.del(signupPhotoKey(id)).catch((e) => console.error("Failed to delete signup photo:", e.message));
 }
+// Same reasoning as migrateLegacyLeaguePhotos above — stripping a
+// signup's photo for the write without first making sure its own
+// signupPhotoKey actually has it would silently delete any photo that
+// didn't happen to arrive through saveSignupPhoto specifically.
+function migrateLegacySignupPhotos(signups) {
+  signups.forEach((s) => {
+    if (!s.photo) return;
+    redis.get(signupPhotoKey(s.id)).then((existing) => {
+      if (!existing) return redis.set(signupPhotoKey(s.id), s.photo);
+    }).catch((e) => console.error("Failed to migrate legacy signup photo for " + s.id + ":", e.message));
+  });
+}
 function saveSignups(signups) {
   if (useRedis) {
     cache.set("interest-signups", signups);
+    migrateLegacySignupPhotos(signups);
     persist("interest-signups", signups.map((s) => (s.photo ? { ...s, photo: "", hasPhoto: true } : s)));
     return;
   }
