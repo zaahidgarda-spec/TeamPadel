@@ -2339,7 +2339,10 @@ function leagueFinalsSpectatorSplash(league, myTeamIds) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   for (const f of logic.allFixturesOf(league)) {
-    if ((f.stage !== "semi" && f.stage !== "final") || f.finalized || !f.teamA || !f.teamB) continue;
+    // Finals only — a semi is still two teams' own business, and firing
+    // this for both of them every season would just be noise for
+    // everyone else. The final is the one moment worth surfacing league-wide.
+    if (f.stage !== "final" || f.finalized || !f.teamA || !f.teamB) continue;
     if (myTeamIds.has(f.teamA) || myTeamIds.has(f.teamB)) continue; // already covered as a participant
     const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
     if (!sched.date) continue;
