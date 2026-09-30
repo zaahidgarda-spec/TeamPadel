@@ -4371,12 +4371,20 @@ function playoffDaysOutLabel(p) {
 // reduced-motion.
 function playPlayoffSplash(p) {
   if (document.querySelector(".ps-splash") || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const key = `padel-playoff-splash:${p.fixtureId}:${p.daysOut}`;
+  // The "l"/"n" suffix means the splash plays again the moment lineups go
+  // from unknown to submitted — even if it already played once today —
+  // since that's exactly the update the chip strip below exists to show.
+  const key = `padel-playoff-splash:${p.fixtureId}:${p.daysOut}:${p.lineups ? "l" : "n"}`;
   try {
     if (localStorage.getItem(key)) return;
     localStorage.setItem(key, "1");
   } catch { /* seen-state not remembered — playing anyway is harmless */ }
   const kickoff = p.time ? " · KICK-OFF " + fmtTime(p.time).toUpperCase() : "";
+  // One chip per court once both captains have picked their side — "SGL"
+  // for the closing singles rubber, "S1"..."S4" for the doubles ones —
+  // each pair's names already shortened server-side (see
+  // shortPairNamesText) so a full pairing fits a fifth of the screen.
+  const chipsHtml = p.lineups ? `<div class="ps-chips">${p.lineups.map((l) => `<div class="ps-chip"><b>${l.isSingles ? "SGL" : "S" + l.seed}</b><span>${escapeHtml(l.mine)}</span><span>v ${escapeHtml(l.theirs)}</span></div>`).join("")}</div>` : "";
   const splash = document.createElement("div");
   splash.className = "ps-splash";
   splash.innerHTML = `<div class="ps-in">
@@ -4385,6 +4393,7 @@ function playPlayoffSplash(p) {
     <div class="ps-t ps-t1">${avatarHtml({ logo: p.teamLogo, name: p.teamName })}<span>${escapeHtml(p.teamName)}</span></div>
     <div class="ps-t ps-t2">${avatarHtml({ logo: p.opponentLogo, name: p.opponentTeam })}<span>${escapeHtml(p.opponentTeam)}</span></div>
     <div class="ps-vs">VS</div>
+    ${chipsHtml}
     <div class="ps-bar">${playoffDaysOutLabel(p)}${escapeHtml(kickoff)}</div>
   </div>`;
   document.body.appendChild(splash);

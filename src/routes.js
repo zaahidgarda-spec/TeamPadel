@@ -2311,12 +2311,29 @@ function teamPlayoffSplash(league, team, isCaptain) {
       lastMeeting = meeting.teamA === team.id ? { mine: sc.winsA, theirs: sc.winsB } : { mine: sc.winsB, theirs: sc.winsA };
       lastMeeting.label = fixtureLabel(league, meeting);
     }
+    // Once both captains have actually picked their side, the splash's
+    // chip strip shows the real court-by-court match-ups instead of just
+    // the two team names — the whole point being it updates the moment
+    // the second lineup lands, not just once at kickoff.
+    let lineups = null;
+    if (f.selectionA.submitted && f.selectionB.submitted) {
+      const mySide = f.teamA === team.id ? "A" : "B";
+      const mySel = mySide === "A" ? f.selectionA : f.selectionB;
+      const oppSel = mySide === "A" ? f.selectionB : f.selectionA;
+      const isSinglesFixture = mySel.pairs.length === 5;
+      lineups = mySel.pairs.map((pair, idx) => ({
+        seed: idx + 1,
+        isSingles: isSinglesFixture && idx === 4,
+        mine: shortPairNamesText(team, pair),
+        theirs: shortPairNamesText(opp, oppSel.pairs[idx]),
+      }));
+    }
     return {
       fixtureId: f.id, stage: f.stage, leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       opponentTeam: opp.name, opponentLogo: opp.logo || "",
       date: sched.date, time: sched.time || "", venue: sched.venue || league.defaultVenue || "",
-      daysOut, matchDay: daysOut === 0, isCaptain: !!isCaptain, lastMeeting,
+      daysOut, matchDay: daysOut === 0, isCaptain: !!isCaptain, lastMeeting, lineups,
     };
   }
   return null;
@@ -5497,6 +5514,19 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
 function pairNamesText(team, pair) {
   if (!team || !pair) return "TBD";
   const names = pair.map((pid) => (team.players.find((p) => p.id === pid) || {}).name).filter(Boolean);
+  return names.length ? names.join(" & ") : "TBD";
+}
+// "Sam Ortiz" -> "Sam O." — same shortening the client's shortPlayerName
+// applies for tight spaces (the poster's grid cells), used here so the
+// playoff splash's court chips (see teamPlayoffSplash) fit a full pair's
+// names in a fifth of the screen's width.
+function shortNameOf(name) {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? parts[0] + " " + parts[parts.length - 1].charAt(0).toUpperCase() + "." : parts[0];
+}
+function shortPairNamesText(team, pair) {
+  if (!team || !pair) return "TBD";
+  const names = pair.map((pid) => (team.players.find((p) => p.id === pid) || {}).name).filter(Boolean).map(shortNameOf);
   return names.length ? names.join(" & ") : "TBD";
 }
 // Every fixture a captained team has actually started playing (something's
