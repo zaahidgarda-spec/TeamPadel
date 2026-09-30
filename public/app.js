@@ -1459,7 +1459,21 @@ async function renderHomepageHighlights() {
         <div class="nr-potw-names" style="margin-top:10px;">${escapeHtml(heroNews.title)}</div>
         ${heroNews.body ? `<div class="nr-potw-team" style="font-size:13px;line-height:1.5;color:#E4E9F5;">${escapeHtml(heroNews.body)}</div>` : ""}
       </div>`;
-    heroEl.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
+    // A manual card (see the "Interesting this week" add modal) has no
+    // league of its own to open — for an owner, tapping it instead reopens
+    // its own edit modal, since winning the hero slot also means it no
+    // longer has a row of its own down below to click for that (see the
+    // dedup above); a regular visitor just sees it as non-interactive.
+    if (heroNews.leagueId) {
+      heroEl.style.cursor = "pointer";
+      heroEl.onclick = async () => { await openLeague(heroNews.leagueId); switchTab("news"); };
+    } else if (isOwner) {
+      heroEl.style.cursor = "pointer";
+      heroEl.onclick = () => openInterestingModal({ manualId: heroNews.manualId, short: heroNews.title, leagueName: heroNews.leagueName, photo: heroNews.photo, pinned: heroNews.pinned });
+    } else {
+      heroEl.style.cursor = "default";
+      heroEl.onclick = null;
+    }
   }
   // Without its own photo hero (nothing posted anywhere yet), the rows
   // still need a heading of their own to sit under.
@@ -10858,6 +10872,7 @@ function openInterestingModal(existing) {
   el("interesting-add-league").value = existing ? existing.leagueName : "";
   el("interesting-add-error").textContent = "";
   el("interesting-add-save").textContent = existing ? "Save" : "Add";
+  el("interesting-add-pinned").checked = existing ? !!existing.pinned : false;
   pendingInterestingPhoto = existing ? (existing.photo || "") : "";
   updateInterestingPhotoPreview();
   el("interesting-add-modal-backdrop").classList.add("open");
@@ -10880,9 +10895,11 @@ el("interesting-add-modal-close").onclick = () => el("interesting-add-modal-back
 el("interesting-add-cancel").onclick = () => el("interesting-add-modal-backdrop").classList.remove("open");
 el("interesting-add-save").onclick = async () => {
   const short = el("interesting-add-short").value.trim(), leagueName = el("interesting-add-league").value.trim();
+  const pinned = el("interesting-add-pinned").checked;
   if (!short) { el("interesting-add-error").textContent = "Enter something to show."; return; }
+  if (pinned && !pendingInterestingPhoto) { el("interesting-add-error").textContent = "Add a photo first — a pinned card needs one to become the headline."; return; }
   try {
-    const body = { short, leagueName, photo: pendingInterestingPhoto };
+    const body = { short, leagueName, photo: pendingInterestingPhoto, pinned };
     if (editingInterestingId) await api(`/admin/interesting/manual/${editingInterestingId}`, { method: "PUT", body });
     else await api("/admin/interesting/manual", { method: "POST", body });
     el("interesting-add-modal-backdrop").classList.remove("open");

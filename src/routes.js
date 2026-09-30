@@ -403,8 +403,8 @@ function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
     // An admin's pin beats everything below — the whole point of pinning
     // a post is not having to out-rank the auto sort by round or recency.
-    if (a.pinned && !b.pinned) return -1;
-    if (b.pinned && !a.pinned) return 1;
+    if (a.pinnedAt && !b.pinnedAt) return -1;
+    if (b.pinnedAt && !a.pinnedAt) return 1;
     // Round-based ordering only makes sense between two posts that both
     // actually belong to a round — a manually-typed admin post has none.
     // Treating a missing round as an implicit "higher than any real round"
@@ -1293,7 +1293,7 @@ router.get("/homepage/highlights", (req, res) => {
       const photo = newsPostPhoto(p, league);
       if (!photo) return;
       const { headline, body } = newsPostHeadline(p);
-      heroCandidates.push({ title: headline, body, photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name, round: p.auto ? p.round : null, pinned: !!p.pinned });
+      heroCandidates.push({ title: headline, body, photo, createdAt: p.createdAt, leagueId: league.id, leagueName: league.name, round: p.auto ? p.round : null, pinnedAt: p.pinnedAt || null });
     });
 
     const latest = (league.news || [])
@@ -1319,22 +1319,35 @@ router.get("/homepage/highlights", (req, res) => {
   // cap on auto-generated ones — they were deliberately added, not just
   // whatever happened to be most recent.
   const manualHighlights = (extras.manual || []).slice().sort((a, b) => b.createdAt - a.createdAt)
-    .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id, photo: m.photo || "" }));
+    .map((m) => ({ type: "manual", label: "News", short: m.short, leagueId: null, leagueName: m.leagueName || "", createdAt: m.createdAt, manualId: m.id, photo: m.photo || "", pinned: !!m.pinnedAt }));
+  // A manual card with its own photo can win the hero slot too, same as a
+  // league post — it just has no league to open, so the client leaves its
+  // hero un-clickable (see heroNews.leagueId below).
+  (extras.manual || []).forEach((m) => {
+    if (!m.photo) return;
+    heroCandidates.push({ title: m.short, body: "", photo: m.photo, createdAt: m.createdAt, leagueId: null, leagueName: m.leagueName || "Team Padel", round: null, pinnedAt: m.pinnedAt || null, manualId: m.id });
+  });
   heroCandidates.sort((a, b) => b.createdAt - a.createdAt);
-  // A pinned post (see the news pin route) wins the Leagues-tab hero slot
-  // too, same "an admin's explicit pick beats the automatic sort" idea as
-  // sortNewsPosts — across every league, not just its own, since this
-  // hero is already site-wide. Falls back to newest-with-a-photo as before
-  // when nothing's pinned.
-  const heroNews = heroCandidates.find((c) => c.pinned) || heroCandidates[0] || null;
+  // A pin (see the news pin route, and a manual card's own pinnedAt) wins
+  // the Leagues-tab hero slot outright — the most recently pinned thing,
+  // across every league and every manual card, since this hero is already
+  // site-wide and only one pin should ever need to answer for it. Falls
+  // back to newest-with-a-photo, as before, when nothing's pinned.
+  const pinned = heroCandidates.filter((c) => c.pinnedAt).sort((a, b) => b.pinnedAt - a.pinnedAt);
+  const heroNews = pinned[0] || heroCandidates[0] || null;
   // That same round's bigwin/rough-night/table cards would otherwise repeat
   // right below it — once a round is the hero, its own highlights drop out
   // of "Interesting this week" rather than saying the same thing twice.
+  // A manual card that won hero gets the same treatment against its own
+  // row list, so it doesn't show twice either.
   const shownHighlights = heroNews && heroNews.round != null
     ? autoHighlights.filter((h) => !(h.leagueId === heroNews.leagueId && h.round === heroNews.round))
     : autoHighlights;
-  if (heroNews) delete heroNews.round;
-  res.json({ potw, highlights: manualHighlights.concat(shownHighlights.slice(0, 9)), heroNews });
+  const shownManualHighlights = heroNews && heroNews.manualId
+    ? manualHighlights.filter((m) => m.manualId !== heroNews.manualId)
+    : manualHighlights;
+  if (heroNews) { delete heroNews.round; delete heroNews.pinnedAt; heroNews.pinned = pinned[0] === heroNews; }
+  res.json({ potw, highlights: shownManualHighlights.concat(shownHighlights.slice(0, 9)), heroNews });
 });
 
 // Every visible league's sponsors, flattened into one site-wide list for
@@ -1382,12 +1395,12 @@ router.post("/admin/interesting/restore", (req, res) => {
 // actually interesting that the recap engine has no way to know about.
 router.post("/admin/interesting/manual", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
-  const { short, leagueName, photo } = req.body || {};
+  const { short, leagueName, photo, pinned } = req.body || {};
   if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
   if (imageTooLarge(res, photo)) return;
   const extras = store.getHomepageExtras();
   if (!extras.manual) extras.manual = [];
-  extras.manual.push({ id: logic.uid(), short: short.trim(), leagueName: (leagueName || "").trim(), photo: photo || "", createdAt: Date.now() });
+  extras.manual.push({ id: logic.uid(), short: short.trim(), leagueName: (leagueName || "").trim(), photo: photo || "", createdAt: Date.now(), pinnedAt: pinned ? Date.now() : null });
   store.saveHomepageExtras(extras);
   res.json({ ok: true });
 });
@@ -1395,7 +1408,7 @@ router.post("/admin/interesting/manual", (req, res) => {
 // one that was written before photos were an option.
 router.put("/admin/interesting/manual/:id", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
-  const { short, leagueName, photo } = req.body || {};
+  const { short, leagueName, photo, pinned } = req.body || {};
   if (!short || !short.trim()) return res.status(400).json({ error: "Enter something to show." });
   if (imageTooLarge(res, photo)) return;
   const extras = store.getHomepageExtras();
@@ -1404,6 +1417,11 @@ router.put("/admin/interesting/manual/:id", (req, res) => {
   entry.short = short.trim();
   entry.leagueName = (leagueName || "").trim();
   entry.photo = photo || "";
+  // A fresh pin gets a fresh timestamp (so it wins ties against whatever
+  // else is pinned elsewhere); unpinning just clears it. Re-saving while
+  // already pinned leaves its original pin time alone — editing the text
+  // isn't re-pinning it.
+  entry.pinnedAt = pinned ? (entry.pinnedAt || Date.now()) : null;
   store.saveHomepageExtras(extras);
   res.json({ ok: true });
 });
@@ -6900,8 +6918,12 @@ router.put("/leagues/:leagueId/news/:postId/pin", requireAdmin, (req, res) => {
   const post = (league.news || []).find((p) => p.id === req.params.postId);
   if (!post) return res.status(404).json({ error: "Post not found." });
   const pinned = !!req.body.pinned;
-  (league.news || []).forEach((p) => { if (p.pinned) p.pinned = false; });
-  post.pinned = pinned;
+  (league.news || []).forEach((p) => { if (p.pinnedAt) p.pinnedAt = null; });
+  // A real timestamp, not just true/false — the Leagues-tab hero (see
+  // /homepage/highlights) compares pin times across every league AND every
+  // manual "Interesting this week" card, since only one of them can win
+  // that single site-wide slot: whichever was pinned most recently.
+  post.pinnedAt = pinned ? Date.now() : null;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
