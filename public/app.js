@@ -404,6 +404,7 @@ async function boot() {
     switchHubTab("account");
     if (entryChoice === "create") el("show-account-signup").click();
   }
+  renderAuctionBanner();
   // Black while the splash/loading screen is up (matches it exactly, no
   // blue status-bar strip on top of a black screen) — back to the site's
   // own blue now that the real app is actually on screen.
@@ -1761,6 +1762,95 @@ el("interest-submit-btn").onclick = async () => {
   } catch (e) { el("interest-error").textContent = e.message; }
 };
 
+/* ---------- Premier League Auction notice ----------
+   A one-off seasonal event, not an admin-configurable feature — update
+   this one constant (copy, date, cutoff) each time there's a new auction
+   rather than building a settings screen for something that happens a
+   couple of times a year. */
+const AUCTION_EVENT = {
+  id: "premier-league-auction-2026-11",
+  title: "Premier League Auction",
+  dateLabel: "Sat 14 Nov, 6:00 PM",
+  cutoff: "2026-11-14T18:00:00",
+};
+function auctionIsLive() { return Date.now() < new Date(AUCTION_EVENT.cutoff).getTime(); }
+function auctionAlreadyRegistered() {
+  try { return localStorage.getItem("padel-auction-registered:" + AUCTION_EVENT.id) === "1"; } catch { return false; }
+}
+// The Leagues tab banner — reappears every visit (like the sponsor strip
+// above it) for as long as the event is live and this browser hasn't
+// already registered. Contrast renderAuctionCallout below, which is
+// one-shot regardless of registration.
+function renderAuctionBanner() {
+  const banner = el("auction-banner");
+  if (!auctionIsLive() || auctionAlreadyRegistered()) { banner.style.display = "none"; return; }
+  el("auction-banner-title").textContent = AUCTION_EVENT.title + " · " + AUCTION_EVENT.dateLabel;
+  el("auction-banner-sub").textContent = "Register your interest before teams start bidding.";
+  banner.style.display = "flex";
+}
+// My Profile's callout — shown exactly once, ever, per browser: the seen
+// flag is set the moment it renders, not on dismiss or registration, so
+// a player who never even notices it still only gets one shot at it,
+// same "once and done" reasoning as the league-wide final splash.
+function renderAuctionCallout() {
+  const callout = el("auction-callout");
+  const seenKey = "padel-auction-callout-seen:" + AUCTION_EVENT.id;
+  let seen = false;
+  try { seen = localStorage.getItem(seenKey) === "1"; } catch { /* private mode — show it, harmless either way */ }
+  if (!auctionIsLive() || auctionAlreadyRegistered() || seen) { callout.style.display = "none"; return; }
+  el("auction-callout-title").textContent = AUCTION_EVENT.title;
+  el("auction-callout-sub").textContent = AUCTION_EVENT.dateLabel + " — register before teams start bidding.";
+  callout.style.display = "block";
+  try { localStorage.setItem(seenKey, "1"); } catch { /* not remembered — it'll just show again next visit */ }
+}
+let auctionPhotoDataUrl = "";
+function openAuctionModal() {
+  el("auction-modal-eyebrow").textContent = AUCTION_EVENT.title;
+  el("auction-modal-sub").textContent = "Teams bid for every registered player live on the night — fill this in once, organisers do the rest.";
+  el("auction-name").value = playerAccount ? playerAccount.name : "";
+  el("auction-email").value = playerAccount ? playerAccount.email : "";
+  el("auction-rating").value = "";
+  el("auction-phone").value = "";
+  auctionPhotoDataUrl = "";
+  el("auction-photo-preview").textContent = "📷";
+  el("auction-photo-preview").parentElement.style.backgroundImage = "";
+  el("auction-error").textContent = "";
+  el("auction-success").style.display = "none";
+  el("auction-modal-backdrop").classList.add("open");
+}
+function closeAuctionModal() { el("auction-modal-backdrop").classList.remove("open"); }
+el("auction-banner").onclick = openAuctionModal;
+el("auction-callout-btn").onclick = openAuctionModal;
+el("auction-callout-dismiss").onclick = () => { el("auction-callout").style.display = "none"; };
+el("auction-modal-close").onclick = closeAuctionModal;
+el("auction-modal-backdrop").onclick = (e) => { if (e.target === el("auction-modal-backdrop")) closeAuctionModal(); };
+el("auction-photo-btn").onclick = () => el("auction-photo-input").click();
+el("auction-photo-input").onchange = () => {
+  const file = el("auction-photo-input").files[0];
+  if (!file) return;
+  resizeImageToDataUrl(file, 240, (dataUrl) => {
+    if (!dataUrl) return;
+    auctionPhotoDataUrl = dataUrl;
+    el("auction-photo-preview").textContent = "";
+    el("auction-photo-btn").style.backgroundImage = `url('${dataUrl}')`;
+  });
+};
+el("auction-submit-btn").onclick = async () => {
+  const name = el("auction-name").value.trim();
+  const email = el("auction-email").value.trim();
+  const contactNumber = el("auction-phone").value.trim();
+  const playtomicLevel = el("auction-rating").value.trim();
+  el("auction-error").textContent = "";
+  try {
+    await api("/interest", { method: "POST", body: { name, email, contactNumber, playtomicLevel, photo: auctionPhotoDataUrl, context: "event", event: AUCTION_EVENT.title } });
+    try { localStorage.setItem("padel-auction-registered:" + AUCTION_EVENT.id, "1"); } catch { /* harmless — worst case the banner shows again */ }
+    el("auction-success").style.display = "block";
+    el("auction-banner").style.display = "none";
+    el("auction-callout").style.display = "none";
+    setTimeout(closeAuctionModal, 1400);
+  } catch (e) { el("auction-error").textContent = e.message; }
+};
+
 /* ---------- Hub tabs (Leagues / Admin) ---------- */
 
 function switchHubTab(name) {
@@ -2559,7 +2649,7 @@ async function renderInterestSignups() {
   c.innerHTML = signups.map((s) => `
     <div class="notif-row" data-id="${s.id}">
       <div>
-        <strong>${escapeHtml(s.name)}</strong> — ${s.joinAs === "team" ? "Full team" : "Individual player"}${s.league ? " · " + escapeHtml(s.league) : ""}
+        <strong>${escapeHtml(s.name)}</strong> — ${s.context === "event" ? "🏆 " + escapeHtml(s.event || "Event") : (s.joinAs === "team" ? "Full team" : "Individual player") + (s.league ? " · " + escapeHtml(s.league) : "")}
         <div class="note">${escapeHtml(s.contactNumber || "—")} · ${escapeHtml(s.email || "—")}${s.playtomicLevel ? " · Playtomic " + escapeHtml(s.playtomicLevel) : ""}</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
@@ -2904,6 +2994,7 @@ async function refreshAccountStatus() {
     el("account-search-results").innerHTML = "";
     el("account-search-input").value = "";
     renderAccountProfile();
+    renderAuctionCallout();
     // A signed-in player lands on their own dashboard first, not the
     // generic leagues browser everyone else sees.
     switchHubTab("account");

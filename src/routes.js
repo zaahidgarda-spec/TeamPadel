@@ -1409,11 +1409,15 @@ router.delete("/admin/interesting/manual/:id", (req, res) => {
 /* ---------- "Interested to join a league" signups ---------- */
 
 router.post("/interest", (req, res) => {
-  const { name, contactNumber, email, playtomicLevel, league, joinAs } = req.body || {};
+  const { name, contactNumber, email, playtomicLevel, league, joinAs, photo, context, event } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
   if (!contactNumber || !contactNumber.trim()) return res.status(400).json({ error: "Contact number is required." });
   if (!email || !email.includes("@")) return res.status(400).json({ error: "A valid email is required." });
-  if (joinAs !== "team" && joinAs !== "individual") return res.status(400).json({ error: "Choose team or individual player." });
+  // A one-off event signup (an auction, say) has no league or team/player
+  // choice to make — only the ordinary "join a league" form needs those.
+  const isEvent = context === "event";
+  if (!isEvent && joinAs !== "team" && joinAs !== "individual") return res.status(400).json({ error: "Choose team or individual player." });
+  if (imageTooLarge(res, photo)) return;
   const signups = store.getSignups();
   signups.unshift({
     id: logic.uid(),
@@ -1422,7 +1426,10 @@ router.post("/interest", (req, res) => {
     email: email.trim(),
     playtomicLevel: (playtomicLevel || "").trim(),
     league: (league || "").trim(),
-    joinAs,
+    joinAs: joinAs || "",
+    context: isEvent ? "event" : "league",
+    event: isEvent ? (event || "").trim() : "",
+    photo: photo || "",
     createdAt: Date.now(),
   });
   store.saveSignups(signups);

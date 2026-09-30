@@ -1191,6 +1191,29 @@ html.has-admin-bar .wrap{padding-top:54px;}
   .account-hero-benefits{grid-template-columns:1fr;}
 }
 
+/* A one-off event notice (see AUCTION_EVENT in app.js) — gold rather than
+   the blue --accent, matching the entry splash/playoff poster's own
+   "this is a special occasion" language instead of routine UI. The
+   Leagues banner (auction-banner) reappears every visit until the event
+   passes or this browser has registered; the My Profile callout
+   (auction-callout) is one-shot — see renderAuctionCallout. */
+.auction-banner{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:linear-gradient(100deg,#1c1400,var(--panel));border:1px solid #E8B34C;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;cursor:pointer;font:inherit;color:inherit;}
+.auction-banner-ic{width:36px;height:36px;border-radius:50%;background:#E8B34C;color:#1c1400;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;}
+.auction-banner-txt{flex:1;min-width:0;display:flex;flex-direction:column;}
+.auction-banner-txt b{font-family:var(--font-display);font-size:13.5px;text-transform:uppercase;letter-spacing:.02em;}
+.auction-banner-txt span{font-size:11.5px;color:var(--text-dim);}
+.auction-banner-cta{flex:none;font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#E8B34C;border:1px solid #E8B34C;border-radius:999px;padding:7px 14px;}
+.auction-callout{position:relative;background:linear-gradient(100deg,#1c1400,var(--panel));border:1px solid #E8B34C;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;}
+.auction-callout .dismiss{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:18px;padding:0 2px;line-height:1;}
+.auction-callout .dismiss:hover{color:var(--clay);}
+.auction-callout b{display:block;font-family:var(--font-display);font-size:13.5px;text-transform:uppercase;letter-spacing:.02em;color:#E8B34C;margin-bottom:3px;padding-right:20px;}
+.auction-callout > span{display:block;font-size:12px;color:var(--text-dim);line-height:1.4;margin-bottom:10px;}
+.au-box{max-width:400px;}
+.au-eyebrow{font-family:var(--font-display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#E8B34C;margin:0 0 2px;}
+.au-photo-row{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:18px;}
+.au-photo-circle{width:76px;height:76px;border-radius:50%;background:var(--panel-2);border:2px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;background-size:cover;background-position:center;color:var(--text-faint);padding:0;}
+.au-photo-row span{font-size:11.5px;color:var(--text-dim);}
+
 .pd-tonight-scroll,.pd-scroll{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;margin:0 -2px;}
 .pd-tonight-card{flex:0 0 auto;width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px;box-shadow:var(--shadow-sm);}
 .pd-tonight-card .league-tag,.pd-table-card .league-tag,.pd-fixture-card .league-tag{font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:3px 8px;border-radius:var(--radius-sm);display:inline-block;margin-bottom:9px;}

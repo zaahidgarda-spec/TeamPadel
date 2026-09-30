@@ -186,6 +186,11 @@
           </div>
           <button class="primary" id="homepage-pending-score-btn">Enter score</button>
         </div>
+        <button type="button" class="auction-banner" id="auction-banner" style="display:none;">
+          <span class="auction-banner-ic">🏆</span>
+          <span class="auction-banner-txt"><b id="auction-banner-title"></b><span id="auction-banner-sub"></span></span>
+          <span class="auction-banner-cta">Register interest</span>
+        </button>
         <div class="hub-top-row">
           <div class="card floodlit" id="next-matches-card" style="display:none;">
             <div class="mcb-photo-layer" id="next-matches-photo-layer" style="display:none;"><div class="mcb-photo-overlay"></div></div>
@@ -327,6 +332,13 @@
               </div>
             </div>
             <button class="secondary" id="account-logout-btn">Log out</button>
+          </div>
+
+          <div class="auction-callout" id="auction-callout" style="display:none;">
+            <button class="dismiss" id="auction-callout-dismiss" aria-label="Dismiss" type="button">&times;</button>
+            <b id="auction-callout-title"></b>
+            <span id="auction-callout-sub"></span>
+            <button class="primary" id="auction-callout-btn">Register interest</button>
           </div>
 
           <div class="roster-signup-strip" id="photo-nudge-banner" style="display:none;">
@@ -1561,6 +1573,36 @@
           <button class="secondary" id="rw-add-another-btn" style="display:none;">+ Add another league</button>
           <button class="primary" id="rw-continue-btn" style="display:none;">Continue to My Profile</button>
         </div>
+      </div>
+    </div>
+
+    <div id="auction-modal-backdrop" class="modal-backdrop">
+      <div class="modal-box au-box">
+        <button class="modal-close" id="auction-modal-close" aria-label="Close">&times;</button>
+        <p class="au-eyebrow" id="auction-modal-eyebrow"></p>
+        <h3 class="modal-title" id="auction-modal-title">Register your interest</h3>
+        <p class="note" id="auction-modal-sub" style="margin:0 0 16px;"></p>
+        <div class="au-photo-row">
+          <button type="button" class="au-photo-circle" id="auction-photo-btn"><span id="auction-photo-preview">📷</span></button>
+          <input type="file" accept="image/*" id="auction-photo-input" style="display:none;">
+          <span>Add a photo (optional)</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <label class="sr-only" for="auction-name">Name</label>
+          <input type="text" id="auction-name" placeholder="Name">
+          <div>
+            <label class="sr-only" for="auction-rating">Playtomic rating</label>
+            <input type="text" id="auction-rating" placeholder="Playtomic rating, e.g. 3.25">
+            <p class="note" style="margin:4px 0 0;">Don't have one? Leave it blank — organisers can help arrange a rated match.</p>
+          </div>
+          <label class="sr-only" for="auction-email">Email</label>
+          <input type="email" id="auction-email" placeholder="Email address">
+          <label class="sr-only" for="auction-phone">Phone number</label>
+          <input type="tel" id="auction-phone" placeholder="Phone number">
+        </div>
+        <div class="error" id="auction-error"></div>
+        <p class="note" id="auction-success" style="display:none;margin-top:8px;color:var(--accent);">Thanks — organisers will be in touch before auction night!</p>
+        <button class="primary" id="auction-submit-btn" style="width:100%;margin-top:10px;">Submit my interest</button>
       </div>
     </div>
 
