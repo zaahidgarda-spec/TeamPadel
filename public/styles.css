@@ -1713,6 +1713,19 @@ nav.tabs::-webkit-scrollbar{display:none;}
 .modal-close:hover{color:var(--clay);border-color:var(--clay);}
 .modal-title{font-family:var(--font-display);font-size:18px;text-transform:uppercase;margin:0 0 4px;padding-right:30px;}
 
+/* Signed-out My Profile card + the registration wizard: navy/gold instead
+   of the site's normal light card, matching the entry splash and playoff
+   posters. Overriding the shared tokens in this scope is enough — every
+   rule below (and the card/modal chrome above) already reads them. */
+#account-signed-out-card,
+#reg-wizard-backdrop .modal-box{
+  --panel:#131C2E; --panel-2:#0D1420; --line:#26324A;
+  --text:#EAF0FF; --text-dim:#9AAAC4; --text-faint:#6B7A99;
+  --accent:#E8B34C; --accent-ink:#1c1400; --accent-soft:rgba(232,179,76,.14);
+  color:var(--text);
+}
+#account-signed-out-card .info-callout{border-color:rgba(232,179,76,.3);}
+
 /* Registration wizard — league, then team, then yourself, right after
    signup. Reuses the standard modal chrome above; everything from here
    down is specific to its own three-step flow. */
