@@ -401,6 +401,10 @@ function newsRoundRank(round) {
 }
 function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
+    // An admin's pin beats everything below — the whole point of pinning
+    // a post is not having to out-rank the auto sort by round or recency.
+    if (a.pinned && !b.pinned) return -1;
+    if (b.pinned && !a.pinned) return 1;
     // Round-based ordering only makes sense between two posts that both
     // actually belong to a round — a manually-typed admin post has none.
     // Treating a missing round as an implicit "higher than any real round"
@@ -6878,6 +6882,21 @@ router.post("/leagues/:leagueId/news", requireAdmin, (req, res) => {
 router.delete("/leagues/:leagueId/news/:postId", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   league.news = (league.news || []).filter((p) => p.id !== req.params.postId);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+// Overrides sortNewsPosts' own headline pick (round rank, or recency for a
+// manual post — see its own comment) with an admin's explicit choice. At
+// most one pinned post per league — pinning a new one silently un-pins
+// whichever was pinned before, so "which post is pinned" never needs its
+// own separate answer from "which post is the headline".
+router.put("/leagues/:leagueId/news/:postId/pin", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const post = (league.news || []).find((p) => p.id === req.params.postId);
+  if (!post) return res.status(404).json({ error: "Post not found." });
+  const pinned = !!req.body.pinned;
+  (league.news || []).forEach((p) => { if (p.pinned) p.pinned = false; });
+  post.pinned = pinned;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

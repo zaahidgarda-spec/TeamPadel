@@ -15156,7 +15156,7 @@ function newsRoundLabel(round) {
 function newsCardData(p, leagueLabel) {
   const dateText = new Date(p.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" });
   if (!p.highlights) {
-    return { id: p.id, photo: p.photo || "", eyebrow: leagueLabel ? escapeHtml(leagueLabel) : "Update", dateText, headline: escapeHtml(p.title), potw: null };
+    return { id: p.id, photo: p.photo || "", eyebrow: leagueLabel ? escapeHtml(leagueLabel) : "Update", dateText, headline: escapeHtml(p.title), potw: null, pinned: !!p.pinned };
   }
   const lid = p.leagueId || currentLeagueId;
   const potw = p.potw || [];
@@ -15170,12 +15170,13 @@ function newsCardData(p, leagueLabel) {
     eyebrow: leagueLabel ? escapeHtml(leagueLabel) : newsRoundLabel(p.round),
     dateText, headline: escapeHtml(headline),
     potw: potw.length ? { html: potwNamesHtml, team: escapeHtml(potw.map((x) => x.team).join(", ")) } : null,
+    pinned: !!p.pinned,
   };
 }
 function newsHeroHtml(d) {
   const photoStyle = d.photo ? ` style="background-image:url('${d.photo}');"` : "";
   return `<div class="nf-hero-photo" data-id="${d.id}"${photoStyle}>
-    <span class="nf-pill">${d.eyebrow}</span>
+    <span class="nf-pill">${d.pinned ? "📌 Pinned · " : ""}${d.eyebrow}</span>
     <div class="nf-hero-head">${d.headline}</div>
     ${d.potw ? `<div class="nf-hero-potw"><span class="ic">👑</span>${d.potw.html} &middot; ${d.potw.team}</div>` : ""}
   </div>`;
@@ -15209,20 +15210,26 @@ function openNewsDetailModal(p, leagueLabel, canDelete) {
     const formHtml = (p.inForm || []).length ? `<div style="margin-top:4px;"><div style="font-family:var(--font-display);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:9px;">In form right now</div><div style="display:flex;gap:14px;flex-wrap:wrap;">${p.inForm.map((f) => `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:56px;"><div class="nf-avatar" style="width:32px;height:32px;font-size:11px;">${escapeHtml(playerInitials(f.name))}</div><div style="font-size:10px;text-align:center;">${newsPlayerLinkHtml(lid, { id: f.playerId, name: f.name })}</div></div>`).join("")}</div></div>` : "";
     bodyHtml = rows + formHtml;
   }
-  const deleteHtml = canDelete ? `<button class="link" id="news-detail-delete-btn" type="button" style="margin-top:16px;color:var(--clay);">Delete this post</button>` : "";
+  const pinHtml = canDelete ? `<button class="link" id="news-detail-pin-btn" type="button" style="margin-top:16px;">${p.pinned ? "Unpin from headline" : "Pin as headline"}</button>` : "";
+  const deleteHtml = canDelete ? `<button class="link" id="news-detail-delete-btn" type="button" style="margin-top:16px;margin-left:16px;color:var(--clay);">Delete this post</button>` : "";
   const box = el("news-detail-modal-box");
   box.innerHTML = `
     <button class="modal-close" id="news-detail-modal-close" aria-label="Close" style="background:rgba(18,32,58,.55);border-color:transparent;color:#fff;">&times;</button>
     <div class="nf-detail-photo"${photoStyle}>
-      <span class="nf-pill">${d.eyebrow} &middot; ${d.dateText}</span>
+      <span class="nf-pill">${p.pinned ? "📌 Pinned · " : ""}${d.eyebrow} &middot; ${d.dateText}</span>
       <div class="nf-detail-head">${d.headline}</div>
       ${d.potw ? `<div class="nf-hero-potw"><span class="ic">👑</span>${d.potw.html} &middot; ${d.potw.team}</div>` : ""}
     </div>
     ${bodyHtml}
-    ${deleteHtml}`;
+    ${pinHtml}${deleteHtml}`;
   bindNewsPlayerLinks(box);
   el("news-detail-modal-close").onclick = () => el("news-detail-modal-backdrop").classList.remove("open");
   if (canDelete) {
+    el("news-detail-pin-btn").onclick = async () => {
+      await api(`/leagues/${currentLeagueId}/news/${p.id}/pin`, { method: "PUT", body: { pinned: !p.pinned } });
+      el("news-detail-modal-backdrop").classList.remove("open");
+      renderNews();
+    };
     el("news-detail-delete-btn").onclick = async () => {
       if (!confirm("Delete this post?")) return;
       await api(`/leagues/${currentLeagueId}/news/${p.id}`, { method: "DELETE" });
