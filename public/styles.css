@@ -1197,17 +1197,23 @@ html.has-admin-bar .wrap{padding-top:54px;}
    Leagues banner (auction-banner) reappears every visit until the event
    passes or this browser has registered; the My Profile callout
    (auction-callout) is one-shot — see renderAuctionCallout. */
-.auction-banner{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:linear-gradient(100deg,#1c1400,var(--panel));border:1px solid #E8B34C;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;cursor:pointer;font:inherit;color:inherit;}
+/* Self-contained literal colors, not the shared --panel/--text-dim
+   tokens — this banner and callout sit in the site's ordinary LIGHT
+   pages (the Leagues tab, the signed-in dashboard), neither of which is
+   inside the dark-scoped signed-out card/wizard, so a token like
+   --panel would resolve to white here and silently break the contrast
+   this gold-on-navy treatment depends on. */
+.auction-banner{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:linear-gradient(100deg,#1c1400,#131C2E);border:1px solid #E8B34C;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;cursor:pointer;font:inherit;}
 .auction-banner-ic{width:36px;height:36px;border-radius:50%;background:#E8B34C;color:#1c1400;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;}
 .auction-banner-txt{flex:1;min-width:0;display:flex;flex-direction:column;}
-.auction-banner-txt b{font-family:var(--font-display);font-size:13.5px;text-transform:uppercase;letter-spacing:.02em;}
-.auction-banner-txt span{font-size:11.5px;color:var(--text-dim);}
+.auction-banner-txt b{font-family:var(--font-display);font-size:13.5px;text-transform:uppercase;letter-spacing:.02em;color:#EAF0FF;}
+.auction-banner-txt span{font-size:11.5px;color:#9AAAC4;}
 .auction-banner-cta{flex:none;font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#E8B34C;border:1px solid #E8B34C;border-radius:999px;padding:7px 14px;}
-.auction-callout{position:relative;background:linear-gradient(100deg,#1c1400,var(--panel));border:1px solid #E8B34C;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;}
-.auction-callout .dismiss{position:absolute;top:10px;right:10px;background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:18px;padding:0 2px;line-height:1;}
+.auction-callout{position:relative;background:linear-gradient(100deg,#1c1400,#131C2E);border:1px solid #E8B34C;border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;}
+.auction-callout .dismiss{position:absolute;top:10px;right:10px;background:none;border:none;color:#6B7A99;cursor:pointer;font-size:18px;padding:0 2px;line-height:1;}
 .auction-callout .dismiss:hover{color:var(--clay);}
 .auction-callout b{display:block;font-family:var(--font-display);font-size:13.5px;text-transform:uppercase;letter-spacing:.02em;color:#E8B34C;margin-bottom:3px;padding-right:20px;}
-.auction-callout > span{display:block;font-size:12px;color:var(--text-dim);line-height:1.4;margin-bottom:10px;}
+.auction-callout > span{display:block;font-size:12px;color:#9AAAC4;line-height:1.4;margin-bottom:10px;}
 .au-box{max-width:400px;}
 .au-eyebrow{font-family:var(--font-display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#E8B34C;margin:0 0 2px;}
 .au-photo-row{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:18px;}
