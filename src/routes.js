@@ -1408,7 +1408,7 @@ router.delete("/admin/interesting/manual/:id", (req, res) => {
 
 /* ---------- "Interested to join a league" signups ---------- */
 
-router.post("/interest", (req, res) => {
+router.post("/interest", async (req, res) => {
   const { name, contactNumber, email, playtomicLevel, league, joinAs, photo, context, event } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
   if (!contactNumber || !contactNumber.trim()) return res.status(400).json({ error: "Contact number is required." });
@@ -1418,9 +1418,10 @@ router.post("/interest", (req, res) => {
   const isEvent = context === "event";
   if (!isEvent && joinAs !== "team" && joinAs !== "individual") return res.status(400).json({ error: "Choose team or individual player." });
   if (imageTooLarge(res, photo)) return;
+  const id = logic.uid();
   const signups = store.getSignups();
   signups.unshift({
-    id: logic.uid(),
+    id,
     name: name.trim(),
     contactNumber: contactNumber.trim(),
     email: email.trim(),
@@ -1433,15 +1434,17 @@ router.post("/interest", (req, res) => {
     createdAt: Date.now(),
   });
   store.saveSignups(signups);
+  await store.saveSignupPhoto(id, photo || "");
   res.json({ ok: true });
 });
 router.get("/interest", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   res.json(store.getSignups());
 });
-router.delete("/interest/:id", (req, res) => {
+router.delete("/interest/:id", async (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   store.saveSignups(store.getSignups().filter((x) => x.id !== req.params.id));
+  await store.saveSignupPhoto(req.params.id, "");
   res.json({ ok: true });
 });
 
@@ -1695,19 +1698,19 @@ router.post("/players/logout", (req, res) => {
 // exactly as they'd stay if this person had simply stopped playing rather
 // than asked to be forgotten. The privacy policy states this plainly
 // rather than leaving it as a silent implementation choice.
-router.post("/players/delete-account", requirePlayerUser, (req, res) => {
+router.post("/players/delete-account", requirePlayerUser, async (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   if (!user) return res.status(404).json({ error: "Account not found." });
-  (user.claims || []).forEach((c) => {
+  for (const c of user.claims || []) {
     const league = store.getLeague(c.leagueId);
-    if (!league) return;
+    if (!league) continue;
     const team = league.teams.find((t) => t.id === c.teamId);
     const player = team && team.players.find((p) => p.id === c.playerId);
-    if (!player) return;
+    if (!player) continue;
     if (player.claimedByUserId === user.id) player.claimedByUserId = null;
-    if (player.photo) player.photo = "";
+    if (player.photo) { player.photo = ""; await store.savePlayerPhoto(league.id, player.id, ""); }
     store.saveLeague(league.id, league);
-  });
+  }
   const index = store.getUsersIndex().filter((e) => e.id !== user.id);
   store.saveUsersIndex(index);
   store.deleteUser(user.id);
@@ -3514,7 +3517,7 @@ router.put(
 // requireAdminOrCaptain) know about player-account claims, so this checks
 // all three paths inline rather than bolting a claims lookup onto those
 // shared middlewares.
-router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res) => {
+router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });
   const team = league.teams.find((t) => t.id === req.params.teamId);
@@ -3535,6 +3538,7 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res
 
   const photo = req.body.photo || "";
   player.photo = photo;
+  await store.savePlayerPhoto(league.id, player.id, photo);
   const touchedLeagues = new Map([[league.id, league]]);
   // A profile photo belongs to the whole person, not just this one
   // league's roster row — once this record is claimed, the same photo
@@ -3544,15 +3548,16 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/photo", (req, res
   // keeps the plain single-league behavior.
   if (player.claimedByUserId) {
     const account = store.getUser(player.claimedByUserId);
-    (account ? account.claims || [] : []).forEach((c) => {
+    for (const c of (account ? account.claims || [] : [])) {
       const otherLeague = touchedLeagues.get(c.leagueId) || store.getLeague(c.leagueId);
-      if (!otherLeague) return;
+      if (!otherLeague) continue;
       const otherTeam = otherLeague.teams.find((t) => t.id === c.teamId);
       const otherPlayer = otherTeam && otherTeam.players.find((p) => p.id === c.playerId);
-      if (!otherPlayer) return;
+      if (!otherPlayer) continue;
       otherPlayer.photo = photo;
+      await store.savePlayerPhoto(otherLeague.id, otherPlayer.id, photo);
       touchedLeagues.set(otherLeague.id, otherLeague);
-    });
+    }
   }
   touchedLeagues.forEach((l) => store.saveLeague(l.id, l));
   res.json({ ok: true });
@@ -4576,10 +4581,11 @@ router.put("/leagues/:leagueId/default-venue", requireAdmin, (req, res) => {
 });
 // A background photo for this league's card on the home hub — same
 // data-URL-on-the-object approach as a team's logo, just a bigger image.
-router.put("/leagues/:leagueId/court-photo", requireAdmin, (req, res) => {
+router.put("/leagues/:leagueId/court-photo", requireAdmin, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (imageTooLarge(res, req.body.photo)) return;
   league.courtPhoto = req.body.photo || "";
+  await store.saveLeagueCourtPhoto(league.id, league.courtPhoto);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -7370,19 +7376,22 @@ router.post("/leagues/:leagueId/notifications/read-all", (req, res) => {
 
 /* ---------- Sponsors ---------- */
 
-router.post("/leagues/:leagueId/sponsors", requireAdmin, (req, res) => {
+router.post("/leagues/:leagueId/sponsors", requireAdmin, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   const { name, link, image } = req.body || {};
   if (!image) return res.status(400).json({ error: "An image is required." });
   if (imageTooLarge(res, image)) return;
   if (!league.sponsors) league.sponsors = [];
-  league.sponsors.push({ id: logic.uid(), name: (name || "").trim(), link: (link || "").trim(), image });
+  const id = logic.uid();
+  league.sponsors.push({ id, name: (name || "").trim(), link: (link || "").trim(), image });
+  await store.saveSponsorPhoto(league.id, id, image);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
-router.delete("/leagues/:leagueId/sponsors/:sponsorId", requireAdmin, (req, res) => {
+router.delete("/leagues/:leagueId/sponsors/:sponsorId", requireAdmin, async (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   league.sponsors = (league.sponsors || []).filter((s) => s.id !== req.params.sponsorId);
+  await store.saveSponsorPhoto(league.id, req.params.sponsorId, "");
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

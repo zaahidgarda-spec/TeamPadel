@@ -162,7 +162,10 @@ async function init() {
   cache.set("leagues-index", index);
   for (const entry of index) {
     const league = await redis.get("league-" + entry.id);
-    if (league) cache.set("league-" + entry.id, league);
+    if (league) {
+      await hydrateLeaguePhotos(league);
+      cache.set("league-" + entry.id, league);
+    }
   }
   const usersIndex = (await redis.get("users-index")) || [];
   cache.set("users-index", usersIndex);
@@ -170,7 +173,11 @@ async function init() {
     const user = await redis.get("user-" + entry.id);
     if (user) cache.set("user-" + entry.id, user);
   }
-  cache.set("interest-signups", (await redis.get("interest-signups")) || []);
+  const signups = (await redis.get("interest-signups")) || [];
+  for (const s of signups) {
+    if (s.hasPhoto && !s.photo) s.photo = await getSignupPhoto(s.id);
+  }
+  cache.set("interest-signups", signups);
   cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
   cache.set("prediction-accuracy", (await redis.get("prediction-accuracy")) || { latest: null, history: [] });
   cache.set("site-settings", (await redis.get("site-settings")) || {});
@@ -198,10 +205,73 @@ function getLeague(id) {
   if (useRedis) return cache.get("league-" + id) || null;
   return readJsonFile("league-" + id, null);
 }
+// A league with a full roster of uploaded player photos, a court photo
+// and a few sponsor banners can add real weight to a document that gets
+// rewritten on every score entry — and Upstash's 10MB per-request cap
+// doesn't care that only a rubber's result actually changed. These three
+// image kinds get split into their own key (leaguePhotosKey), same
+// reasoning as kit photos above, just applied to the main league record
+// instead of a team's kit sheet. Redis-only: the local file store has no
+// such limit, so saveLeague there still just writes everything together,
+// exactly as it always has.
+function leaguePhotosKey(id) { return "leaguephotos:" + id; }
+function emptyLeaguePhotos() { return { players: {}, sponsors: {}, court: "" }; }
+async function getLeaguePhotosBlob(id) {
+  if (!useRedis) return emptyLeaguePhotos();
+  return (await redis.get(leaguePhotosKey(id)).catch((e) => { console.error("Failed to read league photos:", e.message); return null; })) || emptyLeaguePhotos();
+}
+// Merges previously-split-out photos back onto a league object just
+// pulled fresh from Redis — called once, at boot (init above), since
+// Redis mode then serves every read straight from the in-memory cache
+// for the rest of this process's life; nothing else ever needs to call
+// this again until the next restart.
+async function hydrateLeaguePhotos(league) {
+  const photos = await getLeaguePhotosBlob(league.id);
+  (league.teams || []).forEach((t) => (t.players || []).forEach((p) => { if (photos.players[p.id]) p.photo = photos.players[p.id]; }));
+  (league.sponsors || []).forEach((s) => { if (photos.sponsors[s.id]) s.image = photos.sponsors[s.id]; });
+  if (photos.court) league.courtPhoto = photos.court;
+}
+// The inverse, for the Redis WRITE only — a shallow-ish clone with every
+// photo byte blanked out, so the document saveLeague actually sends to
+// Redis stays small. The in-memory object callers already hold onto
+// (and the cache, below) keeps its real photos untouched.
+function stripLeaguePhotosForWrite(league) {
+  return {
+    ...league,
+    teams: (league.teams || []).map((t) => (
+      (t.players || []).some((p) => p.photo)
+        ? { ...t, players: t.players.map((p) => (p.photo ? { ...p, photo: "" } : p)) }
+        : t
+    )),
+    sponsors: (league.sponsors || []).map((s) => (s.image ? { ...s, image: "" } : s)),
+    courtPhoto: "",
+  };
+}
+async function saveLeaguePhotoField(leagueId, mutate) {
+  const photos = await getLeaguePhotosBlob(leagueId);
+  mutate(photos);
+  await redis.set(leaguePhotosKey(leagueId), photos).catch((e) => console.error("Failed to save league photos:", e.message));
+}
+// Called by the player-photo upload route (and its cross-league fan-out,
+// and account deletion's cleanup) right alongside the ordinary
+// `player.photo = photo` — a no-op locally, since local mode still just
+// lets saveLeague persist the byte in place like before this split existed.
+async function savePlayerPhoto(leagueId, playerId, dataUrl) {
+  if (!useRedis) return;
+  await saveLeaguePhotoField(leagueId, (photos) => { if (dataUrl) photos.players[playerId] = dataUrl; else delete photos.players[playerId]; });
+}
+async function saveSponsorPhoto(leagueId, sponsorId, dataUrl) {
+  if (!useRedis) return;
+  await saveLeaguePhotoField(leagueId, (photos) => { if (dataUrl) photos.sponsors[sponsorId] = dataUrl; else delete photos.sponsors[sponsorId]; });
+}
+async function saveLeagueCourtPhoto(leagueId, dataUrl) {
+  if (!useRedis) return;
+  await saveLeaguePhotoField(leagueId, (photos) => { photos.court = dataUrl || ""; });
+}
 function saveLeague(id, league) {
   if (useRedis) {
     cache.set("league-" + id, league);
-    persist("league-" + id, league);
+    persist("league-" + id, stripLeaguePhotosForWrite(league));
     return;
   }
   writeJsonFile("league-" + id, league);
@@ -210,6 +280,7 @@ function deleteLeague(id) {
   if (useRedis) {
     cache.delete("league-" + id);
     remove("league-" + id);
+    remove(leaguePhotosKey(id));
     return;
   }
   const p = filePath("league-" + id);
@@ -321,10 +392,27 @@ function getSignups() {
   if (useRedis) return cache.get("interest-signups") || [];
   return readJsonFile("interest-signups", []);
 }
+// The whole interest-signups list is one Redis key, rewritten on every
+// new signup or removal — fine for names and emails, but a growing
+// history of submitted photos (the auction notice, say) would mean that
+// one rewrite keeps carrying every earlier photo too, forever. Each
+// signup's photo gets its own key instead (see signupPhotoKey below);
+// the list itself only ever keeps a hasPhoto flag. Redis-only, same
+// "local mode doesn't need this" reasoning as league photos above.
+function signupPhotoKey(id) { return "signupphoto:" + id; }
+async function getSignupPhoto(id) {
+  if (!useRedis) return "";
+  return (await redis.get(signupPhotoKey(id)).catch((e) => { console.error("Failed to read signup photo:", e.message); return null; })) || "";
+}
+async function saveSignupPhoto(id, dataUrl) {
+  if (!useRedis) return;
+  if (dataUrl) await redis.set(signupPhotoKey(id), dataUrl).catch((e) => console.error("Failed to save signup photo:", e.message));
+  else await redis.del(signupPhotoKey(id)).catch((e) => console.error("Failed to delete signup photo:", e.message));
+}
 function saveSignups(signups) {
   if (useRedis) {
     cache.set("interest-signups", signups);
-    persist("interest-signups", signups);
+    persist("interest-signups", signups.map((s) => (s.photo ? { ...s, photo: "", hasPhoto: true } : s)));
     return;
   }
   writeJsonFile("interest-signups", signups);
@@ -404,9 +492,14 @@ module.exports = {
   todayStr,
   getSignups,
   saveSignups,
+  getSignupPhoto,
+  saveSignupPhoto,
   getHomepageExtras,
   saveHomepageExtras,
   getKitPhoto,
   saveKitPhoto,
   deleteKitPhotosForTeam,
+  savePlayerPhoto,
+  saveSponsorPhoto,
+  saveLeagueCourtPhoto,
 };
