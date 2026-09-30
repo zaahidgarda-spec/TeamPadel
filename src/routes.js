@@ -1584,10 +1584,14 @@ router.get("/auth/:provider/start", (req, res) => {
 //    nobody can later "sign up" or log in with that email and a password
 //    of their choosing — only the provider, or a reset link sent to the
 //    inbox itself, gets in.
+// Returns { user, isNew } — isNew only true for the last branch (a genuine
+// brand-new account) — so the callback below can tell the client to open
+// the registration wizard exactly once, the same moment the plain
+// email/password sign-up does, instead of on every social sign-IN too.
 async function accountForSocialProfile(provider, profile) {
   const index = store.getUsersIndex();
   const linked = index.map((e) => store.getUser(e.id)).find((u) => u && u.providers && u.providers[provider] === profile.subject);
-  if (linked) return linked;
+  if (linked) return { user: linked, isNew: false };
   if (!profile.email || !profile.emailVerified) {
     throw new Error("We couldn't get a confirmed email from " + oauth.label(provider) + ". Sign up with your email instead, or allow email access and try again.");
   }
@@ -1602,7 +1606,7 @@ async function accountForSocialProfile(provider, profile) {
       if (profile.name) existing.name = profile.name;
     }
     await store.saveUserDurable(existing.id, existing);
-    return existing;
+    return { user: existing, isNew: false };
   }
   const id = logic.uid();
   const user = {
@@ -1613,7 +1617,7 @@ async function accountForSocialProfile(provider, profile) {
   index.push({ id, email });
   await store.saveUserDurable(id, user);
   await store.saveUsersIndexDurable(index);
-  return user;
+  return { user, isNew: true };
 }
 router.get("/auth/:provider/callback", loginLimiter, async (req, res) => {
   const provider = req.params.provider;
@@ -1627,10 +1631,11 @@ router.get("/auth/:provider/callback", loginLimiter, async (req, res) => {
   }
   try {
     const profile = await oauth.fetchProfile(provider, { code: String(req.query.code), redirectUri: oauthRedirectUri(req, provider) });
-    const user = await accountForSocialProfile(provider, profile);
+    const { user, isNew } = await accountForSocialProfile(provider, profile);
     req.session.playerUser = { id: user.id };
     adoptSessionCaptaincy(req);
-    req.session.save(() => backToSite(res, { signedIn: "1" }));
+    const backParams = isNew ? { signedIn: "1", isNew: "1" } : { signedIn: "1" };
+    req.session.save(() => backToSite(res, backParams));
   } catch (e) {
     console.error("Social sign-in failed:", e.message);
     backToSite(res, { authError: e.message || "Sign-in didn't work — please try again." });

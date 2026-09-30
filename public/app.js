@@ -2852,12 +2852,17 @@ el("export-accounts-btn").onclick = async () => {
 let resetTokenInUrl = new URLSearchParams(location.search).get("resetToken");
 // "Continue with Google / Facebook": the buttons only appear for providers
 // this server has switched on, and a failed round trip comes back here as
-// ?authError=... to be shown where the other sign-in errors go.
+// ?authError=... to be shown where the other sign-in errors go. A brand-new
+// account (never an existing one just signing in again) also carries
+// ?isNew=1 — read synchronously, before the URL gets scrubbed below, so
+// refreshAccountStatus can open the registration wizard the same way the
+// plain email sign-up does (see oauthNewSignupPending).
+let oauthNewSignupPending = new URLSearchParams(location.search).get("isNew") === "1";
 (async function setupSocialLogin() {
   const params = new URLSearchParams(location.search);
   const authError = params.get("authError");
   if (authError || params.get("signedIn")) {
-    params.delete("authError"); params.delete("signedIn");
+    params.delete("authError"); params.delete("signedIn"); params.delete("isNew");
     const rest = params.toString();
     history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
   }
@@ -2902,6 +2907,7 @@ async function refreshAccountStatus() {
     // A signed-in player lands on their own dashboard first, not the
     // generic leagues browser everyone else sees.
     switchHubTab("account");
+    if (oauthNewSignupPending) { oauthNewSignupPending = false; openRegWizard(); }
   }
 }
 // An account with nothing linked yet (no claimed record, no team) has one
