@@ -2315,25 +2315,48 @@ function teamPlayoffSplash(league, team, isCaptain) {
     // chip strip shows the real court-by-court match-ups instead of just
     // the two team names — the whole point being it updates the moment
     // the second lineup lands, not just once at kickoff.
-    let lineups = null;
-    if (f.selectionA.submitted && f.selectionB.submitted) {
-      const mySide = f.teamA === team.id ? "A" : "B";
-      const mySel = mySide === "A" ? f.selectionA : f.selectionB;
-      const oppSel = mySide === "A" ? f.selectionB : f.selectionA;
-      const isSinglesFixture = mySel.pairs.length === 5;
-      lineups = mySel.pairs.map((pair, idx) => ({
-        seed: idx + 1,
-        isSingles: isSinglesFixture && idx === 4,
-        mine: shortPairNamesText(team, pair),
-        theirs: shortPairNamesText(opp, oppSel.pairs[idx]),
-      }));
-    }
+    const mySide = f.teamA === team.id ? "A" : "B";
+    const mySel = mySide === "A" ? f.selectionA : f.selectionB;
+    const oppSel = mySide === "A" ? f.selectionB : f.selectionA;
     return {
       fixtureId: f.id, stage: f.stage, leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       opponentTeam: opp.name, opponentLogo: opp.logo || "",
       date: sched.date, time: sched.time || "", venue: sched.venue || league.defaultVenue || "",
-      daysOut, matchDay: daysOut === 0, isCaptain: !!isCaptain, lastMeeting, lineups,
+      daysOut, matchDay: daysOut === 0, isCaptain: !!isCaptain, isParticipant: true, lastMeeting,
+      lineups: buildSplashLineups(mySel, team, oppSel, opp),
+    };
+  }
+  return null;
+}
+// The same live semi/final window as teamPlayoffSplash, but for a player
+// who isn't claimed onto or captaining either finalist team — everyone
+// else in the league still gets to see the moment, just without a "my
+// team" framing, and (per the client's seen-key) only ever once, rather
+// than replayed across each days-out step or when lineups land the way a
+// real participant's splash is.
+function leagueFinalsSpectatorSplash(league, myTeamIds) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (const f of logic.allFixturesOf(league)) {
+    if ((f.stage !== "semi" && f.stage !== "final") || f.finalized || !f.teamA || !f.teamB) continue;
+    if (myTeamIds.has(f.teamA) || myTeamIds.has(f.teamB)) continue; // already covered as a participant
+    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    if (!sched.date) continue;
+    const matchDate = new Date(sched.date + "T00:00:00");
+    if (isNaN(matchDate)) continue;
+    const daysOut = Math.round((matchDate.getTime() - today.getTime()) / 86400000);
+    if (daysOut < 0 || daysOut > 3) continue;
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    if (!teamA || !teamB) continue;
+    return {
+      fixtureId: f.id, stage: f.stage, leagueId: league.id, leagueName: league.name,
+      teamId: teamA.id, teamName: teamA.name, teamLogo: teamA.logo || "",
+      opponentTeam: teamB.name, opponentLogo: teamB.logo || "",
+      date: sched.date, time: sched.time || "", venue: sched.venue || league.defaultVenue || "",
+      daysOut, matchDay: daysOut === 0, isCaptain: false, isParticipant: false, lastMeeting: null,
+      lineups: buildSplashLineups(f.selectionA, teamA, f.selectionB, teamB),
     };
   }
   return null;
@@ -2349,7 +2372,15 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
   const fixtureCards = [];
   const playoffSplash = [];
   const fixtureTeamKeys = new Set();
+  // Every league this account touches, and which of its own teams that
+  // is — used below to also surface a no-"my team" splash for a league
+  // final the account isn't actually playing in (see
+  // leagueFinalsSpectatorSplash): everyone in the league gets the moment,
+  // not just the two finalist teams' own players.
+  const myLeagues = new Map();
   const addFixtureTeam = (league, team) => {
+    if (!myLeagues.has(league.id)) myLeagues.set(league.id, { league, teamIds: new Set() });
+    myLeagues.get(league.id).teamIds.add(team.id);
     const key = league.id + ":" + team.id;
     if (fixtureTeamKeys.has(key)) return;
     fixtureTeamKeys.add(key);
@@ -2554,6 +2585,10 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     const league = store.getLeague(c.leagueId);
     const team = league && league.teams.find((t) => t.id === c.teamId);
     if (league && team) addFixtureTeam(league, team);
+  });
+  myLeagues.forEach(({ league, teamIds }) => {
+    const splash = leagueFinalsSpectatorSplash(league, teamIds);
+    if (splash) playoffSplash.push(splash);
   });
   fixtureCards.sort((a, b) => {
     if (a.date && b.date) return (a.date + a.time).localeCompare(b.date + b.time);
@@ -5528,6 +5563,19 @@ function shortPairNamesText(team, pair) {
   if (!team || !pair) return "TBD";
   const names = pair.map((pid) => (team.players.find((p) => p.id === pid) || {}).name).filter(Boolean).map(shortNameOf);
   return names.length ? names.join(" & ") : "TBD";
+}
+// The playoff splash's court-by-court chip strip (see teamPlayoffSplash and
+// leagueFinalsSpectatorSplash below) — null until both sides have actually
+// picked their lineup, since there's nothing real to show before then.
+function buildSplashLineups(mySel, myTeam, oppSel, oppTeam) {
+  if (!(mySel.submitted && oppSel.submitted)) return null;
+  const isSinglesFixture = mySel.pairs.length === 5;
+  return mySel.pairs.map((pair, idx) => ({
+    seed: idx + 1,
+    isSingles: isSinglesFixture && idx === 4,
+    mine: shortPairNamesText(myTeam, pair),
+    theirs: shortPairNamesText(oppTeam, oppSel.pairs[idx]),
+  }));
 }
 // Every fixture a captained team has actually started playing (something's
 // been entered or its kickoff has passed) but hasn't been finalized yet —

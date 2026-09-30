@@ -4371,10 +4371,15 @@ function playoffDaysOutLabel(p) {
 // reduced-motion.
 function playPlayoffSplash(p) {
   if (document.querySelector(".ps-splash") || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  // The "l"/"n" suffix means the splash plays again the moment lineups go
-  // from unknown to submitted — even if it already played once today —
-  // since that's exactly the update the chip strip below exists to show.
-  const key = `padel-playoff-splash:${p.fixtureId}:${p.daysOut}:${p.lineups ? "l" : "n"}`;
+  // A real participant's key replays the splash the moment lineups go
+  // from unknown to submitted, even if it already played once today,
+  // since that update is the whole point of the chip strip below — but a
+  // league-mate who isn't on either finalist team gets it exactly once,
+  // full stop, so their key carries none of that (no days-out, no lineup
+  // state to key off).
+  const key = p.isParticipant === false
+    ? `padel-playoff-splash:${p.fixtureId}:spectator`
+    : `padel-playoff-splash:${p.fixtureId}:${p.daysOut}:${p.lineups ? "l" : "n"}`;
   try {
     if (localStorage.getItem(key)) return;
     localStorage.setItem(key, "1");
@@ -4409,7 +4414,11 @@ function playPlayoffSplash(p) {
 // up. Captains get the Selection Room doors; players just open the league.
 function renderAccountPlayoffSplash(list) {
   const wrap = el("account-playoff-list");
-  wrap.innerHTML = (list || []).map((p, i) => {
+  // The persistent poster only ever belongs to a team actually playing —
+  // a league-mate who isn't on either finalist team gets the one-time
+  // full-screen splash below, never a standing card on their own profile.
+  const posterList = (list || []).filter((p) => p.isParticipant !== false);
+  wrap.innerHTML = posterList.map((p, i) => {
     const isFinal = p.stage === "final";
     const kickoff = [fmtDate(p.date), p.time ? fmtTime(p.time) : ""].filter(Boolean).join(" · ");
     const meeting = p.lastMeeting ? `<div class="po-row"><span>Met earlier · ${escapeHtml(p.lastMeeting.label)}</span><b>${p.lastMeeting.mine} – ${p.lastMeeting.theirs}${p.lastMeeting.mine === p.lastMeeting.theirs ? "" : p.lastMeeting.mine > p.lastMeeting.theirs ? " to you" : " to them"}</b></div>` : "";
@@ -4429,13 +4438,17 @@ function renderAccountPlayoffSplash(list) {
     </div>`;
   }).join("");
   wrap.querySelectorAll(".po-card").forEach((card) => {
-    const p = list[Number(card.dataset.i)];
+    const p = posterList[Number(card.dataset.i)];
     tintTeamHalves(card.querySelector(".po-a"), card.querySelector(".po-b"), p.teamLogo, p.opponentLogo);
   });
-  if (list && list.length) playPlayoffSplash(list[0]);
+  // A participant's own splash takes priority over a league-mate's
+  // spectator one if somehow both are live at once — only one overlay
+  // ever plays per visit.
+  const toPlay = (list || []).find((p) => p.isParticipant !== false) || (list || [])[0];
+  if (toPlay) playPlayoffSplash(toPlay);
   wrap.querySelectorAll(".po-btn").forEach((btn) => {
     btn.onclick = () => {
-      const p = list[Number(btn.closest(".po-card").dataset.i)];
+      const p = posterList[Number(btn.closest(".po-card").dataset.i)];
       if (!p.isCaptain) return openLeague(p.leagueId);
       return enterSelectionRoom(p.leagueId, p);
     };
