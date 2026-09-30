@@ -3270,13 +3270,25 @@ async function renderRegWizardStep1() {
     byLeague.get(p.leagueId).teamIds.add(p.teamId);
   });
   const leagues = [...byLeague.values()].sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  // The real, already-uploaded court photo (see hasCourtPhoto server-side)
+  // instead of a bare initial. This list is small and shown once — not the
+  // open-ended Leagues hub grid the lazy IntersectionObserver loader
+  // (observeLeagueCardPhotos) is built for — so fetching every photo up
+  // front is simpler and doesn't depend on a card being scrolled into
+  // view inside a modal to ever trigger.
+  await Promise.all(leagues.map(async (l) => {
+    const entry = leaguesIndex.find((x) => x.id === l.leagueId);
+    if (!entry || !entry.hasCourtPhoto) return;
+    l.photo = await api(`/leagues/${l.leagueId}/court-photo`).then((d) => d.photo || "").catch(() => "");
+  }));
+  if (!regWiz || regWiz.stage !== "league") return;
   const search = el("rw-search");
   search.style.display = leagues.length > 8 ? "block" : "none";
   search.value = "";
   search.placeholder = "Search leagues…";
   const draw = (list) => {
     el("rw-body").innerHTML = list.length
-      ? `<div class="rw-grid">${list.map((l) => `<button type="button" class="rw-card" data-id="${l.leagueId}">${avatarHtml({ name: l.leagueName })}<b>${escapeHtml(l.leagueName)}</b><span>${l.teamIds.size} team${l.teamIds.size === 1 ? "" : "s"}</span></button>`).join("")}</div>`
+      ? `<div class="rw-grid">${list.map((l) => `<button type="button" class="rw-card${l.photo ? " rw-has-photo" : ""}" data-id="${l.leagueId}"${l.photo ? ` style="background-image:url('${l.photo}')"` : ""}>${avatarHtml({ name: l.leagueName })}<b>${escapeHtml(l.leagueName)}</b><span>${l.teamIds.size} team${l.teamIds.size === 1 ? "" : "s"}</span></button>`).join("")}</div>`
       : '<p class="rw-empty">No leagues match that search.</p>';
     el("rw-body").querySelectorAll(".rw-card").forEach((btn) => {
       btn.onclick = () => {
@@ -3315,7 +3327,7 @@ async function renderRegWizardStep2() {
   el("rw-body").querySelectorAll(".rw-card").forEach((btn) => {
     btn.onclick = () => {
       const found = teams.find((t) => t.teamId === btn.dataset.id);
-      regWiz.teamId = found.teamId; regWiz.teamName = found.teamName;
+      regWiz.teamId = found.teamId; regWiz.teamName = found.teamName; regWiz.teamLogo = avatars.teamLogos[found.teamId] || "";
       renderRegWizardStep3();
     };
   });
@@ -3373,7 +3385,7 @@ function renderRegWizardDone() {
     <div class="rw-done-ring">&#10003;</div>
     <h4>Linked to My Profile</h4>
     <p>You're linked as <b>${escapeHtml(regWiz.claimedName)}</b>. Your fixtures, results and rating start showing on My Profile right away.</p>
-    <div class="rw-done-card">${avatarHtml({ name: regWiz.teamName })}<div><b>${escapeHtml(regWiz.leagueName)} &middot; ${escapeHtml(regWiz.teamName)}</b><span>${escapeHtml(regWiz.claimedName)}</span></div></div>
+    <div class="rw-done-card">${avatarHtml({ logo: regWiz.teamLogo, name: regWiz.teamName })}<div><b>${escapeHtml(regWiz.leagueName)} &middot; ${escapeHtml(regWiz.teamName)}</b><span>${escapeHtml(regWiz.claimedName)}</span></div></div>
   </div>`;
 }
 el("rw-add-another-btn").onclick = () => {
