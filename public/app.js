@@ -31,6 +31,11 @@ let viewingKey = null;
 // the league has no groups (a plain flat pairs or team league).
 let viewingGroupId = null;
 let myNotifications = [];
+// The header-wide bell's own list — every notification across every team
+// this account captains, distinct from myNotifications above (one
+// league's worth, for that league's own Notifications tab).
+let myBellNotifications = [];
+let bellIsCaptain = false;
 let isOwner = false;
 // The signed-in player account (independent of team-captain/admin sessions
 // above) — null when nobody's logged in on this axis.
@@ -3005,6 +3010,7 @@ async function refreshAccountStatus() {
   // open either search box — and dropped on sign-out so a shared device
   // never keeps the list around for the next person.
   if (playerAccount) { renderAccountNews(); loadPlayerIndex(); loadAvatarsIndex(); loadTeamIndex().then(() => runTeamSearch(el("team-search-input").value)); } else { clearPlayerIndexCache(); clearTeamIndexCache(); }
+  refreshBellNotifications();
   if (resetTokenInUrl) {
     switchHubTab("account");
     el("account-signed-out-card").style.display = "none";
@@ -7415,6 +7421,62 @@ el("mark-all-read-btn").onclick = async () => {
   await api(`/leagues/${currentLeagueId}/notifications/read-all`, { method: "POST" });
   myNotifications.forEach((n) => { n.read = true; });
   renderNotificationsList(); updateNotifTabLabel();
+};
+
+/* ---------- Header-wide notification bell ----------
+   Every team this account captains, across every league, in one
+   dropdown — as opposed to a league's own Notifications tab above,
+   which only ever shows that one league's. Hidden entirely for an
+   account that captains nothing, same as that tab already is. */
+async function refreshBellNotifications() {
+  if (!playerAccount) { myBellNotifications = []; bellIsCaptain = false; renderBellWidget(); return; }
+  const r = await api("/players/notifications").catch(() => ({ notifications: [], isCaptain: false }));
+  myBellNotifications = r.notifications || [];
+  bellIsCaptain = !!r.isCaptain;
+  renderBellWidget();
+}
+function renderBellWidget() {
+  const widget = el("bell-widget");
+  if (!bellIsCaptain) { widget.style.display = "none"; el("bell-panel").classList.remove("open"); return; }
+  widget.style.display = "block";
+  const unread = myBellNotifications.filter((n) => !n.read).length;
+  const dot = el("bell-dot");
+  dot.style.display = unread ? "flex" : "none";
+  dot.textContent = unread > 9 ? "9+" : String(unread);
+  renderBellPanelBody();
+}
+function renderBellPanelBody() {
+  const body = el("bell-panel-body");
+  if (!myBellNotifications.length) { body.innerHTML = '<p class="empty">No notifications yet.</p>'; return; }
+  body.innerHTML = "";
+  myBellNotifications.slice(0, 25).forEach((n) => {
+    const jumpTab = n.type === "potw" ? "awards" : (n.type === "selection_unlock" || n.type === "lineup_reminder") ? "selection" : n.type === "forfeit" ? "results" : null;
+    const row = document.createElement("div");
+    row.className = "notif-row notif-clickable" + (n.read ? "" : " unread");
+    row.innerHTML = `<span class="notif-msg"><span class="notif-league">${escapeHtml(n.leagueName)}</span><br>${escapeHtml(n.message)}</span><time class="notif-time">${new Date(n.createdAt).toLocaleString()}</time>`;
+    row.onclick = async () => {
+      if (!n.read) {
+        await api(`/leagues/${n.leagueId}/notifications/${n.id}/read`, { method: "POST" });
+        n.read = true;
+        renderBellWidget();
+      }
+      el("bell-panel").classList.remove("open");
+      await openLeague(n.leagueId);
+      if (jumpTab && Number.isInteger(n.round)) {
+        const goToRound = getRoundsList().find((k) => k.stage === "regular" && k.round === n.round);
+        if (goToRound) { viewingKey = goToRound; switchTab(jumpTab); renderAll(); }
+      }
+    };
+    body.appendChild(row);
+  });
+}
+el("bell-btn").onclick = (e) => { e.stopPropagation(); el("bell-panel").classList.toggle("open"); };
+document.addEventListener("click", (e) => { if (!e.target.closest("#bell-widget")) el("bell-panel").classList.remove("open"); });
+el("bell-mark-all-btn").onclick = async () => {
+  const leagueIds = [...new Set(myBellNotifications.filter((n) => !n.read).map((n) => n.leagueId))];
+  await Promise.all(leagueIds.map((id) => api(`/leagues/${id}/notifications/read-all`, { method: "POST" })));
+  myBellNotifications.forEach((n) => { n.read = true; });
+  renderBellWidget();
 };
 
 /* ---------- Toss: coin flip + video call, both scoped to this league,

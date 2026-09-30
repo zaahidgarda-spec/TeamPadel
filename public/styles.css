@@ -120,11 +120,26 @@ header.site-header.hub-hero{background:radial-gradient(120% 160% at 18% 0%,var(-
 .h1{font-family:var(--font-display);font-weight:700;font-size:34px;letter-spacing:.01em;text-transform:uppercase;margin:0;background:transparent;border:none;color:var(--text);padding:0;line-height:1.15;}
 .h1-sub{font-size:19px;padding-left:16px;border-left:1px solid var(--line);max-width:100%;box-sizing:border-box;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 .h1:disabled{-webkit-text-fill-color:var(--text);opacity:1;}
-.header-right{display:flex;align-items:center;gap:10px;}
+.header-right{display:flex;align-items:center;gap:10px;min-width:0;}
 .role-flag{font-family:var(--font-display);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:5px 10px;border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-ink);}
 .role-flag-link{cursor:pointer;}
 .role-flag-link:hover{filter:brightness(1.12);}
 .team-logo-flag{width:32px;height:32px;border-radius:50%;object-fit:cover;background:var(--panel-2);border:2px solid var(--accent);}
+
+/* The header-wide bell (see renderBellWidget in app.js) — every
+   notification across every team this account captains, aggregated
+   into one dropdown. Hidden entirely for an account that captains
+   nothing, same as the per-league Notifications tab already is. */
+.bell-widget{position:relative;flex-shrink:0;}
+.bell-btn{position:relative;width:34px;height:34px;border-radius:50%;background:var(--panel-2);border:1px solid var(--line);cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.bell-btn:hover{border-color:var(--accent);}
+.bell-dot{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:var(--clay);color:#fff;font-family:var(--font-display);font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg);}
+.bell-panel{display:none;position:absolute;top:calc(100% + 10px);right:0;width:320px;max-height:420px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow-lg);z-index:30;}
+.bell-panel.open{display:block;}
+.bell-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.bell-panel-head b{font-family:var(--font-display);font-size:13px;text-transform:uppercase;letter-spacing:.04em;}
+.bell-panel .notif-msg{display:block;}
+.bell-panel .notif-league{font-family:var(--font-display);font-size:9.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--accent);}
 
 .auth-widget{position:relative;}
 .auth-panel{display:none;position:absolute;top:calc(100% + 10px);right:0;width:280px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow-lg);z-index:30;}
@@ -1537,6 +1552,7 @@ footer.actions{display:flex;justify-content:space-between;align-items:center;mar
   .h1-sub{font-size:16px;padding-left:12px;}
   .header-right{width:100%;justify-content:flex-end;}
   .auth-panel{width:min(300px,calc(100vw - 28px));right:-8px;}
+  .bell-panel{width:min(300px,calc(100vw - 28px));right:-8px;}
   .league-switcher-panel{width:min(300px,calc(100vw - 28px));}
   nav.tabs{width:100%;}
   nav.tabs button{padding:10px 12px;font-size:11.5px;}

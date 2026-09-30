@@ -7419,6 +7419,29 @@ router.post("/leagues/:leagueId/notifications/read-all", (req, res) => {
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
+// Every notification across every team this account captains, in one
+// list — the header-wide bell (see renderBellWidget in app.js), as
+// opposed to the per-league Notifications tab above, which only ever
+// showed one league's own. resolveLeagueSession already recognizes a
+// signed-in player account's own captaincies with no separate per-league
+// login, so the existing mark-read/read-all routes above work unchanged
+// when called with this account's session — this route only needs to
+// answer "what is there to show," not duplicate how it gets marked read.
+router.get("/players/notifications", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const out = [];
+  (user.captaincies || []).forEach((c) => {
+    const league = store.getLeague(c.leagueId);
+    if (!league) return;
+    const team = league.teams.find((t) => t.id === c.teamId);
+    if (!team) return;
+    (league.notifications || []).filter((n) => n.teamId === c.teamId).forEach((n) => {
+      out.push({ ...n, leagueId: league.id, leagueName: league.name, teamName: team.name });
+    });
+  });
+  out.sort((a, b) => b.createdAt - a.createdAt);
+  res.json({ notifications: out, isCaptain: (user.captaincies || []).length > 0 });
+});
 
 /* ---------- Sponsors ---------- */
 
