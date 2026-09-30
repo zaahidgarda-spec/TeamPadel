@@ -249,6 +249,25 @@ function postOrUpdateRoundRecap(league, round) {
   league.news.push({ id: logic.uid(), createdAt: Date.now(), auto: true, round, ...fields });
   return true;
 }
+// Same idea as postOrUpdateRoundRecap, for a semi-final or final instead of
+// a regular round — see logic.buildPlayoffRecap for why it needs its own
+// builder. Keyed by stageKey ("semis"/"final") in the same `round` field a
+// regular recap keys by round number; a string can never collide with a
+// real round number, so both kinds of post share one lookup with no extra
+// field needed.
+function postOrUpdatePlayoffRecap(league, stageKey) {
+  const recap = logic.buildPlayoffRecap(league, stageKey);
+  if (!recap) return false;
+  if (!league.news) league.news = [];
+  const existing = league.news.find((p) => p.auto && p.round === stageKey);
+  const fields = { title: recap.title, body: recap.body, potw: recap.potw, highlights: recap.highlights, inForm: recap.inForm };
+  if (existing) {
+    Object.assign(existing, fields);
+    return false;
+  }
+  league.news.push({ id: logic.uid(), createdAt: Date.now(), auto: true, round: stageKey, ...fields });
+  return true;
+}
 // Catches up any round that finished before the auto-recap feature existed
 // (or before a league even had it wired in) — walks every non-hidden
 // league's already-finalized regular rounds and posts whichever ones don't
@@ -321,9 +340,15 @@ function backfillRoundRecaps() {
     const league = store.getLeague(entry.id);
     if (!league || !league.fixtures) return;
     const rounds = [...new Set(league.fixtures.filter((f) => f.stage === "regular").map((f) => f.round))];
-    if (rounds.length === 0) return;
     rounds.forEach((round) => postOrUpdateRoundRecap(league, round));
-    store.saveLeague(league.id, league);
+    // Same catch-up, for whichever playoff stages are already finalized —
+    // covers a league whose semis/final finished before this stage got
+    // its own recap builder (see postOrUpdatePlayoffRecap).
+    if (league.playoffs) {
+      postOrUpdatePlayoffRecap(league, "semis");
+      postOrUpdatePlayoffRecap(league, "final");
+    }
+    if (rounds.length || league.playoffs) store.saveLeague(league.id, league);
   });
 }
 // News Room order: round-based posts read newest-round-first, same as the
@@ -349,7 +374,7 @@ function newsPostPhoto(post, league) {
 function newsPostHeadline(post) {
   if (!post.auto) return { headline: post.title || "", body: post.body || "" };
   const usable = (post.highlights || []).find((h) => h.type !== "quiet" && (h.short || h.text));
-  if (!usable) return { headline: `Round ${post.round} wrap-up`, body: "" };
+  if (!usable) return { headline: post.title || `Round ${post.round} wrap-up`, body: "" };
   // `.text` reads as a real sentence ("X (Team) 6-0 beat Y.") for every
   // type except "table", where it's just a bare team name — `.short`
   // ("X — top of the table") is the only one of the two that reads as
@@ -361,6 +386,19 @@ function newsPostHeadline(post) {
   const cut = full.indexOf(". ");
   return { headline: cut === -1 ? full : full.slice(0, cut + 1), body: "" };
 }
+// A regular round's post carries a real round number; a playoff post
+// carries "semis"/"final" instead (see postOrUpdatePlayoffRecap) — neither
+// is a number, so `b.round - a.round` would silently NaN out the moment
+// one side is a playoff post. This maps both kinds onto one ordering:
+// playoffs always come after every regular round (the final after the
+// semis after however many rounds the season had), same "later in the
+// season sorts first" idea sortNewsPosts already applies.
+function newsRoundRank(round) {
+  if (typeof round === "number") return round;
+  if (round === "semis") return 1e6;
+  if (round === "final") return 1e6 + 1;
+  return null;
+}
 function sortNewsPosts(posts) {
   return posts.slice().sort((a, b) => {
     // Round-based ordering only makes sense between two posts that both
@@ -369,7 +407,8 @@ function sortNewsPosts(posts) {
     // (the old behavior, via `?? Infinity`) pinned that post above every
     // round's recap forever, no matter how old it actually was. Anything
     // without a round on either side just compares by when it was posted.
-    if (a.round != null && b.round != null && a.round !== b.round) return b.round - a.round;
+    const ra = newsRoundRank(a.round), rb = newsRoundRank(b.round);
+    if (ra != null && rb != null && ra !== rb) return rb - ra;
     return b.createdAt - a.createdAt;
   });
 }
@@ -1255,7 +1294,7 @@ router.get("/homepage/highlights", (req, res) => {
 
     const latest = (league.news || [])
       .filter((p) => p.auto)
-      .sort((a, b) => b.round - a.round)[0];
+      .sort((a, b) => newsRoundRank(b.round) - newsRoundRank(a.round))[0];
     if (!latest) return;
     (latest.highlights || []).forEach((h) => {
       if (h.type === "quiet") return;
@@ -6427,6 +6466,19 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
           notify(league, t.id, "news", "Round " + f.round + " wrap-up is posted in News Room.", { round: f.round });
         });
       }
+    }
+  } else if ((f.stage === "semi" || f.stage === "final") && league.format !== "pairs" && league.playoffs) {
+    // A semi-final's recap needs BOTH semis in, same "the whole stage, not
+    // just this one match" reasoning roundComplete uses above — finalizing
+    // the first semi shouldn't post a half-finished wrap-up. The final is
+    // just itself.
+    const stageKey = f.stage === "semi" ? "semis" : "final";
+    const stageFixtures = stageKey === "semis" ? (league.playoffs.semis || []).filter((x) => x && x.teamA && x.teamB) : [league.playoffs.final];
+    const stageComplete = stageFixtures.length > 0 && stageFixtures.every((x) => x.finalized);
+    if (stageComplete && postOrUpdatePlayoffRecap(league, stageKey)) {
+      league.teams.forEach((t) => {
+        notify(league, t.id, "news", (stageKey === "final" ? "The Final" : "Semi-finals") + " wrap-up is posted in News Room.", { stage: stageKey });
+      });
     }
   }
 

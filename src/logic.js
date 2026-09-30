@@ -829,6 +829,97 @@ function buildRoundRecap(league, round) {
   return { title: "Round " + round + " wrap-up", potw: potwEntries, highlights, inForm: inFormList, body: lines.join("\n\n") };
 }
 
+// Same idea as buildRoundRecap, but for a semi-final or final — there's no
+// table, no prior-standings "upset," and no in-form leaderboard to draw
+// from once the regular season is over, so this only ever reports on the
+// match(es) actually played: big wins, matches that went the distance, and
+// — the part a knockout stage actually needs that a regular round doesn't
+// — who won outright and what that means (through to the Final, or
+// champions). stageKey is "semis" (both semi-finals, only once BOTH are
+// finalized — they're one shared moment, not two separate posts) or
+// "final".
+function buildPlayoffRecap(league, stageKey) {
+  if (!league.playoffs) return null;
+  const fixtures = stageKey === "final"
+    ? [league.playoffs.final].filter((f) => f && f.teamA && f.teamB)
+    : (league.playoffs.semis || []).filter((f) => f && f.teamA && f.teamB);
+  if (fixtures.length === 0 || !fixtures.every((f) => f.finalized)) return null;
+  const isPairs = league.format === "pairs";
+  const regulation = isPairs ? 1 : 4;
+  const teamById = (id) => league.teams.find((t) => t.id === id);
+  const pairNames = (team, pair) => {
+    if (!team || !pair) return null;
+    const names = pair.map((pid) => { const p = team.players.find((x) => x.id === pid); return p ? p.name : null; }).filter(Boolean);
+    return names.length === 2 ? names.join(" & ") : null;
+  };
+
+  const bigWins = [], closeMatches = [], results = [];
+  fixtures.forEach((f) => {
+    const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
+    if (!teamA || !teamB) return;
+    const winner = matchWinner(f);
+    if (winner) {
+      const winnerTeam = winner === "A" ? teamA : teamB, loserTeam = winner === "A" ? teamB : teamA;
+      const { winsA, winsB } = fixtureScore(f);
+      const scoreText = winner === "A" ? winsA + "-" + winsB : winsB + "-" + winsA;
+      results.push({ winnerTeam, loserTeam, scoreText });
+    }
+    f.rubbers.slice(0, regulation).forEach((r, idx) => {
+      const w = rubberWinner(r);
+      if (!w) return;
+      const winnerTeam = w === "A" ? teamA : teamB, loserTeam = w === "A" ? teamB : teamA;
+      const winnerSel = w === "A" ? f.selectionA : f.selectionB;
+      const pairText = !isPairs && winnerSel && winnerSel.pairs[idx] ? pairNames(winnerTeam, winnerSel.pairs[idx]) : null;
+      const winnerPlayers = isPairs
+        ? winnerTeam.players.slice(0, 2).map((p) => ({ id: p.id, name: p.name }))
+        : (winnerSel && winnerSel.pairs[idx] ? winnerSel.pairs[idx].map((pid) => winnerTeam.players.find((p) => p.id === pid)).filter(Boolean).map((p) => ({ id: p.id, name: p.name })) : []);
+      const scoreText = rubberScoreText(r);
+      const firstTwo = r.sets.slice(0, 2);
+      const straightSets = firstTwo.length === 2 && firstTwo.every((s) => setWinner(s) === w)
+        && firstTwo.every((s) => { const a = Number(s[0]), b = Number(s[1]); return Math.max(a, b) === 6 && Math.min(a, b) <= 1; });
+      const wentTheDistance = needsTiebreak(r) && !!tiebreakWinner(r.tb);
+      const decidedByThirdSet = r.sets.length >= 3 && !!setWinner(r.sets[2]);
+      const entry = { teamName: winnerTeam.name, teamId: winnerTeam.id, pairText, scoreText, opponentName: loserTeam.name, winnerPlayers };
+      if (straightSets) bigWins.push(entry);
+      if (wentTheDistance || decidedByThirdSet) closeMatches.push(entry);
+    });
+  });
+
+  const highlights = [];
+  const lines = [];
+  const winFragment = (w) => (w.pairText ? w.pairText + " (" + w.teamName + ")" : w.teamName) + " " + w.scoreText + " beat " + w.opponentName;
+  results.forEach((res) => {
+    const verb = stageKey === "final" ? "are your champions" : "through to the Final";
+    lines.push(res.winnerTeam.name + " beat " + res.loserTeam.name + " " + res.scoreText + " — " + verb + "!");
+    highlights.push({
+      type: "result", label: stageKey === "final" ? "Champions" : "Through to the Final",
+      text: res.winnerTeam.name + " beat " + res.loserTeam.name + " " + res.scoreText + ".",
+      short: res.winnerTeam.name + " — " + res.scoreText, teamId: res.winnerTeam.id,
+    });
+  });
+  if (bigWins.length) {
+    const text = bigWins.map((w) => winFragment(w) + ".").join(" ");
+    const items = bigWins.map((w) => ({ players: w.winnerPlayers, teamName: w.pairText ? w.teamName : null, scoreText: w.scoreText, opponentName: w.opponentName }));
+    const short = (bigWins[0].pairText || bigWins[0].teamName) + " — " + bigWins[0].scoreText;
+    highlights.push({ type: "bigwin", label: "Big win", text, items, short, teamId: bigWins[0].teamId });
+    lines.push("Big wins: " + text);
+  }
+  if (closeMatches.length) {
+    const text = closeMatches.map((w) => winFragment(w) + ".").join(" ");
+    const items = closeMatches.map((w) => ({ players: w.winnerPlayers, teamName: w.pairText ? w.teamName : null, scoreText: w.scoreText, opponentName: w.opponentName }));
+    const short = (closeMatches[0].pairText || closeMatches[0].teamName) + " — " + closeMatches[0].scoreText;
+    highlights.push({ type: "distance", label: "Went the distance", text, items, short, teamId: closeMatches[0].teamId });
+    lines.push("Went the distance: " + text);
+  }
+  if (!highlights.length) {
+    highlights.push({ type: "quiet", label: "Scoreline", text: "A quiet one on the scoreline front.", short: "A quiet one on the scoreline front" });
+    lines.push(highlights[0].text);
+  }
+
+  const title = stageKey === "final" ? "The Final — wrap-up" : "Semi-finals — wrap-up";
+  return { title, potw: [], highlights, inForm: [], body: lines.join("\n\n") };
+}
+
 // Every not-yet-finalized fixture this player is selected into, both sides
 // submitted — the "upcoming" half of a player's profile, mirroring
 // playerMatchHistory's "played" half below almost exactly.
@@ -1671,6 +1762,7 @@ module.exports = {
   potwEligiblePairs,
   potwTallyForRound,
   buildRoundRecap,
+  buildPlayoffRecap,
   computeLeagueStats,
   restrictToGroup,
   allFixturesOf,

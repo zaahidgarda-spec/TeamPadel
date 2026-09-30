@@ -1485,7 +1485,12 @@ async function renderHomepageHighlights() {
           if (row.dataset.manualId) {
             await api(`/admin/interesting/manual/${row.dataset.manualId}`, { method: "DELETE" });
           } else {
-            await api("/admin/interesting/dismiss", { method: "POST", body: { leagueId: row.dataset.leagueId, round: Number(row.dataset.round), type: row.dataset.type } });
+            // Sent as the raw dataset string, not Number(...) — a playoff
+            // recap's "round" is "semis"/"final", not a number, and the
+            // dismiss key is built by string-concatenation either way (see
+            // /admin/interesting/dismiss), so a numeric round round-trips
+            // identically as a string.
+            await api("/admin/interesting/dismiss", { method: "POST", body: { leagueId: row.dataset.leagueId, round: row.dataset.round, type: row.dataset.type } });
           }
           renderHomepageHighlights();
         } catch (e2) { alert(e2.message); }
@@ -10750,9 +10755,14 @@ async function generatePosterCanvas(mode, theme) {
   // of stretching it, so two fixtures don't get blown up to fill a story.
   const baseHeaderBlockH = matchLabelFor ? 134 : 108, baseRowGap = 16;
   const basePairRowH = mode === "results" || mode === "predictions" || mode === "playoffs" ? 46 : 34, basePairsTopPad = 8, basePairsBottomPad = 10;
+  // An Ormonde-rules regular fixture carries a real 5th, always-played
+  // singles rubber with its own selection slot (selectionA.pairs.length
+  // is 5, not 4 — see rubberSlot4Kind) — that row needs to show on the
+  // poster the same as the other four, not just live in the app.
+  const rowCountFor = (f) => (f.selectionA.pairs.length >= 5 ? 5 : 4);
   const fixtureMeta = fixtures.map((f) => {
     const revealed = f.selectionA.submitted && f.selectionB.submitted;
-    const blockH = baseHeaderBlockH + (revealed ? basePairsTopPad + 4 * basePairRowH + basePairsBottomPad : 0);
+    const blockH = baseHeaderBlockH + (revealed ? basePairsTopPad + rowCountFor(f) * basePairRowH + basePairsBottomPad : 0);
     return { f, revealed, blockH };
   });
   const naturalH = fixtureMeta.reduce((sum, m) => sum + m.blockH + baseRowGap, 0) || 1;
@@ -10762,7 +10772,7 @@ async function generatePosterCanvas(mode, theme) {
   const headerBlockH = sz(baseHeaderBlockH), rowGap = sz(baseRowGap);
   const pairRowH = sz(basePairRowH), pairsTopPad = sz(basePairsTopPad), pairsBottomPad = sz(basePairsBottomPad);
   const logoRadius = sz(40);
-  const scaledContentH = fixtureMeta.reduce((sum, m) => sum + (headerBlockH + (m.revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0)) + rowGap, 0);
+  const scaledContentH = fixtureMeta.reduce((sum, m) => sum + (headerBlockH + (m.revealed ? pairsTopPad + rowCountFor(m.f) * pairRowH + pairsBottomPad : 0)) + rowGap, 0);
   // Bias the leftover space toward the bottom rather than a dead center —
   // reads better sitting just under the title than floating mid-page.
   const startY = topY + Math.max(0, (availableH - scaledContentH) * 0.32);
@@ -10815,7 +10825,7 @@ async function generatePosterCanvas(mode, theme) {
   fixtureMeta.forEach(({ f, revealed }) => {
     if (!revealed) return;
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < rowCountFor(f); i++) {
       pairNamesAll.push(playerNamesForShort(teamA, f.selectionA.pairs[i]), playerNamesForShort(teamB, f.selectionB.pairs[i]));
     }
   });
@@ -10826,7 +10836,8 @@ async function generatePosterCanvas(mode, theme) {
   let y = startY;
   for (let matchIdx = 0; matchIdx < fixtureMeta.length; matchIdx++) {
     const { f, revealed } = fixtureMeta[matchIdx];
-    const blockH = headerBlockH + (revealed ? pairsTopPad + 4 * pairRowH + pairsBottomPad : 0);
+    const rowCount = rowCountFor(f);
+    const blockH = headerBlockH + (revealed ? pairsTopPad + rowCount * pairRowH + pairsBottomPad : 0);
     const teamA = teamById(f.teamA), teamB = teamById(f.teamB);
     ctx.fillStyle = "rgba(255,255,255,0.07)";
     roundRectPath(ctx, 56, y, W - 112, blockH, sz(18));
@@ -10878,7 +10889,8 @@ async function generatePosterCanvas(mode, theme) {
       ctx.stroke();
 
       let py = y + headerBlockH + pairsTopPad + pairRowH / 2;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < rowCount; i++) {
+        const isSingles = rubberSlot4Kind(f, i) === "singles";
         const namesA = playerNamesForShort(teamA, f.selectionA.pairs[i]);
         const namesB = playerNamesForShort(teamB, f.selectionB.pairs[i]);
         const predEntry = mode === "predictions" && predMap ? predMap[f.id + ":" + i] : null;
@@ -10908,14 +10920,14 @@ async function generatePosterCanvas(mode, theme) {
         if ((mode === "results" || mode === "playoffs") && f.finalized) {
           ctx.fillStyle = "#64748B";
           ctx.font = "500 " + sz(12) + "px Oswald, sans-serif";
-          ctx.fillText("SEED " + (i + 1), W / 2, py - sz(9));
+          ctx.fillText(isSingles ? "SINGLES" : "SEED " + (i + 1), W / 2, py - sz(9));
           ctx.fillStyle = "#FFFFFF";
           ctx.font = "600 " + sz(18) + "px Oswald, sans-serif";
           ctx.fillText(rubberScoreText(f.rubbers[i]) || "—", W / 2, py + sz(14));
         } else if (mode === "predictions") {
           ctx.fillStyle = "#64748B";
           ctx.font = "500 " + sz(12) + "px Oswald, sans-serif";
-          ctx.fillText("SEED " + (i + 1), W / 2, py - sz(9));
+          ctx.fillText(isSingles ? "SINGLES" : "SEED " + (i + 1), W / 2, py - sz(9));
           if (winner) {
             ctx.fillStyle = theme.win;
             ctx.font = "600 " + sz(18) + "px Oswald, sans-serif";
@@ -10932,7 +10944,7 @@ async function generatePosterCanvas(mode, theme) {
         } else {
           ctx.fillStyle = "#64748B";
           ctx.font = "500 " + sz(15) + "px Oswald, sans-serif";
-          ctx.fillText("S" + (i + 1), W / 2, py + sz(5));
+          ctx.fillText(isSingles ? "S" : "S" + (i + 1), W / 2, py + sz(5));
         }
 
         py += pairRowH;
@@ -14795,6 +14807,15 @@ function newsHeadlineText(h) {
   const cut = full.indexOf(". ");
   return cut === -1 ? full : full.slice(0, cut + 1);
 }
+// A regular round's post is keyed by its round number; a semi-final/final
+// wrap-up (see postOrUpdatePlayoffRecap server-side) is keyed by "semis"/
+// "final" instead — this is the one place both need to read as a short
+// label rather than the raw value ("Round semis" would read as a bug).
+function newsRoundLabel(round) {
+  if (round === "semis") return "Semi-finals";
+  if (round === "final") return "The Final";
+  return "Round " + round;
+}
 // One shape for both post types (manual and auto round-recap), used by
 // all three feed tiers below and by the detail modal — a manual post's
 // "headline" is just its title.
@@ -14806,13 +14827,13 @@ function newsCardData(p, leagueLabel) {
   const lid = p.leagueId || currentLeagueId;
   const potw = p.potw || [];
   const headlineHighlight = newsHeadlineHighlight(p.highlights);
-  const headline = headlineHighlight ? newsHeadlineText(headlineHighlight) : `Round ${p.round} wrap-up`;
+  const headline = headlineHighlight ? newsHeadlineText(headlineHighlight) : (p.title || newsRoundLabel(p.round) + " wrap-up");
   const potwNamesHtml = potw.map((x) =>
     x.playerAId ? newsPlayerLinkHtml(lid, { id: x.playerAId, name: x.playerAName }) + " &amp; " + newsPlayerLinkHtml(lid, { id: x.playerBId, name: x.playerBName }) : escapeHtml(x.names)
   ).join(", ");
   return {
     id: p.id, photo: p.photo || "",
-    eyebrow: leagueLabel ? escapeHtml(leagueLabel) : "Round " + p.round,
+    eyebrow: leagueLabel ? escapeHtml(leagueLabel) : newsRoundLabel(p.round),
     dateText, headline: escapeHtml(headline),
     potw: potw.length ? { html: potwNamesHtml, team: escapeHtml(potw.map((x) => x.team).join(", ")) } : null,
   };
