@@ -5707,7 +5707,7 @@ const RATING_ATTRS = [
   ["smash", "Smash"], ["lob", "Lob"], ["serve", "Serve"], ["mentality", "Mentality"],
 ];
 const RATINGS_TO_UNLOCK = 3;
-const RATING_QUEUE_SIZE = 3;
+const RATING_QUEUE_SIZE = 5;
 const RATING_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
 function ratingMatchTime(league, f, rubber) {
