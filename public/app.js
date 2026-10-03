@@ -2173,6 +2173,7 @@ const ADMIN_SECTIONS = [
   { id: "player-accounts-card", key: "accounts", title: "Player accounts" },
   { id: "combine-players-card", key: "combine", title: "Combine player profiles" },
   { id: "combine-teams-card", key: "combineTeams", title: "Combine team profiles" },
+  { id: "ratings-monitor-card", key: "ratings", title: "Opponent ratings" },
   { id: "push-stats-card", key: "push", title: "Push notifications" },
   { id: "push-broadcast-card", key: "announce", title: "Send push announcement" },
   { id: "guest-wall-card", key: "wall", title: "Guest sign-up wall" },
@@ -2301,7 +2302,7 @@ async function refreshOwnerStatus() {
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
   el("pay-link-finder-card").style.display = isOwner ? "block" : "none";
-  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
+  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderRatingsMonitorCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
 // Cross-league "find a player's pay link" tool — pick a league (each
@@ -2525,6 +2526,47 @@ async function renderPushStatsCard() {
       </div>`).join("")
     : '<p class="empty">No devices subscribed yet.</p>';
 }
+// Owner-only: how the opponent-rating splash is going — ratings coming in,
+// how far the splash has reached, which attributes score high or low, and who
+// is closest to (or past) unlocking their card. Totals only, never who rated.
+async function renderRatingsMonitorCard() {
+  const card = el("ratings-monitor-card");
+  card.style.display = "block";
+  const body = el("ratings-monitor-body");
+  const d = await api("/admin/ratings-overview").catch(() => null);
+  if (!d) { body.innerHTML = '<p class="empty">Couldn’t load the ratings just now.</p>'; return; }
+  const t = d.totals, r = d.reach;
+  setAdminInfo("ratings", { n: t.ratings, sub: `${t.playersRated} player${t.playersRated === 1 ? "" : "s"} rated` });
+  el("ratings-monitor-updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const tile = (num, lbl) => `<div class="stat-tile"><div class="stat-num">${num}</div><div class="stat-lbl">${lbl}</div></div>`;
+  const line = (label, val) => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);"><span>${label}</span><span class="note">${val}</span></div>`;
+  const maxDay = Math.max(1, ...d.days.map((x) => x.count));
+  const bars = d.days.map((x) => `<div title="${escapeHtml(x.date)}: ${x.count}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:48px;"><div style="height:${Math.max(x.count ? 6 : 2, Math.round((x.count / maxDay) * 48))}px;background:${x.count ? "#E8B34C" : "var(--line)"};border-radius:2px;"></div></div>`).join("");
+  const attrRows = d.attributes.map((a) => {
+    const r2 = a.avg === null ? 0 : Math.max(1, Math.min(5, Math.round(a.avg)));
+    const seg = [1, 2, 3, 4, 5].map((n) => `<span><i style="width:${a.avg === null ? 0 : Math.max(0, Math.min(1, a.avg - (n - 1))) * 100}%;background:${RATING_FILL[r2] || "transparent"}"></i></span>`).join("");
+    return `<div class="at-row"><div class="at-rh"><span>${escapeHtml(a.label)}</span><span>${a.avg === null ? "—" : `<b>${a.avg.toFixed(1)}</b><em style="color:${RATING_INK[r2]}">${RATING_WORDS[r2]}</em>`}</span></div><div class="at-sg">${seg}</div></div>`;
+  }).join("");
+  const playerRows = d.players.length
+    ? d.players.map((p) => `<div class="row" style="justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);"><span style="min-width:0;"><b>${escapeHtml(p.name)}</b><span class="note" style="display:block;">${escapeHtml([p.team, p.league].filter(Boolean).join(" · "))}</span></span><span class="note" style="text-align:right;white-space:nowrap;">${p.unlocked ? `Unlocked · avg ${p.avg === null ? "—" : p.avg.toFixed(1)} · ${p.count}` : `${p.count} of ${d.config.unlockAt}`}</span></div>`).join("")
+    : '<p class="empty">No ratings yet.</p>';
+  body.innerHTML = `
+    <div class="pd-stats" style="margin-bottom:14px;">${tile(t.ratings, "Ratings given")}${tile(t.raters, "People who rated")}${tile(t.playersRated, "Players rated")}${tile(t.unlocked, "Cards unlocked")}</div>
+    <h3 style="margin:14px 0 4px;font-size:14px;">Reach</h3>
+    ${line("Have a match to rate now", r.eligible)}
+    ${line("Rated, skipped or closed it", `${r.seen} of ${r.eligible}`)}
+    ${line("Still have one waiting", r.pending)}
+    ${line("Ratings, last 24h / 7 days", `${t.last24h} / ${t.last7d}`)}
+    <h3 style="margin:16px 0 6px;font-size:14px;">Ratings per day (last 14 days)</h3>
+    <div style="display:flex;gap:3px;align-items:flex-end;">${bars}</div>
+    <div class="row note" style="justify-content:space-between;margin-top:4px;"><span>${escapeHtml(d.days[0].date)}</span><span>Today</span></div>
+    <h3 style="margin:16px 0 8px;font-size:14px;">Attribute averages across everyone</h3>
+    ${attrRows}
+    <h3 style="margin:16px 0 4px;font-size:14px;">Players with ratings</h3>
+    ${playerRows}
+    <p class="note" style="margin-top:12px;">Settings: the splash covers the last ${d.config.queueSize} matches (up to ${d.config.windowDays} days old). A card unlocks at ${d.config.unlockAt} ratings.</p>`;
+}
+el("ratings-monitor-refresh").onclick = () => renderRatingsMonitorCard();
 // Owner-only: how good the match predictions are, from the background check
 // the server runs by itself (src/accuracy.js). Plain-English on purpose — the
 // point is knowing how much to trust a prediction, and when there are enough

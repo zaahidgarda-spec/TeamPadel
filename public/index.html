@@ -594,6 +594,15 @@
           </div>
           <div id="push-stats-by-league"></div>
         </div>
+        <div class="card" id="ratings-monitor-card" style="display:none;">
+          <h2 class="section-title">Opponent ratings</h2>
+          <p class="note" style="margin-bottom:12px;">How the post-match rating splash is going. Totals only: who rated whom stays anonymous, and a player's average only shows once they have enough ratings to unlock their card.</p>
+          <div id="ratings-monitor-body"><p class="empty">Loading…</p></div>
+          <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap;">
+            <span class="note" id="ratings-monitor-updated"></span>
+            <button class="secondary" id="ratings-monitor-refresh" type="button">Refresh</button>
+          </div>
+        </div>
         <div class="card" id="guest-wall-card" style="display:none;">
           <h2 class="section-title">Guest sign-up wall</h2>
           <p class="note" style="margin-bottom:12px;">When on, someone who isn't signed in can look at a little, then the page fades to one "Sign up free" card. Anyone logged in with a team code, as a captain, or as admin is never stopped. Off by default — try it on one league first. This is enforced by the server, not just the screen: for a ticked league a guest's browser only ever receives its name and the top three teams (the rest of its data is refused), and the Leagues-page option also empties the "next matches" and highlights lists for guests. The list of leagues itself stays public.</p>

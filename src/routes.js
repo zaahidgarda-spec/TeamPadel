@@ -5845,6 +5845,75 @@ function attributeCardFor(user) {
   const overall = shown.length ? Math.min(99, Math.round((shown.reduce((s, a) => s + a.avg, 0) / shown.length) * 20)) : null;
   return { count, needed: RATINGS_TO_UNLOCK, unlocked: true, attributes, overall };
 }
+// Owner-only, read-only — powers the "Opponent ratings" card on the Admin tab.
+// Totals and averages only: who gave a rating is never returned, so the
+// feature stays anonymous to the owner too. A player's own average is only
+// shown once they have enough ratings to have an unlocked card, the same
+// bar the player sees, so a single rating can't be read back to one person.
+router.get("/admin/ratings-overview", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const items = Object.values(store.getPlayerRatings().items);
+  const claimsIndex = buildClaimsIndex();
+  const identityOf = (l, p) => claimsIndex.get(l + ":" + p) || l + ":" + p;
+  const dayOf = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+  const now = Date.now();
+  const byPlayer = new Map();
+  const attr = {};
+  RATING_ATTRS.forEach(([k]) => { attr[k] = { sum: 0, n: 0 }; });
+  const perDay = {};
+  items.forEach((r) => {
+    const id = identityOf(r.leagueId, r.targetPlayerId);
+    let e = byPlayer.get(id);
+    if (!e) {
+      const league = store.getLeague(r.leagueId);
+      let name = "Unknown player", team = "";
+      if (league) league.teams.forEach((t) => t.players.forEach((p) => { if (p.id === r.targetPlayerId) { name = p.name; team = t.name; } }));
+      e = { name, team, league: league ? league.name : "", count: 0, sum: 0, n: 0, last: 0 };
+      byPlayer.set(id, e);
+    }
+    e.count++;
+    e.last = Math.max(e.last, r.at || 0);
+    Object.values(r.scores).forEach((v) => { e.sum += v; e.n++; });
+    RATING_ATTRS.forEach(([k]) => { if (r.scores[k]) { attr[k].sum += r.scores[k]; attr[k].n++; } });
+    const d = dayOf(r.at || 0);
+    perDay[d] = (perDay[d] || 0) + 1;
+  });
+  const days = [];
+  for (let i = 13; i >= 0; i--) { const d = dayOf(now - i * 86400000); days.push({ date: d, count: perDay[d] || 0 }); }
+  // How far the splash has actually reached: accounts that currently have
+  // at least one match to rate, how many of those have dealt with it
+  // (rated, skipped or closed it), and how many still have one waiting.
+  let eligible = 0, seen = 0, pending = 0;
+  store.getUsersIndex().forEach(({ id }) => {
+    const u = store.getUser(id);
+    if (!u || !(u.claims || []).length) return;
+    const ms = ratableMatchesFor(u);
+    if (!ms.length) return;
+    eligible++;
+    const st = u.ratingState || {};
+    if (st.introSeen) seen++;
+    if (ms.some((m) => !(st.done && st.done[m.key]))) pending++;
+  });
+  const players = Array.from(byPlayer.values())
+    .sort((a, b) => b.count - a.count || b.last - a.last)
+    .slice(0, 25)
+    .map((e) => ({ name: e.name, team: e.team, league: e.league, count: e.count, unlocked: e.count >= RATINGS_TO_UNLOCK, avg: e.count >= RATINGS_TO_UNLOCK && e.n ? Math.round((e.sum / e.n) * 10) / 10 : null }));
+  res.json({
+    config: { queueSize: RATING_QUEUE_SIZE, windowDays: Math.round(RATING_WINDOW_MS / 86400000), unlockAt: RATINGS_TO_UNLOCK },
+    totals: {
+      ratings: items.length,
+      raters: new Set(items.map((r) => r.raterId)).size,
+      playersRated: byPlayer.size,
+      unlocked: Array.from(byPlayer.values()).filter((e) => e.count >= RATINGS_TO_UNLOCK).length,
+      last24h: items.filter((r) => now - (r.at || 0) < 86400000).length,
+      last7d: items.filter((r) => now - (r.at || 0) < 7 * 86400000).length,
+    },
+    reach: { eligible, seen, pending },
+    days,
+    attributes: RATING_ATTRS.map(([key, label]) => ({ key, label, n: attr[key].n, avg: attr[key].n ? Math.round((attr[key].sum / attr[key].n) * 10) / 10 : null })),
+    players,
+  });
+});
 router.get("/players/attributes", requirePlayerUser, (req, res) => {
   res.json(attributeCardFor(store.getUser(req.session.playerUser.id)));
 });
