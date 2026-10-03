@@ -6301,6 +6301,9 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
     // (correcting a mistaken forfeit, most likely) — clears the walkover
     // flag so it goes back to counting for Elo like any other rubber.
     if (f.rubbers[idx].forfeited) f.rubbers[idx].forfeited = null;
+    // The official result supersedes whatever the control room had jotted
+    // down courtside (see the live-score route below).
+    delete f.rubbers[idx].live;
     logAudit(league, req, f, "score_edit", { seedIdx: idx, before, after, wasFinalized: f.finalized });
   }
   // A score that settles the match means it's over — so it's finished on
@@ -6376,6 +6379,38 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/forfeit", requi
   logAudit(league, req, f, "forfeit", { seedIdx: idx, winner });
   store.saveLeague(league.id, league);
   res.json({ ok: true, rubber });
+});
+
+// Live Court Control's own scoreboard: whatever the control room keys in
+// courtside lives in rubber.live, completely apart from rubber.sets/tb —
+// the official result. It never feeds Results, the table, the live table
+// preview, ratings or finalizing; captains still post the official score
+// themselves (the PUT above), and doing so replaces this. A score that
+// settles the match still finishes it on the court board, since that's
+// Court Control's own state, not a result.
+router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/live-score", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  if (f.finalized) return res.status(400).json({ error: "This fixture is finalized — the official result is already in." });
+  if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
+  const rubber = f.rubbers[idx];
+  const num = (v) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? null : Number(v));
+  const { sets, tb } = req.body || {};
+  if (!Array.isArray(sets) || sets.length !== rubber.sets.length) return res.status(400).json({ error: "Invalid score." });
+  const cleanSets = sets.map((s) => [num(Array.isArray(s) ? s[0] : null), num(Array.isArray(s) ? s[1] : null)]);
+  const cleanTb = Array.isArray(tb) ? [num(tb[0]), num(tb[1])] : rubber.tb.slice();
+  const empty = cleanSets.every((s) => s[0] === null && s[1] === null) && !cleanTb[0] && !cleanTb[1];
+  if (empty) delete rubber.live;
+  else {
+    rubber.live = { sets: cleanSets, tb: cleanTb, updatedAt: Date.now() };
+    if (!rubber.completedAt && logic.rubberWinner({ ...rubber, sets: cleanSets, tb: cleanTb })) completeRubberNow(league, f, idx);
+  }
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
 });
 
 // Live Court Control: mark a rubber as under way courtside. Independent of
@@ -6477,8 +6512,8 @@ function completeRubberNow(league, f, idx) {
     winPctA: pred ? pred.winPctA : null,
     winPctB: pred ? pred.winPctB : null,
     provisional: pred ? pred.provisional : null,
-    sets: rubber.sets.map((set) => set.slice()),
-    tb: rubber.tb.slice(),
+    sets: (rubber.live ? rubber.live.sets : rubber.sets).map((set) => set.slice()),
+    tb: (rubber.live ? rubber.live.tb : rubber.tb).slice(),
   });
   return true;
 }

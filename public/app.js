@@ -9534,6 +9534,15 @@ try {
   if (storedView === "timeline" || storedView === "table") liveCourtView = storedView;
 } catch { /* storage unavailable — default to the board */ }
 
+// What Court Control shows for a match's score: the official result if one
+// has been posted, otherwise whatever the control room jotted down
+// courtside (rubber.live — kept apart from the official sets/tb on purpose,
+// so it never reaches Results, the table or ratings).
+function liveScoredRubber(r) {
+  const hasOfficial = r.forfeited || r.sets.some((x) => x[0] !== null && x[0] !== "" && x[1] !== null && x[1] !== "") || (r.tb && r.tb[0] && r.tb[1]);
+  if (hasOfficial || !r.live) return r;
+  return { ...r, sets: r.live.sets, tb: r.live.tb };
+}
 function liveTileInfo(s, c) {
   const b = liveBoard;
   const cell = b && b.grid[s] && b.grid[s][c];
@@ -9619,7 +9628,7 @@ function liveTileHtml(s, c, oneFixture) {
   // fights the score for space). Empty whenever there's no team object to
   // show a crest for (a bye, a still-undecided rubber, or the rare case
   // neither side actually won — see rubberWinnerClient).
-  const winnerSide = info.state === "done" ? rubberWinnerClient(info.rubber) : null;
+  const winnerSide = info.state === "done" ? rubberWinnerClient(liveScoredRubber(info.rubber)) : null;
   const winnerTeam = winnerSide === "A" ? sides[0].team : winnerSide === "B" ? sides[1].team : null;
   const winnerBadge = winnerTeam ? `<span class="lc-winner-badge">${avatarHtml(winnerTeam)}</span>` : "";
   // The two teams' badges otherwise sit once in the court's header when the
@@ -9631,9 +9640,10 @@ function liveTileHtml(s, c, oneFixture) {
   const label = isSuperTie ? "Singles" : seedLabelText(t.f, t.cell.seed, true);
   let foot;
   if (info.state === "live") {
-    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span><span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}">${elapsedClock(info.rubber.startedAt)}</span></div>`;
+    const liveText = rubberScoreText(liveScoredRubber(info.rubber));
+    foot = `<div class="lc-tile-ft"><span class="lc-livebadge"><i></i>Live</span>${liveText ? `<span class="lc-tile-tag">${escapeHtml(liveText)}</span>` : ""}<span class="lc-tile-mn lc-timer" data-started="${info.rubber.startedAt}">${elapsedClock(info.rubber.startedAt)}</span></div>`;
   } else if (info.state === "done") {
-    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-tag">&#10003; ${escapeHtml(rubberScoreText(info.rubber) || "")}</span></div>`;
+    foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span><span class="lc-tile-tag">&#10003; ${escapeHtml(rubberScoreText(liveScoredRubber(info.rubber)) || "")}</span></div>`;
   } else {
     foot = `<div class="lc-tile-ft"><span class="lc-tile-tag">${label}</span>${info.pace ? '<span class="lc-tile-pen" title="Set by you">&#9998;</span>' : ""}</div>`;
   }
@@ -9944,7 +9954,7 @@ function renderLiveSheet() {
     closeLiveSheet();
     const pairAHtml = pairNamesGoldHtml(t.opt.teamA, f.selectionA.pairs[cell.seed], f.selectionA);
     const pairBHtml = pairNamesGoldHtml(t.opt.teamB, f.selectionB.pairs[cell.seed], f.selectionB);
-    openScoreModal(f, cell.seed, info.rubber, t.opt.teamA, t.opt.teamB, false, pairAHtml, pairBHtml, { skipFinalize: true, onSaved: async () => { await refreshLeague(); renderAll(); } });
+    openScoreModal(f, cell.seed, liveScoredRubber(info.rubber), t.opt.teamA, t.opt.teamB, false, pairAHtml, pairBHtml, { live: true, skipFinalize: true, onSaved: async () => { await refreshLeague(); renderAll(); } });
   };
   const completeBtn = sheet.querySelector("[data-complete]");
   if (completeBtn) completeBtn.onclick = async () => {
@@ -10654,6 +10664,9 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   const slotNum = f.slotOrder ? f.slotOrder.indexOf(idx) + 1 : null;
   const isRestrictedSeed = !isDecider && !isSuperTieOnly && f.rubbers.length > 1;
   el("score-modal-title").textContent = isDecider ? "Decider score" : isSuperTieOnly ? "Singles score" : f.rubbers.length === 1 ? "Match score" : seedLabelText(f, idx, isRestrictedSeed) + " score" + (slotNum ? " · Slot " + slotNum : "");
+  // Court Control's Score button: a courtside scoreboard only, never the
+  // official result (captains still post that themselves).
+  if (opts.live) el("score-modal-title").textContent += " · live board only";
   const nameA = isDecider ? escapeHtml(teamA.name) : pairAHtml;
   const nameB = isDecider ? escapeHtml(teamB.name) : pairBHtml;
   const splitAfterTwo = () => {
@@ -10814,7 +10827,7 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
     if (showTb() || isSuperTieOnly) body.tb = state.tb;
     const endpointBase = opts.endpointBase || `/leagues/${currentLeagueId}/fixtures/${f.id}`;
     try {
-      await api(`${endpointBase}/rubbers/${idx}`, { method: "PUT", body });
+      await api(`${endpointBase}/rubbers/${idx}${opts.live ? "/live-score" : ""}`, { method: "PUT", body });
       let finalizeRes = null;
       if (isPairsRubber && !opts.skipFinalize) {
         // A pairs fixture is exactly one rubber, so a decisive score IS the
@@ -10856,7 +10869,7 @@ function openScoreModal(f, idx, rubber, teamA, teamB, isDecider, pairAHtml, pair
   forfeitPicker.innerHTML = "";
   forfeitPicker.style.display = "none";
   forfeitBtn.style.display = "";
-  const canForfeit = myRole === "admin" && !f.finalized && !rubber.forfeited && teamA && teamB;
+  const canForfeit = myRole === "admin" && !opts.live && !f.finalized && !rubber.forfeited && teamA && teamB;
   forfeitRow.style.display = canForfeit ? "block" : "none";
   if (canForfeit) {
     forfeitBtn.onclick = () => {
