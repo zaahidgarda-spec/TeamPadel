@@ -558,8 +558,43 @@
         </div>
         <div id="admin-dash-top" style="display:none;">
           <div class="admin-top-row"><h2 class="section-title" style="margin:0;border:none;padding:0;">Admin</h2><span id="admin-top-actions"></span></div>
-          <div class="admin-alert-strip" id="admin-alert-strip" style="display:none;"></div>
-          <div class="admin-kpi-grid" id="admin-kpi-grid"></div>
+          <div class="admin-tabs" id="admin-tabs" role="tablist"></div>
+        </div>
+        <div class="admin-pane" id="admin-pane-today">
+          <div class="admin-today-grid">
+            <div class="admin-today-side">
+              <input type="search" class="admin-find" id="admin-find-today" placeholder="Find a player or team" autocomplete="off">
+              <div class="admin-needs" id="admin-needs"></div>
+              <div class="card" id="admin-leagues-mini" style="display:none;"></div>
+            </div>
+            <div class="admin-today-main">
+              <div class="admin-tiles" id="admin-tiles"></div>
+              <div id="admin-today-cards"></div>
+              <div class="card" id="admin-feed-card">
+                <h2 class="section-title">Just happened</h2>
+                <div id="admin-feed"><p class="empty">Loading…</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="admin-pane" id="admin-pane-people">
+          <div class="card" id="admin-people-search-card">
+            <input type="search" class="admin-find" id="admin-find" placeholder="Find a player or team" autocomplete="off">
+            <div class="admin-chips" id="admin-people-chips"></div>
+            <div id="admin-find-results"></div>
+          </div>
+          <div id="admin-people-cards"></div>
+        </div>
+        <div class="admin-pane" id="admin-pane-leagues">
+          <div id="admin-leagues-health"><p class="empty">Loading…</p></div>
+          <div id="admin-leagues-cards"></div>
+        </div>
+        <div class="admin-pane" id="admin-pane-site">
+          <div id="admin-site-cards"></div>
+          <div class="card" id="admin-actions-card">
+            <h2 class="section-title">Recent admin actions</h2>
+            <div id="admin-actions-list"><p class="empty">Loading…</p></div>
+          </div>
         </div>
         <div class="card" id="live-count-card" style="display:none;">
           <h2 class="section-title">On the app right now</h2>

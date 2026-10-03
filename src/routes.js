@@ -844,6 +844,15 @@ router.use("/leagues/:leagueId", (req, res, next) => {
   if (WALL_OPEN_PATHS.some((re) => re.test(req.path))) return next();
   res.status(401).json({ error: "Sign up free to see this.", signupRequired: true });
 });
+// A short rolling record of the things the owner changes from the Admin tab
+// (newest first, capped), shown under Site > Recent admin actions.
+function logAdminAction(text) {
+  try {
+    const settings = store.getSiteSettings();
+    settings.adminActions = [{ at: Date.now(), text }, ...(settings.adminActions || [])].slice(0, 40);
+    store.saveSiteSettings(settings);
+  } catch { /* the log is a convenience, never worth failing the change itself */ }
+}
 router.put("/admin/guest-wall", (req, res) => {
   if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   const { hub, leagues } = req.body || {};
@@ -851,6 +860,7 @@ router.put("/admin/guest-wall", (req, res) => {
   const settings = store.getSiteSettings();
   settings.guestWall = { hub: !!hub, leagues: (Array.isArray(leagues) ? leagues : []).filter((id) => known.has(id)) };
   store.saveSiteSettings(settings);
+  logAdminAction("Updated the guest sign-up wall");
   res.json({ ok: true, guestWall: guestWallSettings() });
 });
 
@@ -2148,6 +2158,7 @@ router.post("/admin/players/combine", async (req, res) => {
   } catch (e) {
     return res.status(503).json({ error: "Couldn't save just now — try again in a moment." });
   }
+  logAdminAction(`Combined ${records.length} player records into ${name.trim()}`);
   res.json({ ok: true, userId: user.id });
 });
 // Same idea as the player search just above, for the "Combine team
@@ -2181,6 +2192,7 @@ router.post("/admin/teams/combine", (req, res) => {
     team.clubId = clubId;
     store.saveLeague(league.id, league);
   });
+  logAdminAction(`Combined ${resolved.length} team records into one club`);
   res.json({ ok: true });
 });
 // A simple read-back of every player account and what it's linked to —
@@ -2668,6 +2680,7 @@ router.post("/leagues", async (req, res) => {
   const index = store.getIndex();
   index.push({ id: league.id, name: league.name, createdAt: league.createdAt });
   store.saveIndex(index);
+  logAdminAction(`Created league "${league.name}"`);
   res.json({ id: league.id });
 });
 
@@ -2889,6 +2902,7 @@ router.post("/admin/push/broadcast", async (req, res) => {
     });
     touchedLeagues.forEach((l) => store.saveLeague(l.id, l));
   }
+  logAdminAction(`Sent push: ${text.length > 60 ? text.slice(0, 57) + "…" : text}`);
   res.json({ ok: true, total: jobs.length, sent: jobs.length - errors.length, failed: errors.length });
 });
 
@@ -2960,6 +2974,7 @@ router.put("/leagues/:leagueId/hidden", (req, res) => {
   if (!entry) return res.status(404).json({ error: "Not found." });
   entry.hidden = !!req.body.hidden;
   store.saveIndex(index);
+  logAdminAction(`${entry.hidden ? "Hid" : "Unhid"} league "${entry.name}"`);
   res.json({ ok: true, hidden: entry.hidden });
 });
 
@@ -2977,6 +2992,7 @@ router.put("/leagues/:leagueId/incognito", (req, res) => {
   if (!entry) return res.status(404).json({ error: "Not found." });
   entry.incognito = !!req.body.incognito;
   store.saveIndex(index);
+  logAdminAction(`${entry.incognito ? "Made" : "Un-made"} league "${entry.name}" incognito`);
   res.json({ ok: true, incognito: entry.incognito });
 });
 
@@ -5845,6 +5861,90 @@ function attributeCardFor(user) {
   const overall = shown.length ? Math.min(99, Math.round((shown.reduce((s, a) => s + a.avg, 0) / shown.length) * 20)) : null;
   return { count, needed: RATINGS_TO_UNLOCK, unlocked: true, attributes, overall };
 }
+// Owner-only, read-only — powers the Admin tab's Leagues view: every league
+// with its health on one line (line-ups due, results waiting, courts live).
+function leagueHealth(league) {
+  const now = Date.now();
+  let lineupsDue = 0, lineupsOverdue = 0, resultsWaiting = 0, liveCourts = 0, unfinalized = 0;
+  let current = null;
+  logic.allFixturesOf(league).forEach((f) => {
+    if (!f || f.finalized || !f.teamA || !f.teamB) return;
+    unfinalized++;
+    if (!current) current = f;
+    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    const kickoffMs = kickoffMsOf(sched.date, sched.time);
+    f.rubbers.forEach((r) => { if (r.startedAt && !r.completedAt) liveCourts++; });
+    const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);
+    if (started) resultsWaiting++;
+    if (league.format !== "pairs" && isRoundOpen(league, f)) {
+      [f.selectionA, f.selectionB].forEach((sel) => {
+        if (sel && !sel.submitted) {
+          lineupsDue++;
+          if (kickoffMs && kickoffMs - 24 * 3600000 < now) lineupsOverdue++;
+        }
+      });
+    }
+  });
+  const status = leagueStatus(league);
+  let stage = "Setting up";
+  if (current) stage = fixtureLabel(league, current);
+  else if (logic.allFixturesOf(league).length) stage = "Season complete";
+  return { status, stage, lineupsDue, lineupsOverdue, resultsWaiting, liveCourts, unfinalized };
+}
+router.get("/admin/leagues-health", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const out = [];
+  store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    out.push({ id: league.id, name: league.name, format: league.format || "teams", incognito: !!entry.incognito, teamCount: league.teams.length, ...leagueHealth(league) });
+  });
+  // The ones with something wrong first, then live, then the rest.
+  const score = (l) => (l.lineupsOverdue ? 4 : 0) + (l.resultsWaiting ? 2 : 0) + (l.liveCourts ? 1 : 0);
+  out.sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
+  res.json(out);
+});
+// Owner-only, read-only — the Today view: a few numbers that don't have a
+// card of their own, plus a short "just happened" feed built from what's
+// already stored (new accounts, confirmed results, interest signups, ratings,
+// and the admin action log).
+router.get("/admin/today", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  const now = Date.now();
+  const DAY = 86400000;
+  const dayOf = (ms) => new Date(ms).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+  const today = dayOf(now);
+  const users = store.getUsersIndex().map(({ id }) => store.getUser(id)).filter((u) => u && u.createdAt && !u.test);
+  const newAccounts7d = users.filter((u) => now - u.createdAt < 7 * DAY).length;
+  const newAccountsPrev7d = users.filter((u) => now - u.createdAt >= 7 * DAY && now - u.createdAt < 14 * DAY).length;
+  const ratings = Object.values(store.getPlayerRatings().items);
+  const ratingsToday = ratings.filter((r) => dayOf(r.at || 0) === today).length;
+  let matchesLive = 0, lineupsOverdue = 0, resultsWaiting = 0;
+  const feed = [];
+  store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league) return;
+    const h = leagueHealth(league);
+    matchesLive += h.liveCourts;
+    lineupsOverdue += h.lineupsOverdue;
+    resultsWaiting += h.resultsWaiting;
+    logic.allFixturesOf(league).forEach((f) => {
+      if (f && f.finalized && f.finalizedAt && now - f.finalizedAt < 3 * DAY) {
+        feed.push({ at: f.finalizedAt, kind: "result", text: `${league.name}: ${fixtureLabel(league, f)} result confirmed` });
+      }
+    });
+  });
+  users.filter((u) => now - u.createdAt < 3 * DAY).forEach((u) => feed.push({ at: u.createdAt, kind: "account", text: `${u.name || "Someone"} joined` }));
+  (store.getSignups() || []).filter((sg) => sg.createdAt && now - sg.createdAt < 3 * DAY).forEach((sg) => feed.push({ at: sg.createdAt, kind: "signup", text: `League interest: ${sg.name || "a new sign-up"}` }));
+  if (ratingsToday) feed.push({ at: Math.max(...ratings.filter((r) => dayOf(r.at || 0) === today).map((r) => r.at || 0)), kind: "rating", text: `${ratingsToday} opponent rating${ratingsToday === 1 ? "" : "s"} given today` });
+  ((store.getSiteSettings().adminActions) || []).filter((a) => now - a.at < 3 * DAY).forEach((a) => feed.push({ at: a.at, kind: "admin", text: a.text }));
+  feed.sort((a, b) => b.at - a.at);
+  res.json({ newAccounts7d, newAccountsPrev7d, ratingsToday, matchesLive, lineupsOverdue, resultsWaiting, feed: feed.slice(0, 8) });
+});
+router.get("/admin/actions", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Site owner login required." });
+  res.json(((store.getSiteSettings().adminActions) || []).slice(0, 12));
+});
 // Owner-only, read-only — powers the "Opponent ratings" card on the Admin tab.
 // Totals and averages only: who gave a rating is never returned, so the
 // feature stays anonymous to the owner too. A player's own average is only

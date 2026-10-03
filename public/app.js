@@ -2164,38 +2164,29 @@ async function renderGuestWallCard() {
 // a count so the page reads as a short list. Which sections are open is
 // remembered on this device.
 const ADMIN_SECTIONS = [
-  { id: "live-count-card", key: "online", title: "On the app now" },
-  { id: "logins-today-card", key: "loginsToday", title: "Logged in today" },
-  { id: "hub-claim-requests-card", key: "claims", title: "Claim requests", alert: true },
-  { id: "interest-signups-card", key: "signups", title: "League interest signups", alert: true },
-  { id: "pay-link-finder-card", key: "paylink", title: "Find a player's pay link" },
-  { id: "manage-leagues-card", key: "leagues", title: "Leagues" },
-  { id: "player-accounts-card", key: "accounts", title: "Player accounts" },
-  { id: "combine-players-card", key: "combine", title: "Combine player profiles" },
-  { id: "combine-teams-card", key: "combineTeams", title: "Combine team profiles" },
-  { id: "ratings-monitor-card", key: "ratings", title: "Opponent ratings" },
-  { id: "push-stats-card", key: "push", title: "Push notifications" },
-  { id: "push-broadcast-card", key: "announce", title: "Send push announcement" },
-  { id: "guest-wall-card", key: "wall", title: "Guest sign-up wall" },
-  { id: "prediction-accuracy-card", key: "accuracy", title: "Prediction accuracy" },
-  { id: "create-league-card", key: "create", title: "Create a league" },
+  { id: "live-count-card", key: "online", title: "On the app now", pane: "today" },
+  { id: "logins-today-card", key: "loginsToday", title: "Logged in today", pane: "today" },
+  { id: "hub-claim-requests-card", key: "claims", title: "Claim requests", alert: true, pane: "people" },
+  { id: "interest-signups-card", key: "signups", title: "League interest signups", alert: true, pane: "people" },
+  { id: "player-accounts-card", key: "accounts", title: "Player accounts", pane: "people" },
+  { id: "combine-players-card", key: "combine", title: "Combine player profiles", pane: "people" },
+  { id: "combine-teams-card", key: "combineTeams", title: "Combine team profiles", pane: "people" },
+  { id: "pay-link-finder-card", key: "paylink", title: "Find a player's pay link", pane: "people" },
+  { id: "manage-leagues-card", key: "leagues", title: "League visibility", pane: "leagues" },
+  { id: "create-league-card", key: "create", title: "Create a league", pane: "leagues" },
+  { id: "ratings-monitor-card", key: "ratings", title: "Opponent ratings", pane: "site" },
+  { id: "prediction-accuracy-card", key: "accuracy", title: "Prediction accuracy", pane: "site" },
+  { id: "push-stats-card", key: "push", title: "Push notifications", pane: "site" },
+  { id: "push-broadcast-card", key: "announce", title: "Send push announcement", pane: "site" },
+  { id: "guest-wall-card", key: "wall", title: "Guest sign-up wall", pane: "site" },
 ];
-// What "is anything wrong right now" means — each one drops onto the red
-// strip up top the moment its count is above zero, and off again once it
-// isn't (a claim gets resolved, a signup gets followed up).
-const ADMIN_ALERTS = [
-  { key: "claims", label: "Claim requests" },
-  { key: "signups", label: "League interest signups" },
-];
-// A glance at the site's health, not an inbox — counts that go up and
-// down slowly, not ones that need action today (those are ADMIN_ALERTS,
-// above).
-const ADMIN_KPIS = [
-  { key: "online", label: "On the app now", icon: "🟢" },
-  { key: "leagues", label: "Leagues", icon: "🏆" },
-  { key: "accounts", label: "Players", icon: "👤" },
-  { key: "accuracy", label: "Prediction accuracy", icon: "🎯" },
-];
+// The four views of the Admin tab, and where each section's card lives.
+const ADMIN_TABS = [{ key: "today", label: "Today" }, { key: "people", label: "People" }, { key: "leagues", label: "Leagues" }, { key: "site", label: "Site" }];
+const ADMIN_PANE_BOX = { today: "admin-today-cards", people: "admin-people-cards", leagues: "admin-leagues-cards", site: "admin-site-cards" };
+const ADMIN_TAB_KEY = "padel-admin-tab";
+let adminTab = "today";
+let adminToday = null; // last /admin/today answer
+let adminLeagues = null; // last /admin/leagues-health answer
 const ADMIN_OPEN_KEY = "padel-admin-open";
 let adminOpen = null;
 const adminInfo = {}; // key -> { n, tag, sub }
@@ -2212,20 +2203,142 @@ function setAdminSectionOpen(key, open) {
   saveAdminOpen();
 }
 function jumpToAdminSection(key) {
-  setAdminSectionOpen(key, true);
   const sec = ADMIN_SECTIONS.find((x) => x.key === key);
+  if (!sec) return;
+  setAdminTab(sec.pane);
+  setAdminSectionOpen(key, true);
   el(sec.id).scrollIntoView({ behavior: "smooth", block: "start" });
 }
-// The red strip up top — only the alerts with something actually waiting,
-// so it disappears entirely once nothing needs you.
-function renderAdminAlertStrip() {
-  const strip = el("admin-alert-strip");
-  const items = ADMIN_ALERTS.map((a) => ({ ...a, n: adminInfo[a.key] && adminInfo[a.key].n })).filter((a) => a.n > 0);
-  if (!items.length) { strip.style.display = "none"; return; }
-  strip.innerHTML = `<div class="admin-alert-title">Needs your attention</div>` +
-    items.map((a) => `<div class="admin-alert-row" data-key="${a.key}"><span class="t">${escapeHtml(a.label)}</span><span class="n">${a.n} &rsaquo;</span></div>`).join("");
-  strip.querySelectorAll("[data-key]").forEach((row) => { row.onclick = () => jumpToAdminSection(row.dataset.key); });
-  strip.style.display = "block";
+function setAdminTab(key) {
+  if (!ADMIN_TABS.some((t) => t.key === key)) key = "today";
+  adminTab = key;
+  try { localStorage.setItem(ADMIN_TAB_KEY, key); } catch { /* not remembered */ }
+  applyAdminTab();
+}
+// Shows the active view (and only for the site owner).
+function applyAdminTab() {
+  ADMIN_TABS.forEach((t) => {
+    const pane = el("admin-pane-" + t.key);
+    if (pane) pane.classList.toggle("on", isOwner && t.key === adminTab);
+  });
+  const bar = el("admin-tabs");
+  if (bar) bar.querySelectorAll("button").forEach((b) => { const on = b.dataset.tab === adminTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
+}
+function adminNeedsList() {
+  const n = (k) => (adminInfo[k] && adminInfo[k].n) || 0;
+  return [
+    { key: "claims", label: "Claim requests", n: n("claims"), go: () => jumpToAdminSection("claims") },
+    { key: "signups", label: "League interest signups", n: n("signups"), go: () => jumpToAdminSection("signups") },
+    { key: "overdue", label: "Line-ups overdue", n: (adminToday && adminToday.lineupsOverdue) || 0, go: () => setAdminTab("leagues") },
+  ].filter((x) => x.n > 0);
+}
+// "Needs you": only what is actually waiting, and a quiet green line when
+// nothing is. The badge on the Today tab carries the total.
+function renderAdminNeeds() {
+  const box = el("admin-needs");
+  if (!box) return;
+  const items = adminNeedsList();
+  box.innerHTML = items.length
+    ? `<div class="admin-needs-box"><div class="admin-needs-title">Needs you</div>${items.map((x, i) => `<div class="admin-needs-row" data-i="${i}"><span>${escapeHtml(x.label)}</span><span class="n">${x.n} &rsaquo;</span></div>`).join("")}</div>`
+    : '<div class="admin-needs-box ok">Nothing needs you right now.</div>';
+  box.querySelectorAll("[data-i]").forEach((row) => { row.onclick = () => items[Number(row.dataset.i)].go(); });
+  const total = items.reduce((sum, x) => sum + x.n, 0);
+  const tab = document.querySelector('#admin-tabs button[data-tab="today"]');
+  if (tab) tab.innerHTML = `Today${total ? `<span class="bdg">${total}</span>` : ""}`;
+}
+function renderAdminTiles() {
+  const box = el("admin-tiles");
+  if (!box) return;
+  const n = (k) => (adminInfo[k] && adminInfo[k].n != null ? adminInfo[k].n : "—");
+  const t = adminToday || {};
+  const delta = t.newAccounts7d != null ? t.newAccounts7d - (t.newAccountsPrev7d || 0) : null;
+  const tiles = [
+    { v: n("online"), l: "On the app now", go: () => jumpToAdminSection("online") },
+    { v: n("loginsToday"), l: "Logged in today", go: () => jumpToAdminSection("loginsToday") },
+    { v: t.matchesLive != null ? t.matchesLive : "—", l: "Matches live", go: () => setAdminTab("leagues") },
+    { v: t.newAccounts7d != null ? t.newAccounts7d : "—", l: "New accounts, 7 days", u: delta == null || delta === 0 ? "" : (delta > 0 ? "+" + delta : String(delta)) + " vs the week before", down: delta < 0, go: () => jumpToAdminSection("accounts") },
+    { v: t.ratingsToday != null ? t.ratingsToday : "—", l: "Ratings today", go: () => jumpToAdminSection("ratings") },
+    { v: n("push"), l: "Push devices", go: () => jumpToAdminSection("push") },
+  ];
+  box.innerHTML = tiles.map((x, i) => `<button type="button" class="admin-tile" data-i="${i}"><div class="v">${x.v}</div><div class="l">${x.l}</div>${x.u ? `<div class="u${x.down ? " down" : ""}">${escapeHtml(x.u)}</div>` : ""}</button>`).join("");
+  box.querySelectorAll("[data-i]").forEach((b) => { b.onclick = () => tiles[Number(b.dataset.i)].go(); });
+}
+function adminAgo(ms) {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 1) return "just now";
+  if (m < 60) return m + "m ago";
+  const h = Math.round(m / 60);
+  if (h < 24) return h + "h ago";
+  return Math.round(h / 24) + "d ago";
+}
+function leagueHealthPills(l) {
+  const out = [];
+  if (l.lineupsOverdue) out.push(`<span class="admin-pill bad">${l.lineupsOverdue} line-up${l.lineupsOverdue === 1 ? "" : "s"} overdue</span>`);
+  else if (l.lineupsDue) out.push(`<span class="admin-pill warn">${l.lineupsDue} line-up${l.lineupsDue === 1 ? "" : "s"} due</span>`);
+  if (l.resultsWaiting) out.push(`<span class="admin-pill warn">${l.resultsWaiting} result${l.resultsWaiting === 1 ? "" : "s"} waiting</span>`);
+  if (l.liveCourts) out.push(`<span class="admin-pill info">${l.liveCourts} court${l.liveCourts === 1 ? "" : "s"} live</span>`);
+  if (!out.length) out.push(`<span class="admin-pill ok">${l.unfinalized ? "Nothing waiting" : (l.stage === "Setting up" ? "No fixtures yet" : "All results in")}</span>`);
+  return out;
+}
+// The Today view: numbers, the feed, and the side-rail league list. One
+// fetch each for the two server summaries; everything else is read off what
+// the existing cards already loaded.
+async function renderAdminToday() {
+  const [today, leagues, actions] = await Promise.all([
+    api("/admin/today").catch(() => null),
+    api("/admin/leagues-health").catch(() => null),
+    api("/admin/actions").catch(() => null),
+  ]);
+  adminToday = today;
+  adminLeagues = leagues;
+  renderAdminTiles();
+  renderAdminNeeds();
+  const feed = el("admin-feed");
+  const kindColor = { result: "#178A4C", account: "#2563EB", signup: "#E2432F", rating: "#E8B34C", admin: "#64748B" };
+  feed.innerHTML = today && today.feed.length
+    ? today.feed.map((f) => `<div class="admin-feed-row"><i class="dt" style="background:${kindColor[f.kind] || "#2563EB"}"></i><span class="tx">${escapeHtml(f.text)}</span><span class="tm">${adminAgo(f.at)}</span></div>`).join("")
+    : '<p class="empty">Nothing in the last few days.</p>';
+  renderAdminLeagues();
+  const list = el("admin-actions-list");
+  list.innerHTML = actions && actions.length
+    ? actions.map((a) => `<div class="admin-feed-row"><span class="tx">${escapeHtml(a.text)}</span><span class="tm">${adminAgo(a.at)}</span></div>`).join("")
+    : '<p class="empty">Nothing changed from here yet.</p>';
+}
+function renderAdminLeagues() {
+  const box = el("admin-leagues-health");
+  const mini = el("admin-leagues-mini");
+  const ls = adminLeagues;
+  if (!ls) { box.innerHTML = '<p class="empty">Couldn’t load the leagues just now.</p>'; mini.style.display = "none"; return; }
+  box.innerHTML = ls.length ? ls.map((l) => `<div class="admin-lg">
+      <div class="admin-lg-top"><span class="admin-lg-name">${escapeHtml(l.name)}</span><span class="admin-pill${l.liveCourts ? " ok" : ""}">${escapeHtml(l.stage)}</span></div>
+      <div class="admin-lg-chips">${leagueHealthPills(l).join("")}</div>
+      <div class="admin-lg-btns"><button type="button" class="primary" data-manage="${l.id}">Manage</button>${l.format !== "pairs" ? `<button type="button" class="secondary" data-cr="${l.id}">Control room</button>` : ""}</div>
+    </div>`).join("") : '<p class="empty">No leagues yet. Create one below.</p>';
+  box.querySelectorAll("[data-manage]").forEach((b) => { b.onclick = () => openLeague(b.dataset.manage); });
+  box.querySelectorAll("[data-cr]").forEach((b) => { b.onclick = () => goToControlRoom(b.dataset.cr); });
+  mini.style.display = ls.length ? "" : "none";
+  mini.innerHTML = `<h2 class="section-title">Leagues</h2>` + ls.slice(0, 6).map((l) => `<div class="admin-mini-row" data-go="${l.id}"><span>${escapeHtml(l.name)}</span>${leagueHealthPills(l)[0]}</div>`).join("");
+  mini.querySelectorAll("[data-go]").forEach((row) => { row.onclick = () => setAdminTab("leagues"); });
+}
+// People: one box over the two searches that already exist (players, teams).
+let adminFindTimer = null;
+function runAdminFind(q) {
+  const out = el("admin-find-results");
+  clearTimeout(adminFindTimer);
+  q = (q || "").trim();
+  if (q.length < 2) { out.innerHTML = ""; return; }
+  adminFindTimer = setTimeout(async () => {
+    const [players, teams] = await Promise.all([
+      api("/admin/players/search?q=" + encodeURIComponent(q)).catch(() => []),
+      api("/admin/teams/search?q=" + encodeURIComponent(q)).catch(() => []),
+    ]);
+    if (el("admin-find").value.trim() !== q) return;
+    const prow = (p) => `<div class="admin-res-row"><span>${escapeHtml(p.playerName)}<span class="sub">${escapeHtml([p.teamName, p.leagueName].filter(Boolean).join(" · "))}</span></span><span class="admin-pill ${p.claimed ? "ok" : ""}">${p.claimed ? "Account" : "Unclaimed"}</span></div>`;
+    const trow = (t) => `<div class="admin-res-row"><span>${escapeHtml(t.teamName || t.name || "Team")}<span class="sub">${escapeHtml(t.leagueName || "")}</span></span><span class="admin-pill">Team</span></div>`;
+    out.innerHTML = (players.length ? `<div class="admin-needs-title" style="color:var(--text-dim);margin-top:4px;">Players</div>${players.map(prow).join("")}` : "") +
+      (teams.length ? `<div class="admin-needs-title" style="color:var(--text-dim);margin-top:10px;">Teams</div>${teams.map(trow).join("")}` : "") +
+      (!players.length && !teams.length ? '<p class="empty">No one found.</p>' : "");
+  }, 250);
 }
 // `n` is the number shown on a KPI tile and (when it's a count) on the
 // section; `tag` overrides the section's badge text (e.g. "62%") and, for
@@ -2239,19 +2352,31 @@ function setAdminInfo(key, { n, tag, sub }) {
     const text = tag != null ? tag : (n != null ? String(n) : "");
     tagEl.querySelector(".count").innerHTML = text !== "" ? `<span class="tag${sec.alert && n > 0 ? " warn" : ""}">${escapeHtml(text)}</span>` : "";
   }
-  const kpi = document.querySelector(`.admin-kpi[data-key="${key}"]`);
-  if (kpi) kpi.querySelector(".num").textContent = tag != null ? tag : (n == null ? "—" : n);
-  if (ADMIN_ALERTS.some((a) => a.key === key)) renderAdminAlertStrip();
+  renderAdminTiles();
+  renderAdminNeeds();
 }
 function setupAdminDashboard() {
   if (setupAdminDashboard.done) return;
   setupAdminDashboard.done = true;
   adminOpen = readAdminOpen();
-  const parent = el("hub-view-admin");
-  // KPIs — a glance at site health; the red alert strip above them (see
-  // renderAdminAlertStrip) is what actually needs a decision today.
-  el("admin-kpi-grid").innerHTML = ADMIN_KPIS.map((k) => `<button type="button" class="admin-kpi" data-key="${k.key}"><div class="ic">${k.icon}</div><div class="num">—</div><div class="l">${k.label}</div></button>`).join("");
-  el("admin-kpi-grid").querySelectorAll(".admin-kpi").forEach((btn) => { btn.onclick = () => jumpToAdminSection(btn.dataset.key); });
+  // The four views.
+  el("admin-tabs").innerHTML = ADMIN_TABS.map((t) => `<button type="button" role="tab" data-tab="${t.key}">${t.label}</button>`).join("");
+  el("admin-tabs").querySelectorAll("button").forEach((b) => { b.onclick = () => setAdminTab(b.dataset.tab); });
+  try { adminTab = localStorage.getItem(ADMIN_TAB_KEY) || "today"; } catch { adminTab = "today"; }
+  if (!ADMIN_TABS.some((t) => t.key === adminTab)) adminTab = "today";
+  // The People search, and the Today side-rail box that hands over to it.
+  el("admin-find").oninput = () => runAdminFind(el("admin-find").value);
+  el("admin-find-today").oninput = () => {
+    const q = el("admin-find-today").value;
+    if (q.trim().length < 2) return;
+    setAdminTab("people");
+    el("admin-find").value = q;
+    el("admin-find-today").value = "";
+    runAdminFind(q);
+    el("admin-find").focus();
+  };
+  el("admin-people-chips").innerHTML = [["claims", "Claims"], ["accounts", "Accounts"], ["combine", "Combine"], ["paylink", "Pay link"]].map(([k, l]) => `<button type="button" class="admin-chip" data-k="${k}">${l}</button>`).join("");
+  el("admin-people-chips").querySelectorAll("[data-k]").forEach((b) => { b.onclick = () => jumpToAdminSection(b.dataset.k); });
   // Log out sits up top with the title, not inside "Create a league".
   const logout = el("owner-logout-btn");
   if (logout) el("admin-top-actions").appendChild(logout);
@@ -2259,7 +2384,7 @@ function setupAdminDashboard() {
   ADMIN_SECTIONS.forEach((sec) => {
     const card = el(sec.id);
     if (!card) return;
-    parent.appendChild(card);
+    el(ADMIN_PANE_BOX[sec.pane]).appendChild(card);
     card.classList.add("admin-acc");
     // Buttons that lived in the old heading move to a small row in the body.
     const heading = card.querySelector(":scope > .section-title");
@@ -2293,6 +2418,7 @@ async function refreshOwnerStatus() {
   el("logins-today-card").style.display = isOwner ? "block" : "none";
   setupAdminDashboard();
   el("admin-dash-top").style.display = isOwner ? "block" : "none";
+  applyAdminTab();
   updateAdminBar();
   pollAdminBar();
   // Not a login entry point anymore (that's the unified box on My Profile)
@@ -2302,7 +2428,7 @@ async function refreshOwnerStatus() {
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
   el("pay-link-finder-card").style.display = isOwner ? "block" : "none";
-  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderRatingsMonitorCard(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
+  if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderRatingsMonitorCard(); renderAdminToday(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
 // Cross-league "find a player's pay link" tool — pick a league (each
