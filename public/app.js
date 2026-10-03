@@ -3920,14 +3920,14 @@ function playRatingSplash(q) {
   splash.setAttribute("aria-modal", "true");
   splash.setAttribute("aria-label", "Rate your opponents");
   const first = matches[0];
-  splash.innerHTML = `<div class="rs-l"></div><div class="rs-r"></div><div class="rs-dim"></div>
-    <div class="rs-word">RATE</div>
+  splash.innerHTML = `<div class="rs-s rs-s1"></div><div class="rs-s rs-s2"></div><div class="rs-s rs-s3"></div><div class="rs-s rs-s4"></div><div class="rs-s rs-s5"></div><div class="rs-dim"></div>
+    <img class="rs-wm" src="/images/logo.png" alt="">
     <div class="rs-kick" id="rs-kick"></div>
     <button type="button" class="rs-x" id="rs-x" aria-label="Close">&times;</button>
     <div class="rs-t rs-t1">${ratingPairCircles(first.mine)}<span>${escapeHtml(ratingPairNames(first.mine))}</span></div>
     <div class="rs-t rs-t2">${ratingPairCircles(first.opponents)}<span>${escapeHtml(ratingPairNames(first.opponents))}</span></div>
     <div class="rs-badge" id="rs-badge"></div>
-    <div class="rs-sheet" id="rs-sheet"></div>`;
+    <div class="rs-sheetbox"><div class="rs-sheet" id="rs-sheet"></div></div>`;
   document.body.appendChild(splash);
   const sheet = splash.querySelector("#rs-sheet");
   const kick = splash.querySelector("#rs-kick");
