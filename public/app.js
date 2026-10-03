@@ -2613,10 +2613,15 @@ async function renderLiveCount() {
 // answers "who was logged in today" over the whole day, not just this
 // instant.
 async function renderLoginsToday() {
-  const rows = await api("/admin/logins-today").catch(() => null);
+  let rows = null, why = "";
+  try { rows = await api("/admin/logins-today"); } catch (e) { why = (e && e.message) || ""; }
   const body = el("logins-today-body");
   setAdminInfo("loginsToday", { n: rows ? rows.length : null });
-  if (!rows) { body.innerHTML = '<p class="empty">Couldn’t load this.</p>'; return; }
+  if (!rows) {
+    body.innerHTML = `<p class="empty">Couldn’t load this${why ? ": " + escapeHtml(why) : ""} <button type="button" class="link" id="logins-today-retry">Try again</button></p>`;
+    el("logins-today-retry").onclick = () => renderLoginsToday();
+    return;
+  }
   if (!rows.length) { body.innerHTML = '<p class="empty">Nobody’s logged in yet today.</p>'; return; }
   body.innerHTML = rows.map((r) => `
     <div class="row" style="justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);">

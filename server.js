@@ -68,6 +68,10 @@ const API_WINDOW_MS = 60 * 1000;
 const API_MAX_REQUESTS = 180; // generous for a real user clicking around; well below what a scraping loop would want
 const apiRequestCounts = new Map(); // ip -> { count, resetAt }
 function apiRateLimiter(req, res, next) {
+  // The site owner is never throttled: the Admin tab alone fires a couple of
+  // dozen reads each time it opens, and running the site shouldn't hit a
+  // ceiling meant for scrapers.
+  if (req.session && req.session.isOwner) return next();
   const ip = req.ip;
   const now = Date.now();
   let entry = apiRequestCounts.get(ip);
