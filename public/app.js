@@ -9906,6 +9906,11 @@ function renderLiveSheet() {
     html += `<div class="row2"><button type="button" class="p" data-start>Start</button><button type="button" data-startmove>Move / swap</button></div>`;
   } else {
     html += `<div class="row2"><button type="button" class="p" data-score>Score</button>${info.state === "live" ? '<button type="button" data-complete>Mark complete</button>' : '<button type="button" data-reopen>Start again</button>'}</div>`;
+    // The courtside score is only a scoreboard until someone makes it the
+    // real result — offered only while there IS a live score and no
+    // official one already posted for this match (see liveScoredRubber).
+    const liveOnly = info.rubber.live && liveScoredRubber(info.rubber) !== info.rubber;
+    if (liveOnly && !f.finalized) html += `<div class="row2" style="grid-template-columns:1fr;"><button type="button" data-official>Use ${escapeHtml(rubberScoreText(liveScoredRubber(info.rubber)))} as the official result</button></div>`;
   }
   showLiveSheet(html);
   const sheet = el("lc-sheet");
@@ -9955,6 +9960,17 @@ function renderLiveSheet() {
     const pairAHtml = pairNamesGoldHtml(t.opt.teamA, f.selectionA.pairs[cell.seed], f.selectionA);
     const pairBHtml = pairNamesGoldHtml(t.opt.teamB, f.selectionB.pairs[cell.seed], f.selectionB);
     openScoreModal(f, cell.seed, liveScoredRubber(info.rubber), t.opt.teamA, t.opt.teamB, false, pairAHtml, pairBHtml, { live: true, skipFinalize: true, onSaved: async () => { await refreshLeague(); renderAll(); } });
+  };
+  const officialBtn = sheet.querySelector("[data-official]");
+  if (officialBtn) officialBtn.onclick = async () => {
+    const live = info.rubber.live;
+    if (!confirm(`Post ${rubberScoreText(liveScoredRubber(info.rubber))} as the official result for this match? It goes on Results and counts towards the table once the fixture is finalized.`)) return;
+    try {
+      // The ordinary admin score route, so it's audit-logged and replaces
+      // the live score exactly like a captain's own entry would.
+      await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/rubbers/${cell.seed}`, { method: "PUT", body: { sets: live.sets, tb: live.tb } });
+      closeLiveSheet(); await refreshLeague(); renderAll();
+    } catch (e) { alert(e.message); }
   };
   const completeBtn = sheet.querySelector("[data-complete]");
   if (completeBtn) completeBtn.onclick = async () => {
