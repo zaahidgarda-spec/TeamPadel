@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
-const { sendMail, isConfigured: mailConfigured, buildNotificationEmail } = require("./mailer");
+const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, explainSendFailure } = require("./mailer");
 const oauth = require("./oauth");
 const accuracy = require("./accuracy");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
@@ -2194,6 +2194,34 @@ router.post("/admin/teams/combine", (req, res) => {
   });
   logAdminAction(`Combined ${resolved.length} team records into one club`);
   res.json({ ok: true });
+});
+// Owner-only: a password reset link for one account, handed back to the
+// admin to pass on by hand (WhatsApp, say) when the reset email never
+// arrives. It's the same one-use token the "Forgot password" email carries,
+// but good for 24 hours instead of 1, since a person may not open a message
+// straight away. Making a new one cancels any earlier link for that account.
+router.post("/admin/players/:userId/reset-link", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const user = store.getUser(req.params.userId);
+  if (!user) return res.status(404).json({ error: "Account not found." });
+  user.resetToken = crypto.randomBytes(32).toString("hex");
+  user.resetTokenExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+  store.saveUser(user.id, user);
+  const base = (process.env.PUBLIC_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  logAdminAction(`Made a password reset link for ${user.name}`);
+  res.json({ link: `${base}/?resetToken=${user.resetToken}`, expiresAt: user.resetTokenExpiresAt, name: user.name });
+});
+// Owner-only: send one real test email so "is email working?" has a clear
+// answer, with the plain-English reason when it isn't.
+router.post("/admin/email/test", async (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  const to = normalizeEmail(req.body && req.body.to);
+  if (!to || !to.includes("@")) return res.status(400).json({ error: "Enter an email address to send the test to." });
+  const method = process.env.EMAIL_DRY_RUN ? "dry run" : process.env.BREVO_API_KEY ? "Brevo" : (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) ? "Gmail" : "none";
+  if (!mailConfigured()) return res.json({ ok: false, method, message: "Email isn't set up on this server. No email service key is saved in its settings, so no email can go out." });
+  const result = await sendMail({ to, subject: "Team Padel email check", text: "If you can read this, Team Padel can send email. Password reset links and line-up reminders will reach people." });
+  logAdminAction(`Sent a test email to ${to}`);
+  res.json({ ok: !!result.sent, method, message: result.sent ? `Sent to ${to} using ${method}. Check the inbox, and spam too.` : explainSendFailure(result) });
 });
 // A simple read-back of every player account and what it's linked to —
 // so combining someone isn't a write-only black box for the admin.

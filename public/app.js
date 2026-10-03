@@ -2176,6 +2176,7 @@ const ADMIN_SECTIONS = [
   { id: "create-league-card", key: "create", title: "Create a league", pane: "leagues" },
   { id: "ratings-monitor-card", key: "ratings", title: "Opponent ratings", pane: "site" },
   { id: "prediction-accuracy-card", key: "accuracy", title: "Prediction accuracy", pane: "site" },
+  { id: "email-test-card", key: "email", title: "Email check", pane: "site" },
   { id: "push-stats-card", key: "push", title: "Push notifications", pane: "site" },
   { id: "push-broadcast-card", key: "announce", title: "Send push announcement", pane: "site" },
   { id: "guest-wall-card", key: "wall", title: "Guest sign-up wall", pane: "site" },
@@ -2428,6 +2429,7 @@ async function refreshOwnerStatus() {
   adminTabBtn.style.display = isOwner ? "" : "none";
   if (!isOwner && adminTabBtn.classList.contains("active")) switchHubTab("leagues");
   el("pay-link-finder-card").style.display = isOwner ? "block" : "none";
+  el("email-test-card").style.display = isOwner ? "block" : "none";
   if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderRatingsMonitorCard(); renderAdminToday(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
   renderHub();
 }
@@ -3046,6 +3048,7 @@ function accountRowHtml(a) {
       ${a.online ? '<span class="badge done" style="margin-left:6px;" title="On the site in the last 90 seconds">Online</span>' : ""}
       ${meta ? `<div class="note">${escapeHtml(meta)}</div>` : ""}
       ${!a.signedUp ? '<div class="note">Waiting for them to sign up with this email — their linked records are already here.</div>' : ""}
+      ${a.signedUp && !a.test ? `<div class="acc-reset" data-user="${a.id}" data-name="${escapeHtml(a.name)}"><button class="link acc-reset-btn" type="button">Copy password reset link</button><div class="acc-reset-out note"></div></div>` : ""}
       ${a.claims.length ? `<div class="combine-claim-list">${a.claims.map((cl) => `
         <div class="combine-claim-row" data-user="${a.id}" data-league="${cl.leagueId}" data-team="${cl.teamId}" data-player="${cl.playerId}">
           <span class="note">${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>
@@ -3073,6 +3076,24 @@ async function renderCombineAccounts() {
     group("Real sign-ups", "People who created their own account (email, Google or Facebook), newest first.", real, true)
     + group("Combined by an admin", "Made by combining someone's records under their email. They haven't signed up yet — when they do, with this email, they land on these records.", combined, true)
     + group("Test accounts", "Placeholder or test addresses — kept, but out of the way and left out of the export.", test, false);
+  c.querySelectorAll(".acc-reset").forEach((box) => {
+    const btn = box.querySelector(".acc-reset-btn");
+    const out = box.querySelector(".acc-reset-out");
+    btn.onclick = async () => {
+      btn.disabled = true;
+      out.textContent = "";
+      try {
+        const r = await api(`/admin/players/${box.dataset.user}/reset-link`, { method: "POST" });
+        let copied = false;
+        try { await navigator.clipboard.writeText(r.link); copied = true; } catch { /* clipboard blocked, the link is shown below instead */ }
+        const first = (box.dataset.name || "").split(/\s+/)[0] || "there";
+        const msg = `Hi ${first}, here's your Team Padel password reset link. It works for 24 hours: ${r.link}`;
+        out.innerHTML = `${copied ? "Copied. " : ""}Valid for 24 hours; making another cancels this one. <a href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send on WhatsApp</a><div style="word-break:break-all;margin-top:4px;user-select:all;">${escapeHtml(r.link)}</div>`;
+      } catch (e) {
+        out.textContent = (e && e.message) || "Couldn't make a link just now.";
+      } finally { btn.disabled = false; }
+    };
+  });
   c.querySelectorAll(".combine-unlink-btn").forEach((btn) => {
     btn.onclick = async () => {
       const row = btn.closest(".combine-claim-row");
@@ -3121,6 +3142,20 @@ el("export-accounts-btn").onclick = async () => {
     URL.revokeObjectURL(url);
   } catch (e) { alert("Export failed: " + e.message); }
   finally { btn.disabled = false; btn.textContent = original; }
+};
+
+el("email-test-btn").onclick = async () => {
+  const to = el("email-test-to").value.trim();
+  const out = el("email-test-result");
+  const btn = el("email-test-btn");
+  if (!to) { out.textContent = "Enter an email address to send the test to."; return; }
+  btn.disabled = true; out.textContent = "Sending…";
+  try {
+    const r = await api("/admin/email/test", { method: "POST", body: { to } });
+    out.innerHTML = `<b style="color:${r.ok ? "var(--success)" : "var(--clay)"};">${r.ok ? "Sent" : "Not sent"}</b> · ${escapeHtml(r.message)}`;
+  } catch (e) {
+    out.textContent = (e && e.message) || "Couldn't send just now.";
+  } finally { btn.disabled = false; }
 };
 
 /* ---------- Player accounts (sign up, claim player records, see profile) ----------
