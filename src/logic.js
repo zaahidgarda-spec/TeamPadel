@@ -1770,5 +1770,6 @@ module.exports = {
   playerMatchHistoryAllSeasons,
   potwAwardsAllSeasons,
   stageKeyFor,
+  stageLabel,
   namesSimilar,
 };

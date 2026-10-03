@@ -5697,6 +5697,158 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
   res.json(out);
 });
 
+// ---- Opponent ratings (the FIFA-style player card) ----
+// Rated by the people who actually faced you, only ever through the splash
+// that follows a finalized match (see ratableMatchesFor): eight attributes,
+// 1 Weak to 5 Elite, anonymous. A player's card only shows once they've
+// collected RATINGS_TO_UNLOCK ratings.
+const RATING_ATTRS = [
+  ["consistency", "Consistency"], ["defence", "Defence"], ["volleys", "Volleys"], ["vibora", "Vibora"],
+  ["smash", "Smash"], ["lob", "Lob"], ["serve", "Serve"], ["mentality", "Mentality"],
+];
+const RATINGS_TO_UNLOCK = 3;
+const RATING_QUEUE_SIZE = 3;
+const RATING_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
+
+function ratingMatchTime(league, f, rubber) {
+  if (f.finalizedAt) return f.finalizedAt;
+  if (rubber && rubber.completedAt) return rubber.completedAt;
+  const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+  const date = sched.date || f.date;
+  if (!date) return 0;
+  const ms = kickoffMsOf(date, sched.time) || new Date(date + "T12:00:00+02:00").getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
+// The rubbers this account actually played in that are finished and
+// finalized, newest first, capped to the last few — each with the pair they
+// faced. A rubber (one court's match) is the unit, not the whole team
+// fixture, since that is what a player really played against two people.
+// Anything older than the cap simply falls out of the window, so a player who
+// closes the splash never has old matches resurface later.
+function ratableMatchesFor(user) {
+  const hidden = new Set(store.getIndex().filter((e) => e.hidden).map((e) => e.id));
+  const mine = new Set((user.claims || []).map((c) => c.leagueId + ":" + c.playerId));
+  const cutoff = Date.now() - RATING_WINDOW_MS;
+  const byKey = new Map();
+  let seq = 0;
+  (user.claims || []).forEach((c) => {
+    if (hidden.has(c.leagueId)) return;
+    const league = store.getLeague(c.leagueId);
+    const team = league && league.teams.find((t) => t.id === c.teamId);
+    if (!team) return;
+    logic.allFixturesOf(league).forEach((f) => {
+      if (!f || !f.finalized || (f.teamA !== team.id && f.teamB !== team.id)) return;
+      const mySide = f.teamA === team.id ? "A" : "B";
+      const mySel = mySide === "A" ? f.selectionA : f.selectionB;
+      const oppSel = mySide === "A" ? f.selectionB : f.selectionA;
+      const oppTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
+      if (!mySel || !oppSel || !oppTeam) return;
+      (mySel.pairs || []).forEach((pair, idx) => {
+        if (!pair || !pair.includes(c.playerId)) return;
+        const rubber = f.rubbers[idx];
+        if (!rubber || rubber.forfeited) return;
+        const winner = logic.rubberWinner(rubber);
+        const played = rubber.sets.length > 0 && !!(logic.setWinner(rubber.sets[0]) && logic.setWinner(rubber.sets[1]));
+        if (!winner && !played) return;
+        const key = league.id + ":" + f.id + ":" + idx;
+        if (byKey.has(key)) return;
+        const when = ratingMatchTime(league, f, rubber);
+        if (when && when < cutoff) return;
+        const ref = (team2, pid) => { const p = team2.players.find((x) => x.id === pid); return p ? { playerId: p.id, name: p.name } : null; };
+        const opponents = (oppSel.pairs[idx] || []).map((pid) => ref(oppTeam, pid)).filter((o) => o && !mine.has(league.id + ":" + o.playerId));
+        if (!opponents.length) return;
+        const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+        byKey.set(key, {
+          key, leagueId: league.id, leagueName: league.name, fixtureId: f.id, idx, when, seq: seq++,
+          date: sched.date || f.date || "", label: logic.stageLabel(league, f),
+          result: winner === null ? "D" : winner === mySide ? "W" : "L",
+          scoreText: logic.rubberScoreText(rubber, mySide === "B"),
+          mine: pair.map((pid) => ref(team, pid)).filter(Boolean),
+          opponents, myTeamName: team.name, oppTeamName: oppTeam.name,
+        });
+      });
+    });
+  });
+  // Newest first; matches with no usable date (older data) fall back to the
+  // order they sit in the fixture list, later meaning more recent.
+  return Array.from(byKey.values()).sort((a, b) => b.when - a.when || b.seq - a.seq).slice(0, RATING_QUEUE_SIZE);
+}
+router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const state = user.ratingState || {};
+  const items = store.getPlayerRatings().items;
+  const matches = ratableMatchesFor(user)
+    .filter((m) => !(state.done && state.done[m.key]))
+    .map((m) => ({
+      ...m,
+      opponents: m.opponents.map((o) => ({ ...o, rated: !!items[user.id + "|" + m.key + "|" + o.playerId] })),
+    }))
+    .filter((m) => m.opponents.some((o) => !o.rated));
+  res.json({ intro: !state.introSeen, matches });
+});
+router.post("/players/ratings", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const { matchKey, playerId, scores } = req.body || {};
+  const match = ratableMatchesFor(user).find((m) => m.key === matchKey);
+  if (!match) return res.status(404).json({ error: "That match can't be rated." });
+  const opp = match.opponents.find((o) => o.playerId === playerId);
+  if (!opp) return res.status(400).json({ error: "You can only rate players you faced in that match." });
+  const clean = {};
+  RATING_ATTRS.forEach(([k]) => {
+    const v = scores && Number(scores[k]);
+    if (Number.isInteger(v) && v >= 1 && v <= 5) clean[k] = v;
+  });
+  if (!Object.keys(clean).length) return res.status(400).json({ error: "Rate at least one attribute." });
+  const ratings = store.getPlayerRatings();
+  ratings.items[user.id + "|" + match.key + "|" + opp.playerId] = {
+    raterId: user.id, matchKey: match.key, leagueId: match.leagueId, targetPlayerId: opp.playerId, scores: clean, at: Date.now(),
+  };
+  store.savePlayerRatings(ratings);
+  res.json({ ok: true });
+});
+// Called when the splash is rated through, skipped past, or closed: marks
+// those matches finished so they never come back, and remembers the
+// first-time "start rating" intro has been seen.
+router.post("/players/ratings/done", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const keys = Array.isArray(req.body && req.body.matchKeys) ? req.body.matchKeys : [];
+  const valid = new Set(ratableMatchesFor(user).map((m) => m.key));
+  const state = user.ratingState || { done: {}, introSeen: false };
+  state.done = state.done || {};
+  keys.forEach((k) => { if (valid.has(k)) state.done[k] = Date.now(); });
+  state.introSeen = true;
+  user.ratingState = state;
+  store.saveUser(user.id, user);
+  res.json({ ok: true });
+});
+// This account's own card: every rating given to any player record it has
+// claimed, averaged per attribute. Hidden entirely (just a progress count)
+// until it has RATINGS_TO_UNLOCK ratings, and once there are 5+ values for
+// an attribute, a lone score 3 or more away from the median is ignored so
+// one spiteful rating can't drag it.
+function attributeCardFor(user) {
+  const mine = new Set((user.claims || []).map((c) => c.leagueId + ":" + c.playerId));
+  const mineRatings = Object.values(store.getPlayerRatings().items).filter((r) => mine.has(r.leagueId + ":" + r.targetPlayerId));
+  const count = mineRatings.length;
+  if (count < RATINGS_TO_UNLOCK) return { count, needed: RATINGS_TO_UNLOCK, unlocked: false };
+  const attributes = RATING_ATTRS.map(([key, label]) => {
+    let vals = mineRatings.map((r) => r.scores[key]).filter((v) => v);
+    if (vals.length >= 5) {
+      const sorted = vals.slice().sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      vals = vals.filter((v) => Math.abs(v - median) < 3);
+    }
+    if (vals.length < RATINGS_TO_UNLOCK) return { key, label, avg: null, n: vals.length };
+    return { key, label, avg: Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10, n: vals.length };
+  });
+  const shown = attributes.filter((a) => a.avg !== null);
+  const overall = shown.length ? Math.min(99, Math.round((shown.reduce((s, a) => s + a.avg, 0) / shown.length) * 20)) : null;
+  return { count, needed: RATINGS_TO_UNLOCK, unlocked: true, attributes, overall };
+}
+router.get("/players/attributes", requirePlayerUser, (req, res) => {
+  res.json(attributeCardFor(store.getUser(req.session.playerUser.id)));
+});
+
 // PayFast calls this directly — never a browser, no session, and the body
 // is application/x-www-form-urlencoded (not JSON), hence the dedicated
 // raw-body middleware just on this one route.
@@ -6598,6 +6750,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   const singlesRegulation = league.singlesDecider && f.stage === "regular" && f.rubbers.length === 5 ? 5 : undefined;
   if (!logic.requiredRubbersOk(f, league.format === "pairs", singlesRegulation)) return res.status(400).json({ error: "Enter a full score before finalizing." });
   f.finalized = true;
+  f.finalizedAt = Date.now();
   logAudit(league, req, f, "finalize", {});
   syncPlayoffs(league);
 

@@ -179,6 +179,7 @@ async function init() {
   }
   cache.set("interest-signups", signups);
   cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
+  cache.set("player-ratings", (await redis.get("player-ratings")) || { items: {} });
   cache.set("prediction-accuracy", (await redis.get("prediction-accuracy")) || { latest: null, history: [] });
   cache.set("site-settings", (await redis.get("site-settings")) || {});
 }
@@ -474,6 +475,23 @@ function saveHomepageExtras(extras) {
   writeJsonFile("homepage-extras", extras);
 }
 
+// Opponent attribute ratings (the FIFA-style player card) — one record per
+// rater + match + rated player, keyed so a repeat submit overwrites rather
+// than double-counts. Rater ids stay in the store but are never sent to a
+// client: ratings are anonymous to whoever is being rated.
+function getPlayerRatings() {
+  if (useRedis) return cache.get("player-ratings") || { items: {} };
+  return readJsonFile("player-ratings", { items: {} });
+}
+function savePlayerRatings(ratings) {
+  if (useRedis) {
+    cache.set("player-ratings", ratings);
+    persist("player-ratings", ratings);
+    return;
+  }
+  writeJsonFile("player-ratings", ratings);
+}
+
 // The latest prediction-accuracy report plus one small point per day for the
 // trend (see accuracy.js).
 function getPredictionAccuracy() {
@@ -532,6 +550,8 @@ module.exports = {
   saveSignups,
   getSignupPhoto,
   saveSignupPhoto,
+  getPlayerRatings,
+  savePlayerRatings,
   getHomepageExtras,
   saveHomepageExtras,
   getKitPhoto,

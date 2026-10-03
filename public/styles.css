@@ -1396,6 +1396,89 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .po-btn{width:100%;margin-top:4px;border:0;border-radius:12px;background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-size:14px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:12px;cursor:pointer;}
 .pd-fixture-lineup-cta{background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;text-align:center;padding:8px 10px;cursor:pointer;}
 
+/* Opponent rating splash — shown after a finalized match (and once as a
+   "start rating" intro covering the last few). Same diagonal clash as the
+   playoff splash, but it stays until the player rates, skips or closes it.
+   The resting style is each element's FINAL state; the animations only
+   supply the starting frame (fill-mode backwards), so reduced-motion just
+   switches the animations off. */
+.rs-splash{position:fixed;inset:0;z-index:9100;overflow:hidden;background:#0a1428;color:#fff;}
+.rs-l,.rs-r{position:absolute;inset:0;}
+.rs-l{background:#12203A;clip-path:polygon(0 0,62% 0,38% 100%,0 100%);animation:rsIn .55s .1s cubic-bezier(.2,.8,.2,1) backwards;}
+.rs-r{background:#8f2316;clip-path:polygon(62% 0,100% 0,100% 100%,38% 100%);animation:rsIn .55s .1s cubic-bezier(.2,.8,.2,1) backwards;}
+.rs-l{--rs-from:-105%;}
+.rs-r{--rs-from:105%;}
+@keyframes rsIn{from{transform:translateX(var(--rs-from));}}
+.rs-word{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%) rotate(-90deg);font-family:var(--font-display);font-weight:700;font-size:min(150px,18vh);line-height:.8;color:rgba(255,255,255,.12);white-space:nowrap;animation:rsWord .4s .7s backwards;pointer-events:none;}
+@keyframes rsWord{from{opacity:0;transform:translate(-50%,-50%) rotate(-90deg) scale(2.6);}}
+.rs-kick{position:absolute;left:0;right:0;top:16px;text-align:center;font-family:var(--font-display);font-size:12px;letter-spacing:.24em;color:#E8B34C;text-transform:uppercase;padding:0 52px;}
+.rs-x{position:absolute;right:12px;top:10px;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.35);border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer;z-index:3;padding:0;}
+.rs-t{position:absolute;display:flex;flex-direction:column;align-items:center;gap:8px;width:min(140px,36vw);text-align:center;font-family:var(--font-display);font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.rs-t span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rs-pr{display:flex;}
+.rs-pr b{width:62px;height:62px;border-radius:50%;border:2px solid rgba(255,255,255,.6);background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:21px;}
+.rs-pr b+b{margin-left:-16px;}
+.rs-t1{left:8%;top:62px;animation:rsDrop .5s .85s cubic-bezier(.3,1.4,.5,1) backwards;}
+.rs-t2{right:8%;top:min(215px,27vh);animation:rsRise .5s .95s cubic-bezier(.3,1.4,.5,1) backwards;}
+@keyframes rsDrop{from{opacity:0;transform:translateY(-200px);}}
+@keyframes rsRise{from{opacity:0;transform:translateY(200px);}}
+.rs-badge{position:absolute;left:50%;top:min(182px,23vh);width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-weight:700;font-size:20px;display:flex;align-items:center;justify-content:center;animation:rsPop .35s 1.1s cubic-bezier(.3,1.6,.5,1) backwards,rsRing 1.2s 1.1s ease-out;}
+@keyframes rsPop{from{transform:scale(0);}}
+@keyframes rsRing{0%{box-shadow:0 0 0 0 rgba(232,179,76,.6);}100%{box-shadow:0 0 0 46px rgba(232,179,76,0);}}
+.rs-dim{position:absolute;inset:0;background:rgba(6,6,6,.58);display:none;}
+.rs-rating .rs-dim{display:block;}
+.rs-rating .rs-t,.rs-rating .rs-badge{display:none;}
+.rs-sheet{position:absolute;left:10px;right:10px;bottom:10px;max-width:440px;margin:0 auto;background:rgba(10,20,40,.92);border-radius:16px;padding:14px;max-height:calc(100% - 24px);overflow-y:auto;animation:rsSheet .5s 1.6s ease-out backwards;}
+.rs-rating .rs-sheet{top:52px;animation:none;}
+@keyframes rsSheet{from{transform:translateY(80px);opacity:0;}}
+.rs-kind{font-family:var(--font-display);font-size:16px;letter-spacing:.08em;text-transform:uppercase;color:#E8B34C;margin-bottom:6px;}
+.rs-sub{font-size:12px;color:rgba(255,255,255,.65);margin-bottom:10px;}
+.rs-row{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(255,255,255,.6);margin-bottom:8px;}
+.rs-row b{color:#fff;font-weight:500;text-align:right;}
+.rs-m{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12px;}
+.rs-m b{display:block;font-weight:500;font-size:13px;color:#fff;}
+.rs-m span{color:rgba(255,255,255,.6);}
+.rs-m .rs-res{margin-left:auto;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;}
+.rs-res.W{background:#173a2a;color:#7fd9a8;}
+.rs-res.L{background:#5b1a12;color:#F09595;}
+.rs-res.D{background:#2a3347;color:#c9d3e6;}
+.rs-btn{display:block;width:100%;margin-top:6px;border:0;border-radius:12px;background:#E8B34C;color:#3a2600;font-family:var(--font-display);font-size:14px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:12px;cursor:pointer;}
+.rs-link{display:block;width:100%;background:none;border:0;color:rgba(255,255,255,.65);font-size:12px;margin-top:8px;padding:6px;cursor:pointer;text-decoration:underline;}
+.rs-note{text-align:center;font-size:11px;color:rgba(255,255,255,.55);margin-top:8px;}
+.rs-who{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.rs-who b{width:40px;height:40px;border-radius:50%;background:#8f2316;border:2px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;flex:none;}
+.rs-who .n{font-family:var(--font-display);font-size:17px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
+.rs-who .s{font-size:11px;color:rgba(255,255,255,.6);}
+.rs-rw{margin-bottom:8px;}
+.rs-rh{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;color:rgba(255,255,255,.88);}
+.rs-sg{display:flex;gap:3px;}
+.rs-sg button{flex:1;height:24px;padding:0;border:0;border-radius:3px;background:#0D1420;overflow:hidden;cursor:pointer;}
+.rs-sg i{display:block;height:100%;}
+.rs-err{font-size:12px;color:#F09595;min-height:16px;margin-top:6px;text-align:center;}
+.rs-thanks{text-align:center;padding:16px 0 8px;}
+.rs-thanks b{display:block;font-family:var(--font-display);font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:#E8B34C;margin-bottom:4px;}
+@media (prefers-reduced-motion:reduce){.rs-splash *{animation:none!important;}}
+
+/* Your attributes — the card built from opponent ratings, on My Profile. */
+.at-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px;}
+.at-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.at-ovr{font-family:var(--font-display);font-size:38px;line-height:1;color:var(--text);}
+.at-ovr small{display:block;font-family:var(--font-body);font-size:11px;color:var(--text-dim);margin-top:2px;}
+.at-pill{font-size:11px;padding:3px 9px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);color:var(--text-dim);white-space:nowrap;}
+.at-row{margin-bottom:9px;}
+.at-rh{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:3px;}
+.at-rh b{font-family:var(--font-display);font-size:15px;font-weight:600;}
+.at-rh em{font-style:normal;font-size:11px;margin-left:5px;}
+.at-sg{display:flex;gap:3px;}
+.at-sg span{flex:1;height:8px;background:var(--panel-2);border-radius:3px;overflow:hidden;}
+.at-sg i{display:block;height:100%;}
+.at-foot{display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-top:10px;}
+.at-pips{display:flex;gap:6px;margin:4px 0 10px;}
+.at-pips span{flex:1;height:8px;border-radius:4px;background:var(--panel-2);}
+.at-pips span.on{background:#E8B34C;}
+.at-lock{font-size:14px;color:var(--text);}
+.at-lock small{display:block;font-size:12px;color:var(--text-dim);margin-top:2px;}
+
 /* Trophy Room — a locked/unlocked achievement grid, on a signed-in
    player's own profile and the read-only version shown on anyone else's.
    Every badge type is always visible, in the same shape whether earned

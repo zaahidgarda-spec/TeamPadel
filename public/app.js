@@ -3882,6 +3882,181 @@ async function renderAccountPendingResults() {
     };
   });
 }
+// ---- Opponent ratings ----
+// After a finalized match the player gets a full-screen splash to rate the
+// two people they faced on eight attributes (1 Weak to 5 Elite), anonymously.
+// It is the only place ratings can be given: rate, skip a player, or close
+// it, and that match never comes back. The server decides which matches are
+// still open (see /players/rating-queue — the last three finalized ones).
+const RATING_ATTRS = [["consistency", "Consistency"], ["defence", "Defence"], ["volleys", "Volleys"], ["vibora", "Vibora"], ["smash", "Smash"], ["lob", "Lob"], ["serve", "Serve"], ["mentality", "Mentality"]];
+const RATING_WORDS = ["", "Weak", "Developing", "Solid", "Strong", "Elite"];
+const RATING_FILL = ["", "#E0584B", "#E8863A", "#5B9BE8", "#4FBF86", "#E8B34C"];
+const RATING_INK = ["", "#C0392B", "#C96A1B", "#2563EB", "#178A4C", "#A87708"];
+let ratingSplashChecked = false;
+function nameInitials(name) {
+  const parts = String(name || "?").trim().split(/\s+/);
+  return ((parts[0] || "?").charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "")).toUpperCase();
+}
+function ratingPairNames(list) { return list.map((p) => shortPlayerNamePlain(p)).join(" & "); }
+function ratingPairCircles(list) { return `<div class="rs-pr">${list.map((p) => `<b>${escapeHtml(nameInitials(p.name))}</b>`).join("")}</div>`; }
+function ratingResultWord(m) { return m.result === "W" ? "Won" : m.result === "L" ? "Lost" : "Drew"; }
+async function maybePlayRatingSplash() {
+  if (ratingSplashChecked || document.querySelector(".ps-splash, .rs-splash")) return;
+  ratingSplashChecked = true;
+  let q;
+  try { q = await api("/players/rating-queue"); } catch { return; }
+  // A playoff splash always goes first; rating waits for the next open.
+  if (!q || !q.matches || !q.matches.length || document.querySelector(".ps-splash, .rs-splash")) return;
+  playRatingSplash(q);
+}
+function playRatingSplash(q) {
+  const matches = q.matches.map((m) => ({ ...m, opponents: m.opponents.filter((o) => !o.rated) })).filter((m) => m.opponents.length);
+  if (!matches.length) return;
+  const keys = matches.map((m) => m.key);
+  const intro = q.intro || matches.length > 1;
+  const splash = document.createElement("div");
+  splash.className = "rs-splash";
+  splash.setAttribute("role", "dialog");
+  splash.setAttribute("aria-modal", "true");
+  splash.setAttribute("aria-label", "Rate your opponents");
+  const first = matches[0];
+  splash.innerHTML = `<div class="rs-l"></div><div class="rs-r"></div><div class="rs-dim"></div>
+    <div class="rs-word">RATE</div>
+    <div class="rs-kick" id="rs-kick"></div>
+    <button type="button" class="rs-x" id="rs-x" aria-label="Close">&times;</button>
+    <div class="rs-t rs-t1">${ratingPairCircles(first.mine)}<span>${escapeHtml(ratingPairNames(first.mine))}</span></div>
+    <div class="rs-t rs-t2">${ratingPairCircles(first.opponents)}<span>${escapeHtml(ratingPairNames(first.opponents))}</span></div>
+    <div class="rs-badge" id="rs-badge"></div>
+    <div class="rs-sheet" id="rs-sheet"></div>`;
+  document.body.appendChild(splash);
+  const sheet = splash.querySelector("#rs-sheet");
+  const kick = splash.querySelector("#rs-kick");
+  const sub = (id) => splash.querySelector(id);
+  let mi = 0, oi = 0, scores = {}, sentAny = false, finished = false;
+
+  const markDone = () => api("/players/ratings/done", { method: "POST", body: { matchKeys: keys } }).catch(() => {});
+  const remove = () => { document.removeEventListener("keydown", onKey); splash.remove(); };
+  const closeNow = () => { if (finished) return; finished = true; markDone(); remove(); };
+  const onKey = (e) => { if (e.key === "Escape") closeNow(); };
+  document.addEventListener("keydown", onKey);
+  sub("#rs-x").onclick = closeNow;
+
+  const cover = () => {
+    splash.classList.remove("rs-rating");
+    if (intro) {
+      kick.textContent = "New: rate your opponents";
+      sub("#rs-badge").textContent = String(matches.length);
+      sheet.innerHTML = `<div class="rs-kind">Start rating opponents now</div>
+        <div class="rs-sub">${matches.length > 1 ? `Your last ${matches.length} matches.` : "Your last match."} Anonymous, about 20 seconds each.</div>
+        ${matches.map((m) => `<div class="rs-m"><div><b>${escapeHtml(ratingPairNames(m.opponents))}</b><span>${escapeHtml(m.date ? fmtDate(m.date) : m.label)}${m.scoreText ? " · " + escapeHtml(m.scoreText) : ""}</span></div><span class="rs-res ${m.result}">${m.result}</span></div>`).join("")}
+        <button type="button" class="rs-btn" id="rs-go">Start rating</button>`;
+    } else {
+      kick.textContent = "Full time · " + first.label;
+      sub("#rs-badge").textContent = "FT";
+      sheet.innerHTML = `<div class="rs-kind">Rate your opponents</div>
+        <div class="rs-row"><span>Result</span><b>${ratingResultWord(first)}${first.scoreText ? " " + escapeHtml(first.scoreText) : ""}</b></div>
+        <div class="rs-row"><span>Takes</span><b>20 seconds · anonymous</b></div>
+        <button type="button" class="rs-btn" id="rs-go">Rate ${escapeHtml(ratingPairNames(first.opponents))}</button>
+        <div class="rs-note">Close it and it’s gone for this match.</div>`;
+    }
+    sheet.querySelector("#rs-go").onclick = rate;
+    sheet.querySelector("#rs-go").focus();
+  };
+
+  const paintRow = (k) => {
+    const v = scores[k] || 0;
+    const row = sheet.querySelector(`[data-row="${k}"]`);
+    row.querySelector(".rs-val").textContent = v ? v + " · " + RATING_WORDS[v] : "Skip";
+    row.querySelector(".rs-val").style.color = v ? RATING_FILL[v] : "rgba(255,255,255,.4)";
+    row.querySelectorAll("button").forEach((b) => {
+      const n = Number(b.dataset.n);
+      const fill = b.firstElementChild;
+      fill.style.width = v && n <= v ? "100%" : "0";
+      fill.style.background = v ? RATING_FILL[v] : "transparent";
+    });
+  };
+
+  const advance = () => {
+    const m = matches[mi];
+    scores = {};
+    if (oi < m.opponents.length - 1) { oi++; return rate(); }
+    mi++; oi = 0;
+    if (mi < matches.length) return rate();
+    finished = true;
+    markDone();
+    if (!sentAny) return remove();
+    splash.classList.add("rs-rating");
+    kick.textContent = "";
+    sheet.innerHTML = `<div class="rs-thanks"><b>Ratings sent</b><div class="rs-sub">Thanks. Nobody sees who rated them.</div></div>`;
+    setTimeout(remove, 1600);
+    sheet.onclick = remove;
+  };
+
+  function rate() {
+    const m = matches[mi], o = m.opponents[oi];
+    const lastOpp = oi === m.opponents.length - 1;
+    const lastAll = lastOpp && mi === matches.length - 1;
+    const next = !lastOpp ? m.opponents[oi + 1] : null;
+    splash.classList.add("rs-rating");
+    kick.textContent = matches.length > 1 ? `Match ${mi + 1} of ${matches.length}` : "";
+    sheet.scrollTop = 0;
+    sheet.innerHTML = `<div class="rs-who"><b>${escapeHtml(nameInitials(o.name))}</b><div><div class="n">${escapeHtml(o.name)}</div><div class="s">Player ${oi + 1} of ${m.opponents.length} · ${ratingResultWord(m)} ${escapeHtml(m.scoreText || "")}</div></div></div>
+      ${RATING_ATTRS.map(([k, label]) => `<div class="rs-rw" data-row="${k}"><div class="rs-rh"><span>${label}</span><span class="rs-val" style="color:rgba(255,255,255,.4)">Skip</span></div><div class="rs-sg">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-k="${k}" data-n="${n}" aria-label="${label}: ${n}, ${RATING_WORDS[n]}"><i style="width:0"></i></button>`).join("")}</div></div>`).join("")}
+      <div class="rs-err" id="rs-err">Skip anything you didn’t see.</div>
+      <button type="button" class="rs-btn" id="rs-send">${lastAll ? "Send ratings" : next ? "Send and rate " + escapeHtml(next.name.split(/\s+/)[0]) : "Send and next match"}</button>
+      <button type="button" class="rs-link" id="rs-skip">Skip ${escapeHtml(o.name.split(/\s+/)[0])}</button>`;
+    sheet.onclick = null;
+    sheet.querySelectorAll(".rs-sg button").forEach((b) => {
+      b.onclick = () => {
+        const k = b.dataset.k, n = Number(b.dataset.n);
+        if (scores[k] === n) delete scores[k]; else scores[k] = n;
+        paintRow(k);
+        const err = sheet.querySelector("#rs-err");
+        err.textContent = "Skip anything you didn’t see.";
+      };
+    });
+    sheet.querySelector("#rs-skip").onclick = advance;
+    const send = sheet.querySelector("#rs-send");
+    send.onclick = async () => {
+      const err = sheet.querySelector("#rs-err");
+      if (!Object.keys(scores).length) { err.textContent = "Rate at least one attribute, or skip this player."; return; }
+      send.disabled = true;
+      try {
+        await api("/players/ratings", { method: "POST", body: { matchKey: m.key, playerId: o.playerId, scores } });
+        sentAny = true;
+        advance();
+      } catch (e) {
+        send.disabled = false;
+        err.textContent = (e && e.message) || "Couldn’t send that. Try again.";
+      }
+    };
+  }
+  cover();
+}
+// "Your attributes" on My Profile: the eight bars once 3 opponents have rated
+// this account, otherwise a progress meter toward that.
+async function renderAccountAttributes(cards) {
+  const sec = el("account-attributes-section");
+  if (!(cards || []).length) { sec.style.display = "none"; return; }
+  let a;
+  try { a = await api("/players/attributes"); } catch { sec.style.display = "none"; return; }
+  sec.style.display = "";
+  const box = el("account-attributes");
+  if (!a.unlocked) {
+    box.innerHTML = `<div class="at-card"><div class="at-pips">${Array.from({ length: a.needed }, (_, i) => `<span class="${i < a.count ? "on" : ""}"></span>`).join("")}</div>
+      <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>After each match you can rate the players you faced, and they rate you. Your attributes unlock once ${a.needed} opponents have rated you.</small></div></div>`;
+    return;
+  }
+  const shown = a.attributes.filter((x) => x.avg !== null).sort((x, y) => y.avg - x.avg);
+  const rows = a.attributes.map((x) => {
+    if (x.avg === null) return `<div class="at-row"><div class="at-rh"><span>${escapeHtml(x.label)}</span><span style="color:var(--text-faint);font-size:12px;">Needs more ratings</span></div><div class="at-sg">${"<span></span>".repeat(5)}</div></div>`;
+    const r = Math.max(1, Math.min(5, Math.round(x.avg)));
+    const seg = [1, 2, 3, 4, 5].map((n) => `<span><i style="width:${Math.max(0, Math.min(1, x.avg - (n - 1))) * 100}%;background:${RATING_FILL[r]}"></i></span>`).join("");
+    return `<div class="at-row"><div class="at-rh"><span>${escapeHtml(x.label)}</span><span><b>${x.avg.toFixed(1)}</b><em style="color:${RATING_INK[r]}">${RATING_WORDS[r]}</em></span></div><div class="at-sg">${seg}</div></div>`;
+  }).join("");
+  box.innerHTML = `<div class="at-card"><div class="at-top"><div class="at-ovr">${a.overall === null ? "–" : a.overall}<small>Overall</small></div><span class="at-pill">Rated by ${a.count} opponents</span></div>${rows}
+    ${shown.length > 1 ? `<div class="at-foot"><span>Top: ${escapeHtml(shown[0].label)}</span><span>Next up: ${escapeHtml(shown[shown.length - 1].label)}</span></div>` : ""}</div>`;
+}
 async function renderAccountProfile() {
   const { cards, fixtureCards, playoffSplash } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [], playoffSplash: [] }));
   accountAroundData = { cards: cards || [], fixtureCards: fixtureCards || [] };
@@ -3889,6 +4064,8 @@ async function renderAccountProfile() {
   renderPlayerAround();
   renderAccountAvatar(cards);
   renderAccountPlayoffSplash(playoffSplash);
+  maybePlayRatingSplash();
+  renderAccountAttributes(cards);
   updatePhotoNudge(cards);
   const matchNightNow = renderAccountNextMatch(cards);
   renderAccountTables(cards);
