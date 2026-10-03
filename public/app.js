@@ -394,6 +394,7 @@ async function boot() {
       el("loading-bar-track").style.display = "none";
       el("loading-caption").style.display = "none";
       const gate = el("entry-gate");
+      el("loading").classList.add("gate-mode");
       gate.style.display = "flex";
       entryChoice = await new Promise((resolve) => {
         el("entry-create-btn").onclick = () => resolve("create");
