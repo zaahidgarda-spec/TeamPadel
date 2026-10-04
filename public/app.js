@@ -108,11 +108,13 @@ function playerById(team, id) { return team ? team.players.find((p) => p.id === 
 // the league name is edited — no separate "brand" field to keep up to date.
 function leagueBrand(name) {
   const n = (name || "").toLowerCase();
-  if (n.includes("premier league")) return { logo: "/images/league-premier-league.png", theme: "league-theme-premier", alt: "Team Padel Premier League" };
-  if (n.includes("business class")) return { logo: "/images/league-business-class.png", theme: "league-theme-business", alt: "Team Padel Business Class" };
+  if (n.includes("premier league")) return { logo: "/images/league-premier-league.png", theme: "league-theme-premier", alt: "Team Padel Premier League", official: true };
+  if (n.includes("business class")) return { logo: "/images/league-business-class.png", theme: "league-theme-business", alt: "Team Padel Business Class", official: true };
   if (n.includes("50+")) return { logo: "/images/league-vibora-50.png", theme: "league-theme-vibora50", alt: "Vibora 50+ Padel League" };
   return null;
 }
+// Gold verified seal for the leagues Team Padel runs itself (brand.official).
+const OFFICIAL_SEAL_SVG = '<svg class="official-seal" viewBox="0 0 24 24" role="img" aria-label="Official Team Padel league"><title>Official Team Padel league</title><path d="M12 1.8l2.6 1.9 3.2-.2 1 3.1 2.6 1.9-1 3.1 1 3.1-2.6 1.9-1 3.1-3.2-.2L12 22.2l-2.6-1.9-3.2.2-1-3.1L2.6 15.5l1-3.1-1-3.1 2.6-1.9 1-3.1 3.2.2z" fill="#E8B34C"/><path d="M8 12.2l2.8 2.8L16.2 9.4" stroke="#0B0B0F" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function avatarHtml(t) {
   if (t && t.logo) return `<img class="avatar" src="${t.logo}" alt="">`;
   const initial = t ? t.name.charAt(0).toUpperCase() : "?";
@@ -1089,7 +1091,7 @@ function leagueCardHtml(l) {
     : "";
   const brand = leagueBrand(l.name);
   const nameHtml = brand
-    ? `<img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">`
+    ? `<span class="league-card-brand"><img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">${brand.official ? OFFICIAL_SEAL_SVG : ""}</span>`
     : `<span class="league-card-name">${escapeHtml(l.name)}</span>`;
   // Admin-set 0-5 rating of how competitive the league is — 0 means nobody's
   // rated it yet, so the row just doesn't show rather than reading as "no bars".
@@ -1113,6 +1115,7 @@ function leagueCardHtml(l) {
       <span class="meta-item">${ICON_PEOPLE}${l.teamCount} ${l.format === "pairs" ? "pair" : "team"}${l.teamCount === 1 ? "" : "s"}</span>
       ${isOwner ? `<span class="meta-item">${ICON_CALENDAR}Created ${new Date(l.createdAt).toLocaleDateString()}</span>` : ""}
     </div>
+    ${brand && brand.official ? '<div class="official-foot">Official Team Padel league</div>' : ""}
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
 }
@@ -6068,6 +6071,7 @@ function renderAll() {
   const brandLogo = el("league-brand-logo");
   if (brand) { brandHeader.classList.add(brand.theme); brandLogo.src = brand.logo; brandLogo.alt = brand.alt; }
   else { brandLogo.src = "/images/logo-dark.png"; brandLogo.alt = "Team Padel"; }
+  el("league-brand-seal").innerHTML = brand && brand.official ? OFFICIAL_SEAL_SVG : "";
   const status = league.status;
   const auth = el("auth-status");
   if (myRole === "admin") auth.textContent = "Signed in as Admin";

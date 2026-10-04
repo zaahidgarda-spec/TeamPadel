@@ -723,6 +723,13 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.league-theme-vibora50{border-color:#2563EB;background:linear-gradient(165deg,rgba(37,99,235,.12),var(--panel) 60%);}
 .league-card.league-theme-vibora50:hover{border-color:#2563EB;}
 .league-copy-codes-btn{margin-top:10px;}
+/* Verified seal + footer on the leagues Team Padel runs itself. */
+.league-card-brand{display:flex;align-items:center;gap:8px;min-width:0;}
+.official-seal{width:22px;height:22px;flex:none;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));}
+.league-brand-seal{display:flex;align-items:center;flex:none;}
+.league-brand-seal:empty{display:none;}
+.official-foot{margin-top:12px;padding-top:10px;border-top:1px dashed rgba(184,134,43,.5);font-family:var(--font-display);font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:#B8862B;}
+.league-card.has-photo .official-foot{color:#F1C468;border-top-color:rgba(241,196,104,.5);}
 
 /* A real court photo behind the card instead of the plain panel — a dark
    scrim (transparent at the top, near-black at the bottom) keeps every
