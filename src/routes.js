@@ -5903,6 +5903,35 @@ function attributeCardFor(user) {
   const overall = shown.length ? Math.min(99, Math.round((shown.reduce((s, a) => s + a.avg, 0) / shown.length) * 20)) : null;
   return { count, needed: RATINGS_TO_UNLOCK, unlocked: true, attributes, overall };
 }
+// Trophy Room "new badge" splash. The badges themselves are worked out on the
+// client (see trophyTiles), each with a stable key; the server only remembers
+// which keys this account has already been shown. The first check for an
+// account just records everything it already has, so nobody gets a splash
+// for every old badge the day this ships.
+function cleanBadgeKeys(keys) {
+  return (Array.isArray(keys) ? keys : []).filter((k) => typeof k === "string" && k.length > 0 && k.length <= 160).slice(0, 300);
+}
+router.post("/players/badges/check", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const keys = cleanBadgeKeys(req.body && req.body.keys);
+  if (!user.badgesSeen) {
+    user.badgesSeen = { keys: Array.from(new Set(keys)), startedAt: Date.now() };
+    store.saveUser(user.id, user);
+    return res.json({ newKeys: [] });
+  }
+  const seen = new Set(user.badgesSeen.keys);
+  res.json({ newKeys: keys.filter((k) => !seen.has(k)) });
+});
+router.post("/players/badges/seen", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const keys = cleanBadgeKeys(req.body && req.body.keys);
+  if (!user.badgesSeen) user.badgesSeen = { keys: [], startedAt: Date.now() };
+  const all = new Set(user.badgesSeen.keys);
+  keys.forEach((k) => all.add(k));
+  user.badgesSeen.keys = Array.from(all).slice(-500);
+  store.saveUser(user.id, user);
+  res.json({ ok: true });
+});
 // Owner-only, read-only — powers the Admin tab's Leagues view: every league
 // with its health on one line (line-ups due, results waiting, courts live).
 function leagueHealth(league) {

@@ -4109,7 +4109,12 @@ function nameInitials(name) {
 function ratingPairNames(list) { return list.map((p) => shortPlayerNamePlain(p)).join(" & "); }
 function ratingPairCircles(list) { return `<div class="rs-pr">${list.map((p) => `<b>${escapeHtml(nameInitials(p.name))}</b>`).join("")}</div>`; }
 function ratingResultWord(m) { return m.result === "W" ? "Won" : m.result === "L" ? "Lost" : "Drew"; }
-async function maybePlayRatingSplash() {
+let ratingSplashDone = Promise.resolve();
+function maybePlayRatingSplash() {
+  ratingSplashDone = checkRatingSplash();
+  return ratingSplashDone;
+}
+async function checkRatingSplash() {
   if (ratingSplashChecked || document.querySelector(".ps-splash, .rs-splash")) return;
   ratingSplashChecked = true;
   let q;
@@ -4430,6 +4435,46 @@ const VIBORA_LOGO_UNLOCKED = "/images/vibora-50-champion.png";
 // never actually play there isn't "not yet," it's just irrelevant. So
 // this tile is omitted entirely rather than shown locked for anyone who
 // isn't (and never was) rostered in that league.
+// One descriptor per tile on the Trophy Room grid, in grid order: what it is
+// (`type`), whether it is earned, how to draw it, and — for an earned one — a
+// stable `key` that identifies that exact achievement, so a new one can be
+// told apart from ones already celebrated (see maybePlayBadgeSplash). `big`
+// marks the championships, which get the confetti splash.
+function trophyTiles(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, inViboraLeague) {
+  const premierWins = championships.filter((h) => h.leagueName === PREMIER_LEAGUE_NAME);
+  const businessClassWins = championships.filter((h) => h.leagueName === BUSINESS_CLASS_LEAGUE_NAME);
+  const viboraWins = championships.filter((h) => h.leagueName === VIBORA_LEAGUE_NAME);
+  const regularChampionships = championships.filter((h) => h.leagueName !== PREMIER_LEAGUE_NAME && h.leagueName !== BUSINESS_CLASS_LEAGUE_NAME && h.leagueName !== VIBORA_LEAGUE_NAME);
+  const t = [];
+  const add = (type, locked, icon, title, sub, key, extra) => t.push({ type, locked, icon, title, sub, key: locked ? null : key, ...extra });
+  const viboraImg = (locked) => `<img class="ach-badge-img" src="${locked ? VIBORA_LOGO_LOCKED : VIBORA_LOGO_UNLOCKED}" alt="">`;
+  // Premier leads the grid, always — a wide tile so it visually outranks
+  // everything else regardless of win/lock state.
+  if (premierWins.length) premierWins.forEach((h) => add("premier", false, ICON_PREMIER, "Premier League Champion", `Season ${h.season}`, `premier:${h.season}`, { wide: true, big: true }));
+  else add("premier", true, ICON_PREMIER, "Premier League Champion", "Not yet", null, { wide: true });
+  if (businessClassWins.length) businessClassWins.forEach((h) => add("business", false, ICON_BUSINESS_CLASS, "Business Class Champion", `Season ${h.season}`, `business:${h.season}`, { big: true }));
+  else add("business", true, ICON_BUSINESS_CLASS, "Business Class Champion", "Not yet", null);
+  if (viboraWins.length) viboraWins.forEach((h) => add("vibora", false, viboraImg(false), "Vibora 50+ Champion", `Season ${h.season}`, `vibora:${h.season}`, { big: true }));
+  else if (inViboraLeague) add("vibora", true, viboraImg(true), "Vibora 50+ Champion", "Not yet", null);
+  if (regularChampionships.length) regularChampionships.forEach((h) => add("champion", false, "🏆", "Champion", `${h.teamName} · S${h.season}`, `champion:${h.leagueName}:${h.season}`, { big: true }));
+  else add("champion", true, "🏆", "Champion", "Not yet", null);
+  if (runnerUps.length) runnerUps.forEach((h) => add("runnerup", false, "🥈", "Runner-up", `${h.teamName} · S${h.season}`, `runnerup:${h.leagueName}:${h.season}`));
+  else add("runnerup", true, "🥈", "Runner-up", "Not yet", null);
+  if (awards.length) awards.forEach((w) => add("potw", false, "👑", "Player of the Week", `Round ${w.round} · ${w.leagueName}`, `potw:${w.leagueName}:${w.round}`));
+  else add("potw", true, "👑", "Player of the Week", "Not yet", null);
+  if (winStreak && winStreak.count >= WIN_STREAK_THRESHOLD) add("streak", false, "🔥", "Win streak", `${winStreak.count} in a row · ${winStreak.leagueName}`, "streak");
+  else add("streak", true, "🔥", "Win streak", `${WIN_STREAK_THRESHOLD}+ in a row`, null);
+  if (bagelCount > 0) add("bagel", false, "🎾", "6-0 Set", `${bagelCount} won`, "bagel");
+  else add("bagel", true, "🎾", "6-0 Set", "Not yet", null);
+  if (unbeatenSeasons.length) unbeatenSeasons.forEach((s) => add("unbeaten", false, "💯", "Unbeaten Season", `${s.label} · ${s.leagueName}`, `unbeaten:${s.leagueName}:${s.label}`));
+  else add("unbeaten", true, "💯", "Unbeaten Season", "Not yet", null);
+  // The same achievement can legitimately repeat (a Player of the Week in
+  // round 4 of two different seasons): number the repeats so each one has its
+  // own key.
+  const seen = {};
+  t.forEach((x) => { if (!x.key) return; seen[x.key] = (seen[x.key] || 0) + 1; if (seen[x.key] > 1) x.key += "#" + seen[x.key]; });
+  return t;
+}
 function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, hasPlayed, inViboraLeague) {
   if (!hasPlayed && championships.length === 0 && runnerUps.length === 0 && awards.length === 0) return "";
   const tile = (locked, icon, title, sub) => `
@@ -4442,33 +4487,89 @@ function achievementGridHtml(championships, runnerUps, awards, winStreak, bagelC
       <div class="ach-badge ${locked ? "locked" : "unlocked"}">${icon}</div>
       <div class="ach-cap"><b>${escapeHtml(title)}</b>${escapeHtml(sub)}</div>
     </div>`;
-  const imgTile = (locked, title, sub) => tile(locked, `<img class="ach-badge-img" src="${locked ? VIBORA_LOGO_LOCKED : VIBORA_LOGO_UNLOCKED}" alt="">`, title, sub);
-  const premierWins = championships.filter((h) => h.leagueName === PREMIER_LEAGUE_NAME);
-  const businessClassWins = championships.filter((h) => h.leagueName === BUSINESS_CLASS_LEAGUE_NAME);
-  const viboraWins = championships.filter((h) => h.leagueName === VIBORA_LEAGUE_NAME);
-  const regularChampionships = championships.filter((h) => h.leagueName !== PREMIER_LEAGUE_NAME && h.leagueName !== BUSINESS_CLASS_LEAGUE_NAME && h.leagueName !== VIBORA_LEAGUE_NAME);
-  const tiles = [];
-  // Premier leads the grid, always — a wide tile so it visually outranks
-  // everything else regardless of win/lock state.
-  if (premierWins.length) premierWins.forEach((h) => tiles.push(wideTile(false, ICON_PREMIER, "Premier League Champion", `Season ${h.season}`)));
-  else tiles.push(wideTile(true, ICON_PREMIER, "Premier League Champion", "Not yet"));
-  if (businessClassWins.length) businessClassWins.forEach((h) => tiles.push(tile(false, ICON_BUSINESS_CLASS, "Business Class Champion", `Season ${h.season}`)));
-  else tiles.push(tile(true, ICON_BUSINESS_CLASS, "Business Class Champion", "Not yet"));
-  if (viboraWins.length) viboraWins.forEach((h) => tiles.push(imgTile(false, "Vibora 50+ Champion", `Season ${h.season}`)));
-  else if (inViboraLeague) tiles.push(imgTile(true, "Vibora 50+ Champion", "Not yet"));
-  if (regularChampionships.length) regularChampionships.forEach((h) => tiles.push(tile(false, "🏆", "Champion", `${h.teamName} · S${h.season}`)));
-  else tiles.push(tile(true, "🏆", "Champion", "Not yet"));
-  if (runnerUps.length) runnerUps.forEach((h) => tiles.push(tile(false, "🥈", "Runner-up", `${h.teamName} · S${h.season}`)));
-  else tiles.push(tile(true, "🥈", "Runner-up", "Not yet"));
-  if (awards.length) awards.forEach((w) => tiles.push(tile(false, "👑", "Player of the Week", `Round ${w.round} · ${w.leagueName}`)));
-  else tiles.push(tile(true, "👑", "Player of the Week", "Not yet"));
-  if (winStreak && winStreak.count >= WIN_STREAK_THRESHOLD) tiles.push(tile(false, "🔥", "Win streak", `${winStreak.count} in a row · ${winStreak.leagueName}`));
-  else tiles.push(tile(true, "🔥", "Win streak", `${WIN_STREAK_THRESHOLD}+ in a row`));
-  if (bagelCount > 0) tiles.push(tile(false, "🎾", "6-0 Set", `${bagelCount} won`));
-  else tiles.push(tile(true, "🎾", "6-0 Set", "Not yet"));
-  if (unbeatenSeasons.length) unbeatenSeasons.forEach((s) => tiles.push(tile(false, "💯", "Unbeaten Season", `${s.label} · ${s.leagueName}`)));
-  else tiles.push(tile(true, "💯", "Unbeaten Season", "Not yet"));
+  const tiles = trophyTiles(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, inViboraLeague)
+    .map((x) => (x.wide ? wideTile : tile)(x.locked, x.icon, x.title, x.sub));
   return `<div class="trophy-shade"><div class="ach-grid">${tiles.join("")}</div></div>`;
+}
+// Trophy Room "new badge" splash. Regular badges get the shelf (the grid of
+// badge slots, the new one sliding into place); championships get confetti.
+// Which badges were already celebrated is remembered per account on the
+// server, and the first check for an account only records what it already has.
+let badgeSplashChecked = false;
+async function maybePlayBadgeSplash(tiles, hasRecords) {
+  if (badgeSplashChecked || !hasRecords) return;
+  badgeSplashChecked = true;
+  const earned = tiles.filter((t) => !t.locked && t.key);
+  let r;
+  try { r = await api("/players/badges/check", { method: "POST", body: { keys: earned.map((t) => t.key) } }); } catch { return; }
+  if (!r || !r.newKeys || !r.newKeys.length) return;
+  // Playoff and rating splashes go first; a badge not shown now is still new
+  // the next time the app opens.
+  await ratingSplashDone;
+  if (document.querySelector(".ps-splash, .rs-splash, .bs-splash")) return;
+  const fresh = earned.filter((t) => r.newKeys.includes(t.key)).sort((a, b) => (b.big ? 1 : 0) - (a.big ? 1 : 0));
+  if (fresh.length) playBadgeSplash(fresh, tiles);
+}
+function playBadgeSplash(list, tiles) {
+  const types = [];
+  tiles.forEach((t) => {
+    let slot = types.find((x) => x.type === t.type);
+    if (!slot) { slot = { type: t.type, icon: t.icon, locked: true }; types.push(slot); }
+    if (!t.locked) { slot.locked = false; slot.icon = t.icon; }
+  });
+  const splash = document.createElement("div");
+  splash.className = "bs-splash";
+  splash.setAttribute("role", "dialog");
+  splash.setAttribute("aria-modal", "true");
+  splash.setAttribute("aria-label", "New badge");
+  document.body.appendChild(splash);
+  const markSeen = (keys) => api("/players/badges/seen", { method: "POST", body: { keys } }).catch(() => {});
+  let i = 0, closed = false;
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    markSeen(list.map((b) => b.key));
+    document.removeEventListener("keydown", onKey);
+    splash.remove();
+  };
+  document.addEventListener("keydown", onKey);
+  const confetti = () => {
+    const cols = ["#E8B34C", "#E2432F", "#ffffff", "#F3C969"];
+    let h = "";
+    for (let n = 0; n < 34; n++) h += `<i class="bs-cf" style="left:${Math.round(Math.random() * 100)}%;background:${cols[n % 4]};animation-delay:${(Math.random() * 1.6).toFixed(2)}s;animation-duration:${(2.4 + Math.random() * 1.8).toFixed(2)}s"></i>`;
+    return h;
+  };
+  const show = () => {
+    const b = list[i];
+    markSeen([b.key]);
+    const last = i === list.length - 1;
+    const body = b.big
+      ? `<div class="bs-confetti">${confetti()}</div>
+         <div class="bs-kick">Champions</div>
+         <div class="bs-hero"><div class="ach-badge unlocked bs-big">${b.icon}</div></div>
+         <div class="bs-title">${escapeHtml(b.title)}</div>
+         <div class="bs-sub">${escapeHtml(b.sub)}</div>`
+      : `<div class="bs-kick">Trophy Room</div>
+         <div class="bs-h">New badge added</div>
+         <div class="bs-grid">${types.map((x) => `<div class="bs-slot${x.type === b.type ? " is-new" : ""}"><div class="ach-badge ${x.locked ? "locked" : "unlocked"}">${x.icon}</div></div>`).join("")}</div>
+         <div class="bs-title bs-fade">${escapeHtml(b.title)}</div>
+         <div class="bs-sub bs-fade">${escapeHtml(b.sub)}</div>
+         <div class="bs-count bs-fade">${types.filter((x) => !x.locked).length} of ${types.length} badges collected</div>`;
+    splash.innerHTML = `<button type="button" class="bs-x" id="bs-x" aria-label="Close">&times;</button>
+      <div class="bs-body">${body}</div>
+      <div class="bs-cta"><button type="button" class="bs-b1" id="bs-view">View Trophy Room</button>${last ? "" : `<button type="button" class="bs-b2" id="bs-next"><span>Next badge (${i + 1} of ${list.length})</span></button>`}</div>`;
+    splash.querySelector("#bs-x").onclick = close;
+    splash.querySelector("#bs-view").onclick = () => {
+      close();
+      switchHubTab("account");
+      setTimeout(() => el("account-trophy-section").scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+    };
+    const next = splash.querySelector("#bs-next");
+    if (next) next.onclick = () => { i++; show(); };
+    splash.querySelector("#bs-view").focus();
+  };
+  show();
 }
 function renderTrophyRoom(cards) {
   const section = el("account-trophy-section");
@@ -4489,6 +4590,7 @@ function renderTrophyRoom(cards) {
   section.style.display = html ? "block" : "none";
   container.innerHTML = html;
   el("trophy-poster-row").style.display = html ? "flex" : "none";
+  maybePlayBadgeSplash(trophyTiles(championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons, inViboraLeague), cards.length > 0);
   el("generate-trophy-poster-btn").onclick = () => openPosterModal("trophy", {
     playerName: playerAccount ? playerAccount.name : "Player",
     championships, runnerUps, awards, winStreak, bagelCount, unbeatenSeasons,
