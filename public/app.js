@@ -1677,6 +1677,13 @@ el("create-league-btn").onclick = async () => {
     await openLeague(id);
   } catch (e) { alert(e.message); }
 };
+el("create-test-league-btn").onclick = async () => {
+  try {
+    const { id } = await api("/admin/test-league", { method: "POST" });
+    leaguesIndex = await api("/leagues");
+    await openLeague(id);
+  } catch (e) { alert(e.message); }
+};
 // Admin bar — a slim strip across the top of EVERY screen (hub, My Profile,
 // search, inside a league) with one "Control room" button: the way into
 // Live Court Control from anywhere. Shown to the site owner everywhere and
@@ -5690,6 +5697,7 @@ function auSetupHtml(s) {
       <p class="note" style="margin-bottom:8px;">One name per line. They all start at the base price below.</p>
       <textarea id="au-names" rows="4" placeholder="Zed Alpha&#10;Yan Beta" style="width:100%;box-sizing:border-box;font:inherit;"></textarea>
       <div class="row" style="margin-top:8px;align-items:center;"><label class="note">Base price <input type="number" min="1" step="1" id="au-base" value="${c.minBid}" style="width:80px;"></label><button class="secondary" id="au-add">Add to the pool</button></div>
+      ${league.isTest ? '<div class="row" style="margin-top:10px;align-items:center;gap:8px;flex-wrap:wrap;"><button class="secondary" id="au-dummy" type="button">Dummy import</button><span class="note">Test league: each team keeps its first 2 players (at 5) and 20 made-up players go up for sale.</span></div>' : ""}
       <div style="margin-top:12px;">${pool || '<p class="note">Nobody in the pool yet.</p>'}</div></div>
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><span class="note">When everything looks right, open the room. Captains can then bid.</span><span><button class="primary" id="au-open">Open the auction</button> <button class="link" id="au-del">Delete</button></span></div></div>`;
 }
@@ -5790,6 +5798,7 @@ function auWire(s) {
   on("au-apply", () => { if (confirm("Add the sold players to their teams, and remove the players teams didn't keep? This can't be undone.")) post("/apply"); });
   on("au-open", () => post("/start"));
   on("au-del", () => { if (confirm("Delete this auction and everything in it?")) auctionAct("", { method: "DELETE" }).then(() => { league.auctionStatus = undefined; startAuctionRoom(); }); });
+  on("au-dummy", () => post("/dummy-import"));
   on("au-add", () => {
     const names = el("au-names").value.split("\n").map((n) => n.trim()).filter(Boolean);
     post("/pool", { names, basePrice: el("au-base").value }).then((r) => { if (r) el("au-names").value = ""; });

@@ -6,6 +6,7 @@ const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requi
 const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, explainSendFailure } = require("./mailer");
 const oauth = require("./oauth");
 const accuracy = require("./accuracy");
+const testdata = require("./testdata");
 const auction = require("./auction");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
@@ -2711,6 +2712,22 @@ router.get("/players/news", requirePlayerUser, (req, res) => {
     (league.news || []).forEach((p) => posts.push({ ...p, photo: newsPostPhoto(p, league), leagueId: league.id, leagueName: league.name }));
   });
   res.json(sortNewsPosts(posts));
+});
+
+// Practice kit: a throwaway league with made-up teams, logos and players,
+// kept off every public list (hidden) so it never reaches real players.
+router.post("/admin/test-league", (req, res) => {
+  if (!req.session.isOwner) return res.status(403).json({ error: "Only the site admin can create a test league." });
+  const index = store.getIndex();
+  const n = index.filter((e) => e.isTest).length + 1;
+  const league = newLeagueObj(`TEST · Auction practice ${n}`, "test@example.invalid", "teams", false);
+  league.isTest = true;
+  league.teams = testdata.buildTeams({ uid: logic.uid, genCode: () => genTeamCode(league) });
+  store.saveLeague(league.id, league);
+  index.push({ id: league.id, name: league.name, createdAt: league.createdAt, hidden: true, isTest: true });
+  store.saveIndex(index);
+  logAdminAction(`Created test league "${league.name}"`);
+  res.json({ id: league.id, teams: league.teams.map((t) => ({ name: t.name, code: t.code })) });
 });
 
 router.post("/leagues", async (req, res) => {
@@ -5823,6 +5840,22 @@ function adminAuctionAction(fn) {
     res.json(auction.publicState(ctx.a, ctx.league, auctionViewer(req, ctx.league)));
   };
 }
+// Dummy import (test leagues only): each team keeps its first two players at
+// a price of 5, and a made-up pool of 20 players goes up for sale.
+router.post("/leagues/:leagueId/auction/dummy-import", requireAdmin, adminAuctionAction((a, league) => {
+  if (!league.isTest) return { error: "Dummy import is only for test leagues." };
+  if (a.status !== "setup") return { error: "The auction has started." };
+  const retained = {};
+  league.teams.forEach((t) => { retained[t.id] = t.players.slice(0, 2).map((p) => ({ playerId: p.id, price: 5 })); });
+  const set = auction.setupAuction(a, league, a.config, retained);
+  if (set.error) return set;
+  for (const tier of testdata.poolPlan(league, a.pool, a.config.minBid)) {
+    if (!tier.names.length) continue;
+    const r = auction.addToPool(a, tier.names, tier.base);
+    if (r.error) return r;
+  }
+  return { ok: true };
+}));
 router.put("/leagues/:leagueId/auction/setup", requireAdmin, adminAuctionAction((a, league, body) => auction.setupAuction(a, league, body.config, body.retained)));
 router.post("/leagues/:leagueId/auction/pool", requireAdmin, adminAuctionAction((a, league, body) => auction.addToPool(a, body.names, body.basePrice)));
 router.put("/leagues/:leagueId/auction/pool/:poolId", requireAdmin, adminAuctionAction((a, league, body, req) => auction.updatePoolItem(a, req.params.poolId, body)));
