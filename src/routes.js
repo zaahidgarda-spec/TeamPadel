@@ -975,6 +975,7 @@ function loadGlobalRatings() {
 // night, interleaved fairly across leagues" grouping, just over a
 // different set of leagues (every active league vs. just the ones this
 // player is in).
+const RESULTS_MIN_SHOW_MS = 24 * 60 * 60 * 1000;
 function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
   // {id, name} rather than a bare name — the client links each one to that
   // player's profile, which needs their id (and, per pairing, which league
@@ -984,16 +985,26 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
     return p ? { id: p.id, name: p.name } : null;
   };
 
+  // A fixture drops off this card the moment it is finalized, which can be
+  // minutes after the last score goes in. So results stay visible for at
+  // least RESULTS_MIN_SHOW_MS after finalizing: those "recent" fixtures are
+  // shown after the night's open matches, never ahead of them or in place
+  // of them. (A fixture finalized before finalizedAt was recorded has no
+  // timestamp to count from, so it is not brought back.)
+  const nowMs = Date.now();
   const fixtures = [];
+  const recentFixtures = [];
   leagues.forEach((league) => {
     logic.allFixturesOf(league).forEach((f) => {
-      if (f.finalized || !f.teamA || !f.teamB) return;
+      if (!f.teamA || !f.teamB) return;
+      const recent = !!(f.finalized && f.finalizedAt && nowMs - f.finalizedAt < RESULTS_MIN_SHOW_MS);
+      if (f.finalized && !recent) return;
       if (!(f.selectionA.submitted && f.selectionB.submitted)) return;
       const teamA = league.teams.find((t) => t.id === f.teamA);
       const teamB = league.teams.find((t) => t.id === f.teamB);
       if (!teamA || !teamB) return;
       const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
-      fixtures.push({ league, f, teamA, teamB, sched });
+      (recent ? recentFixtures : fixtures).push({ league, f, teamA, teamB, sched });
     });
   });
 
@@ -1028,8 +1039,9 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
   // Flatten to one entry per seed pairing (up to 4 per fixture), grouped
   // by league — this is what actually gets featured, not the fixture
   // itself.
+  const flatten = (group) => {
   const byLeague = new Map();
-  sameNight.forEach(({ league, f, teamA, teamB, sched }) => {
+  group.forEach(({ league, f, teamA, teamB, sched }) => {
     f.selectionA.pairs.forEach((pairA, i) => {
       const pairB = f.selectionB.pairs[i];
       const refsA = [playerRef(teamA, pairA[0]), playerRef(teamA, pairA[1])].filter(Boolean);
@@ -1084,6 +1096,8 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
     }
   }
   return pairings;
+  };
+  return flatten(sameNight).concat(flatten(recentFixtures));
 }
 
 // Public, unauthenticated — every visitor pings this (public/app.js), not
