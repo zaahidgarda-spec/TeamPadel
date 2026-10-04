@@ -202,6 +202,7 @@ function nextPlayer(a, poolId, randomFn) {
     item = list[Math.floor((randomFn || Math.random)() * list.length)];
   }
   item.status = "pending";
+  a.lastSold = null;
   a.current = { poolId: item.id, bids: [] };
   bump(a, `${item.name} is on the block (from ${item.basePrice})`, "next");
   return { ok: true };
@@ -240,6 +241,7 @@ function sell(a, league) {
   lot.item.status = "sold";
   lot.item.teamId = lot.leaderTeamId;
   lot.item.price = lot.bid;
+  a.lastSold = { poolId: lot.item.id, bids: a.current.bids.slice() };
   a.current = null;
   bump(a, `SOLD: ${lot.item.name} to ${team ? team.name : "a team"} for ${lot.bid}`, "sold", { teamId: lot.leaderTeamId, amount: lot.bid, name: lot.item.name });
   return { ok: true };
@@ -249,8 +251,28 @@ function pass(a) {
   const lot = currentLot(a);
   if (!lot) return { error: "No player is on the block." };
   lot.item.status = "unsold";
+  a.lastSold = null;
   a.current = null;
   bump(a, `${lot.item.name} went unsold`, "unsold");
+  return { ok: true };
+}
+
+// A mis-tap on Sold: puts the player back on the block with the bids as they
+// were, so the room carries on. Only the most recent sale, and only until the
+// next player goes up or the auction ends.
+function undoSale(a) {
+  if (a.status !== "live" && a.status !== "paused") return { error: "The auction isn't running." };
+  if (a.current) return { error: "A player is on the block. Sell or pass first." };
+  if (!a.lastSold) return { error: "There is no sale to undo." };
+  const item = a.pool.find((p) => p.id === a.lastSold.poolId);
+  if (!item || item.status !== "sold") { a.lastSold = null; return { error: "There is no sale to undo." }; }
+  const name = item.name;
+  item.status = "pending";
+  item.teamId = null;
+  item.price = null;
+  a.current = { poolId: item.id, bids: a.lastSold.bids };
+  a.lastSold = null;
+  bump(a, `Sale undone: ${name} is back on the block`, "info");
   return { ok: true };
 }
 
@@ -298,6 +320,7 @@ function finish(a) {
   if (a.status === "done") return { error: "The auction is already finished." };
   if (a.current) return { error: "A player is on the block. Sell or pass first." };
   a.status = "done";
+  a.lastSold = null;
   bump(a, "The auction is finished", "done");
   return { ok: true };
 }
@@ -327,6 +350,7 @@ function publicState(a, league, viewer) {
       bid: lot.bid, leaderTeamId: lot.leaderTeamId, minNext: lot.minNext,
       bids: a.current.bids.slice(-6).reverse().map((b) => ({ teamId: b.teamId, amount: b.amount })),
     } : null,
+    lastSold: a.lastSold ? (() => { const it = a.pool.find((p) => p.id === a.lastSold.poolId); return it ? { name: it.name, teamId: it.teamId, price: it.price } : null; })() : null,
     log: a.log.slice(0, 30),
     version: a.version,
     myTeamId: viewer.teamId || null,
@@ -337,5 +361,5 @@ function publicState(a, league, viewer) {
 
 module.exports = {
   DEFAULT_CONFIG, newAuction, teamState, currentLot, validateConfig, setupAuction, addToPool, updatePoolItem, removeFromPool,
-  start, setPaused, nextPlayer, placeBid, undoBid, sell, pass, finish, rosterBlockers, applyToRosters, publicState,
+  start, setPaused, nextPlayer, placeBid, undoBid, sell, undoSale, pass, finish, rosterBlockers, applyToRosters, publicState,
 };

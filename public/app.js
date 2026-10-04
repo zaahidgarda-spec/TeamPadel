@@ -411,6 +411,7 @@ async function boot() {
     if (entryChoice === "create") el("show-account-signup").click();
   }
   renderAuctionBanner();
+  renderAuctionLiveBanner();
   // Black while the splash/loading screen is up (matches it exactly, no
   // blue status-bar strip on top of a black screen) — back to the site's
   // own blue now that the real app is actually on screen.
@@ -419,6 +420,11 @@ async function boot() {
   // work standalone, without the visitor ever touching the hub or being
   // signed into anything, and even for a hidden league (same "reachable
   // at its own link" exception hidden leagues already get elsewhere).
+  const auScreenMatch = window.location.hash.match(/^#auction-screen\/([^/]+)$/);
+  if (auScreenMatch) {
+    openAuctionScreen(auScreenMatch[1]);
+    return;
+  }
   const payLinkMatch = window.location.hash.match(/^#pay-link\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/);
   if (payLinkMatch) {
     await openPayLink(...payLinkMatch.slice(1));
@@ -1606,6 +1612,7 @@ function observeLeagueCardPhotos(root) {
   }
 }
 function renderHub() {
+  renderAuctionLiveBanner();
   renderInterestLeagueOptions();
   const list = el("league-list");
   list.innerHTML = "";
@@ -1801,6 +1808,17 @@ function auctionAlreadyRegistered() {
 // above it) for as long as the event is live and this browser hasn't
 // already registered. Contrast renderAuctionCallout below, which is
 // one-shot regardless of registration.
+// A league's player auction that is running right now: a banner on the home
+// page that takes captains (and anyone watching) straight into the room.
+function renderAuctionLiveBanner() {
+  const banner = el("auction-live-banner");
+  if (!banner) return;
+  const live = (leaguesIndex || []).filter((l) => l.auctionStatus === "live" || l.auctionStatus === "paused");
+  if (!live.length) { banner.style.display = "none"; return; }
+  el("auction-live-title").textContent = live.length === 1 ? `Auction live: ${live[0].name}` : `${live.length} auctions live`;
+  banner.style.display = "flex";
+  banner.onclick = async () => { await openLeague(live[0].id); switchTab("auction"); };
+}
 function renderAuctionBanner() {
   const banner = el("auction-banner");
   if (!auctionIsLive() || auctionAlreadyRegistered()) { banner.style.display = "none"; return; }
@@ -5497,7 +5515,17 @@ async function loadAuction(force) {
 }
 function setAuctionState(s) {
   const first = auctionState === null;
+  const before = auctionState;
   auctionState = s;
+  // Tell a captain the moment they lose the lead, and buzz when a new player goes up.
+  if (before && before.exists && s.exists && s.myTeamId) {
+    const wasMine = before.current && before.current.leaderTeamId === s.myTeamId;
+    const stillMine = s.current && s.current.leaderTeamId === s.myTeamId;
+    const sameLot = before.current && s.current && before.current.poolId === s.current.poolId;
+    if (wasMine && sameLot && !stillMine) { auctionMsg = "You've been outbid."; buzz([70, 40, 70]); }
+    else if (s.current && (!before.current || !sameLot)) buzz(40);
+  }
+  if (s.current && before && before.current && before.current.poolId !== s.current.poolId) auctionMsg = "";
   auctionVersion = s.version || 0;
   // A fresh "sold" in the log plays the stamp, but never for what was already
   // in the log when this screen opened.
@@ -5508,6 +5536,7 @@ function setAuctionState(s) {
   }
   renderAuction();
 }
+function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch { /* not supported */ } }
 function showAuctionSold(entry) {
   // On the body, not inside the tab: a tab's own transform would turn
   // "fixed" into "fixed to the tab", so it would not cover the screen.
@@ -5533,7 +5562,11 @@ async function auctionAct(path, opts) {
     return null;
   }
 }
+let auctionBidding = false;
 async function auctionBid(amount, teamId) {
+  if (auctionBidding) return;
+  auctionBidding = true;
+  document.querySelectorAll("#auction-root .au-bid").forEach((b) => { b.disabled = true; });
   auctionMsg = "";
   try {
     const s = await api(`/leagues/${auctionLeagueId}/auction/bid`, { method: "POST", body: { amount, teamId } });
@@ -5542,7 +5575,7 @@ async function auctionBid(amount, teamId) {
     auctionMsg = (e && e.message) || "Bid not placed.";
     // A bid that lost a race still carries the fresh room: jump to the new price.
     if (e && e.room) setAuctionState(e.room); else renderAuction();
-  }
+  } finally { auctionBidding = false; }
 }
 const auTeamName = (s, id) => { const t = s.teams.find((x) => x.id === id); return t ? t.name : "a team"; };
 function auTeamBadge(t) { return t.logo ? `<img class="au-logo" src="${t.logo}" alt="">` : `<span class="au-logo au-logo-fb">${escapeHtml((t.name || "?").charAt(0).toUpperCase())}</span>`; }
@@ -5550,6 +5583,61 @@ function auStatusPill(st) {
   const map = { setup: ["Setting up", ""], live: ["Live", "live"], paused: ["Paused", "warn"], done: ["Finished", "done"] };
   const [label, cls] = map[st] || [st, ""];
   return `<span class="au-pill ${cls}">${st === "live" ? "&#9679; " : ""}${label}</span>`;
+}
+// A full-screen, hands-off view of the auction for a TV or projector at the
+// venue: the player and the price huge, every team's money and squad below.
+// Anyone can open it (the room is public to watch); it has no controls.
+function openAuctionScreen(leagueId) {
+  el("loading").style.display = "none";
+  el("app").style.display = "none";
+  document.title = "Auction | Team Padel";
+  const leagueName = ((leaguesIndex || []).find((l) => l.id === leagueId) || {}).name || "Player auction";
+  const scr = document.createElement("div");
+  scr.className = "aus";
+  document.body.appendChild(scr);
+  let state = null, version = 0, lastAt = 0, first = true;
+  const tile = (t, s) => {
+    const cur = s.current;
+    const names = t.retained.length + t.bought.length;
+    return `<div class="aus-team${cur && cur.leaderTeamId === t.id ? " lead" : ""}">
+      <div class="aus-tn">${escapeHtml(t.name)}</div>
+      <div class="aus-purse">${t.purseLeft}<small>left</small></div>
+      <div class="aus-sq">${names} of ${s.config.squadSize} players</div>
+      <div class="aus-buys">${t.bought.map((p) => `<span>${escapeHtml(p.name)} <b>${p.price}</b></span>`).join("")}</div></div>`;
+  };
+  const draw = () => {
+    const s = state;
+    if (!s || !s.exists) { scr.innerHTML = `<div class="aus-mid"><div class="aus-big">No auction here yet</div></div>`; return; }
+    const cur = s.current;
+    const leader = cur && cur.leaderTeamId ? s.teams.find((t) => t.id === cur.leaderTeamId) : null;
+    let main;
+    if (cur) {
+      main = `<div class="aus-left"><div class="aus-kick">On the block</div><div class="aus-name">${escapeHtml(cur.name)}</div><div class="aus-base">Starts at ${cur.basePrice}</div></div>
+        <div class="aus-right"><div class="aus-price">${cur.bid != null ? cur.bid : "&ndash;"}</div><div class="aus-by">${leader ? escapeHtml(leader.name) : "No bids yet"}</div></div>`;
+    } else {
+      const left = s.pool.filter((p) => p.status === "pending").length;
+      const msg = s.status === "done" ? "The auction is finished" : s.status === "setup" ? "The auction starts soon" : s.status === "paused" ? "Paused" : "Waiting for the next player";
+      main = `<div class="aus-mid"><div class="aus-kick">${escapeHtml(leagueName)}</div><div class="aus-big">${msg}</div>${s.status === "live" || s.status === "paused" ? `<div class="aus-base">${left} still to come</div>` : ""}</div>`;
+    }
+    scr.innerHTML = `<div class="aus-top"><span>${escapeHtml(leagueName)}</span><span>${s.status === "live" ? "&#9679; LIVE" : s.status === "paused" ? "PAUSED" : s.status === "done" ? "FINISHED" : "SETTING UP"}</span></div>
+      <div class="aus-main">${main}</div><div class="aus-teams">${s.teams.map((t) => tile(t, s)).join("")}</div>`;
+  };
+  const poll = async () => {
+    let s;
+    try { s = await api(`/leagues/${leagueId}/auction${version ? "?since=" + version : ""}`); } catch { return; }
+    if (s.unchanged) return;
+    version = s.version || 0;
+    state = s;
+    if (s.log && s.log.length) {
+      const sold = s.log.find((l) => l.type === "sold" && l.at > lastAt);
+      if (!first && sold) showAuctionSold(sold);
+      lastAt = Math.max(lastAt, s.log[0].at);
+    }
+    first = false;
+    draw();
+  };
+  poll();
+  setInterval(() => { if (!document.hidden) poll(); }, 1200);
 }
 function renderAuction() {
   const root = el("auction-root");
@@ -5567,6 +5655,7 @@ function renderAuction() {
   }
   const parts = [];
   parts.push(`<div class="au-head"><h2 class="section-title" style="margin:0;border:none;padding:0;">Player auction</h2>${auStatusPill(s.status)}</div>`);
+  if (s.status !== "setup") parts.push('<div class="au-tools"><button type="button" class="link" id="au-screen">Open the big-screen view</button></div>');
   if (auctionMsg) parts.push(`<div class="au-msg">${escapeHtml(auctionMsg)}</div>`);
   if (s.status === "setup") parts.push(s.isAdmin ? auSetupHtml(s) : '<div class="card"><p class="note">The auction hasn\'t started yet. Here is where each team stands going in.</p></div>');
   else parts.push(auLotHtml(s));
@@ -5607,6 +5696,7 @@ function auLotHtml(s) {
     body = `<div class="au-wait"><div class="au-big">The auction is finished</div><p class="note">${sold.length} sold, ${s.pool.filter((p) => p.status === "unsold").length} unsold.${s.applied ? " The results are in the team rosters." : ""}</p>${s.isAdmin && !s.applied ? '<button class="primary" id="au-apply">Add the new players to the teams</button>' : ""}</div>`;
   } else if (!cur) {
     body = `<div class="au-wait"><div class="au-big">${s.status === "paused" ? "Paused" : "Waiting for the next player"}</div>
+      ${s.isAdmin && s.lastSold ? `<p class="note" style="margin-top:8px;">Last sale: ${escapeHtml(s.lastSold.name)} to ${escapeHtml(auTeamName(s, s.lastSold.teamId))} for ${s.lastSold.price}. <button type="button" class="link" id="au-undosale">Undo sale</button></p>` : ""}
       ${s.isAdmin ? `<div class="row" style="justify-content:center;gap:8px;flex-wrap:wrap;margin-top:12px;">
         <button class="primary" id="au-next" ${s.status === "paused" ? "disabled" : ""}>Next player (random)</button>
         <select id="au-pick" aria-label="Pick a player"><option value="">Pick one…</option>${s.pool.filter((p) => p.status !== "sold").map((p) => `<option value="${p.id}">${escapeHtml(p.name)}${p.status === "unsold" ? " (unsold)" : ""}</option>`).join("")}</select>
@@ -5665,6 +5755,8 @@ function auWire(s) {
   on("au-next", () => post("/next"));
   on("au-go", () => { const v = el("au-pick").value; if (!v) { auctionMsg = "Pick a player first."; renderAuction(); return; } post("/next", { poolId: v }); });
   on("au-sold", () => post("/sold"));
+  on("au-undosale", () => post("/undo-sale"));
+  on("au-screen", () => window.open(`${location.origin}/#auction-screen/${auctionLeagueId}`, "_blank"));
   on("au-pass", () => post("/pass"));
   on("au-undo", () => post("/undo-bid"));
   on("au-pause", () => post(s.status === "paused" ? "/resume" : "/pause"));

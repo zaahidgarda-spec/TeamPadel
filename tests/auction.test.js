@@ -164,3 +164,32 @@ test("the public view hides nothing private and carries the viewer's team", () =
   assert.strictEqual(v.teams[0].maxBid, 7, "a bid spends nothing until the player is sold");
   assert.ok(v.log.length > 0);
 });
+
+test("undoing a sale puts the player back on the block with the bids as they were", () => {
+  const { lg, a, t1, t2 } = ready();
+  A.start(a);
+  const zed = a.pool[0];
+  A.nextPlayer(a, zed.id);
+  A.placeBid(a, t1, 2);
+  A.placeBid(a, t2, 3);
+  A.sell(a, lg);
+  assert.strictEqual(A.teamState(a, t2).bought.length, 1);
+  assert.ok(A.undoSale(a).ok);
+  assert.strictEqual(zed.status, "pending");
+  assert.strictEqual(A.teamState(a, t2).bought.length, 0);
+  assert.strictEqual(A.currentLot(a).bid, 3);
+  assert.strictEqual(A.currentLot(a).leaderTeamId, "t2");
+  assert.ok(A.undoSale(a).error, "only once, and not while a player is on the block");
+});
+
+test("a sale cannot be undone after the next player goes up, after a pass, or when none happened", () => {
+  const { lg, a, t1 } = ready();
+  A.start(a);
+  assert.ok(A.undoSale(a).error, "nothing sold yet");
+  A.nextPlayer(a, a.pool[0].id);
+  A.placeBid(a, t1, 2);
+  A.sell(a, lg);
+  A.nextPlayer(a, a.pool[1].id);
+  A.pass(a);
+  assert.ok(A.undoSale(a).error, "the next player went up and was passed");
+});

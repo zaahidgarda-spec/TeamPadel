@@ -920,6 +920,7 @@ router.get("/leagues", (req, res) => {
       // photo lazily, once it actually scrolls into view (see
       // GET /leagues/:leagueId/court-photo and observeLeagueCardPhotos
       // client-side).
+      auctionStatus: (league && league.auctionStatus) || null,
       hasCourtPhoto: !!(league && league.courtPhoto),
       // Every round/stage's {date,time,venue} — small enough to ship whole,
       // and the hub card needs it to work out "is a match live right now"
@@ -5832,6 +5833,7 @@ router.post("/leagues/:leagueId/auction/resume", requireAdmin, adminAuctionActio
 router.post("/leagues/:leagueId/auction/next", requireAdmin, adminAuctionAction((a, league, body) => auction.nextPlayer(a, body.poolId)));
 router.post("/leagues/:leagueId/auction/sold", requireAdmin, adminAuctionAction((a, league) => auction.sell(a, league)));
 router.post("/leagues/:leagueId/auction/pass", requireAdmin, adminAuctionAction((a) => auction.pass(a)));
+router.post("/leagues/:leagueId/auction/undo-sale", requireAdmin, adminAuctionAction((a) => auction.undoSale(a)));
 router.post("/leagues/:leagueId/auction/undo-bid", requireAdmin, adminAuctionAction((a) => auction.undoBid(a)));
 router.post("/leagues/:leagueId/auction/finish", requireAdmin, adminAuctionAction((a, league, body) => {
   // Check that adding the results to the rosters can work BEFORE changing
