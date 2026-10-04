@@ -29,7 +29,7 @@ input[type=number]{
 }
 
 *{box-sizing:border-box;}
-html{color-scheme:light;}
+html{color-scheme:only light;}
 html,body{overflow-x:hidden;}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;-webkit-font-smoothing:antialiased;}
 .wrap{max-width:1040px;margin:0 auto;padding:28px 20px 80px;}
