@@ -753,10 +753,11 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card-brand.is-official .league-card-logo{width:132px;height:42px;min-width:0;flex:0 1 132px;object-fit:contain;object-position:left center;}
 .league-card.has-photo .league-card-brand.is-official .league-card-logo{object-position:center;}
 /* Official leagues with a court photo: the logo sits on an amber frosted-glass
-   bar that runs edge to edge across the photo, status tag above it. */
+   bar with chopped (angled) ends — the brand's button shape — across the photo,
+   status tag above it. */
 .league-card.official.has-photo .league-card-top{flex-direction:column-reverse;align-items:stretch;gap:12px;}
 .league-card.official.has-photo .league-card-top>.row{justify-content:flex-end;}
-.league-card.official.has-photo .league-card-brand.is-official{position:relative;overflow:hidden;flex:none;margin:0 -22px;padding:10px 22px;background:linear-gradient(100deg,rgba(255,236,190,.8),rgba(240,196,98,.55));-webkit-backdrop-filter:blur(10px) saturate(1.4);backdrop-filter:blur(10px) saturate(1.4);border-top:1px solid rgba(255,244,214,.95);border-bottom:1px solid rgba(184,134,43,.6);}
+.league-card.official.has-photo .league-card-brand.is-official{position:relative;overflow:hidden;flex:none;margin:0 -12px;padding:10px 26px;clip-path:polygon(16px 0,100% 0,calc(100% - 16px) 100%,0 100%);background:linear-gradient(100deg,rgba(255,236,190,.85),rgba(240,196,98,.6));-webkit-backdrop-filter:blur(10px) saturate(1.4);backdrop-filter:blur(10px) saturate(1.4);border-top:1px solid rgba(255,244,214,.95);border-bottom:1px solid rgba(184,134,43,.6);}
 /* A soft diagonal sheen across the amber glass. */
 .league-card.official.has-photo .league-card-brand.is-official::after{content:"";position:absolute;top:0;bottom:0;left:55%;width:90px;background:linear-gradient(105deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-18deg);pointer-events:none;}
 .league-card.official.has-photo .league-card-brand.is-official .league-card-logo{width:156px;height:46px;flex:0 1 156px;background:none;padding:0;box-shadow:none;border-radius:0;object-position:left center;}
