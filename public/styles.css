@@ -739,6 +739,10 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card.has-photo::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(6,10,20,0) 0%,rgba(6,10,20,.35) 45%,rgba(6,10,20,.88) 100%);}
 .league-card.has-photo>*{position:relative;z-index:1;}
 .league-card.has-photo .league-card-name{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.5);}
+/* The branded league logos (Premier League, Business Class) are black type on
+   a transparent background — on the dark photo scrim they vanish, so they
+   sit on a light plate whenever the card has a court photo. */
+.league-card.has-photo .league-card-logo{box-sizing:content-box;background:rgba(255,255,255,.94);padding:6px 10px;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.35);}
 .league-card.has-photo .tag{background:rgba(37,99,235,.35);border-color:rgba(147,197,253,.6);color:#fff;}
 .league-card.has-photo .strength-label{color:rgba(255,255,255,.7);}
 .league-card.has-photo .strength-bars .bar{background:rgba(255,255,255,.25);}
