@@ -6,6 +6,7 @@ const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requi
 const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, explainSendFailure } = require("./mailer");
 const oauth = require("./oauth");
 const accuracy = require("./accuracy");
+const auction = require("./auction");
 const { sendPushToSubscriptions, getVapidPublicKey } = require("./push");
 const payfast = require("./payfast");
 
@@ -5753,6 +5754,127 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
   // score is more urgent than one from an hour ago.
   out.sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
   res.json(out);
+});
+
+// ---- Player auction room ----
+// Teams arrive with retained players and a fixed budget; the open spots are
+// filled by captains bidding live. Rules live in auction.js; this is only the
+// HTTP wrapper: load the league's auction, run one action, save, answer.
+function auctionViewer(req, league) {
+  const isAdmin = isAdminSession(req, league.id);
+  const u = resolveLeagueSession(req, league.id);
+  return { isAdmin, teamId: u && u.role === "captain" ? u.teamId : null };
+}
+// The league record only remembers the auction's overall status (so the tab
+// can show or hide without an extra request); the bids live in their own key.
+function syncAuctionStatus(league, a) {
+  const next = a ? a.status : undefined;
+  if (league.auctionStatus === next) return;
+  if (next === undefined) delete league.auctionStatus; else league.auctionStatus = next;
+  store.saveLeague(league.id, league);
+}
+function loadAuction(req, res) {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) { res.status(404).json({ error: "League not found." }); return null; }
+  const a = store.getAuction(league.id);
+  return { league, a };
+}
+router.get("/leagues/:leagueId/auction", (req, res) => {
+  const ctx = loadAuction(req, res);
+  if (!ctx) return;
+  const { league, a } = ctx;
+  const viewer = auctionViewer(req, league);
+  if (!a) return res.json({ exists: false, isAdmin: viewer.isAdmin });
+  if (req.query.since && Number(req.query.since) === a.version) return res.json({ unchanged: true, version: a.version, serverTime: Date.now() });
+  res.json(auction.publicState(a, league, viewer));
+});
+// Creates the room for this league (the Auction tab then appears for everyone).
+router.post("/leagues/:leagueId/auction", requireAdmin, (req, res) => {
+  const ctx = loadAuction(req, res);
+  if (!ctx) return;
+  if (ctx.a) return res.status(400).json({ error: "This league already has an auction." });
+  if (league_isPairs(ctx.league)) return res.status(400).json({ error: "Auctions are for team leagues." });
+  const a = auction.newAuction(ctx.league);
+  store.saveAuction(ctx.league.id, a);
+  syncAuctionStatus(ctx.league, a);
+  res.json(auction.publicState(a, ctx.league, auctionViewer(req, ctx.league)));
+});
+function league_isPairs(league) { return league.format === "pairs"; }
+router.delete("/leagues/:leagueId/auction", requireAdmin, (req, res) => {
+  const ctx = loadAuction(req, res);
+  if (!ctx || !ctx.a) return ctx && res.status(404).json({ error: "No auction to delete." });
+  if (ctx.a.applied) return res.status(400).json({ error: "The results are already in the team rosters, so this auction can't be deleted." });
+  store.deleteAuction(ctx.league.id);
+  syncAuctionStatus(ctx.league, null);
+  res.json({ ok: true });
+});
+// One handler shape for every admin action: run it, and on success save and
+// return the fresh room, on failure return the plain-English reason.
+function adminAuctionAction(fn) {
+  return (req, res) => {
+    const ctx = loadAuction(req, res);
+    if (!ctx) return;
+    if (!ctx.a) return res.status(404).json({ error: "This league has no auction yet." });
+    const r = fn(ctx.a, ctx.league, req.body || {}, req);
+    if (r && r.error) return res.status(400).json({ error: r.error });
+    store.saveAuction(ctx.league.id, ctx.a);
+    syncAuctionStatus(ctx.league, ctx.a);
+    res.json(auction.publicState(ctx.a, ctx.league, auctionViewer(req, ctx.league)));
+  };
+}
+router.put("/leagues/:leagueId/auction/setup", requireAdmin, adminAuctionAction((a, league, body) => auction.setupAuction(a, league, body.config, body.retained)));
+router.post("/leagues/:leagueId/auction/pool", requireAdmin, adminAuctionAction((a, league, body) => auction.addToPool(a, body.names, body.basePrice)));
+router.put("/leagues/:leagueId/auction/pool/:poolId", requireAdmin, adminAuctionAction((a, league, body, req) => auction.updatePoolItem(a, req.params.poolId, body)));
+router.delete("/leagues/:leagueId/auction/pool/:poolId", requireAdmin, adminAuctionAction((a, league, body, req) => auction.removeFromPool(a, req.params.poolId)));
+router.post("/leagues/:leagueId/auction/start", requireAdmin, adminAuctionAction((a) => auction.start(a)));
+router.post("/leagues/:leagueId/auction/pause", requireAdmin, adminAuctionAction((a) => auction.setPaused(a, true)));
+router.post("/leagues/:leagueId/auction/resume", requireAdmin, adminAuctionAction((a) => auction.setPaused(a, false)));
+router.post("/leagues/:leagueId/auction/next", requireAdmin, adminAuctionAction((a, league, body) => auction.nextPlayer(a, body.poolId)));
+router.post("/leagues/:leagueId/auction/sold", requireAdmin, adminAuctionAction((a, league) => auction.sell(a, league)));
+router.post("/leagues/:leagueId/auction/pass", requireAdmin, adminAuctionAction((a) => auction.pass(a)));
+router.post("/leagues/:leagueId/auction/undo-bid", requireAdmin, adminAuctionAction((a) => auction.undoBid(a)));
+router.post("/leagues/:leagueId/auction/finish", requireAdmin, adminAuctionAction((a, league, body) => {
+  // Check that adding the results to the rosters can work BEFORE changing
+  // anything, so a refusal leaves the auction exactly as it was.
+  if (body.apply && !a.applied) {
+    const blocked = auction.rosterBlockers(a, league);
+    if (blocked.length) return { error: `These players are already in match line-ups and can't be released: ${blocked.join(", ")}.` };
+  }
+  const r = auction.finish(a);
+  if (r.error) return r;
+  if (body.apply) {
+    const applied = auction.applyToRosters(a, league);
+    if (applied.error) return applied;
+    store.saveLeague(league.id, league);
+  }
+  return r;
+}));
+router.post("/leagues/:leagueId/auction/apply", requireAdmin, adminAuctionAction((a, league) => {
+  if (a.status !== "done") return { error: "Finish the auction first." };
+  const r = auction.applyToRosters(a, league);
+  if (r.error) return r;
+  store.saveLeague(league.id, league);
+  return r;
+}));
+// A captain bids for their own team; the admin may bid on behalf of any team
+// (a captain with no signal, say) by naming it.
+router.post("/leagues/:leagueId/auction/bid", (req, res) => {
+  const ctx = loadAuction(req, res);
+  if (!ctx) return;
+  if (!ctx.a) return res.status(404).json({ error: "This league has no auction yet." });
+  const viewer = auctionViewer(req, ctx.league);
+  const wantedTeam = viewer.isAdmin && req.body && req.body.teamId ? req.body.teamId : viewer.teamId;
+  if (!wantedTeam) return res.status(403).json({ error: "Only team captains can bid. Log in with your team code first." });
+  const team = ctx.league.teams.find((t) => t.id === wantedTeam);
+  if (!team) return res.status(400).json({ error: "Team not found." });
+  const r = auction.placeBid(ctx.a, team, req.body && req.body.amount);
+  if (r.error) {
+    // A stale bid is not a fault: send the fresh room too so the screen can
+    // jump straight to the new price.
+    return res.status(r.stale ? 409 : 400).json({ error: r.error, room: r.stale ? auction.publicState(ctx.a, ctx.league, viewer) : undefined });
+  }
+  store.saveAuction(ctx.league.id, ctx.a);
+  res.json(auction.publicState(ctx.a, ctx.league, viewer));
 });
 
 // ---- Opponent ratings (the FIFA-style player card) ----

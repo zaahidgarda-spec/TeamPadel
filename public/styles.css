@@ -1482,6 +1482,68 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .at-lock{font-size:14px;color:var(--text);}
 .at-lock small{display:block;font-size:12px;color:var(--text-dim);margin-top:2px;}
 
+/* Player auction room (league > Auction tab). The player on the block is a
+   dark card with the price big; everything else uses the normal card style. */
+.au-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;}
+.au-pill{font-size:11.5px;font-weight:700;padding:3px 11px;border-radius:999px;background:var(--panel-2);color:var(--text-dim);letter-spacing:.04em;text-transform:uppercase;}
+.au-pill.live{background:#FDE7E3;color:#B5321F;}
+.au-pill.warn{background:#FFF1DA;color:#A35F00;}
+.au-pill.done{background:var(--success-soft);color:var(--success);}
+.au-msg{background:#FDF1EE;border:1px solid #F3C5BC;color:#B5321F;border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:13.5px;}
+.au-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px;}
+@media (max-width:520px){.au-fields{grid-template-columns:1fr;}}
+.au-field{display:flex;flex-direction:column;gap:3px;font-size:13px;font-weight:600;}
+.au-field input{padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);font:inherit;}
+.au-field small{font-weight:400;color:var(--text-dim);font-size:11.5px;}
+.au-sub{font-family:var(--font-display);font-size:14px;letter-spacing:.06em;text-transform:uppercase;margin:16px 0 4px;}
+.au-ret-team{border-top:1px solid var(--line);padding:10px 0;}
+.au-ret-title{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.au-ret-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0;font-size:13.5px;}
+.au-ret-row label{display:flex;align-items:center;gap:8px;}
+.au-price{width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--radius-sm);font:inherit;}
+.au-pool-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13.5px;}
+.au-pool-row:first-child{border-top:0;}
+.au-logo{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;}
+.au-logo-fb{display:inline-flex;align-items:center;justify-content:center;background:var(--panel-2);color:var(--accent);font-weight:700;font-size:12px;}
+.au-lot{background:#0a0a0a;color:#fff;border-radius:var(--radius-lg);padding:20px 16px 18px;text-align:center;margin-bottom:14px;border:1px solid #1d1d1d;}
+.au-lot.paused{opacity:.85;}
+.au-kick{font-family:var(--font-display);font-weight:700;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:#E8B34C;}
+.au-name{font-family:var(--font-display);font-weight:700;font-size:32px;text-transform:uppercase;letter-spacing:.03em;line-height:1.1;margin-top:6px;}
+.au-base{font-size:13px;color:rgba(255,255,255,.6);margin-top:4px;}
+.au-bidnow{margin:16px 0 8px;}
+.au-bidnum{font-family:var(--font-display);font-weight:700;font-size:72px;line-height:1;color:#E8B34C;font-variant-numeric:tabular-nums;}
+.au-bidby{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:6px;font-size:15px;color:rgba(255,255,255,.85);min-height:28px;}
+.au-hist{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:10px 0;}
+.au-hist span{font-size:12px;background:rgba(255,255,255,.08);padding:3px 9px;border-radius:999px;color:rgba(255,255,255,.75);}
+.au-bids{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px;}
+.au-bid{border:0;background:#1d1d1d;color:#fff;font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:.04em;text-transform:uppercase;padding:13px 20px;cursor:pointer;clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);}
+.au-bid.main{background:#E8B34C;color:#1c1400;font-size:20px;padding:15px 34px;}
+.au-lead{color:#7fd9a8;font-weight:700;margin:12px 0 4px;}
+.au-lot .note{color:rgba(255,255,255,.6);}
+.au-admin{border-top:1px solid #222;margin-top:16px;padding-top:14px;}
+.au-lot .link{color:rgba(255,255,255,.75);}
+.au-lot .secondary{background:#1d1d1d;color:#fff;border-color:#333;}
+.au-wait{padding:10px 0;}
+.au-big{font-family:var(--font-display);font-weight:700;font-size:24px;text-transform:uppercase;letter-spacing:.03em;}
+.au-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:14px;}
+.au-team{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px 14px;}
+.au-team.mine{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+.au-team.leading{background:var(--success-soft);}
+.au-team-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.au-purse{font-family:var(--font-display);font-weight:700;font-size:34px;line-height:1;font-variant-numeric:tabular-nums;color:var(--accent);}
+.au-purse small{font-family:var(--font-body);font-size:12px;font-weight:400;color:var(--text-dim);margin-left:5px;}
+.au-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+.au-chip{font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--panel-2);color:var(--text-dim);}
+.au-chip.bought{background:#FBF1D9;color:#8a6410;font-weight:600;}
+.au-log{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13.5px;}
+.au-log:first-of-type{border-top:0;}
+.au-sold{position:fixed;inset:0;z-index:9200;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;}
+.au-sold-in{animation:auPop .5s cubic-bezier(.3,1.5,.5,1) backwards;}
+.au-sold-stamp{font-family:var(--font-display);font-weight:700;font-size:84px;letter-spacing:.08em;text-transform:uppercase;color:#E8B34C;border:5px solid #E8B34C;padding:6px 28px;display:inline-block;transform:rotate(-6deg);}
+.au-sold-text{color:#fff;font-size:18px;margin-top:18px;padding:0 20px;}
+@keyframes auPop{from{transform:scale(2.4);opacity:0;}}
+@media (prefers-reduced-motion:reduce){.au-sold-in{animation:none;}}
+
 /* New-badge splash: the regular badges slide into the Trophy Room shelf,
    championships get confetti. Black with the wordmark's chopped corners on
    the buttons, like the other full-screen moments. */

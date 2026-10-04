@@ -5393,6 +5393,9 @@ function tabDefs() {
   defs.push({ key: "news", label: "News room" });
   if ((league.seasonHistoryCount || 0) > 0) defs.push({ key: "season-history", label: "Past seasons" });
   if ((league.hallOfFame && league.hallOfFame.length > 0) || myRole === "admin") defs.push({ key: "halloffame", label: "Hall of Fame" });
+  // The player auction: everyone sees the tab once the league has one, and
+  // the league admin always sees it (to set one up) in a team league.
+  if (league.auctionStatus || (myRole === "admin" && league.format !== "pairs")) defs.push({ key: "auction", label: league.auctionStatus === "live" ? "Auction \u25CF" : "Auction" });
   // Admin sees this too, not just captain — the notifications LIST already
   // shows every team's activity to an admin (see the server-side route),
   // and the email/push cards inside light up for an admin who's ALSO
@@ -5472,6 +5475,219 @@ function buildTabs() {
 // once; news isn't scoped to one) — the selector only makes sense on the
 // tabs that actually show one group's fixtures/table/stats/pairs.
 const GROUP_SCOPED_TABS = ["fixtures", "results", "predictions", "table", "stats", "roster"];
+/* ---------- Player auction room ----------
+   Teams arrive with retained players and a budget; captains bid live for the
+   open spots while the admin runs the room. The rules are on the server
+   (src/auction.js); this only draws the room and sends the taps. */
+let auctionState = null, auctionTimer = null, auctionVersion = 0, auctionLeagueId = null, auctionLastLogAt = 0, auctionMsg = "";
+function auctionActive() { return inLeagueView() && el("view-auction").classList.contains("active") && currentLeagueId === auctionLeagueId; }
+function startAuctionRoom() {
+  stopAuctionRoom();
+  auctionLeagueId = currentLeagueId; auctionVersion = 0; auctionState = null; auctionLastLogAt = 0; auctionMsg = "";
+  loadAuction(true);
+  auctionTimer = setInterval(() => { if (!auctionActive()) { stopAuctionRoom(); return; } if (!document.hidden) loadAuction(false); }, 1500);
+}
+function stopAuctionRoom() { clearInterval(auctionTimer); auctionTimer = null; }
+async function loadAuction(force) {
+  if (!auctionLeagueId) return;
+  let s;
+  try { s = await api(`/leagues/${auctionLeagueId}/auction${!force && auctionVersion ? "?since=" + auctionVersion : ""}`); } catch { return; }
+  if (s.unchanged) return;
+  setAuctionState(s);
+}
+function setAuctionState(s) {
+  const first = auctionState === null;
+  auctionState = s;
+  auctionVersion = s.version || 0;
+  // A fresh "sold" in the log plays the stamp, but never for what was already
+  // in the log when this screen opened.
+  if (s.log && s.log.length) {
+    const newestSold = s.log.find((l) => l.type === "sold" && l.at > auctionLastLogAt);
+    if (!first && newestSold) showAuctionSold(newestSold);
+    auctionLastLogAt = Math.max(auctionLastLogAt, s.log[0].at);
+  }
+  renderAuction();
+}
+function showAuctionSold(entry) {
+  // On the body, not inside the tab: a tab's own transform would turn
+  // "fixed" into "fixed to the tab", so it would not cover the screen.
+  document.querySelectorAll("body > .au-sold").forEach((x) => x.remove());
+  const box = document.createElement("div");
+  box.className = "au-sold";
+  box.setAttribute("role", "status");
+  box.innerHTML = `<div class="au-sold-in"><div class="au-sold-stamp">Sold</div><div class="au-sold-text">${escapeHtml(entry.text.replace(/^SOLD:\s*/, ""))}</div></div>`;
+  document.body.appendChild(box);
+  const gone = () => box.remove();
+  box.onclick = gone;
+  setTimeout(gone, 3200);
+}
+async function auctionAct(path, opts) {
+  auctionMsg = "";
+  try {
+    const s = await api(`/leagues/${auctionLeagueId}/auction${path}`, opts);
+    setAuctionState(s);
+    return s;
+  } catch (e) {
+    auctionMsg = (e && e.message) || "That didn't work.";
+    renderAuction();
+    return null;
+  }
+}
+async function auctionBid(amount, teamId) {
+  auctionMsg = "";
+  try {
+    const s = await api(`/leagues/${auctionLeagueId}/auction/bid`, { method: "POST", body: { amount, teamId } });
+    setAuctionState(s);
+  } catch (e) {
+    auctionMsg = (e && e.message) || "Bid not placed.";
+    // A bid that lost a race still carries the fresh room: jump to the new price.
+    if (e && e.room) setAuctionState(e.room); else renderAuction();
+  }
+}
+const auTeamName = (s, id) => { const t = s.teams.find((x) => x.id === id); return t ? t.name : "a team"; };
+function auTeamBadge(t) { return t.logo ? `<img class="au-logo" src="${t.logo}" alt="">` : `<span class="au-logo au-logo-fb">${escapeHtml((t.name || "?").charAt(0).toUpperCase())}</span>`; }
+function auStatusPill(st) {
+  const map = { setup: ["Setting up", ""], live: ["Live", "live"], paused: ["Paused", "warn"], done: ["Finished", "done"] };
+  const [label, cls] = map[st] || [st, ""];
+  return `<span class="au-pill ${cls}">${st === "live" ? "&#9679; " : ""}${label}</span>`;
+}
+function renderAuction() {
+  const root = el("auction-root");
+  const s = auctionState;
+  if (!s) { root.innerHTML = '<p class="empty">Loading…</p>'; return; }
+  if (!s.exists) {
+    root.innerHTML = s.isAdmin
+      ? `<div class="card"><h2 class="section-title">Player auction</h2>
+          <p class="note" style="margin-bottom:12px;">Run an auction for this league. Each team keeps some of its players and gets a budget, then captains bid live for the open spots while you run the room. Nothing changes in the teams until you add the results at the end.</p>
+          <button class="primary" id="au-create">Create the auction room</button><div class="error" id="au-err">${escapeHtml(auctionMsg)}</div></div>`
+      : '<div class="card"><p class="empty">There is no auction in this league yet.</p></div>';
+    const b = el("au-create");
+    if (b) b.onclick = () => auctionAct("", { method: "POST" });
+    return;
+  }
+  const parts = [];
+  parts.push(`<div class="au-head"><h2 class="section-title" style="margin:0;border:none;padding:0;">Player auction</h2>${auStatusPill(s.status)}</div>`);
+  if (auctionMsg) parts.push(`<div class="au-msg">${escapeHtml(auctionMsg)}</div>`);
+  if (s.status === "setup") parts.push(s.isAdmin ? auSetupHtml(s) : '<div class="card"><p class="note">The auction hasn\'t started yet. Here is where each team stands going in.</p></div>');
+  else parts.push(auLotHtml(s));
+  parts.push(auBoardHtml(s));
+  if (s.status !== "setup") parts.push(auPoolHtml(s));
+  if (s.log.length && s.status !== "setup") parts.push(`<div class="card"><h2 class="section-title">Activity</h2>${s.log.slice(0, 12).map((l) => `<div class="au-log"><span>${escapeHtml(l.text)}</span><span class="note">${new Date(l.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>`).join("")}</div>`);
+  root.innerHTML = parts.join("");
+  auWire(s);
+}
+function auSetupHtml(s) {
+  const c = s.config;
+  const num = (id, label, v, hint) => `<label class="au-field"><span>${label}</span><input type="number" min="1" step="1" id="${id}" value="${v}"><small>${hint}</small></label>`;
+  const teams = league.teams.map((t) => {
+    const st = s.teams.find((x) => x.id === t.id);
+    const kept = new Map((st ? st.retained : []).map((r) => [r.playerId, r.price]));
+    return `<div class="au-ret-team"><div class="au-ret-title">${auTeamBadge(t)}<b>${escapeHtml(t.name)}</b></div>
+      ${t.players.map((p) => `<div class="au-ret-row" data-team="${t.id}" data-player="${p.id}"><label><input type="checkbox" ${kept.has(p.id) ? "checked" : ""}> ${escapeHtml(p.name)}</label><input type="number" min="0" step="1" class="au-price" value="${kept.get(p.id) || 0}" aria-label="Price to keep ${escapeHtml(p.name)}"></div>`).join("") || '<p class="note">No players on this team yet.</p>'}</div>`;
+  }).join("");
+  const pool = s.pool.map((p) => `<div class="au-pool-row"><span>${escapeHtml(p.name)} <span class="note">from ${p.basePrice}</span></span><button type="button" class="link" data-rm="${p.id}">Remove</button></div>`).join("");
+  return `<div class="card"><h2 class="section-title">Rules</h2>
+      <div class="au-fields">${num("au-purse", "Budget per team", c.purse, "points each team starts with")}${num("au-squad", "Squad size", c.squadSize, "players per team, kept ones included")}${num("au-min", "Lowest bid", c.minBid, "the least any player can go for")}${num("au-step", "Bid step", c.increment, "each bid goes up by at least this")}</div>
+      <h3 class="au-sub">Who each team keeps</h3><p class="note" style="margin-bottom:8px;">Tick the players a team keeps and set what keeping each one costs from its budget. Anyone left unticked leaves the team when you add the results at the end.</p>
+      ${teams}
+      <div class="row" style="margin-top:12px;"><button class="primary" id="au-save">Save settings</button></div></div>
+    <div class="card"><h2 class="section-title">Players for sale</h2>
+      <p class="note" style="margin-bottom:8px;">One name per line. They all start at the base price below.</p>
+      <textarea id="au-names" rows="4" placeholder="Zed Alpha&#10;Yan Beta" style="width:100%;box-sizing:border-box;font:inherit;"></textarea>
+      <div class="row" style="margin-top:8px;align-items:center;"><label class="note">Base price <input type="number" min="1" step="1" id="au-base" value="${c.minBid}" style="width:80px;"></label><button class="secondary" id="au-add">Add to the pool</button></div>
+      <div style="margin-top:12px;">${pool || '<p class="note">Nobody in the pool yet.</p>'}</div></div>
+    <div class="card"><div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><span class="note">When everything looks right, open the room. Captains can then bid.</span><span><button class="primary" id="au-open">Open the auction</button> <button class="link" id="au-del">Delete</button></span></div></div>`;
+}
+function auLotHtml(s) {
+  const cur = s.current;
+  const mine = s.teams.find((t) => t.id === s.myTeamId);
+  let body = "";
+  if (s.status === "done") {
+    const sold = s.pool.filter((p) => p.status === "sold");
+    body = `<div class="au-wait"><div class="au-big">The auction is finished</div><p class="note">${sold.length} sold, ${s.pool.filter((p) => p.status === "unsold").length} unsold.${s.applied ? " The results are in the team rosters." : ""}</p>${s.isAdmin && !s.applied ? '<button class="primary" id="au-apply">Add the new players to the teams</button>' : ""}</div>`;
+  } else if (!cur) {
+    body = `<div class="au-wait"><div class="au-big">${s.status === "paused" ? "Paused" : "Waiting for the next player"}</div>
+      ${s.isAdmin ? `<div class="row" style="justify-content:center;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        <button class="primary" id="au-next" ${s.status === "paused" ? "disabled" : ""}>Next player (random)</button>
+        <select id="au-pick" aria-label="Pick a player"><option value="">Pick one…</option>${s.pool.filter((p) => p.status !== "sold").map((p) => `<option value="${p.id}">${escapeHtml(p.name)}${p.status === "unsold" ? " (unsold)" : ""}</option>`).join("")}</select>
+        <button class="secondary" id="au-go">Put up</button></div>` : '<p class="note">The auctioneer will put the next player up shortly.</p>'}</div>`;
+  } else {
+    const leader = cur.leaderTeamId ? s.teams.find((t) => t.id === cur.leaderTeamId) : null;
+    let bidUi = "";
+    if (s.status === "paused") bidUi = '<p class="note">Bidding is paused.</p>';
+    else if (mine) {
+      if (mine.slotsLeft <= 0) bidUi = '<p class="note">Your squad is full.</p>';
+      else if (cur.leaderTeamId === mine.id) bidUi = '<p class="au-lead">You have the highest bid</p>';
+      else if (mine.maxBid < cur.minNext) bidUi = `<p class="note">You can't afford this player. Your most is ${mine.maxBid}.</p>`;
+      else {
+        const steps = [cur.minNext, cur.minNext + 5 * s.config.increment, cur.minNext + 10 * s.config.increment].filter((v, i, a) => v <= mine.maxBid && a.indexOf(v) === i);
+        bidUi = `<div class="au-bids">${steps.map((v, i) => `<button type="button" class="au-bid${i === 0 ? " main" : ""}" data-amt="${v}">Bid ${v}</button>`).join("")}</div><p class="note">Your most on this player: ${mine.maxBid}</p>`;
+      }
+    } else if (!s.isAdmin) bidUi = '<p class="note">Only team captains can bid. Log in with your team code to take part.</p>';
+    const adminUi = s.isAdmin ? `<div class="au-admin">
+        <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:center;">
+          <button class="primary" id="au-sold" ${cur.bid == null ? "disabled" : ""}>Sold${leader ? " to " + escapeHtml(leader.name) : ""}</button>
+          <button class="secondary" id="au-pass">Pass (unsold)</button>
+          <button class="link" id="au-undo" ${cur.bid == null ? "disabled" : ""}>Undo last bid</button>
+          <button class="link" id="au-pause">${s.status === "paused" ? "Resume" : "Pause"}</button></div>
+        <div class="row" style="gap:8px;justify-content:center;margin-top:10px;align-items:center;flex-wrap:wrap;"><span class="note">Bid for a team:</span>
+          <select id="au-for">${s.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select>
+          <button class="secondary" id="au-bidfor" ${cur.minNext ? "" : "disabled"}>Bid ${cur.minNext}</button></div></div>` : "";
+    body = `<div class="au-kick">On the block</div><div class="au-name">${escapeHtml(cur.name)}</div><div class="au-base">Starts at ${cur.basePrice}</div>
+      <div class="au-bidnow"><div class="au-bidnum">${cur.bid != null ? cur.bid : "&ndash;"}</div>
+      <div class="au-bidby">${leader ? auTeamBadge(leader) + `<span>${escapeHtml(leader.name)}</span>` : "No bids yet"}</div></div>
+      ${cur.bids.length ? `<div class="au-hist">${cur.bids.map((b) => `<span>${escapeHtml(auTeamName(s, b.teamId))} ${b.amount}</span>`).join("")}</div>` : ""}
+      ${bidUi}${adminUi}`;
+  }
+  const adminDone = "";
+  return `<div class="au-lot${s.status === "paused" ? " paused" : ""}">${body}${adminDone}</div>${s.isAdmin && s.status !== "done" && !cur && s.status !== "setup" ? '<div class="row" style="justify-content:flex-end;margin-bottom:12px;"><button class="link" id="au-finish">Finish the auction</button></div>' : ""}`;
+}
+function auBoardHtml(s) {
+  const cur = s.current;
+  return `<div class="au-board">${s.teams.map((t) => `<div class="au-team${t.id === s.myTeamId ? " mine" : ""}${cur && cur.leaderTeamId === t.id ? " leading" : ""}">
+      <div class="au-team-top">${auTeamBadge(t)}<b>${escapeHtml(t.name)}</b></div>
+      <div class="au-purse">${t.purseLeft}<small>left</small></div>
+      <div class="note">${t.retained.length + t.bought.length} of ${s.config.squadSize} players${s.status !== "setup" ? " · can bid up to " + t.maxBid : ""}</div>
+      <div class="au-chips">${t.retained.map((r) => `<span class="au-chip kept" title="Kept">${escapeHtml(r.name)}${r.price ? " · " + r.price : ""}</span>`).join("")}${t.bought.map((p) => `<span class="au-chip bought">${escapeHtml(p.name)} · ${p.price}</span>`).join("")}</div></div>`).join("")}</div>`;
+}
+function auPoolHtml(s) {
+  const grp = (label, st) => {
+    const list = s.pool.filter((p) => p.status === st);
+    if (!list.length) return "";
+    return `<details class="pa-group"${st === "pending" ? " open" : ""}><summary><strong>${label}</strong> <span class="tag">${list.length}</span></summary>${list.map((p) => `<div class="au-pool-row"><span>${escapeHtml(p.name)}</span><span class="note">${st === "sold" ? escapeHtml(auTeamName(s, p.teamId)) + " · " + p.price : "from " + p.basePrice}</span></div>`).join("")}</details>`;
+  };
+  return `<div class="card"><h2 class="section-title">Players</h2>${grp("Still to come", "pending")}${grp("Sold", "sold")}${grp("Unsold", "unsold")}</div>`;
+}
+function auWire(s) {
+  const on = (id, fn) => { const b = el(id); if (b) b.onclick = fn; };
+  const post = (path, body) => auctionAct(path, { method: "POST", body: body || {} });
+  document.querySelectorAll("#auction-root .au-bid").forEach((b) => { b.onclick = () => auctionBid(Number(b.dataset.amt)); });
+  on("au-next", () => post("/next"));
+  on("au-go", () => { const v = el("au-pick").value; if (!v) { auctionMsg = "Pick a player first."; renderAuction(); return; } post("/next", { poolId: v }); });
+  on("au-sold", () => post("/sold"));
+  on("au-pass", () => post("/pass"));
+  on("au-undo", () => post("/undo-bid"));
+  on("au-pause", () => post(s.status === "paused" ? "/resume" : "/pause"));
+  on("au-bidfor", () => auctionBid(s.current.minNext, el("au-for").value));
+  on("au-finish", () => { if (confirm("Finish the auction? No more bidding after this.")) post("/finish"); });
+  on("au-apply", () => { if (confirm("Add the sold players to their teams, and remove the players teams didn't keep? This can't be undone.")) post("/apply"); });
+  on("au-open", () => post("/start"));
+  on("au-del", () => { if (confirm("Delete this auction and everything in it?")) auctionAct("", { method: "DELETE" }).then(() => { league.auctionStatus = undefined; startAuctionRoom(); }); });
+  on("au-add", () => {
+    const names = el("au-names").value.split("\n").map((n) => n.trim()).filter(Boolean);
+    post("/pool", { names, basePrice: el("au-base").value }).then((r) => { if (r) el("au-names").value = ""; });
+  });
+  document.querySelectorAll("#auction-root [data-rm]").forEach((b) => { b.onclick = () => auctionAct(`/pool/${b.dataset.rm}`, { method: "DELETE" }); });
+  on("au-save", () => {
+    const val = (id) => Number(el(id).value);
+    const retained = {};
+    league.teams.forEach((t) => { retained[t.id] = []; });
+    document.querySelectorAll("#auction-root .au-ret-row").forEach((row) => {
+      if (row.querySelector("input[type=checkbox]").checked) retained[row.dataset.team].push({ playerId: row.dataset.player, price: Number(row.querySelector(".au-price").value || 0) });
+    });
+    auctionAct("/setup", { method: "PUT", body: { config: { purse: val("au-purse"), squadSize: val("au-squad"), minBid: val("au-min"), increment: val("au-step") }, retained } });
+  });
+}
 function switchTab(key) {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
   document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
@@ -5483,6 +5699,7 @@ function switchTab(key) {
   // well have last run before this tab was ever visible, so re-run it now
   // that it actually is.
   if (key === "kit") renderKit();
+  if (key === "auction") startAuctionRoom(); else stopAuctionRoom();
 }
 // Two tab rows instead of a dropdown — a division tab row (only shown when
 // there's more than one division) and a group tab row scoped to whichever

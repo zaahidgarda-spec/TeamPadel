@@ -167,6 +167,10 @@ async function init() {
       cache.set("league-" + entry.id, league);
     }
   }
+  for (const entry of index) {
+    const auction = await redis.get("auction-" + entry.id);
+    if (auction) cache.set("auction-" + entry.id, auction);
+  }
   const usersIndex = (await redis.get("users-index")) || [];
   cache.set("users-index", usersIndex);
   for (const entry of usersIndex) {
@@ -302,15 +306,40 @@ function saveLeague(id, league) {
   }
   writeJsonFile("league-" + id, league);
 }
+// A league's player auction lives under its own key, not inside the league
+// record: every bid is a write, and a bid shouldn't rewrite the whole league.
+function getAuction(leagueId) {
+  if (useRedis) return cache.get("auction-" + leagueId) || null;
+  return readJsonFile("auction-" + leagueId, null);
+}
+function saveAuction(leagueId, auction) {
+  if (useRedis) {
+    cache.set("auction-" + leagueId, auction);
+    persist("auction-" + leagueId, auction);
+    return;
+  }
+  writeJsonFile("auction-" + leagueId, auction);
+}
+function deleteAuction(leagueId) {
+  if (useRedis) {
+    cache.delete("auction-" + leagueId);
+    remove("auction-" + leagueId);
+    return;
+  }
+  const p = filePath("auction-" + leagueId);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+}
 function deleteLeague(id) {
   if (useRedis) {
     cache.delete("league-" + id);
     remove("league-" + id);
+    deleteAuction(id);
     remove(leaguePhotosKey(id));
     return;
   }
   const p = filePath("league-" + id);
   if (fs.existsSync(p)) fs.unlinkSync(p);
+  deleteAuction(id);
 }
 
 // Kit photos (a team's front/back, logo, up to 5 sponsor slots) are the
@@ -550,6 +579,9 @@ module.exports = {
   saveSignups,
   getSignupPhoto,
   saveSignupPhoto,
+  getAuction,
+  saveAuction,
+  deleteAuction,
   getPlayerRatings,
   savePlayerRatings,
   getHomepageExtras,
