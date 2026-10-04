@@ -5835,6 +5835,8 @@ router.post("/leagues/:leagueId/auction/sold", requireAdmin, adminAuctionAction(
 router.post("/leagues/:leagueId/auction/pass", requireAdmin, adminAuctionAction((a) => auction.pass(a)));
 router.post("/leagues/:leagueId/auction/undo-sale", requireAdmin, adminAuctionAction((a) => auction.undoSale(a)));
 router.post("/leagues/:leagueId/auction/undo-bid", requireAdmin, adminAuctionAction((a) => auction.undoBid(a)));
+router.post("/leagues/:leagueId/auction/ask", requireAdmin, adminAuctionAction((a, league, body) => auction.setAsk(a, body.amount)));
+router.put("/leagues/:leagueId/auction/pricing", requireAdmin, adminAuctionAction((a, league, body) => auction.updatePricing(a, body)));
 router.post("/leagues/:leagueId/auction/finish", requireAdmin, adminAuctionAction((a, league, body) => {
   // Check that adding the results to the rosters can work BEFORE changing
   // anything, so a refusal leaves the auction exactly as it was.

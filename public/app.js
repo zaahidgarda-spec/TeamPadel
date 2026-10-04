@@ -5497,6 +5497,7 @@ const GROUP_SCOPED_TABS = ["fixtures", "results", "predictions", "table", "stats
    Teams arrive with retained players and a budget; captains bid live for the
    open spots while the admin runs the room. The rules are on the server
    (src/auction.js); this only draws the room and sends the taps. */
+let auctionAskDraft = "";
 let auctionState = null, auctionTimer = null, auctionVersion = 0, auctionLeagueId = null, auctionLastLogAt = 0, auctionMsg = "";
 function auctionActive() { return inLeagueView() && el("view-auction").classList.contains("active") && currentLeagueId === auctionLeagueId; }
 function startAuctionRoom() {
@@ -5613,7 +5614,7 @@ function openAuctionScreen(leagueId) {
     let main;
     if (cur) {
       main = `<div class="aus-left"><div class="aus-kick">On the block</div><div class="aus-name">${escapeHtml(cur.name)}</div><div class="aus-base">Starts at ${cur.basePrice}</div></div>
-        <div class="aus-right"><div class="aus-price">${cur.bid != null ? cur.bid : "&ndash;"}</div><div class="aus-by">${leader ? escapeHtml(leader.name) : "No bids yet"}</div></div>`;
+        <div class="aus-right"><div class="aus-price">${cur.bid != null ? cur.bid : "&ndash;"}</div><div class="aus-by">${leader ? escapeHtml(leader.name) : "No bids yet"}</div>${s.config.priceMode === "called" ? `<div class="aus-call">Calling ${cur.ask}</div>` : ""}</div>`;
     } else {
       const left = s.pool.filter((p) => p.status === "pending").length;
       const msg = s.status === "done" ? "The auction is finished" : s.status === "setup" ? "The auction starts soon" : s.status === "paused" ? "Paused" : "Waiting for the next player";
@@ -5662,8 +5663,10 @@ function renderAuction() {
   parts.push(auBoardHtml(s));
   if (s.status !== "setup") parts.push(auPoolHtml(s));
   if (s.log.length && s.status !== "setup") parts.push(`<div class="card"><h2 class="section-title">Activity</h2>${s.log.slice(0, 12).map((l) => `<div class="au-log"><span>${escapeHtml(l.text)}</span><span class="note">${new Date(l.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>`).join("")}</div>`);
+  const hadAskFocus = document.activeElement && document.activeElement.id === "au-ask";
   root.innerHTML = parts.join("");
   auWire(s);
+  if (hadAskFocus && el("au-ask")) { const i = el("au-ask"); i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch { /* number inputs have no selection range */ } }
 }
 function auSetupHtml(s) {
   const c = s.config;
@@ -5676,7 +5679,8 @@ function auSetupHtml(s) {
   }).join("");
   const pool = s.pool.map((p) => `<div class="au-pool-row"><span>${escapeHtml(p.name)} <span class="note">from ${p.basePrice}</span></span><button type="button" class="link" data-rm="${p.id}">Remove</button></div>`).join("");
   return `<div class="card"><h2 class="section-title">Rules</h2>
-      <div class="au-fields">${num("au-purse", "Budget per team", c.purse, "points each team starts with")}${num("au-squad", "Squad size", c.squadSize, "players per team, kept ones included")}${num("au-min", "Lowest bid", c.minBid, "the least any player can go for")}${num("au-step", "Bid step", c.increment, "each bid goes up by at least this")}</div>
+      <div class="au-fields">${num("au-purse", "Budget per team", c.purse, "points each team starts with")}${num("au-squad", "Squad size", c.squadSize, "players per team, kept ones included")}${num("au-min", "Lowest bid", c.minBid, "the least any player can go for")}${num("au-step", "Bid step", c.increment, "the usual rise between prices")}</div>
+      <label class="au-field" style="margin:4px 0 6px;"><span>Who sets the price</span><select id="au-mode"><option value="called"${c.priceMode !== "open" ? " selected" : ""}>The auctioneer calls the price (captains accept it)</option><option value="open"${c.priceMode === "open" ? " selected" : ""}>Open bidding (the app offers the next price)</option></select><small>You can change this and the bid step at any time, even during the auction.</small></label>
       <h3 class="au-sub">Who each team keeps</h3><p class="note" style="margin-bottom:8px;">Tick the players a team keeps and set what keeping each one costs from its budget. Anyone left unticked leaves the team when you add the results at the end.</p>
       ${teams}
       <div class="row" style="margin-top:12px;"><button class="primary" id="au-save">Save settings</button></div></div>
@@ -5708,13 +5712,26 @@ function auLotHtml(s) {
     else if (mine) {
       if (mine.slotsLeft <= 0) bidUi = '<p class="note">Your squad is full.</p>';
       else if (cur.leaderTeamId === mine.id) bidUi = '<p class="au-lead">You have the highest bid</p>';
+      else if (s.config.priceMode === "called") {
+        bidUi = mine.maxBid < cur.ask
+          ? `<p class="note">The price is ${cur.ask}. You can't afford it. Your most is ${mine.maxBid}.</p>`
+          : `<div class="au-bids"><button type="button" class="au-bid main" data-amt="${cur.ask}">Bid ${cur.ask}</button></div><p class="note">Tap to accept the price. Your most: ${mine.maxBid}</p>`;
+      }
       else if (mine.maxBid < cur.minNext) bidUi = `<p class="note">You can't afford this player. Your most is ${mine.maxBid}.</p>`;
       else {
         const steps = [cur.minNext, cur.minNext + 5 * s.config.increment, cur.minNext + 10 * s.config.increment].filter((v, i, a) => v <= mine.maxBid && a.indexOf(v) === i);
         bidUi = `<div class="au-bids">${steps.map((v, i) => `<button type="button" class="au-bid${i === 0 ? " main" : ""}" data-amt="${v}">Bid ${v}</button>`).join("")}</div><p class="note">Your most on this player: ${mine.maxBid}</p>`;
       }
     } else if (!s.isAdmin) bidUi = '<p class="note">Only team captains can bid. Log in with your team code to take part.</p>';
-    const adminUi = s.isAdmin ? `<div class="au-admin">
+    const callBase = cur.bid != null ? cur.bid : cur.basePrice - 1;
+    const callUi = s.isAdmin && s.config.priceMode === "called" ? `<div class="au-call"><div class="note">Call the price</div>
+        <div class="row" style="gap:6px;justify-content:center;flex-wrap:wrap;">${[1, 2, 5, 10].map((k) => callBase + k).filter((v, i, arr) => arr.indexOf(v) === i).map((v) => `<button type="button" class="au-callbtn${v === cur.ask ? " on" : ""}" data-call="${v}">${v}</button>`).join("")}
+          <input type="number" min="1" step="1" id="au-ask" value="${auctionAskDraft !== "" ? auctionAskDraft : cur.ask}" aria-label="Price to call"><button type="button" class="secondary" id="au-call">Call</button></div></div>` : "";
+    const priceSet = s.isAdmin ? `<details class="au-pset"><summary>Price settings</summary><div class="row" style="gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:8px;">
+        <label class="note">Bid step <input type="number" min="1" step="1" id="au-pstep" value="${s.config.increment}" style="width:64px;"></label>
+        <select id="au-pmode"><option value="called"${s.config.priceMode !== "open" ? " selected" : ""}>Auctioneer calls the price</option><option value="open"${s.config.priceMode === "open" ? " selected" : ""}>Open bidding</option></select>
+        <button type="button" class="secondary" id="au-psave">Save</button></div></details>` : "";
+    const adminUi = s.isAdmin ? `${callUi}<div class="au-admin">
         <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:center;">
           <button class="primary" id="au-sold" ${cur.bid == null ? "disabled" : ""}>Sold${leader ? " to " + escapeHtml(leader.name) : ""}</button>
           <button class="secondary" id="au-pass">Pass (unsold)</button>
@@ -5722,8 +5739,9 @@ function auLotHtml(s) {
           <button class="link" id="au-pause">${s.status === "paused" ? "Resume" : "Pause"}</button></div>
         <div class="row" style="gap:8px;justify-content:center;margin-top:10px;align-items:center;flex-wrap:wrap;"><span class="note">Bid for a team:</span>
           <select id="au-for">${s.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select>
-          <button class="secondary" id="au-bidfor" ${cur.minNext ? "" : "disabled"}>Bid ${cur.minNext}</button></div></div>` : "";
+          <button class="secondary" id="au-bidfor" ${cur.minNext ? "" : "disabled"}>Bid ${cur.ask}</button></div>${priceSet}</div>` : "";
     body = `<div class="au-kick">On the block</div><div class="au-name">${escapeHtml(cur.name)}</div><div class="au-base">Starts at ${cur.basePrice}</div>
+      ${s.config.priceMode === "called" ? `<div class="au-callnow">Calling <b>${cur.ask}</b></div>` : ""}
       <div class="au-bidnow"><div class="au-bidnum">${cur.bid != null ? cur.bid : "&ndash;"}</div>
       <div class="au-bidby">${leader ? auTeamBadge(leader) + `<span>${escapeHtml(leader.name)}</span>` : "No bids yet"}</div></div>
       ${cur.bids.length ? `<div class="au-hist">${cur.bids.map((b) => `<span>${escapeHtml(auTeamName(s, b.teamId))} ${b.amount}</span>`).join("")}</div>` : ""}
@@ -5760,7 +5778,12 @@ function auWire(s) {
   on("au-pass", () => post("/pass"));
   on("au-undo", () => post("/undo-bid"));
   on("au-pause", () => post(s.status === "paused" ? "/resume" : "/pause"));
-  on("au-bidfor", () => auctionBid(s.current.minNext, el("au-for").value));
+  on("au-bidfor", () => auctionBid(s.current.ask, el("au-for").value));
+  document.querySelectorAll("#auction-root [data-call]").forEach((b) => { b.onclick = () => post("/ask", { amount: Number(b.dataset.call) }); });
+  on("au-call", () => { const v = Number(el("au-ask").value); auctionAskDraft = ""; post("/ask", { amount: v }); });
+  const askBox = el("au-ask");
+  if (askBox) askBox.oninput = () => { auctionAskDraft = askBox.value; };
+  on("au-psave", () => auctionAct("/pricing", { method: "PUT", body: { increment: Number(el("au-pstep").value), priceMode: el("au-pmode").value } }));
   on("au-finish", () => { if (confirm("Finish the auction? No more bidding after this.")) post("/finish"); });
   on("au-apply", () => { if (confirm("Add the sold players to their teams, and remove the players teams didn't keep? This can't be undone.")) post("/apply"); });
   on("au-open", () => post("/start"));
@@ -5777,7 +5800,7 @@ function auWire(s) {
     document.querySelectorAll("#auction-root .au-ret-row").forEach((row) => {
       if (row.querySelector("input[type=checkbox]").checked) retained[row.dataset.team].push({ playerId: row.dataset.player, price: Number(row.querySelector(".au-price").value || 0) });
     });
-    auctionAct("/setup", { method: "PUT", body: { config: { purse: val("au-purse"), squadSize: val("au-squad"), minBid: val("au-min"), increment: val("au-step") }, retained } });
+    auctionAct("/setup", { method: "PUT", body: { config: { purse: val("au-purse"), squadSize: val("au-squad"), minBid: val("au-min"), increment: val("au-step"), priceMode: el("au-mode").value }, retained } });
   });
 }
 function switchTab(key) {

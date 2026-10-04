@@ -13,7 +13,10 @@
 //   log       newest first, capped
 //   version   bumped on every change, so the room can poll cheaply
 
-const DEFAULT_CONFIG = { purse: 100, squadSize: 8, minBid: 1, increment: 1 };
+// priceMode: "called" = the auctioneer calls each price and captains accept it
+// (the way a live auction runs); "open" = the app offers the next price up and
+// captains can also jump.
+const DEFAULT_CONFIG = { purse: 100, squadSize: 8, minBid: 1, increment: 1, priceMode: "called" };
 const LOG_CAP = 80;
 
 function uid() {
@@ -69,11 +72,16 @@ function currentLot(a) {
   const item = a.pool.find((p) => p.id === a.current.poolId);
   if (!item) return null;
   const last = a.current.bids[a.current.bids.length - 1] || null;
+  const minNext = last ? last.amount + a.config.increment : item.basePrice;
+  // The price being asked for right now. In called mode that is whatever the
+  // auctioneer last called; in open mode it is simply the next price up.
+  const ask = a.config.priceMode === "called" && a.current.ask ? a.current.ask : minNext;
   return {
     item,
     bid: last ? last.amount : null,
     leaderTeamId: last ? last.teamId : null,
-    minNext: last ? last.amount + a.config.increment : item.basePrice,
+    minNext,
+    ask,
   };
 }
 
@@ -82,6 +90,7 @@ function currentLot(a) {
 function validateConfig(c) {
   const out = {
     purse: Number(c.purse), squadSize: Number(c.squadSize), minBid: Number(c.minBid), increment: Number(c.increment),
+    priceMode: c.priceMode === "open" ? "open" : "called",
   };
   if (!isPosInt(out.purse) || out.purse > 100000) return { error: "The budget has to be a whole number above zero." };
   if (!isPosInt(out.squadSize) || out.squadSize > 40) return { error: "The squad size has to be a whole number between 1 and 40." };
@@ -203,7 +212,7 @@ function nextPlayer(a, poolId, randomFn) {
   }
   item.status = "pending";
   a.lastSold = null;
-  a.current = { poolId: item.id, bids: [] };
+  a.current = { poolId: item.id, bids: [], ask: item.basePrice };
   bump(a, `${item.name} is on the block (from ${item.basePrice})`, "next");
   return { ok: true };
 }
@@ -217,11 +226,15 @@ function placeBid(a, team, amount, now) {
   if (lot.leaderTeamId === team.id) return { error: "You already have the highest bid." };
   const n = Number(amount);
   if (!Number.isInteger(n)) return { error: "Enter a whole-number bid." };
+  if (a.config.priceMode === "called" && n !== lot.ask) return { error: `The price is now ${lot.ask}.`, stale: true };
   if (n < lot.minNext) return { error: `Someone just bid. The lowest bid now is ${lot.minNext}.`, stale: true };
   if (n > st.maxBid) {
     return { error: st.maxBid < lot.minNext ? `You can't afford this one. Your most is ${st.maxBid}.` : `Your most on this player is ${st.maxBid}.` };
   }
   a.current.bids.push({ teamId: team.id, amount: n, at: now || Date.now() });
+  // In called mode the auctioneer decides the next price; until they change it,
+  // it simply goes up by the bid step.
+  a.current.ask = n + a.config.increment;
   bump(a, `${team.name} bid ${n} for ${lot.item.name}`, "bid", { teamId: team.id, amount: n });
   return { ok: true };
 }
@@ -229,6 +242,7 @@ function placeBid(a, team, amount, now) {
 function undoBid(a) {
   if (!a.current || !a.current.bids.length) return { error: "There is no bid to remove." };
   const removed = a.current.bids.pop();
+  a.current.ask = removed.amount;
   bump(a, `Last bid of ${removed.amount} removed`, "info");
   return { ok: true };
 }
@@ -270,9 +284,43 @@ function undoSale(a) {
   item.status = "pending";
   item.teamId = null;
   item.price = null;
-  a.current = { poolId: item.id, bids: a.lastSold.bids };
+  const lastBid = a.lastSold.bids[a.lastSold.bids.length - 1];
+  a.current = { poolId: item.id, bids: a.lastSold.bids, ask: lastBid ? lastBid.amount + a.config.increment : item.basePrice };
   a.lastSold = null;
   bump(a, `Sale undone: ${name} is back on the block`, "info");
+  return { ok: true };
+}
+
+// Called mode: the auctioneer names the price captains can now accept. It has
+// to be higher than the current bid (or at least the base price to open).
+function setAsk(a, amount) {
+  if (a.config.priceMode !== "called") return { error: "This auction is in open-bidding mode, where the app offers the next price." };
+  if (a.status !== "live") return { error: a.status === "paused" ? "The auction is paused." : "The auction isn't running." };
+  const lot = currentLot(a);
+  if (!lot) return { error: "No player is on the block." };
+  const n = Number(amount);
+  if (!isPosInt(n)) return { error: "Enter a whole-number price." };
+  const floor = lot.bid != null ? lot.bid + 1 : lot.item.basePrice;
+  if (n < floor) return { error: `The price has to be at least ${floor}.` };
+  if (n > a.config.purse) return { error: "That is more than a team's whole budget." };
+  a.current.ask = n;
+  bump(a, `Auctioneer calls ${n}`, "ask", { amount: n });
+  return { ok: true };
+}
+
+// The bid step and who sets the price can change at any point, even mid-auction.
+function updatePricing(a, input) {
+  if (a.status === "done") return { error: "This auction is finished." };
+  const inc = Number(input.increment !== undefined ? input.increment : a.config.increment);
+  if (!isPosInt(inc) || inc > a.config.purse) return { error: "The bid step has to be a whole number above zero." };
+  const mode = input.priceMode === "open" ? "open" : input.priceMode === "called" ? "called" : a.config.priceMode;
+  a.config.increment = inc;
+  a.config.priceMode = mode;
+  if (a.current) {
+    const lot = currentLot(a);
+    if (!a.current.ask || a.current.ask < lot.minNext && a.current.bids.length) a.current.ask = lot.minNext;
+  }
+  bump(a, `Price settings changed: step ${inc}, ${mode === "called" ? "auctioneer calls the price" : "open bidding"}`, "info");
   return { ok: true };
 }
 
@@ -347,7 +395,7 @@ function publicState(a, league, viewer) {
     pool: a.pool.map((p) => ({ id: p.id, name: p.name, basePrice: p.basePrice, status: p.status, teamId: p.teamId, price: p.price })),
     current: lot ? {
       poolId: lot.item.id, name: lot.item.name, basePrice: lot.item.basePrice,
-      bid: lot.bid, leaderTeamId: lot.leaderTeamId, minNext: lot.minNext,
+      bid: lot.bid, leaderTeamId: lot.leaderTeamId, minNext: lot.minNext, ask: lot.ask,
       bids: a.current.bids.slice(-6).reverse().map((b) => ({ teamId: b.teamId, amount: b.amount })),
     } : null,
     lastSold: a.lastSold ? (() => { const it = a.pool.find((p) => p.id === a.lastSold.poolId); return it ? { name: it.name, teamId: it.teamId, price: it.price } : null; })() : null,
@@ -361,5 +409,5 @@ function publicState(a, league, viewer) {
 
 module.exports = {
   DEFAULT_CONFIG, newAuction, teamState, currentLot, validateConfig, setupAuction, addToPool, updatePoolItem, removeFromPool,
-  start, setPaused, nextPlayer, placeBid, undoBid, sell, undoSale, pass, finish, rosterBlockers, applyToRosters, publicState,
+  start, setPaused, nextPlayer, placeBid, setAsk, updatePricing, undoBid, sell, undoSale, pass, finish, rosterBlockers, applyToRosters, publicState,
 };

@@ -1571,6 +1571,17 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .aus-buys b{color:#fff;font-weight:600;}
 @media (max-width:760px){.aus-main{grid-template-columns:1fr;text-align:center;}.aus-price{font-size:clamp(80px,22vh,300px);}}
 
+.au-callnow{margin-top:14px;font-family:var(--font-display);font-weight:700;font-size:20px;letter-spacing:.06em;text-transform:uppercase;color:#fff;}
+.au-callnow b{color:#E8B34C;font-size:30px;}
+.au-call{border-top:1px solid #222;margin-top:14px;padding-top:12px;}
+.au-callbtn{border:1px solid #333;background:#1d1d1d;color:#fff;font-family:var(--font-display);font-weight:700;font-size:16px;min-width:44px;padding:9px 12px;cursor:pointer;border-radius:8px;}
+.au-callbtn.on{background:#E8B34C;color:#1c1400;border-color:#E8B34C;}
+.au-call input{width:72px;padding:9px 8px;border-radius:8px;border:1px solid #333;background:#111;color:#fff;font:inherit;text-align:center;}
+.au-pset{margin-top:12px;font-size:12.5px;color:rgba(255,255,255,.7);text-align:center;}
+.au-pset summary{cursor:pointer;}
+.au-pset select{background:#111;color:#fff;border:1px solid #333;border-radius:8px;padding:7px;}
+.aus-call{font-family:var(--font-display);font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:clamp(18px,4vh,44px);color:#fff;margin-top:1.2vh;}
+
 /* New-badge splash: the regular badges slide into the Trophy Room shelf,
    championships get confetti. Black with the wordmark's chopped corners on
    the buttons, like the other full-screen moments. */
