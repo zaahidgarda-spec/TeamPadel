@@ -2830,10 +2830,16 @@ async function renderManageLeagues() {
         </div>
         <div class="note" style="margin-top:4px;">${l.teamCount} team${l.teamCount === 1 ? "" : "s"} · Created ${new Date(l.createdAt).toLocaleDateString()}</div>
       </div>
+      <button class="link manage-league-open-btn" type="button">Open</button>
       <button class="link manage-league-incognito-btn" type="button" data-incognito="${l.incognito}">${l.incognito ? "Make public" : "Make incognito"}</button>
       <button class="link manage-league-hide-btn" type="button" data-hidden="${l.hidden}">${l.hidden ? "Unhide" : "Hide"}</button>
     </div>
   `).join("");
+  // Hidden and incognito leagues drop out of the Leagues tab, so this is the
+  // way back into one to work on it.
+  c.querySelectorAll(".manage-league-open-btn").forEach((btn) => {
+    btn.onclick = () => openLeague(btn.closest(".notif-row").dataset.league).catch((e) => alert(e.message));
+  });
   c.querySelectorAll(".manage-league-hide-btn").forEach((btn) => {
     btn.onclick = async () => {
       const leagueId = btn.closest(".notif-row").dataset.league;
