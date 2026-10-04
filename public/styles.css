@@ -728,9 +728,7 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .official-seal{width:22px;height:22px;flex:none;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));}
 .league-brand-seal{display:flex;align-items:center;flex:none;}
 .league-brand-seal:empty{display:none;}
-.official-foot{margin-top:12px;padding-top:10px;border-top:1px dashed rgba(184,134,43,.5);font-family:var(--font-display);font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:#B8862B;}
-.league-card.has-photo .official-foot{color:#F1C468;border-top-color:rgba(241,196,104,.5);}
-
+.league-card.has-photo 
 /* A real court photo behind the card instead of the plain panel — a dark
    scrim (transparent at the top, near-black at the bottom) keeps every
    existing element legible without having to restyle each one from
@@ -749,7 +747,12 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 /* The branded league logos (Premier League, Business Class) are black type on
    a transparent background — on the dark photo scrim they vanish, so they
    sit on a light plate whenever the card has a court photo. */
-.league-card.has-photo .league-card-logo{box-sizing:content-box;background:rgba(255,255,255,.94);padding:6px 10px;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.35);}
+.league-card.has-photo .league-card-logo{box-sizing:border-box;background:rgba(255,255,255,.94);padding:6px 10px;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.35);}
+/* Premier League and Business Class logos have different proportions — one
+   fixed frame keeps the two official cards looking identical. */
+.league-card-brand.is-official{flex:1 1 auto;}
+.league-card-brand.is-official .league-card-logo{width:132px;height:42px;min-width:0;flex:0 1 132px;object-fit:contain;object-position:left center;}
+.league-card.has-photo .league-card-brand.is-official .league-card-logo{object-position:center;}
 .league-card.has-photo .tag{background:rgba(37,99,235,.35);border-color:rgba(147,197,253,.6);color:#fff;}
 .league-card.has-photo .strength-label{color:rgba(255,255,255,.7);}
 .league-card.has-photo .strength-bars .bar{background:rgba(255,255,255,.25);}

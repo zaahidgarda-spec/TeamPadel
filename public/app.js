@@ -1091,7 +1091,7 @@ function leagueCardHtml(l) {
     : "";
   const brand = leagueBrand(l.name);
   const nameHtml = brand
-    ? `<span class="league-card-brand"><img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">${brand.official ? OFFICIAL_SEAL_SVG : ""}</span>`
+    ? `<span class="league-card-brand${brand.official ? " is-official" : ""}"><img class="league-card-logo" src="${brand.logo}" alt="${brand.alt}">${brand.official ? OFFICIAL_SEAL_SVG : ""}</span>`
     : `<span class="league-card-name">${escapeHtml(l.name)}</span>`;
   // Admin-set 0-5 rating of how competitive the league is — 0 means nobody's
   // rated it yet, so the row just doesn't show rather than reading as "no bars".
@@ -1115,7 +1115,6 @@ function leagueCardHtml(l) {
       <span class="meta-item">${ICON_PEOPLE}${l.teamCount} ${l.format === "pairs" ? "pair" : "team"}${l.teamCount === 1 ? "" : "s"}</span>
       ${isOwner ? `<span class="meta-item">${ICON_CALENDAR}Created ${new Date(l.createdAt).toLocaleDateString()}</span>` : ""}
     </div>
-    ${brand && brand.official ? '<div class="official-foot">Official Team Padel league</div>' : ""}
     ${isOwner ? '<button class="link league-copy-codes-btn" type="button">Copy codes</button>' : ""}
   </div>`;
 }
