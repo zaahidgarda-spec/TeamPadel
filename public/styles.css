@@ -752,6 +752,13 @@ header.site-header.league-theme-vibora50{background:linear-gradient(180deg,rgba(
 .league-card-brand.is-official{flex:1 1 auto;}
 .league-card-brand.is-official .league-card-logo{width:132px;height:42px;min-width:0;flex:0 1 132px;object-fit:contain;object-position:left center;}
 .league-card.has-photo .league-card-brand.is-official .league-card-logo{object-position:center;}
+/* Official leagues with a court photo: the logo sits on a frosted-glass bar
+   that runs edge to edge across the photo, status tag above it. */
+.league-card.official.has-photo .league-card-top{flex-direction:column-reverse;align-items:stretch;gap:12px;}
+.league-card.official.has-photo .league-card-top>.row{justify-content:flex-end;}
+.league-card.official.has-photo .league-card-brand.is-official{flex:none;margin:0 -22px;padding:10px 22px;background:rgba(255,255,255,.72);-webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2);border-top:1px solid rgba(255,255,255,.9);border-bottom:1px solid rgba(255,255,255,.9);}
+.league-card.official.has-photo .league-card-brand.is-official .league-card-logo{width:156px;height:46px;flex:0 1 156px;background:none;padding:0;box-shadow:none;border-radius:0;object-position:left center;}
+.league-card.official.has-photo .league-card-brand.is-official .official-seal{margin-left:auto;}
 .league-card.has-photo .tag{background:rgba(37,99,235,.35);border-color:rgba(147,197,253,.6);color:#fff;}
 .league-card.has-photo .strength-label{color:rgba(255,255,255,.7);}
 .league-card.has-photo .strength-bars .bar{background:rgba(255,255,255,.25);}

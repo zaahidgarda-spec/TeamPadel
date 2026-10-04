@@ -1104,7 +1104,7 @@ function leagueCardHtml(l) {
   // away so there's no flash of the plain dark-on-white card while the
   // real photo is still loading in; observeLeagueCardPhotos below fills in
   // the actual background-image once this card scrolls into view.
-  return `<div class="league-card${brand ? " " + brand.theme : ""}${locked ? " league-card-locked" : ""}${l.hasCourtPhoto ? " has-photo" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}${l.hasCourtPhoto ? ' data-needs-photo="1"' : ""}>
+  return `<div class="league-card${brand ? " " + brand.theme : ""}${brand && brand.official ? " official" : ""}${locked ? " league-card-locked" : ""}${l.hasCourtPhoto ? " has-photo" : ""}" data-id="${l.id}"${locked ? ' data-locked="1"' : ""}${l.hasCourtPhoto ? ' data-needs-photo="1"' : ""}>
     <div class="league-card-top">
       ${nameHtml}
       <div class="row" style="gap:6px;">${viboraTag}<span class="tag league-status-${l.status}${live ? " league-status-live" : ""}">${statusLabel}</span></div>
