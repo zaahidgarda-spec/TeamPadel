@@ -3090,7 +3090,7 @@ function accountRowHtml(a) {
       ${a.signedUp && !a.test ? `<div class="acc-reset" data-user="${a.id}" data-name="${escapeHtml(a.name)}"><button class="link acc-reset-btn" type="button">Copy password reset link</button><div class="acc-reset-out note"></div></div>` : ""}
       ${a.claims.length ? `<div class="combine-claim-list">${a.claims.map((cl) => `
         <div class="combine-claim-row" data-user="${a.id}" data-league="${cl.leagueId}" data-team="${cl.teamId}" data-player="${cl.playerId}">
-          <span class="note">${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>
+          <span class="note">${cl.playerName ? `<strong>${escapeHtml(cl.playerName.replace(/[\u200b-\u200f\u2060]/g, "").trim())}</strong> · ` : ""}${escapeHtml(cl.teamName)} · ${escapeHtml(cl.leagueName)}</span>
           <button class="link combine-unlink-btn" type="button" title="Undo this link">Undo</button>
         </div>
       `).join("")}</div>` : '<div class="note">No linked records</div>'}
