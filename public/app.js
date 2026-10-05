@@ -9370,8 +9370,9 @@ function selectionForm(f, team, side) {
   // suggestion, since they're free to ignore it entirely.
   let ratingById = null;
   if (!league.tieringEnabled) {
+    // The "Suggested seed order" dropdown is no longer shown. The request is
+    // still made only to feed the per-seed rating chips below.
     const hint = seedSuggestionHint(team);
-    div.appendChild(hint.el);
     hint.ready.then((data) => {
       if (!data) return;
       ratingById = new Map(data.players.map((p) => [p.playerId, p.rating]));
@@ -9582,7 +9583,8 @@ function selectionForm(f, team, side) {
   }
   div.appendChild(doubleUpNote);
   refreshDoubleUpNote();
-  if (!league.tieringEnabled) div.appendChild(seedRatingNote);
+  // seedRatingNote ("Suggested order for these pairs") is deliberately not
+  // added to the form any more — captains found the suggestion unreliable.
 
   // Blind selection means the other captain can't see this until they've
   // also submitted, so there's nothing unfair about editing it right up to
