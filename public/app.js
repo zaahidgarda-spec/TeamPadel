@@ -4282,17 +4282,15 @@ function playRatingSplash(q) {
 }
 // "Your attributes" on My Profile: the eight bars once 3 opponents have rated
 // this account, otherwise a progress meter toward that.
-async function renderAccountAttributes(cards) {
-  const sec = el("account-attributes-section");
-  if (!(cards || []).length) { sec.style.display = "none"; return; }
-  let a;
-  try { a = await api("/players/attributes"); } catch { sec.style.display = "none"; return; }
-  sec.style.display = "";
-  const box = el("account-attributes");
+// One attribute card, used on My Profile (own = true) and on anyone else's
+// player page. Only averages are ever shown, never who rated.
+function attributeCardHtml(a, own) {
   if (!a.unlocked) {
-    box.innerHTML = `<div class="at-card"><div class="at-pips">${Array.from({ length: a.needed }, (_, i) => `<span class="${i < a.count ? "on" : ""}"></span>`).join("")}</div>
-      <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>After each match you can rate the players you faced, and they rate you. Your attributes unlock once ${a.needed} opponents have rated you.</small></div></div>`;
-    return;
+    const msg = own
+      ? `After each match you can rate the players you faced, and they rate you. Your attributes unlock once ${a.needed} opponents have rated you.`
+      : `Attributes show once ${a.needed} opponents have rated them.`;
+    return `<div class="at-card"><div class="at-pips">${Array.from({ length: a.needed }, (_, i) => `<span class="${i < a.count ? "on" : ""}"></span>`).join("")}</div>
+      <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>${msg}</small></div></div>`;
   }
   const shown = a.attributes.filter((x) => x.avg !== null).sort((x, y) => y.avg - x.avg);
   const rows = a.attributes.map((x) => {
@@ -4301,8 +4299,26 @@ async function renderAccountAttributes(cards) {
     const seg = [1, 2, 3, 4, 5].map((n) => `<span><i style="width:${Math.max(0, Math.min(1, x.avg - (n - 1))) * 100}%;background:${RATING_FILL[r]}"></i></span>`).join("");
     return `<div class="at-row"><div class="at-rh"><span>${escapeHtml(x.label)}</span><span><b>${x.avg.toFixed(1)}</b><em style="color:${RATING_INK[r]}">${RATING_WORDS[r]}</em></span></div><div class="at-sg">${seg}</div></div>`;
   }).join("");
-  box.innerHTML = `<div class="at-card"><div class="at-top"><div class="at-ovr">${a.overall === null ? "–" : a.overall}<small>Overall</small></div><span class="at-pill">Rated by ${a.count} opponents</span></div>${rows}
+  return `<div class="at-card"><div class="at-top"><div class="at-ovr">${a.overall === null ? "–" : a.overall}<small>Overall</small></div><span class="at-pill">Rated by ${a.count} opponents</span></div>${rows}
     ${shown.length > 1 ? `<div class="at-foot"><span>Top: ${escapeHtml(shown[0].label)}</span><span>Next up: ${escapeHtml(shown[shown.length - 1].label)}</span></div>` : ""}</div>`;
+}
+async function renderAccountAttributes(cards) {
+  const sec = el("account-attributes-section");
+  if (!(cards || []).length) { sec.style.display = "none"; return; }
+  let a;
+  try { a = await api("/players/attributes"); } catch { sec.style.display = "none"; return; }
+  sec.style.display = "";
+  el("account-attributes").innerHTML = attributeCardHtml(a, true);
+}
+// The same card on any player's page — open to everyone, like match history.
+async function renderPlayerModalAttributes(leagueId, playerId) {
+  const box = el("player-modal-attributes");
+  box.innerHTML = "";
+  let a;
+  try { a = await api(`/leagues/${leagueId}/players/${playerId}/attributes`); } catch { return; }
+  // The modal may have moved on to another player while this loaded.
+  if (box.dataset.for && box.dataset.for !== leagueId + ":" + playerId) return;
+  box.innerHTML = `<p class="p-section-label">Attributes</p>${attributeCardHtml(a, false)}`;
 }
 async function renderAccountProfile() {
   const { cards, fixtureCards, playoffSplash } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [], playoffSplash: [] }));
@@ -15621,6 +15637,7 @@ function takePrefetchedPlayerProfile(leagueId, playerId) {
 async function openPlayerHistory(leagueId, playerId, hint) {
   el("player-modal-body").innerHTML = '<p class="empty">Loading…</p>';
   el("player-modal-stats").innerHTML = "";
+  el("player-modal-attributes").innerHTML = "";
   el("player-modal-name").textContent = hint ? hint.playerName : "";
   el("player-modal-topbar-label").textContent = hint ? `${hint.teamName} · ${hint.leagueName}` : "";
   el("player-modal-photo-slot").innerHTML = "";
@@ -15650,6 +15667,8 @@ async function loadPlayerHistoryTab(leagueId, playerId, prefetched) {
   const [data, h2h] = await (prefetched || fetchPlayerProfilePair(leagueId, playerId));
   if (!data) { el("player-modal-body").innerHTML = '<p class="empty">Couldn\'t load this player.</p>'; return; }
   el("player-modal-name").textContent = data.playerName;
+  el("player-modal-attributes").dataset.for = leagueId + ":" + playerId;
+  renderPlayerModalAttributes(leagueId, playerId);
   el("player-modal-topbar-label").textContent = `${data.teamName} · ${data.leagueName}`;
   el("player-modal-photo-slot").innerHTML = playerPhotoHtml(data.photo, data.playerName, data.teamLogo);
   el("player-modal-photo-slot").parentElement.classList.toggle("owner-ring", (data.allOwnedTeams || []).length > 0);

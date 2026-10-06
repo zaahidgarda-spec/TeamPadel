@@ -6044,7 +6044,9 @@ router.post("/players/ratings/done", requirePlayerUser, (req, res) => {
 // an attribute, a lone score 3 or more away from the median is ignored so
 // one spiteful rating can't drag it.
 function attributeCardFor(user) {
-  const mine = new Set((user.claims || []).map((c) => c.leagueId + ":" + c.playerId));
+  return attributeCardForKeys(new Set((user.claims || []).map((c) => c.leagueId + ":" + c.playerId)));
+}
+function attributeCardForKeys(mine) {
   const mineRatings = Object.values(store.getPlayerRatings().items).filter((r) => mine.has(r.leagueId + ":" + r.targetPlayerId));
   const count = mineRatings.length;
   if (count < RATINGS_TO_UNLOCK) return { count, needed: RATINGS_TO_UNLOCK, unlocked: false };
@@ -6246,6 +6248,20 @@ router.get("/admin/ratings-overview", (req, res) => {
 });
 router.get("/players/attributes", requirePlayerUser, (req, res) => {
   res.json(attributeCardFor(store.getUser(req.session.playerUser.id)));
+});
+// Anyone can see a player's attributes — same open access as their match
+// history. The card belongs to the person: if the record is claimed, ratings
+// given to every record that account has claimed are combined. Only the
+// averages are returned, never who rated whom.
+router.get("/leagues/:leagueId/players/:playerId/attributes", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "Not found." });
+  const player = league.teams.flatMap((t) => t.players).find((p) => p.id === req.params.playerId);
+  if (!player) return res.status(404).json({ error: "Player not found." });
+  const keys = new Set([league.id + ":" + player.id]);
+  const owner = player.claimedByUserId ? store.getUser(player.claimedByUserId) : null;
+  if (owner) (owner.claims || []).forEach((c) => keys.add(c.leagueId + ":" + c.playerId));
+  res.json(attributeCardForKeys(keys));
 });
 
 // PayFast calls this directly — never a browser, no session, and the body
