@@ -6980,6 +6980,23 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/live-score", req
   res.json({ ok: true });
 });
 
+// A cheap "has anything changed?" stamp for Live Court Control and the Table
+// tab. They ask this every few seconds and only fetch the whole league when it
+// differs, so a score keyed in on one device shows up on the others almost
+// straight away without anyone downloading the league each time.
+router.get("/leagues/:leagueId/live-version", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  if (guestWalledFor(req, league.id)) return res.json({ v: "walled" });
+  const h = crypto.createHash("md5");
+  logic.allFixturesOf(league).forEach((f) => {
+    h.update(`${f.id}|${f.finalized ? 1 : 0}|${f.selectionA && f.selectionA.submitted ? 1 : 0}${f.selectionB && f.selectionB.submitted ? 1 : 0}|`);
+    (f.rubbers || []).forEach((r) => h.update(JSON.stringify([r.sets, r.tb, r.startedAt || 0, r.completedAt || 0, r.pace || "", r.forfeited || "", r.live ? [r.live.sets, r.live.tb] : 0])));
+  });
+  h.update(JSON.stringify([league.courtSchedule || {}, league.courtNames || [], league.courtCount || 0, league.slotCount || 0]));
+  res.json({ v: h.digest("hex").slice(0, 12) });
+});
+
 // Live Court Control: mark a rubber as under way courtside. Independent of
 // score entry entirely — this just starts the clock the live board times
 // against, so an admin can tap "Start" the moment players walk on.

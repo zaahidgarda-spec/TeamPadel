@@ -1008,29 +1008,54 @@ function refreshLiveCourtTabPosition() {
 // so a second admin device's Start/score/complete taps show up here too.
 // The per-second countdown/progress-bar tick itself (see the ticker below)
 // is local and needs none of this.
-setInterval(async () => {
+// Re-fetches the league and redraws just the open tab when something moved.
+async function refreshLiveTabs() {
   if (!league) return;
-  refreshLiveCourtTabPosition();
   const activeBtn = document.querySelector("#tabs button.active");
   if (activeBtn && activeBtn.dataset.view === "live-court") {
     await refreshLeague();
     // Only the Live Court Control grid itself, not renderAll() — that
     // rebuilds every other tab's DOM too (Selection, Fixtures, Results,
-    // Predictions, ...) even though only this one is on screen, which was
-    // wiping out anything mid-interaction here every 30 seconds — an open
-    // Forfeit picker, a half-open menu, even just scroll position.
-    // And even scoped to just this grid, a full rebuild every 30s still
-    // visibly flashed the whole table on a perfectly quiet round — only
-    // do it when something in the schedule/scores actually changed.
+    // Predictions, ...), wiping out anything mid-interaction there — an open
+    // Forfeit picker, a half-open menu, even just scroll position. And even
+    // scoped to just this grid, only redraw when something in the
+    // schedule/scores actually changed, so a quiet round doesn't flash.
     if (liveCourtSnapshot() !== lastLiveCourtSnapshot || (liveCourtView === "timeline" && Math.floor(Date.now() / 60000) !== liveTimelineMinute)) renderLiveCourtControl();
   } else if (activeBtn && activeBtn.dataset.view === "table") {
-    // Same idea as Live Court Control above, scoped to just this tab's own
-    // render — someone watching the table while a match is still on court
-    // shouldn't have to reload to see a score change move the standings.
+    // Same idea, scoped to just this tab's own render — someone watching the
+    // table while a match is still on court shouldn't have to reload to see
+    // a score change move the standings.
     await refreshLeague();
     if (tableSnapshot() !== lastTableSnapshot) renderTable();
   }
+}
+// Slow safety net: also keeps the tab's own position/pulse current.
+setInterval(() => {
+  if (!league) return;
+  refreshLiveCourtTabPosition();
+  refreshLiveTabs();
 }, 30000);
+// The fast path: every 3 seconds, while Live Court Control or the Table is
+// the open tab, ask the server for a tiny change stamp and only fetch the
+// whole league when it moved — so scores and Start/Complete taps from another
+// device appear almost immediately.
+let lastLiveVersion = null;
+let livePolling = false;
+setInterval(async () => {
+  if (!league || !currentLeagueId || document.hidden || livePolling) return;
+  const activeBtn = document.querySelector("#tabs button.active");
+  const view = activeBtn && activeBtn.dataset.view;
+  if (view !== "live-court" && view !== "table") return;
+  livePolling = true;
+  try {
+    const r = await api(`/leagues/${currentLeagueId}/live-version`);
+    const key = currentLeagueId + ":" + r.v;
+    const changed = lastLiveVersion !== null && key !== lastLiveVersion;
+    lastLiveVersion = key;
+    if (changed) await refreshLiveTabs();
+  } catch { /* offline for a moment — the next tick tries again */ }
+  finally { livePolling = false; }
+}, 3000);
 // Which of the 5 learned-duration buckets a closeness score falls into —
 // mirrors closenessBucket in src/routes.js exactly, since both read/write
 // the same league.courtDurationStats shape.
@@ -10236,7 +10261,7 @@ function liveCourtSnapshot() {
       if (!cell) { cells.push(null); continue; }
       const f = league.fixtures.find((x) => x.id === cell.fixtureId);
       const rubber = f && f.rubbers[cell.seed];
-      cells.push(rubber ? [cell.fixtureId, cell.seed, rubber.startedAt || 0, rubber.completedAt || 0, JSON.stringify(rubber.sets), rubber.pace || ""] : null);
+      cells.push(rubber ? [cell.fixtureId, cell.seed, rubber.startedAt || 0, rubber.completedAt || 0, JSON.stringify(rubber.sets), JSON.stringify(rubber.tb || null), rubber.live ? JSON.stringify([rubber.live.sets, rubber.live.tb]) : "", rubber.pace || ""] : null);
     }
   }
   return JSON.stringify({ round, cells, stats: league.courtDurationStats });
@@ -10264,6 +10289,7 @@ async function renderLiveCourtControl(opts) {
   renderRoundNav("round-nav-live-court");
   el("lc-rebalance-note").textContent = "";
   lastLiveCourtSnapshot = liveCourtSnapshot();
+  refreshLivePushButton();
 
   const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
   const fixtures = courtScheduleFixturesFor(round).filter((f) => f.selectionA.submitted && f.selectionB.submitted);
@@ -10444,6 +10470,30 @@ try {
 // has been posted, otherwise whatever the control room jotted down
 // courtside (rubber.live — kept apart from the official sets/tb on purpose,
 // so it never reaches Results, the table or ratings).
+// Finished matches whose courtside score hasn't been made official yet, for
+// the round on screen.
+function liveScoresToPush() {
+  if (!league || league.format === "pairs" || !viewingKey) return [];
+  const round = viewingKey.stage === "regular" ? viewingKey.round : viewingKey.key;
+  const rawGrid = (league.courtSchedule && league.courtSchedule[round]) || [];
+  const out = [];
+  rawGrid.forEach((row) => (row || []).forEach((cell) => {
+    const f = cell && league.fixtures.find((x) => x.id === cell.fixtureId);
+    const r = f && f.rubbers[cell.seed];
+    if (!f || !r || f.finalized || !r.live || !r.completedAt) return;
+    if (liveScoredRubber(r) === r) return; // an official score is already there
+    const a = league.teams.find((t) => t.id === f.teamA), b = league.teams.find((t) => t.id === f.teamB);
+    out.push({ f, seed: cell.seed, live: r.live, label: `${a ? a.name : "?"} v ${b ? b.name : "?"}, match ${cell.seed + 1}: ${rubberScoreText(liveScoredRubber(r))}` });
+  }));
+  return out;
+}
+function refreshLivePushButton() {
+  const btn = el("lc-push-btn");
+  if (!btn) return;
+  const n = (myRole === "admin" || isOwner) ? liveScoresToPush().length : 0;
+  btn.style.display = n ? "" : "none";
+  btn.textContent = `Make ${n} finished score${n === 1 ? "" : "s"} official`;
+}
 function liveScoredRubber(r) {
   const hasOfficial = r.forfeited || r.sets.some((x) => x[0] !== null && x[0] !== "" && x[1] !== null && x[1] !== "") || (r.tb && r.tb[0] && r.tb[1]);
   if (hasOfficial || !r.live) return r;
@@ -10939,6 +10989,18 @@ async function setLiveFullscreen(on) {
     el("lc-fs-awake").style.display = "none";
   }
 }
+el("lc-push-btn").onclick = async () => {
+  const items = liveScoresToPush();
+  if (!items.length) { refreshLivePushButton(); return; }
+  if (!confirm(`Post these ${items.length} courtside score${items.length === 1 ? "" : "s"} as official results?\n\n${items.map((i) => "• " + i.label).join("\n")}\n\nThey go on Results and count towards the table once each fixture is finalized.`)) return;
+  const failed = [];
+  for (const it of items) {
+    try { await api(`/leagues/${currentLeagueId}/fixtures/${it.f.id}/rubbers/${it.seed}`, { method: "PUT", body: { sets: it.live.sets, tb: it.live.tb } }); }
+    catch (e) { failed.push(`${it.label} (${e.message})`); }
+  }
+  await refreshLeague(); renderAll();
+  if (failed.length) alert("Some scores could not be posted:\n" + failed.join("\n"));
+};
 el("lc-fs-btn").onclick = () => setLiveFullscreen(true);
 el("lc-fs-exit").onclick = () => setLiveFullscreen(false);
 // The browser's own Esc / swipe-down out of full screen also leaves ours.
