@@ -4284,6 +4284,24 @@ function playRatingSplash(q) {
 // this account, otherwise a progress meter toward that.
 // One attribute card, used on My Profile (own = true) and on anyone else's
 // player page. Only averages are ever shown, never who rated.
+// Attributes are rated 1 to 5 but shown on a 1 to 20 scale, like Football
+// Manager. The conversion is display-only (nothing stored changes): 1 star is
+// 1, 3 stars is 10 (an average player) and 5 stars is 20, so the full range is
+// used instead of squeezing everyone into the top two thirds.
+function attrTo20(avg) {
+  const v = avg <= 3 ? 1 + (avg - 1) * 4.5 : 10 + (avg - 3) * 5;
+  return Math.max(1, Math.min(20, v));
+}
+const ATTR_BANDS = [
+  { max: 3, cls: "t0", word: "Weak", range: "1-3" },
+  { max: 7, cls: "t1", word: "Developing", range: "4-7" },
+  { max: 12, cls: "t2", word: "Solid", range: "8-12" },
+  { max: 17, cls: "t3", word: "Strong", range: "13-17" },
+  { max: 20, cls: "t4", word: "Elite", range: "18-20" },
+];
+function attrBand(n) { return ATTR_BANDS.find((b) => n <= b.max) || ATTR_BANDS[ATTR_BANDS.length - 1]; }
+// One attribute card, used on My Profile (own = true) and on anyone else's
+// player page. Only averages are ever shown, never who rated.
 function attributeCardHtml(a, own) {
   if (!a.unlocked) {
     const msg = own
@@ -4292,15 +4310,21 @@ function attributeCardHtml(a, own) {
     return `<div class="at-card"><div class="at-pips">${Array.from({ length: a.needed }, (_, i) => `<span class="${i < a.count ? "on" : ""}"></span>`).join("")}</div>
       <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>${msg}</small></div></div>`;
   }
-  const shown = a.attributes.filter((x) => x.avg !== null).sort((x, y) => y.avg - x.avg);
-  const rows = a.attributes.map((x) => {
-    if (x.avg === null) return `<div class="at-row"><div class="at-rh"><span>${escapeHtml(x.label)}</span><span style="color:var(--text-faint);font-size:12px;">Needs more ratings</span></div><div class="at-sg">${"<span></span>".repeat(5)}</div></div>`;
-    const r = Math.max(1, Math.min(5, Math.round(x.avg)));
-    const seg = [1, 2, 3, 4, 5].map((n) => `<span><i style="width:${Math.max(0, Math.min(1, x.avg - (n - 1))) * 100}%;background:${RATING_FILL[r]}"></i></span>`).join("");
-    return `<div class="at-row"><div class="at-rh"><span>${escapeHtml(x.label)}</span><span><b>${x.avg.toFixed(1)}</b><em style="color:${RATING_INK[r]}">${RATING_WORDS[r]}</em></span></div><div class="at-sg">${seg}</div></div>`;
+  const scaled = a.attributes.map((x) => ({ ...x, raw: x.avg === null ? null : attrTo20(x.avg) }));
+  const rated = scaled.filter((x) => x.raw !== null);
+  const meanRaw = rated.length ? rated.reduce((t, x) => t + x.raw, 0) / rated.length : null;
+  const overall = meanRaw === null ? null : Math.round(meanRaw);
+  // The strongest three (and only ones above the player's own average) get the highlight band.
+  const keys = new Set(rated.slice().sort((x, y) => y.raw - x.raw).slice(0, 3).filter((x) => x.raw > meanRaw).map((x) => x.key));
+  const chip = (n) => n === null ? '<b class="fm-chip t-none">&ndash;</b>' : `<b class="fm-chip ${attrBand(n).cls}">${n}</b>`;
+  const rows = scaled.map((x) => {
+    const n = x.raw === null ? null : Math.round(x.raw);
+    return `<div class="fm-row${keys.has(x.key) ? " key" : ""}" title="${x.avg === null ? "Needs more ratings" : x.avg.toFixed(1) + " out of 5"}"><span>${escapeHtml(x.label)}</span>${chip(n)}</div>`;
   }).join("");
-  return `<div class="at-card"><div class="at-top"><div class="at-ovr">${a.overall === null ? "–" : a.overall}<small>Overall</small></div><span class="at-pill">Rated by ${a.count} opponents</span></div>${rows}
-    ${shown.length > 1 ? `<div class="at-foot"><span>Top: ${escapeHtml(shown[0].label)}</span><span>Next up: ${escapeHtml(shown[shown.length - 1].label)}</span></div>` : ""}</div>`;
+  const legend = ATTR_BANDS.map((b) => `<span><i class="fm-chip ${b.cls}">${b.range.split("-")[0]}</i>${b.word} ${b.range}</span>`).join("");
+  return `<div class="fm-card"><div class="fm-hd"><b>Attributes</b><span>Rated by ${a.count} opponents</span></div>
+    <div class="fm-overall"><span>Overall</span>${chip(overall)}</div>
+    <div class="fm-grid">${rows}</div><div class="fm-leg">${legend}</div></div>`;
 }
 async function renderAccountAttributes(cards) {
   const sec = el("account-attributes-section");

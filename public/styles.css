@@ -1504,6 +1504,23 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .at-pips span.on{background:#E8B34C;}
 .at-lock{font-size:14px;color:var(--text);}
 .at-lock small{display:block;font-size:12px;color:var(--text-dim);margin-top:2px;}
+/* Football Manager style attribute panel: label left, coloured 1-20 badge right. */
+.fm-card{background:linear-gradient(160deg,#2A1650,#170B33);color:#fff;border:1px solid #3d2a6b;border-radius:var(--radius-lg);padding:10px;}
+.fm-hd{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;margin-bottom:6px;border-radius:5px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);}
+.fm-hd b{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:.03em;}
+.fm-hd span{font-size:12px;opacity:.75;}
+.fm-overall{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;margin-bottom:4px;border-bottom:1px solid rgba(255,255,255,.14);font-family:var(--font-display);font-size:16px;letter-spacing:.04em;text-transform:uppercase;}
+.fm-overall .fm-chip{min-width:40px;height:30px;font-size:18px;}
+.fm-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;}
+.fm-row{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:5px;font-size:14px;min-height:34px;border-bottom:1px solid rgba(255,255,255,.08);}
+.fm-row>span{flex:1;min-width:0;}
+.fm-row.key{background:linear-gradient(90deg,rgba(150,100,230,.55),rgba(150,100,230,.15));}
+.fm-chip{display:inline-grid;place-items:center;min-width:32px;height:26px;padding:0 6px;border-radius:4px;font-family:var(--font-display);font-size:15px;font-weight:700;color:#fff;font-style:normal;}
+.fm-chip.t0{background:#C8382F;}.fm-chip.t1{background:#E0A13A;color:#2a1a00;}.fm-chip.t2{background:#2F5AA8;}.fm-chip.t3{background:#58B034;}
+.fm-chip.t4{background:#0F6B2E;box-shadow:0 0 0 2px rgba(111,224,138,.45);}.fm-chip.t-none{background:rgba(255,255,255,.14);color:rgba(255,255,255,.6);}
+.fm-leg{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;opacity:.88;padding:10px 6px 2px;}
+.fm-leg span{display:flex;align-items:center;gap:5px;}.fm-leg .fm-chip{min-width:22px;height:20px;font-size:11px;}
+@media (max-width:340px){.fm-grid{grid-template-columns:1fr;}}
 
 /* Player auction room (league > Auction tab). The player on the block is a
    dark card with the price big; everything else uses the normal card style. */
