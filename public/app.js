@@ -4282,6 +4282,28 @@ function playRatingSplash(q) {
 }
 // "Your attributes" on My Profile: the eight bars once 3 opponents have rated
 // this account, otherwise a progress meter toward that.
+// A player's type is their strongest attribute (ties go to the higher raw
+// average), or All-Rounder when their best and weakest are within 2 points.
+// Opponents' ratings are few and noisy, so it only appears from 6 ratings.
+const PLAYER_TYPE_MIN_RATINGS = 6;
+const PLAYER_TYPES = {
+  volleys: { name: "Net Player", blurb: "Wins points at the net" },
+  smash: { name: "Power Hitter", blurb: "Finishes points overhead" },
+  serve: { name: "Big Server", blurb: "Starts points on top" },
+  vibora: { name: "Spin Specialist", blurb: "Uses spin and angles" },
+  lob: { name: "Tactician", blurb: "Plays the long game and moves opponents" },
+  defence: { name: "The Wall", blurb: "Gets everything back" },
+  consistency: { name: "Metronome", blurb: "Few errors, rarely beaten by mistakes" },
+  mentality: { name: "Competitor", blurb: "Stays strong in the tight moments" },
+  all: { name: "All-Rounder", blurb: "No obvious weakness" },
+};
+function playerTypeOf(scaled) {
+  const rated = scaled.filter((x) => x.raw !== null);
+  if (rated.length < 4) return null;
+  const sorted = rated.slice().sort((x, y) => y.raw - x.raw);
+  if (sorted[0].raw - sorted[sorted.length - 1].raw <= 2) return PLAYER_TYPES.all;
+  return PLAYER_TYPES[sorted[0].key] || null;
+}
 // One attribute card, used on My Profile (own = true) and on anyone else's
 // player page. Only averages are ever shown, never who rated.
 // Attributes are rated 1 to 5 but shown on a 1 to 20 scale, like Football
@@ -4322,8 +4344,12 @@ function attributeCardHtml(a, own) {
     return `<div class="fm-row${keys.has(x.key) ? " key" : ""}" title="${x.avg === null ? "Needs more ratings" : x.avg.toFixed(1) + " out of 5"}"><span>${escapeHtml(x.label)}</span>${chip(n)}</div>`;
   }).join("");
   const legend = ATTR_BANDS.map((b) => `<span><i class="fm-chip ${b.cls}">${b.range.split("-")[0]}</i>${b.word} ${b.range}</span>`).join("");
+  const type = a.count >= PLAYER_TYPE_MIN_RATINGS ? playerTypeOf(scaled) : null;
+  const typeHtml = type
+    ? `<em class="fm-type">${escapeHtml(type.name)}</em><small>${escapeHtml(type.blurb)}</small>`
+    : a.count < PLAYER_TYPE_MIN_RATINGS ? `<small>Player type unlocks at ${PLAYER_TYPE_MIN_RATINGS} ratings (${a.count} so far)</small>` : "";
   return `<div class="fm-card"><div class="fm-hd"><b>Attributes</b><span>Rated by ${a.count} opponents</span></div>
-    <div class="fm-overall"><span>Overall</span>${chip(overall)}</div>
+    <div class="fm-overall"><div class="fm-ovl"><span>Overall</span>${typeHtml}</div>${chip(overall)}</div>
     <div class="fm-grid">${rows}</div><div class="fm-leg">${legend}</div></div>`;
 }
 async function renderAccountAttributes(cards) {

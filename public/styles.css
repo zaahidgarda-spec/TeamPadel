@@ -1511,6 +1511,9 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .fm-hd span{font-size:12px;opacity:.75;}
 .fm-overall{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;margin-bottom:4px;border-bottom:1px solid rgba(255,255,255,.14);font-family:var(--font-display);font-size:16px;letter-spacing:.04em;text-transform:uppercase;}
 .fm-overall .fm-chip{min-width:40px;height:30px;font-size:18px;}
+.fm-ovl{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.fm-type{font-family:var(--font-display);font-style:normal;font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#E8B34C;}
+.fm-ovl small{font-family:var(--font-body);font-size:11px;letter-spacing:0;text-transform:none;opacity:.7;}
 .fm-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;}
 .fm-row{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:5px;font-size:14px;min-height:34px;border-bottom:1px solid rgba(255,255,255,.08);}
 .fm-row>span{flex:1;min-width:0;}
