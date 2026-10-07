@@ -11477,7 +11477,7 @@ function potwEligiblePairsClient(fixtures) {
       selection.pairs.forEach((pair, seed) => {
         const p1 = playerById(team, pair[0]), p2 = playerById(team, pair[1]);
         if (!p1 || !p2) return;
-        pairs.push({ key: `${f.id}:${side}:${seed}`, teamName: team.name, playerAName: p1.name, playerBName: p2.name });
+        pairs.push({ key: `${f.id}:${side}:${seed}`, fixtureId: f.id, seed, teamId: team.id, teamName: team.name, playerAName: p1.name, playerBName: p2.name });
       });
     });
   });
@@ -11494,6 +11494,20 @@ function myClaimedPlayerIdHere() {
     if (p) return p.id;
   }
   return null;
+}
+// Every record of this league the signed-in account has claimed.
+function myClaimedPlayerIdsHere() {
+  if (!playerAccount || !league) return [];
+  return league.teams.flatMap((t) => t.players.filter((pl) => pl.claimedByUserId === playerAccount.id).map((pl) => pl.id));
+}
+// Mirrors potwIsOwnGame in src/logic.js: you can't vote for a pair from your own match.
+function potwIsOwnGameClient(pair, fixtures) {
+  if (myRole === "admin") return false;
+  if (myRole === "captain" && myTeamId && pair.teamId === myTeamId) return true;
+  const ids = myClaimedPlayerIdsHere();
+  if (!ids.length) return false;
+  const f = fixtures.find((x) => x.id === pair.fixtureId);
+  return !!f && [f.selectionA, f.selectionB].some((sel) => ((sel && sel.pairs && sel.pairs[pair.seed]) || []).some((id) => ids.includes(id)));
 }
 function renderPotwCard(fixtures) {
   const card = el("potw-card");
@@ -11528,7 +11542,7 @@ function renderPotwCard(fixtures) {
     voteWrap.className = "row";
     voteWrap.style.marginTop = "12px";
     const select = document.createElement("select");
-    select.innerHTML = '<option value="">Choose a pair…</option>' + eligible.map((p) => `<option value="${p.key}">${escapeHtml(p.playerAName + " & " + p.playerBName)} (${escapeHtml(p.teamName)})</option>`).join("");
+    select.innerHTML = '<option value="">Choose a pair…</option>' + eligible.map((p) => { const own = potwIsOwnGameClient(p, fixtures); return `<option value="${p.key}"${own ? " disabled" : ""}>${escapeHtml(p.playerAName + " & " + p.playerBName)} (${escapeHtml(p.teamName)})${own ? " — your match" : ""}</option>`; }).join("");
     const myVote = league.myPotwVote && league.myPotwVote[round];
     if (myVote) select.value = myVote;
     const btn = document.createElement("button");

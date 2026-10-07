@@ -7300,10 +7300,12 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   // not just captains/admin — one per claimed identity, same as a
   // captain's is one per team.
   let claimedPlayerId = null;
+  let myPlayerIds = [];
   if (req.session.playerUser) {
     const account = store.getUser(req.session.playerUser.id);
-    const claim = account && (account.claims || []).find((c) => c.leagueId === league.id);
-    if (claim) claimedPlayerId = claim.playerId;
+    const mine = account ? (account.claims || []).filter((c) => c.leagueId === league.id) : [];
+    if (mine.length) claimedPlayerId = mine[0].playerId;
+    myPlayerIds = mine.map((c) => c.playerId);
   }
   if (!isAdmin && !isCaptain && !claimedPlayerId) return res.status(403).json({ error: "Log in as a captain, or claim your player record in this league, to vote." });
   // Admin gets one vote too, same as a team captain, just not tied to any
@@ -7318,6 +7320,11 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   const { pairKey } = req.body || {};
   const eligible = logic.potwEligiblePairs(league, round);
   if (!eligible.some((p) => p.key === pairKey)) return res.status(400).json({ error: "That pair didn't play this round." });
+  // Nobody votes for their own game (the admin isn't playing, so is exempt).
+  const chosen = eligible.find((p) => p.key === pairKey);
+  if (!isAdmin && logic.potwIsOwnGame(league, chosen, { playerIds: myPlayerIds, teamId: isCaptain ? u.teamId : null })) {
+    return res.status(400).json({ error: "You can't vote for a pair from your own match." });
+  }
   if (!league.potwVotes) league.potwVotes = {};
   if (!league.potwVotes[round]) league.potwVotes[round] = {};
   league.potwVotes[round][voterKey] = pairKey;

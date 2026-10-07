@@ -589,6 +589,20 @@ function potwEligiblePairs(league, round) {
   });
   return pairs;
 }
+// Whether a Pair of the Week option is from the voter's own game, which they
+// can't vote for. `voter` is { playerIds, teamId }: a player can't vote for
+// either pair in a match they played in (their own pair or the one they faced),
+// and a captain, voting for their team, can't vote for any of that team's pairs.
+function potwIsOwnGame(league, pair, voter) {
+  if (!voter) return false;
+  if (voter.teamId && pair.teamId === voter.teamId) return true;
+  const ids = voter.playerIds || [];
+  if (!ids.length) return false;
+  const f = league.fixtures.find((x) => x.id === pair.fixtureId);
+  if (!f) return false;
+  const inGame = [f.selectionA, f.selectionB].some((sel) => ((sel && sel.pairs && sel.pairs[pair.seed]) || []).some((id) => ids.includes(id)));
+  return inGame;
+}
 // Public tally + winner for a round — vote counts and the winner are shared
 // with everyone (so the crown can show), but who voted for whom stays
 // server-side only, to keep captains from feeling pressured either way.
@@ -1762,6 +1776,7 @@ module.exports = {
   superTieWinner,
   validateSelection,
   validateRoundPair,
+  potwIsOwnGame,
   playerMatchHistory,
   seasonWrappedStats,
   headToHead,

@@ -139,3 +139,32 @@ test("playerMatchHistory — each row carries when its fixture was finalized, fo
   assert.equal(rows[0].finalizedAt, 1234567890);
   assert.equal(rows[0].date, "");
 });
+
+test("potwIsOwnGame — nobody can vote for a pair from their own match", () => {
+  const league = {
+    teams: [
+      { id: "tA", name: "A", players: [{ id: "p1", name: "P1" }, { id: "p2", name: "P2" }, { id: "p3", name: "P3" }, { id: "p4", name: "P4" }] },
+      { id: "tB", name: "B", players: [{ id: "q1", name: "Q1" }, { id: "q2", name: "Q2" }, { id: "q3", name: "Q3" }, { id: "q4", name: "Q4" }] },
+    ],
+    fixtures: [{ id: "f1", round: 1, stage: "regular", teamA: "tA", teamB: "tB", finalized: true,
+      selectionA: { submitted: true, pairs: [["p1", "p2"], ["p3", "p4"]] },
+      selectionB: { submitted: true, pairs: [["q1", "q2"], ["q3", "q4"]] },
+      rubbers: [] }],
+  };
+  const pairs = logic.potwEligiblePairs(league, 1);
+  assert.equal(pairs.length, 4);
+  const byKey = (side, seed) => pairs.find((p) => p.side === side && p.seed === seed);
+  // p1 played seed 0: both pairs of that match are theirs, seed 1's pairs are fair game
+  const player = { playerIds: ["p1"], teamId: null };
+  assert.equal(logic.potwIsOwnGame(league, byKey("A", 0), player), true, "own pair");
+  assert.equal(logic.potwIsOwnGame(league, byKey("B", 0), player), true, "the pair they faced");
+  assert.equal(logic.potwIsOwnGame(league, byKey("A", 1), player), false, "a teammate's other match");
+  assert.equal(logic.potwIsOwnGame(league, byKey("B", 1), player), false, "an opponent pair in another match");
+  // a captain votes for their team, so none of that team's pairs; the other team's are fine
+  const captain = { playerIds: [], teamId: "tA" };
+  assert.equal(logic.potwIsOwnGame(league, byKey("A", 1), captain), true);
+  assert.equal(logic.potwIsOwnGame(league, byKey("B", 1), captain), false);
+  // someone who isn't in any match (a spectator who claimed a benched player) can vote for anything
+  assert.equal(logic.potwIsOwnGame(league, byKey("A", 0), { playerIds: ["p9"], teamId: null }), false);
+  assert.equal(logic.potwIsOwnGame(league, byKey("A", 0), null), false);
+});
