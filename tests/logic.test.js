@@ -125,3 +125,17 @@ test("computeStandings — an ordinary pairs win still scores normally", () => {
   assert.equal(b.nightsLost, 1);
   assert.equal(b.points, 0);
 });
+
+test("playerMatchHistory — each row carries when its fixture was finalized, for leagues with no schedule dates", () => {
+  const league = {
+    format: "teams", schedule: {}, playoffs: null, seasonHistory: [],
+    teams: [{ id: "tA", name: "A", players: [{ id: "p1", name: "P1" }, { id: "p2", name: "P2" }] }, { id: "tB", name: "B", players: [{ id: "q1", name: "Q1" }, { id: "q2", name: "Q2" }] }],
+    fixtures: [{ id: "f1", round: 1, stage: "regular", teamA: "tA", teamB: "tB", finalized: true, finalizedAt: 1234567890,
+      selectionA: { submitted: true, pairs: [["p1", "p2"]] }, selectionB: { submitted: true, pairs: [["q1", "q2"]] },
+      rubbers: [{ sets: [[6, 3], [6, 4]], tb: [null, null] }] }],
+  };
+  const rows = logic.playerMatchHistory(league, "p1", { deltas: new Map() });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].finalizedAt, 1234567890);
+  assert.equal(rows[0].date, "");
+});

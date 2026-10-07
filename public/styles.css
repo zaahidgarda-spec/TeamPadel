@@ -2927,3 +2927,8 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .sel-success b{display:block;}
 .sel-success small{display:block;font-size:12px;font-weight:400;margin-top:2px;color:#2F6E47;}
 @media (prefers-reduced-motion:reduce){.app-toast{transition:none;}}
+
+/* League chips above My Profile's recent results. */
+.form-filter{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;}
+.form-filter button{font:600 12px var(--font-display);letter-spacing:.06em;text-transform:uppercase;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--text-dim);cursor:pointer;}
+.form-filter button.on{background:var(--accent);border-color:var(--accent);color:#fff;}

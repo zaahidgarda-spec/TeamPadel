@@ -1317,6 +1317,9 @@ function playerMatchHistory(league, playerId, ratingsData) {
         seed: idx + 1,
         date: sched.date || f.date || "",
         time: sched.time || "",
+        // When the fixture was finalized — lets a league with no schedule dates
+        // still sort its matches by when they were played.
+        finalizedAt: f.finalizedAt || 0,
         ratingDelta: (deltas.get(`${f.id}:${idx}:${playerId}`) || {}).delta ?? null,
       });
     });

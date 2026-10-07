@@ -4404,6 +4404,8 @@ async function renderPlayerModalAttributes(leagueId, playerId) {
   if (box.dataset.for && box.dataset.for !== leagueId + ":" + playerId) return;
   box.innerHTML = `<p class="p-section-label">Attributes</p>${attributeCardHtml(a, false)}`;
 }
+// Which league's results the My Profile list is showing ("all" = every league).
+let accountResultsFilter = "all";
 async function renderAccountProfile() {
   const { cards, fixtureCards, playoffSplash } = await api("/players/profile").catch(() => ({ cards: [], fixtureCards: [], playoffSplash: [] }));
   accountAroundData = { cards: cards || [], fixtureCards: fixtureCards || [] };
@@ -4435,25 +4437,38 @@ async function renderAccountProfile() {
   if (cards.length === 0) { c.innerHTML = '<p class="empty">Find your player record to see your matches, results, and awards here.</p>'; return; }
   // One combined view across every claimed record — Sandton and Killarney
   // results show up together as one person's history, not walled off into
-  // separate per-league boxes. Each row still names its own league, so
-  // context isn't lost, just no longer segregated. Most recent first, and
-  // capped — this is a glance at recent form, not a full archive (every
-  // result is still in the roster's own player-history popup).
+  // separate per-league boxes. Each row still names its own league. Most
+  // recent first, and capped — this is a glance at recent form, not a full
+  // archive — so a row of league chips above lets you look at one league's
+  // results on their own (a league with no scheduled dates would otherwise
+  // sink below the cut). Every result is also in the player-history popup.
+  const whenOf = (r) => (r.date ? Date.parse(r.date) || 0 : (r.finalizedAt || 0));
   const allResults = cards.flatMap((card) => card.results.map((r) => Object.assign({
     leagueName: card.leagueName, leagueId: card.leagueId, isPairs: card.isPairs,
     mePlayerName: card.playerName, mePhoto: card.photo,
     meTeamId: card.teamId, meTeamName: card.teamName, meTeamLogo: card.teamLogo,
   }, r)))
-    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    .sort((a, b) => whenOf(b) - whenOf(a));
   const cardHtmlFor = (r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto, teamId: r.meTeamId, teamName: r.meTeamName, teamLogo: r.meTeamLogo }, { isPairs: r.isPairs, leagueTag: r.leagueName });
-  const results = allResults.slice(0, 8);
   const seeAllBtn = el("account-form-see-all-btn");
-  c.innerHTML = results.length
-    ? results.map(cardHtmlFor).join("")
-    : '<p class="empty">No results yet.</p>';
-  bindMatchCardLinks(c);
-  seeAllBtn.style.display = allResults.length > results.length ? "inline-block" : "none";
-  seeAllBtn.onclick = () => openAllMatchesModal(allResults.map(cardHtmlFor).join(""));
+  const filterBar = el("account-form-filter");
+  const leagueChips = [...new Map(allResults.map((r) => [r.leagueId, r.leagueName]))];
+  if (accountResultsFilter !== "all" && !leagueChips.some(([id]) => id === accountResultsFilter)) accountResultsFilter = "all";
+  const drawResults = () => {
+    const list = accountResultsFilter === "all" ? allResults : allResults.filter((r) => r.leagueId === accountResultsFilter);
+    const shown = list.slice(0, 8);
+    c.innerHTML = shown.length ? shown.map(cardHtmlFor).join("") : '<p class="empty">No results yet.</p>';
+    bindMatchCardLinks(c);
+    seeAllBtn.style.display = list.length > shown.length ? "inline-block" : "none";
+    seeAllBtn.onclick = () => openAllMatchesModal(list.map(cardHtmlFor).join(""));
+    filterBar.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.league === accountResultsFilter));
+  };
+  filterBar.style.display = leagueChips.length > 1 ? "flex" : "none";
+  filterBar.innerHTML = leagueChips.length > 1
+    ? `<button type="button" data-league="all">All</button>${leagueChips.map(([id, name]) => `<button type="button" data-league="${escapeHtml(id)}">${escapeHtml(name)}</button>`).join("")}`
+    : "";
+  filterBar.querySelectorAll("button").forEach((b) => { b.onclick = () => { accountResultsFilter = b.dataset.league; drawResults(); }; });
+  drawResults();
 }
 // The stat strip — season record, how many leagues, a captain badge if
 // they manage a team, and an award count. A glance-able summary of "how's
