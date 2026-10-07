@@ -12749,8 +12749,11 @@ async function generateTablePosterCanvas(theme) {
   const rankColW = hz(60);
   const logoR = hz(26);
   const nameX = marginX + rankColW + hz(20) + logoR * 2 + hz(16);
-  const statCols = ["P", "WON", "LOST", "DIFF", "PTS"];
-  const statColW = hz(74);
+  // A Vibora (pairs) match can end level, and a draw is neither a win nor a
+  // loss — without its own column, played would never add up to won + lost.
+  const isPairsLeague = league.format === "pairs";
+  const statCols = isPairsLeague ? ["P", "WON", "DRAWN", "LOST", "DIFF", "PTS"] : ["P", "WON", "LOST", "DIFF", "PTS"];
+  const statColW = hz(isPairsLeague ? 70 : 74);
   const statsStartX = W - marginX - statCols.length * statColW;
   const nameMaxWidth = statsStartX - nameX - hz(20);
   // One size for every pair name on the table, picked from the widest —
@@ -12790,11 +12793,15 @@ async function generateTablePosterCanvas(theme) {
     ctx.fillStyle = "#FFFFFF";
     ctx.fillText(fitText(ctx, r.name.toUpperCase(), nameMaxWidth, nameFontSize, "600", "Oswald, sans-serif", nameFontSize), nameX, midY + hz(9));
 
-    const values = [r.played, r.rubbersWon, r.rubbersLost, (r.diff > 0 ? "+" : "") + r.diff, r.points];
+    const diffText = (r.diff > 0 ? "+" : "") + r.diff;
+    const values = isPairsLeague
+      ? [r.played, r.rubbersWon, r.nightsDrawn || 0, r.rubbersLost, diffText, r.points]
+      : [r.played, r.rubbersWon, r.rubbersLost, diffText, r.points];
     ctx.textAlign = "center";
     values.forEach((v, ci) => {
-      ctx.fillStyle = ci === 4 ? theme.accent : "#DCE3F0";
-      ctx.font = (ci === 4 ? "700 " : "500 ") + hz(ci === 4 ? 26 : 22) + "px Oswald, sans-serif";
+      const isPts = ci === values.length - 1;
+      ctx.fillStyle = isPts ? theme.accent : "#DCE3F0";
+      ctx.font = (isPts ? "700 " : "500 ") + hz(isPts ? 26 : 22) + "px Oswald, sans-serif";
       ctx.fillText(String(v), statsStartX + ci * statColW + statColW / 2, midY + hz(8));
     });
 
