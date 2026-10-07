@@ -8996,12 +8996,13 @@ function roundPairForm(f, team, side, roundIdx, usedIds, roundTier) {
     if (!localPair[0] || !localPair[1]) { err.textContent = "Pick two players."; return; }
     try {
       await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundIdx + 1}/pair`, { method: "POST", body: { side, pair: localPair } });
+      showToast(`Pairing ${roundIdx + 1} submitted`);
       await refreshLeague(); renderAll();
     } catch (e) {
       if (e.needsConfirm) {
         if (confirm(e.message + " Submit anyway?")) {
           api(`/leagues/${currentLeagueId}/fixtures/${f.id}/pair-toss/${roundIdx + 1}/pair`, { method: "POST", body: { side, pair: localPair, confirmDoubleUp: true } })
-            .then(async () => { await refreshLeague(); renderAll(); })
+            .then(async () => { showToast(`Pairing ${roundIdx + 1} submitted. Double-up confirmed.`); await refreshLeague(); renderAll(); })
             .catch((e2) => { err.textContent = e2.message; });
         }
       } else {
@@ -9460,6 +9461,25 @@ function seedSuggestionHint(team) {
   }).catch(() => { body.textContent = "Couldn't load a suggestion right now."; return null; });
   return { el: details, ready };
 }
+// A small confirmation that appears at the bottom of the screen for a few
+// seconds — "it worked" feedback for actions that otherwise just redraw.
+let toastTimer = null;
+function showToast(message) {
+  let t = document.getElementById("app-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "app-toast"; t.className = "app-toast"; t.setAttribute("role", "status"); t.setAttribute("aria-live", "polite");
+    document.body.appendChild(t);
+  }
+  t.innerHTML = `<span class="tick">&#10003;</span><span>${escapeHtml(message)}</span>`;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 4500);
+}
+// Remembers a just-saved line-up so its form can keep showing a green
+// "Submitted" banner after the page redraws (the form stays editable until the
+// other team has also submitted, so without this a save looked like nothing).
+let selectionSavedNote = null;
 function selectionForm(f, team, side) {
   const div = document.createElement("div"); div.className = "selection-side";
   const selField = side === "A" ? "selectionA" : "selectionB";
@@ -9474,6 +9494,12 @@ function selectionForm(f, team, side) {
   if (team.players.length < 2) {
     div.appendChild(Object.assign(document.createElement("p"), { className: "note", textContent: "Add at least 2 players to this team's roster in the Admin tab first." }));
     return div;
+  }
+  if (selectionSavedNote && selectionSavedNote.key === f.id + ":" + side && selectionSavedNote.until > Date.now()) {
+    const banner = document.createElement("div");
+    banner.className = "sel-success"; banner.setAttribute("role", "status");
+    banner.innerHTML = `<span class="tick">&#10003;</span><div><b>${escapeHtml(selectionSavedNote.title)}</b>${selectionSavedNote.detail ? `<small>${escapeHtml(selectionSavedNote.detail)}</small>` : ""}</div>`;
+    div.appendChild(banner);
   }
   // A quiet, collapsed-by-default nudge for whoever's actually picking —
   // never shown to the opposing captain (canEdit above already gates this
@@ -9528,6 +9554,12 @@ function selectionForm(f, team, side) {
       }
     }
     return false;
+  }
+  function doubledUpNames() {
+    const singlesIdx = localPairs.length === 5 ? 4 : -1;
+    const counts = new Map();
+    localPairs.forEach((pair, i) => { if (i === singlesIdx) return; (pair || []).forEach((id) => { if (id) counts.set(id, (counts.get(id) || 0) + 1); }); });
+    return [...counts].filter(([, n]) => n > 1).map(([id]) => (team.players.find((p) => p.id === id) || { name: "A player" }).name);
   }
   function refreshDoubleUpNote() {
     doubleUpNote.style.display = findDuplicate() ? "block" : "none";
@@ -9722,7 +9754,12 @@ function selectionForm(f, team, side) {
       return;
     }
     try {
+      const doubled = doubledUpNames();
       await api(`/leagues/${currentLeagueId}/fixtures/${f.id}/selection`, { method: "POST", body: { side, pairs: localPairs, confirmDoubleUp: doubleUpCheckbox.checked } });
+      const title = already ? "Line-up updated" : "Line-up submitted";
+      const detail = doubled.length ? `Double-up confirmed: ${doubled.join(" and ")} ${doubled.length === 1 ? "plays" : "play"} more than once tonight.` : "";
+      selectionSavedNote = { key: f.id + ":" + side, title, detail, until: Date.now() + 15000 };
+      showToast(doubled.length ? `${title}. Double-up confirmed.` : title);
       await refreshLeague(); renderAll();
     } catch (e) {
       err.textContent = e.message;
