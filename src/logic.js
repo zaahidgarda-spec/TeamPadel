@@ -426,7 +426,7 @@ function superTieWinner(league) {
 // that opted into a singles decider — that one seed takes exactly one
 // player, not a pair, so it skips the usual two-players/no-self-pair checks.
 // `goldRule` (only for a tiering-enabled team league) is
-// `{ goldIds, isGoldSeed }` — goldIds is the SUBMITTING team's own
+// `{ goldIds, isGoldSeed, silverAllowance? }` — goldIds is the SUBMITTING team's own
 // gold-tier player ids, and isGoldSeed(i) says whether seed i admits a
 // gold-tier player (normally just the first `goldTierCount` seeds, but a
 // seed already decided by the pair-toss ceremony defers to that instead).
@@ -447,8 +447,18 @@ function validateSelection(pairs, confirmDoubleUp, singlesIdx, goldRule) {
     }
     if (!a || !b) return { error: "Every seed needs two players selected." };
     if (a === b) return { error: "A player can't be paired with themselves (seed " + (i + 1) + ")." };
-    if (goldRule && !goldRule.isGoldSeed(i) && (goldRule.goldIds.has(a) || goldRule.goldIds.has(b))) {
-      return { error: "A gold-tier player can only be seeded in a gold-tier seed — seed " + (i + 1) + " is silver." };
+    if (goldRule && !goldRule.isGoldSeed(i)) {
+      const goldHere = (goldRule.goldIds.has(a) ? 1 : 0) + (goldRule.goldIds.has(b) ? 1 : 0);
+      // Some leagues (Balwin rules) let a set number of gold players play in
+      // the first silver seed — `silverAllowance` is { seedIdx, max }.
+      const allowed = goldRule.silverAllowance && goldRule.silverAllowance.seedIdx === i ? goldRule.silverAllowance.max : 0;
+      if (goldHere > allowed) {
+        return {
+          error: allowed
+            ? "Seed " + (i + 1) + " can have at most " + allowed + " gold-tier player" + (allowed === 1 ? "" : "s") + "."
+            : "A gold-tier player can only be seeded in a gold-tier seed — seed " + (i + 1) + " is silver.",
+        };
+      }
     }
     if (seen.has(a) || seen.has(b)) doubleUp = true;
     seen.add(a);
@@ -468,12 +478,18 @@ function validateSelection(pairs, confirmDoubleUp, singlesIdx, goldRule) {
 // checked against a "silver" round — this round's tier was already
 // decided in the /choice step, so there's no seed-index math here, just
 // "does this pairing's declared tier actually admit a gold player."
-function validateRoundPair(existingPairs, roundIdx, pair, confirmDoubleUp, roundTier, goldIds) {
+function validateRoundPair(existingPairs, roundIdx, pair, confirmDoubleUp, roundTier, goldIds, silverGoldAllowed) {
   const [a, b] = pair || [];
   if (!a || !b) return { error: "Pick two players for this pairing." };
   if (a === b) return { error: "A player can't be paired with themselves." };
-  if (roundTier === "silver" && goldIds && (goldIds.has(a) || goldIds.has(b))) {
-    return { error: "A gold-tier player can only play a gold pairing — this one was tossed silver." };
+  if (roundTier === "silver" && goldIds) {
+    const goldHere = (goldIds.has(a) ? 1 : 0) + (goldIds.has(b) ? 1 : 0);
+    // `silverGoldAllowed`: how many gold players this silver pairing may take
+    // (Balwin rules allow one in the first silver pairing; otherwise 0).
+    const allowed = silverGoldAllowed || 0;
+    if (goldHere > allowed) {
+      return { error: allowed ? "This silver pairing can have at most " + allowed + " gold-tier player" + (allowed === 1 ? "" : "s") + "." : "A gold-tier player can only play a gold pairing — this one was tossed silver." };
+    }
   }
   // Only the 4 pair-toss rounds count as "already used" — an Ormonde-rules
   // fixture's 5th slot (index 4) is the singles seed, a different match

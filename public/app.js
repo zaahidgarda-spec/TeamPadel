@@ -187,6 +187,15 @@ function effectiveSeedTier(f, seedIdx) {
   if (tossed) return tossed;
   return seedIdx < (league.goldMatchCount || 0) ? "gold" : "silver";
 }
+// The first silver seed (Seed 3 with two gold matches) can take a set number
+// of gold players when the league allows it (Balwin rules: one).
+function firstSilverSeedIdx(f) {
+  for (let i = 0; i < 4; i++) { if (effectiveSeedTier(f, i) === "silver") return i; }
+  return -1;
+}
+function goldAllowanceFor(f, seedIdx) {
+  return seedIdx === firstSilverSeedIdx(f) ? Math.max(0, Math.min(2, Number(league.goldInFirstSilverSeed) || 0)) : 0;
+}
 // A tinted background + accent bar on a gold seed's own row — so it reads
 // at a glance before a captain even reaches the chip/label text. Silver
 // rows stay plain; there's nothing to call out there.
@@ -6799,6 +6808,9 @@ function renderAdmin() {
   el("gold-tier-count-input").value = league.goldTierCount || 1;
   el("gold-match-count-input").value = league.goldMatchCount || 1;
   el("tiering-match-count-row").style.display = league.tieringEnabled ? "flex" : "none";
+  el("gold-silver-allow-input").value = league.goldInFirstSilverSeed || 0;
+  el("tiering-silver-allow-row").style.display = league.tieringEnabled ? "flex" : "none";
+  el("tiering-silver-allow-hint").style.display = league.tieringEnabled ? "block" : "none";
   el("tiering-match-count-hint").style.display = league.tieringEnabled ? "block" : "none";
   el("tiering-flat-toggle").checked = !!league.flatTierLabels;
   el("tiering-flat-row").style.display = league.tieringEnabled ? "flex" : "none";
@@ -7784,6 +7796,14 @@ el("gold-match-count-input").addEventListener("change", async () => {
   if (!goldMatchCount || goldMatchCount < 1) return;
   try {
     await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount: league.goldTierCount || 1, goldMatchCount } });
+    await refreshLeague(); renderAll();
+  } catch (e) { alert(e.message); }
+});
+el("gold-silver-allow-input").addEventListener("change", async () => {
+  const goldInFirstSilverSeed = Number(el("gold-silver-allow-input").value);
+  if (!Number.isInteger(goldInFirstSilverSeed) || goldInFirstSilverSeed < 0 || goldInFirstSilverSeed > 2) { el("gold-silver-allow-input").value = league.goldInFirstSilverSeed || 0; return; }
+  try {
+    await api(`/leagues/${currentLeagueId}/tiering`, { method: "PUT", body: { enabled: true, goldTierCount: league.goldTierCount || 1, goldInFirstSilverSeed } });
     await refreshLeague(); renderAll();
   } catch (e) { alert(e.message); }
 });
@@ -8934,8 +8954,10 @@ function roundPairForm(f, team, side, roundIdx, usedIds, roundTier) {
     div.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-error", textContent: "Not enough unused players left on this roster for another pairing." }));
     return div;
   }
+  const firstSilverRound = (f.pairToss || []).findIndex((r) => r && r.tier === "silver");
+  const silverGoldAllowed = roundTier === "silver" && roundIdx === firstSilverRound ? Math.max(0, Math.min(2, Number(league.goldInFirstSilverSeed) || 0)) : 0;
   if (roundTier === "silver" && available.some((p) => isGoldPlayer(p))) {
-    div.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-bottom:8px;", textContent: "This pairing tossed silver — gold-tier players can only play a gold pairing." }));
+    div.appendChild(Object.assign(document.createElement("p"), { className: "toss-hud-note", style: "margin-bottom:8px;", textContent: silverGoldAllowed ? `This pairing tossed silver — it can include at most ${silverGoldAllowed} gold-tier player${silverGoldAllowed === 1 ? "" : "s"}.` : "This pairing tossed silver — gold-tier players can only play a gold pairing." }));
   }
   const sel = side === "A" ? f.selectionA : f.selectionB;
   const existing = sel.pairs[roundIdx] || [null, null];
@@ -8946,7 +8968,9 @@ function roundPairForm(f, team, side, roundIdx, usedIds, roundTier) {
   function optionsFor(mySlot) {
     const otherVal = localPair[mySlot === 0 ? 1 : 0];
     return '<option value="">Player…</option>' + available.map((p) => {
-      const goldBlocked = roundTier === "silver" && isGoldPlayer(p);
+      const otherP = otherVal && available.find((x) => x.id === otherVal);
+      const goldOther = otherP && isGoldPlayer(otherP) ? 1 : 0;
+      const goldBlocked = roundTier === "silver" && isGoldPlayer(p) && silverGoldAllowed - goldOther < 1;
       const disabled = p.id === otherVal || goldBlocked;
       return `<option value="${p.id}" ${disabled ? "disabled" : ""} ${p.id === localPair[mySlot] ? "selected" : ""}>${goldPrefix(p)}${escapeHtml(p.name)}${goldBlocked ? " — gold only" : ""}</option>`;
     }).join("");
@@ -9621,12 +9645,16 @@ function selectionForm(f, team, side) {
       const isBlank = !localPairs[seedIdx][slot];
       const blankHtml = `<div class="pick-row pick-row-blank${isBlank ? " hi" : ""}"><span class="pick-avatar">&mdash;</span><span class="placeholder">Blank</span>${isBlank ? '<span class="check">&#10003;</span>' : ""}</div>`;
       const playersHtml = team.players.map((p) => {
-        const goldBlocked = goldBlockedSeed && isGoldPlayer(p);
+        const allowance = goldBlockedSeed ? goldAllowanceFor(f, seedIdx) : 0;
+        const otherPlayer = otherVal && team.players.find((x) => x.id === otherVal);
+        const goldInOtherSlot = otherPlayer && isGoldPlayer(otherPlayer) ? 1 : 0;
+        const goldAllowedHere = allowance - goldInOtherSlot >= 1;
+        const goldBlocked = goldBlockedSeed && isGoldPlayer(p) && !goldAllowedHere;
         const disabled = p.id === otherVal || goldBlocked;
         const current = p.id === localPairs[seedIdx][slot];
         const elsewhereIdx = usedElsewhere[p.id];
         const note = goldBlocked
-          ? `<span class="reason">Silver seed</span>`
+          ? `<span class="reason">${allowance ? "Only " + allowance + " gold here" : "Silver seed"}</span>`
           : elsewhereIdx !== undefined ? `<span class="reason">${localPairs.length === 1 ? "Also in" : "Also Seed " + (elsewhereIdx + 1)}</span>` : "";
         return `<div class="pick-row pick-row-player${disabled ? " disabled" : ""}${current ? " hi" : ""}" data-pid="${p.id}"><span class="pick-avatar">${escapeHtml(p.name.charAt(0).toUpperCase())}</span>${goldPrefix(p)}${escapeHtml(p.name)}${note}${current ? '<span class="check">&#10003;</span>' : ""}</div>`;
       }).join("");

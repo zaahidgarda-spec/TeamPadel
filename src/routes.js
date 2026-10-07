@@ -73,6 +73,11 @@ function kickoffMsOf(date, time) {
   return Number.isNaN(ms) ? null : ms;
 }
 
+// How many gold-tier players may also play a league's first silver seed.
+function goldInSilverMax(league) {
+  const n = Number(league.goldInFirstSilverSeed);
+  return Number.isInteger(n) ? Math.max(0, Math.min(2, n)) : 0;
+}
 function newLeagueObj(name, adminEmail, format, singlesDecider) {
   return {
     id: logic.uid(),
@@ -118,6 +123,7 @@ function newLeagueObj(name, adminEmail, format, singlesDecider) {
     courtNames: [], // keyed by court index -> custom label; falls back to "Court N" when blank
     tieringEnabled: false, // gold-tier seeding — off by default, admin opts in
     goldTierCount: 0, // how many players per team must be tagged "gold" once enabled
+    goldInFirstSilverSeed: 0, // how many gold players may also play the first silver seed (Balwin rules: 1)
     goldMatchCount: 0, // how many of the 4 seeds are gold-eligible once enabled — independent of goldTierCount: a team can have 3 gold players but still only 2 gold-flagged matches to fit them into
     strength: 0, // 0-5 rating admin sets to describe how competitive the league is; 0 = not rated, hidden on the league card
     // keyed by round number -> 2D array [slotIdx][courtIdx] of { fixtureId, seed } | null —
@@ -4131,7 +4137,9 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/pair-toss/:round/pair", requ
   if (!Array.isArray(pair) || pair.length !== 2) return res.status(400).json({ error: "Pick two players for this pairing." });
   const myTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamA : f.teamB));
   const goldIds = myTeam ? new Set(myTeam.players.filter((p) => p.gold).map((p) => p.id)) : null;
-  const result = logic.validateRoundPair(f[selKey].pairs, roundIdx, pair, !!req.body.confirmDoubleUp, round.tier, goldIds);
+  const firstSilverRound = rounds.findIndex((r) => r && r.tier === "silver");
+  const silverGoldAllowed = roundIdx === firstSilverRound ? goldInSilverMax(league) : 0;
+  const result = logic.validateRoundPair(f[selKey].pairs, roundIdx, pair, !!req.body.confirmDoubleUp, round.tier, goldIds, silverGoldAllowed);
   if (result) return res.status(400).json({ error: result.error, needsConfirm: !!result.needsConfirm });
   f[selKey].pairs[roundIdx] = pair;
   if (f[selKey].pairs.every((p) => p[0] && p[1])) f[selKey].submitted = true;
@@ -4294,6 +4302,12 @@ router.put("/leagues/:leagueId/tiering", requireAdmin, (req, res) => {
     if (!Number.isInteger(goldMatchCount) || goldMatchCount < 1 || goldMatchCount > 4)
       return res.status(400).json({ error: "Gold matches must be between 1 and 4." });
     league.goldMatchCount = goldMatchCount;
+  }
+  // Balwin rules: how many gold players may also play the first silver seed.
+  if (req.body.goldInFirstSilverSeed !== undefined) {
+    const n = Number(req.body.goldInFirstSilverSeed);
+    if (!Number.isInteger(n) || n < 0 || n > 2) return res.status(400).json({ error: "Gold players allowed in the first silver seed must be 0, 1 or 2." });
+    league.goldInFirstSilverSeed = n;
   }
   // Two ways a league can present its gold/silver split: "seeded" keeps
   // Seed 1..N as a fixed ranking, with only the first goldMatchCount seeds
@@ -6660,13 +6674,19 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/selection", (req, res) => {
   // for that seed, that decision is the real one and wins — the ceremony
   // can hand "gold" to any of the 4 pairings, not just the first.
   const goldMatchCount = Math.max(0, Math.min(4, league.goldMatchCount || 0));
+  const isGoldSeedAt = (i) => {
+    const tossed = f.pairToss && f.pairToss[i] && f.pairToss[i].tier;
+    return tossed ? tossed === "gold" : i < goldMatchCount;
+  };
+  // The first silver seed (Seed 3 with two gold matches) may also take a set
+  // number of gold players — Balwin rules allow one.
+  let firstSilverSeed = -1;
+  for (let i = 0; i < 4; i++) { if (!isGoldSeedAt(i)) { firstSilverSeed = i; break; } }
   const goldRule = league.tieringEnabled && league.format !== "pairs" && myTeam
     ? {
         goldIds: new Set(myTeam.players.filter((p) => p.gold).map((p) => p.id)),
-        isGoldSeed: (i) => {
-          const tossed = f.pairToss && f.pairToss[i] && f.pairToss[i].tier;
-          return tossed ? tossed === "gold" : i < goldMatchCount;
-        },
+        isGoldSeed: isGoldSeedAt,
+        silverAllowance: { seedIdx: firstSilverSeed, max: goldInSilverMax(league) },
       }
     : null;
   const result = logic.validateSelection(pairs, !!req.body.confirmDoubleUp, singlesIdx, goldRule);
