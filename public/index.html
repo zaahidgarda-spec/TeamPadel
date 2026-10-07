@@ -1385,7 +1385,9 @@
       </section>
 
       <section class="view" id="view-kit">
-        <div class="card" style="margin-bottom:16px;">
+        <div class="card kit-wizard-head" id="kit-wizard-head" style="display:none;margin-bottom:16px;"></div>
+        <div class="card kit-done-banner" id="kit-done-banner" style="display:none;margin-bottom:16px;"></div>
+        <div class="card" id="kit-intro-card" style="margin-bottom:16px;">
           <h2 class="section-title">Team kit</h2>
           <p class="note" style="margin:0 0 10px;">Upload your kit photos, then tap a badge to add your logo or a sponsor and drag it into place right on the photo. Only you and the league admin can see this tab.</p>
           <div class="row" id="kit-team-select-row" style="display:none;align-items:center;gap:8px;">
@@ -1404,7 +1406,7 @@
           </div>
         </div>
 
-        <div class="card" style="margin-bottom:16px;">
+        <div class="card" id="kit-design-card" style="margin-bottom:16px;">
           <h3 style="margin:0 0 4px;">1. Kit design</h3>
           <p class="note" style="margin:0 0 14px;">Front: the Team Padel logo top-centre under the neck and the league's main sponsor front-centre (both fixed by the admin), your team logo on the left chest, the league's secondary sponsor on the right chest, and a sponsor on each sleeve. Back: the player's name up top, three sponsors below it. Drag a badge's corner handle to resize it.</p>
           <div class="kit-photos-row">
@@ -1444,7 +1446,7 @@
           <div id="kit-badge-list"></div>
         </div>
 
-        <div class="card" style="margin-bottom:16px;">
+        <div class="card" id="kit-notes-card" style="margin-bottom:16px;">
           <h3 style="margin:0 0 4px;">2. Notes for your kit supplier</h3>
           <p class="note" style="margin:0 0 14px;">Fabric, fit, a deadline — anything that doesn't fit a badge or a size. Shown on the kit-share link too.</p>
           <textarea id="kit-notes-textarea" rows="3" maxlength="500" placeholder="e.g. Dry-fit polyester, true to size, need these by the 20th." style="width:100%;resize:vertical;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:var(--radius-sm);"></textarea>
@@ -1454,7 +1456,7 @@
           </div>
         </div>
 
-        <div class="card" style="margin-bottom:16px;">
+        <div class="card" id="kit-orders-card" style="margin-bottom:16px;">
           <h3 style="margin:0 0 4px;">3. Who's ordering, and what size</h3>
           <p class="note" style="margin:0 0 14px;">Pulled in from your roster — set a size for each player, or add someone extra.</p>
           <div id="kit-orders-list"></div>
@@ -1465,11 +1467,12 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="kit-download-card">
           <h3 style="margin:0 0 4px;">4. Download</h3>
           <p class="note" style="margin:0 0 14px;">One print-ready image per player — front, back, your logo, your sponsors, and their name — ready to send to your kit supplier.</p>
           <div id="kit-download-list"></div>
         </div>
+        <div class="kit-wizard-foot" id="kit-wizard-foot" style="display:none;"></div>
       </section>
 
       <section class="view" id="view-roster">

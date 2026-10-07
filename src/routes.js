@@ -568,6 +568,7 @@ function kitSummary(team) {
     positions: kit.positions,
     orders: kit.orders,
     notes: kit.notes,
+    setup: kit.setup || null,
   };
 }
 // Every photo/logo upload in the app used to land inside its league's own
@@ -3552,6 +3553,22 @@ router.put("/leagues/:leagueId/teams/:teamId/kit/notes", requireAdminOrCaptain((
   team.kit.notes = String((req.body && req.body.notes) || "").trim().slice(0, 500);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// Where a captain is in the guided kit setup (step 1 to 4), and whether they
+// have finished it. A team with no `setup` at all that already has kit content
+// is treated as done by the client, so nobody who set their kit up before this
+// existed is pushed back through it.
+router.put("/leagues/:leagueId/teams/:teamId/kit/setup", requireAdminOrCaptain((req) => req.params.teamId), (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const step = Number(req.body && req.body.step);
+  if (!Number.isInteger(step) || step < 1 || step > 4) return res.status(400).json({ error: "Step must be 1 to 4." });
+  if (!team.kit) team.kit = defaultKit();
+  team.kit.setup = { step, done: !!(req.body && req.body.done) };
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, setup: team.kit.setup });
 });
 
 // The league's own sponsor badges — unlike a team's logo or sleeve

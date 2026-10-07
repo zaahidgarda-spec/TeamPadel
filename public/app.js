@@ -13708,27 +13708,101 @@ function renderKitOrdersList() {
   });
 }
 el("kit-add-order-btn").onclick = () => { kitOrdersDraft.push({ id: null, name: "", size: "" }); renderKitOrdersList(); };
-el("kit-save-orders-btn").onclick = async () => {
+async function saveKitOrders() {
   const team = kitTeamInEdit();
   if (!team) return;
   const cleaned = kitOrdersDraft.map((o) => ({ id: o.id, name: (o.name || "").trim(), size: o.size || "" })).filter((o) => o.name);
+  await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/orders`, { method: "PUT", body: { orders: cleaned } });
+}
+async function saveKitNotes() {
+  const team = kitTeamInEdit();
+  if (!team) return;
+  await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/notes`, { method: "PUT", body: { notes: el("kit-notes-textarea").value } });
+}
+el("kit-save-orders-btn").onclick = async () => {
   try {
-    await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/orders`, { method: "PUT", body: { orders: cleaned } });
+    await saveKitOrders();
     el("kit-orders-status").textContent = "Saved.";
     setTimeout(() => { el("kit-orders-status").textContent = ""; }, 2500);
     await refreshLeague(); renderKit();
   } catch (e) { alert(e.message); }
 };
 el("kit-notes-save-btn").onclick = async () => {
-  const team = kitTeamInEdit();
-  if (!team) return;
   try {
-    await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/notes`, { method: "PUT", body: { notes: el("kit-notes-textarea").value } });
+    await saveKitNotes();
     el("kit-notes-status").textContent = "Saved.";
     setTimeout(() => { el("kit-notes-status").textContent = ""; }, 2500);
     await refreshLeague(); renderKit();
   } catch (e) { alert(e.message); }
 };
+// ---- Guided kit setup -------------------------------------------------------
+// A captain's first visit walks through four steps, saving as they go. Once
+// they finish (or skip), the Kit tab shows everything on one page, as before.
+// A team that already has kit content and no recorded setup counts as done.
+const KIT_STEPS = [
+  { label: "Photos", title: "Kit photos", help: "Upload the front and back of your kit." },
+  { label: "Logos", title: "Logos and sponsors", help: "Tap a badge to add your logo or a sponsor, then drag it into place right on the photo." },
+  { label: "Notes", title: "Notes for your supplier", help: "Fabric, fit, a deadline. This step is optional." },
+  { label: "Sizes", title: "Who is ordering", help: "Set a size for each player." },
+];
+function kitSetupState(kit) {
+  if (myRole !== "captain") return { wizard: false, step: 0, done: false };
+  const setup = kit.setup;
+  if (setup) return { wizard: !setup.done, step: Math.max(1, Math.min(4, Number(setup.step) || 1)), done: !!setup.done };
+  const sp = kit.sponsors || {};
+  const hasContent = !!(kit.front || kit.back || (kit.notes || "").trim() || (kit.orders && kit.orders.length)
+    || sp.sleeveLeft || sp.sleeveRight || sp.backSponsor1 || sp.backSponsor2 || sp.backSponsor3);
+  return { wizard: !hasContent, step: 1, done: hasContent };
+}
+async function kitSetSetup(step, done) {
+  const team = kitTeamInEdit();
+  if (!team) return;
+  await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/setup`, { method: "PUT", body: { step, done: !!done } });
+  await refreshLeague();
+  await renderKit();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+// Saves whatever the current step holds. Photos, badge positions and sizes of
+// logos already save the moment they change; notes and sizes are saved here.
+async function kitSaveStepQuietly(step) {
+  if (step === 3) await saveKitNotes();
+  if (step === 4) await saveKitOrders();
+}
+async function kitWizardMove(step, dir) {
+  const foot = el("kit-wizard-foot");
+  foot.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  try {
+    await kitSaveStepQuietly(step);
+    const last = dir > 0 && step === 4;
+    if (step === 3 || step === 4) showToast(last ? "Kit saved. Setup finished." : "Saved");
+    await kitSetSetup(last ? 4 : Math.max(1, step + dir), last);
+  } catch (e) { alert(e.message); foot.querySelectorAll("button").forEach((b) => { b.disabled = false; }); }
+}
+function applyKitWizard(state) {
+  const view = el("view-kit");
+  view.classList.toggle("kit-wizard", state.wizard);
+  view.dataset.kitStep = state.wizard ? String(state.step) : "";
+  const head = el("kit-wizard-head"), foot = el("kit-wizard-foot"), banner = el("kit-done-banner");
+  head.style.display = state.wizard ? "block" : "none";
+  foot.style.display = state.wizard ? "flex" : "none";
+  banner.style.display = !state.wizard && state.done && myRole === "captain" ? "flex" : "none";
+  if (!state.wizard) {
+    banner.innerHTML = '<span class="tick">&#10003;</span><div><b>Guided kit setup is done</b><small>Everything is below. Change anything, any time.</small></div><button type="button" class="link" id="kit-restart-btn">Edit steps</button>';
+    el("kit-restart-btn").onclick = () => kitSetSetup(1, false).catch((e) => alert(e.message));
+    return;
+  }
+  const step = state.step;
+  const dots = KIT_STEPS.map((st, i) => `<div class="kw-step${i + 1 === step ? " cur" : i + 1 < step ? " dn" : ""}"><span>${i + 1 < step ? "&#10003;" : i + 1}</span><small>${st.label}</small></div>`).join('<i class="kw-line"></i>');
+  head.innerHTML = `<div class="kw-steps">${dots}</div><h2 class="section-title" style="margin:14px 0 2px;">${escapeHtml(KIT_STEPS[step - 1].title)}</h2><p class="note" style="margin:0;">${escapeHtml(KIT_STEPS[step - 1].help)} Each step saves when you move on.</p>`;
+  foot.innerHTML = `<button type="button" class="secondary" id="kw-back"${step === 1 ? " style=\"visibility:hidden;\"" : ""}>Back</button>
+    <button type="button" class="link" id="kw-skip">${step === 4 ? "Skip and finish" : "Skip this step"}</button>
+    <button type="button" class="primary" id="kw-next">${step === 4 ? "Save and finish" : "Save and continue"}</button>`;
+  el("kw-back").onclick = () => kitWizardMove(step, -1);
+  el("kw-next").onclick = () => kitWizardMove(step, 1);
+  el("kw-skip").onclick = async () => {
+    try { await kitSetSetup(step === 4 ? 4 : step + 1, step === 4); } catch (e) { alert(e.message); }
+  };
+}
 el("kit-share-copy-btn").onclick = async () => {
   el("kit-share-status").textContent = "";
   // The clipboard write has to start synchronously, right here, not after
@@ -13914,6 +13988,7 @@ async function renderKit() {
   renderKitOrdersList();
   renderKitDownloadList(current, kit.orders || []);
   el("kit-notes-textarea").value = kit.notes || "";
+  applyKitWizard(kitSetupState(kit));
 }
 
 // kitOverride lets the kit-share (public, no-login) page pass in a kit
