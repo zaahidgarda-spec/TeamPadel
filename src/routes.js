@@ -571,6 +571,18 @@ function kitSummary(team) {
     setup: kit.setup || null,
   };
 }
+// Whether a team's captain still has the kit to set up: no recorded finish, and
+// nothing in the kit yet if they never started the guided steps. Mirrors
+// kitSetupState on the client.
+function kitNeedsSetup(team) {
+  const kit = team.kit;
+  if (kit && kit.setup) return !kit.setup.done;
+  if (!kit) return true;
+  const sp = kit.sponsors || {};
+  const hasContent = !!(kit.front || kit.back || (kit.notes || "").trim() || (kit.orders && kit.orders.length)
+    || sp.sleeveLeft || sp.sleeveRight || sp.backSponsor1 || sp.backSponsor2 || sp.backSponsor3);
+  return !hasContent;
+}
 // Every photo/logo upload in the app used to land inside its league's own
 // single stored record (one JSON blob per league — teams, kit photos, news
 // posts, everything), so a big enough image didn't just cost that one
@@ -1793,7 +1805,7 @@ router.get("/players/me", (req, res) => {
     const team = league && league.teams.find((t) => t.id === c.teamId);
     if (!league || !team) { changed = true; return; } // team/league deleted since — drop quietly
     if (hiddenLeagueIds.has(c.leagueId)) return; // hidden league — data-only, never shown (captaincy itself stays intact)
-    captaincies.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "" });
+    captaincies.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "", kitNeeded: league.format !== "pairs" && kitNeedsSetup(team) });
   });
   if (changed) {
     user.captaincies = captaincies.map((c) => ({ leagueId: c.leagueId, teamId: c.teamId }));

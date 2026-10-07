@@ -2192,6 +2192,55 @@ el("keep-team-strip-dismiss").onclick = () => {
   el("keep-team-strip").style.display = "none";
 };
 
+// "Create your team kit" prompt for captains, shown with the other strips at
+// the top of the league and on My Profile until the kit's been set up. The X
+// dismisses it for good on this device (the Kit tab is always still there).
+function kitStripDismissed(teamId) {
+  try { return (JSON.parse(localStorage.getItem("padel-kit-strip-dismissed") || "[]")).includes(teamId); } catch { return false; }
+}
+function dismissKitStrip(teamId) {
+  try {
+    const list = JSON.parse(localStorage.getItem("padel-kit-strip-dismissed") || "[]");
+    if (!list.includes(teamId)) list.push(teamId);
+    localStorage.setItem("padel-kit-strip-dismissed", JSON.stringify(list));
+  } catch { /* not remembered */ }
+}
+// Mirrors kitNeedsSetup in src/routes.js, from the kit summary a captain's own
+// team carries in the league payload.
+function kitNeedsSetupSummary(kit) {
+  if (!kit) return true;
+  if (kit.setup) return !kit.setup.done;
+  const sp = kit.sponsors || {};
+  return !(kit.hasFront || kit.hasBack || (kit.notes || "").trim() || (kit.orders && kit.orders.length)
+    || sp.sleeveLeft || sp.sleeveRight || sp.backSponsor1 || sp.backSponsor2 || sp.backSponsor3);
+}
+function updateKitSetupStrip() {
+  const strip = el("kit-setup-strip");
+  if (!strip) return;
+  const team = league && myTeamId && league.teams.find((t) => t.id === myTeamId);
+  const activeTab = document.querySelector("#tabs button.active");
+  const onKitTab = !!activeTab && activeTab.dataset.view === "kit";
+  const show = myRole === "captain" && !!team && league.format !== "pairs" && kitNeedsSetupSummary(team.kit) && !kitStripDismissed(team.id) && !onKitTab;
+  strip.style.display = show ? "flex" : "none";
+  if (show) el("kit-setup-strip-title").textContent = "Create the " + team.name + " kit";
+}
+el("kit-setup-strip-cta").onclick = () => switchTab("kit");
+el("kit-setup-strip-dismiss").onclick = () => {
+  if (myTeamId) dismissKitStrip(myTeamId);
+  el("kit-setup-strip").style.display = "none";
+};
+// The same prompt on My Profile, one per team this account captains whose kit is
+// still to do.
+function renderAccountKitStrips() {
+  const box = el("account-kit-strips");
+  if (!box) return;
+  const todo = ((playerAccount && playerAccount.captaincies) || []).filter((c) => c.kitNeeded && !kitStripDismissed(c.teamId));
+  box.innerHTML = todo.map((c) => `<div class="roster-signup-strip" data-team="${escapeHtml(c.teamId)}"><span class="icon">👕</span><div class="txt"><b>Create the ${escapeHtml(c.teamName)} kit</b><span>${escapeHtml(c.leagueName)} · four quick steps, saved as you go.</span></div><button class="primary" data-act="go" data-league="${escapeHtml(c.leagueId)}">Create kit</button><button class="dismiss" data-act="x" aria-label="Dismiss" type="button">&times;</button></div>`).join("");
+  box.querySelectorAll(".roster-signup-strip").forEach((row) => {
+    row.querySelector('[data-act="go"]').onclick = async (e) => { await openLeague(e.currentTarget.dataset.league); switchTab("kit"); };
+    row.querySelector('[data-act="x"]').onclick = () => { dismissKitStrip(row.dataset.team); renderAccountKitStrips(); };
+  });
+}
 // Admin > Guest sign-up wall: off by default; the Leagues page and/or chosen
 // leagues (a shared link to them). Saved on every tick.
 async function renderGuestWallCard() {
@@ -4416,6 +4465,7 @@ async function renderAccountProfile() {
   maybePlayRatingSplash();
   renderAccountAttributes(cards);
   updatePhotoNudge(cards);
+  renderAccountKitStrips();
   const matchNightNow = renderAccountNextMatch(cards);
   renderAccountTables(cards);
   positionAccountTablesSection(matchNightNow);
@@ -5937,6 +5987,7 @@ function auWire(s) {
 }
 function switchTab(key) {
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === key));
+  updateKitSetupStrip();
   document.querySelectorAll("#view-league .view").forEach((v) => v.classList.remove("active"));
   const v = el("view-" + key);
   if (v) v.classList.add("active");
@@ -6176,6 +6227,7 @@ if (document.fonts) {
 function renderAll() {
   applyLeagueWall();
   updateKeepTeamStrip();
+  updateKitSetupStrip();
   syncViewingKey();
   renderGroupSelector();
   const activeTabBtn = document.querySelector("#tabs button.active");
@@ -13758,7 +13810,10 @@ async function kitSetSetup(step, done) {
   const team = kitTeamInEdit();
   if (!team) return;
   await api(`/leagues/${currentLeagueId}/teams/${team.id}/kit/setup`, { method: "PUT", body: { step, done: !!done } });
+  const cap = playerAccount && (playerAccount.captaincies || []).find((c) => c.teamId === team.id);
+  if (cap) cap.kitNeeded = !done;
   await refreshLeague();
+  updateKitSetupStrip();
   await renderKit();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
