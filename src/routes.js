@@ -1983,6 +1983,37 @@ router.get("/players/avatars-index", requirePlayerUser, (req, res) => {
 // behalf. Throws (message is the user-facing error) rather than returning
 // a response directly, so both callers can handle the failure their own
 // way (one record failing shouldn't half-apply an admin combine).
+// A profile photo belongs to the whole person: uploading one copies it to every
+// record the account has claimed (see the photo route). That copy only happened
+// at upload time, though, so a record claimed afterwards never got the photo and
+// showed the team crest instead. This gives every record the account holds that
+// has no photo the one it already has somewhere else.
+function shareAccountPhoto(user) {
+  const find = (c) => {
+    const league = store.getLeague(c.leagueId);
+    const team = league && league.teams.find((t) => t.id === c.teamId);
+    const player = team && team.players.find((p) => p.id === c.playerId);
+    return { league, player };
+  };
+  let photo = "";
+  for (const c of user.claims || []) {
+    const { player } = find(c);
+    if (player && player.photo) { photo = player.photo; break; }
+  }
+  if (!photo) return 0;
+  const touched = new Map();
+  let n = 0;
+  for (const c of user.claims || []) {
+    const { league, player } = find(c);
+    if (!player || player.photo || player.claimedByUserId !== user.id) continue;
+    player.photo = photo;
+    store.savePlayerPhoto(league.id, player.id, photo).catch(() => {});
+    touched.set(league.id, league);
+    n++;
+  }
+  touched.forEach((l) => store.saveLeague(l.id, l));
+  return n;
+}
 function claimPlayerRecord(user, leagueId, teamId, playerId) {
   const league = store.getLeague(leagueId);
   if (!league) throw new Error("League not found.");
@@ -2017,6 +2048,7 @@ function claimPlayerRecord(user, leagueId, teamId, playerId) {
   if (!user.claims.some((c) => c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId)) {
     user.claims.push({ leagueId, teamId, playerId });
   }
+  shareAccountPhoto(user);
 }
 // Pulls every claim off a passwordless placeholder account onto `user`
 // (re-pointing each already-claimed player record along the way) and
@@ -2466,6 +2498,8 @@ function leagueFinalsSpectatorSplash(league, myTeamIds) {
 }
 router.get("/players/profile", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
+  // Repairs records claimed after the photo was uploaded (see shareAccountPhoto).
+  shareAccountPhoto(user);
   const cards = [];
   // Every team this account is attached to, whether claimed as a specific
   // player or just captained — a captain who's never personally claimed a
