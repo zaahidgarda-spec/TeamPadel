@@ -4241,6 +4241,7 @@ function maybePlayRatingSplash() {
   ratingSplashDone = checkRatingSplash();
   return ratingSplashDone;
 }
+const RATING_POPUP_SIZE = 5;
 async function checkRatingSplash() {
   if (ratingSplashChecked || document.querySelector(".ps-splash, .rs-splash")) return;
   ratingSplashChecked = true;
@@ -4248,7 +4249,10 @@ async function checkRatingSplash() {
   try { q = await api("/players/rating-queue"); } catch { return; }
   // A playoff splash always goes first; rating waits for the next open.
   if (!q || !q.matches || !q.matches.length || document.querySelector(".ps-splash, .rs-splash")) return;
-  playRatingSplash(q);
+  // Up to RATING_QUEUE_SIZE matches are rate-able, but the pop-up that opens by
+  // itself only takes the newest few so it never turns into a long chore;
+  // the rest wait on the strip and the match buttons.
+  playRatingSplash({ ...q, matches: q.matches.slice(0, RATING_POPUP_SIZE) });
 }
 function playRatingSplash(q) {
   const matches = q.matches.map((m) => ({ ...m, opponents: m.opponents.filter((o) => !o.rated) })).filter((m) => m.opponents.length);
