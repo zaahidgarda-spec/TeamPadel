@@ -7029,19 +7029,48 @@ function renderAdmin() {
       const del = document.createElement("button");
       del.className = "ghost"; del.innerHTML = "&times;"; del.title = "Remove team";
       del.onclick = async () => {
-        if (!confirm("Remove " + t.name + "?")) return;
-        await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "DELETE" });
+        const hasPast = (league.seasonHistoryCount || 0) > 0;
+        if (!confirm(hasPast
+          ? `Remove ${t.name} from this season?\n\nIts history stays safe in Past seasons. You can bring it back, with its players, logo and code, from "Past teams" below.`
+          : `Remove ${t.name}?\n\nThere's no earlier season on record yet, so this deletes the team completely.`)) return;
+        const r = await api(`/leagues/${currentLeagueId}/teams/${t.id}`, { method: "DELETE" });
         await refreshLeague(); renderAll();
+        if (r && r.kept) showToast(`${t.name} removed from this season. Its history is kept. Bring it back anytime from Past teams.`);
       };
       right.appendChild(del);
     }
     li.appendChild(right); list.appendChild(li);
   });
 
+  renderPastTeams(status);
   renderAdminRoster();
   renderAdminFixtures();
   renderAdminSponsors();
   renderOrphanedPlayers();
+}
+// Teams from earlier seasons that aren't in this one — shown (setup only)
+// right under the team list so a removed team is visibly still there,
+// with a button to put it back.
+async function renderPastTeams(status) {
+  const box = el("past-teams-box");
+  box.style.display = "none";
+  if (status !== "setup" || !(league.seasonHistoryCount > 0)) return;
+  const leagueIdAtStart = currentLeagueId;
+  const past = await api(`/leagues/${currentLeagueId}/past-teams`).catch(() => []);
+  if (leagueIdAtStart !== currentLeagueId || !past.length) return;
+  box.style.display = "block";
+  box.innerHTML = `<div class="pt-title">Past teams · ${past.length}</div>
+    <p class="note pt-note">Not in this season, but their results and players are kept in Past seasons. Bring a team back to restore its roster, logo and captain code.</p>
+    <ul class="plain pt-list">${past.map((t) => `<li><span class="pt-name"><b>${escapeHtml(t.name)}</b><span>${t.playerCount} player${t.playerCount === 1 ? "" : "s"} · last in ${escapeHtml(t.label || "Season " + t.season)}</span></span><button type="button" class="secondary" data-restore="${t.id}">Bring back</button></li>`).join("")}</ul>`;
+  box.querySelectorAll("[data-restore]").forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await api(`/leagues/${currentLeagueId}/teams/${b.dataset.restore}/restore`, { method: "POST" });
+        await refreshLeague(); renderAll();
+        showToast("Team brought back into this season.");
+      } catch (e) { alert(e.message); }
+    };
+  });
 }
 // Every player id still referenced in a finalized match but missing from
 // the roster — the state a delete-before-the-guard left behind. Team,

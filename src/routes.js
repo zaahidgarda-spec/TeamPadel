@@ -3874,13 +3874,58 @@ router.post("/leagues/:leagueId/teams/:teamId/reset-code", requireAdmin, (req, r
   res.json({ ok: true, code: team.code });
 });
 
+// The newest archived copy of every team that played in an earlier season of
+// this league but isn't in the live league now — what "Past teams" lists and
+// what "Bring back" restores from.
+function pastTeamsOf(league) {
+  const liveIds = new Set(league.teams.map((t) => t.id));
+  const found = new Map();
+  (league.seasonHistory || []).forEach((snap) => { // newest first, so the first hit per team is its latest
+    (snap.teams || []).forEach((t) => {
+      if (liveIds.has(t.id) || found.has(t.id)) return;
+      found.set(t.id, { team: t, season: snap.season, label: snap.label });
+    });
+  });
+  return [...found.values()];
+}
 router.delete("/leagues/:leagueId/teams/:teamId", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams are locked once the season has started." });
+  // Whether this team already has a season in the archive — i.e. whether its
+  // history outlives the removal (and it can be brought back later).
+  const kept = (league.seasonHistory || []).some((snap) => (snap.teams || []).some((t) => t.id === req.params.teamId));
   league.teams = league.teams.filter((t) => t.id !== req.params.teamId);
   store.saveLeague(league.id, league);
   store.deleteKitPhotosForTeam(league.id, req.params.teamId).catch(() => {}); // best-effort cleanup
-  res.json({ ok: true });
+  res.json({ ok: true, kept });
+});
+router.get("/leagues/:leagueId/past-teams", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  res.json(pastTeamsOf(league).map(({ team, season, label }) => ({
+    id: team.id, name: team.name, hasLogo: !!team.logo, playerCount: (team.players || []).length, season, label: label || "",
+  })));
+});
+// Brings a team from an earlier season back into this one's setup: same team
+// id (so every player's linked record and the team's history carry straight
+// on), with its roster, logo and captain code as they were.
+router.post("/leagues/:leagueId/teams/:teamId/restore", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  if (leagueStatus(league) !== "setup") return res.status(400).json({ error: "Teams can only be brought back before the season starts." });
+  const hit = pastTeamsOf(league).find((x) => x.team.id === req.params.teamId);
+  if (!hit) return res.status(404).json({ error: "That team isn't in this league's past seasons." });
+  const old = hit.team;
+  if (league.teams.some((t) => t.name.toLowerCase() === old.name.toLowerCase()))
+    return res.status(400).json({ error: `A team called ${old.name} is already in this season.` });
+  const team = JSON.parse(JSON.stringify(old));
+  team.groupId = null;
+  // Same code, so the captain can log straight back in — unless another team
+  // has taken it since.
+  if (!team.code || codeInUse(team.code)) team.code = genTeamCode(league);
+  league.teams.push(team);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, id: team.id, code: team.code });
 });
 
 /* ---------- Groups (Vibora only): each runs its own independent round-robin,
