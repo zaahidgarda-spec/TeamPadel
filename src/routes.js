@@ -4614,6 +4614,15 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
   league.playoffs = null;
   league.roundMeta = {};
   league.potwVotes = {};
+  // Round dates/venues and the court grids are keyed by round number, so left
+  // in place the new season's round 1 would inherit last season's date. The
+  // archive above already holds its own copy of the schedule. Only when a
+  // season was actually archived: resetting right after Start season (no
+  // results yet) is a redo of the same season, so its dates are kept.
+  if (hasAnyResult) {
+    league.schedule = {};
+    league.courtSchedule = {};
+  }
   league.status = "setup";
   store.saveLeague(league.id, league);
   res.json({ ok: true });
