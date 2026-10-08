@@ -5881,65 +5881,93 @@ function buildSplashLineups(mySel, myTeam, oppSel, oppTeam) {
 router.get("/players/pending-results", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   const out = [];
+  const seen = new Set();
   const now = Date.now();
+  // `playerId` set means a player (not the captain) is looking: they only get
+  // the matches they played in, and only those they're still allowed to enter
+  // or fix (a score their captain or the admin put in is theirs to change).
+  const consider = (league, team, f, playerId) => {
+    if (f.finalized || !f.teamA || !f.teamB) return;
+    if (f.teamA !== team.id && f.teamB !== team.id) return;
+    const key = league.id + ":" + f.id;
+    if (seen.has(key)) return;
+    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    const kickoffMs = kickoffMsOf(sched.date, sched.time);
+    const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);
+    if (!started) return;
+    const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
+    const teamA = league.teams.find((t) => t.id === f.teamA);
+    const teamB = league.teams.find((t) => t.id === f.teamB);
+    const lineupsSubmitted = !!(f.selectionA.submitted && f.selectionB.submitted);
+    if (playerId && !lineupsSubmitted) return;
+    const { winsA, winsB } = logic.fixtureScore(f);
+    // The 5th rubber (index 4) is either the knockout playoff decider —
+    // only shown once the first 4 rubbers have actually tied, and no
+    // selection slot of its own — or, on an Ormonde-rules regular fixture,
+    // a real singles match with its own (single-player) selection slot,
+    // always shown. Same rule resultsCard uses client-side.
+    const isSinglesFixture = f.selectionA.pairs.length === 5;
+    const playedIn = (idx) => ((f.selectionA.pairs[idx] || []).includes(playerId)) || ((f.selectionB.pairs[idx] || []).includes(playerId));
+    const rubbers = lineupsSubmitted
+      ? f.rubbers
+          .map((rubber, idx) => ({ rubber, idx }))
+          .filter(({ idx }) => idx !== 4 || isSinglesFixture || winsA === winsB)
+          .filter(({ idx }) => !playerId || playedIn(idx))
+          .map(({ rubber, idx }) => {
+            const winner = logic.rubberWinner(rubber);
+            const isKnockoutDecider = idx === 4 && !isSinglesFixture;
+            return {
+              seed: idx + 1, isDecider: isKnockoutDecider, isSingles: idx === 4 && isSinglesFixture,
+              pairA: isKnockoutDecider ? teamA.name : pairNamesText(teamA, f.selectionA.pairs[idx]),
+              pairB: isKnockoutDecider ? teamB.name : pairNamesText(teamB, f.selectionB.pairs[idx]),
+              scoreText: logic.rubberScoreText(rubber) || null,
+              wonSide: winner,
+              // A double forfeit has no winning side but is still fully
+              // settled — distinct from wonSide so "everything's decided"
+              // doesn't wrongly stay true just because nobody won.
+              decided: !!(winner || rubber.forfeited),
+              // A player can't change a score their captain or the admin entered.
+              locked: !!playerId && (rubber.forfeited || (!!logic.rubberScoreText(rubber) && rubber.scoreBy !== "player")),
+            };
+          })
+      : [];
+    if (playerId) {
+      // Nothing for a player to do: none of their matches is open to them.
+      if (!rubbers.length || rubbers.every((r) => r.locked)) return;
+    } else if (lineupsSubmitted && rubbers.length && rubbers.every((r) => r.decided)) {
+      // Nothing left to enter — every match already has a settled result,
+      // it's only waiting to be finalized — so it isn't "due" any more and
+      // shouldn't sit at the top of the profile.
+      return;
+    }
+    seen.add(key);
+    out.push({
+      leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
+      fixtureId: f.id, label: fixtureLabel(league, f),
+      opponentTeamId: oppTeam ? oppTeam.id : null,
+      opponentName: oppTeam ? oppTeam.name : "TBD",
+      opponentLogo: oppTeam ? oppTeam.logo || "" : "",
+      date: sched.date || "", time: sched.time || "",
+      lineupsSubmitted, score: { a: winsA, b: winsB },
+      playerOnly: !!playerId,
+      rubbers,
+    });
+  };
   (user.captaincies || []).forEach((c) => {
     const league = store.getLeague(c.leagueId);
     if (!league) return;
     const team = league.teams.find((t) => t.id === c.teamId);
     if (!team) return;
-    logic.allFixturesOf(league).forEach((f) => {
-      if (f.finalized || !f.teamA || !f.teamB) return;
-      if (f.teamA !== team.id && f.teamB !== team.id) return;
-      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
-      const kickoffMs = kickoffMsOf(sched.date, sched.time);
-      const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);
-      if (!started) return;
-      const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
-      const teamA = league.teams.find((t) => t.id === f.teamA);
-      const teamB = league.teams.find((t) => t.id === f.teamB);
-      const lineupsSubmitted = !!(f.selectionA.submitted && f.selectionB.submitted);
-      const { winsA, winsB } = logic.fixtureScore(f);
-      // The 5th rubber (index 4) is either the knockout playoff decider —
-      // only shown once the first 4 rubbers have actually tied, and no
-      // selection slot of its own — or, on an Ormonde-rules regular fixture,
-      // a real singles match with its own (single-player) selection slot,
-      // always shown. Same rule resultsCard uses client-side.
-      const isSinglesFixture = f.selectionA.pairs.length === 5;
-      const rubbers = lineupsSubmitted
-        ? f.rubbers
-            .map((rubber, idx) => ({ rubber, idx }))
-            .filter(({ idx }) => idx !== 4 || isSinglesFixture || winsA === winsB)
-            .map(({ rubber, idx }) => {
-              const winner = logic.rubberWinner(rubber);
-              const isKnockoutDecider = idx === 4 && !isSinglesFixture;
-              return {
-                seed: idx + 1, isDecider: isKnockoutDecider, isSingles: idx === 4 && isSinglesFixture,
-                pairA: isKnockoutDecider ? teamA.name : pairNamesText(teamA, f.selectionA.pairs[idx]),
-                pairB: isKnockoutDecider ? teamB.name : pairNamesText(teamB, f.selectionB.pairs[idx]),
-                scoreText: logic.rubberScoreText(rubber) || null,
-                wonSide: winner,
-                // A double forfeit has no winning side but is still fully
-                // settled — distinct from wonSide so "everything's decided"
-                // doesn't wrongly stay true just because nobody won.
-                decided: !!(winner || rubber.forfeited),
-              };
-            })
-        : [];
-      // Nothing left to enter — every match already has a settled result,
-      // it's only waiting to be finalized — so it isn't "due" any more and
-      // shouldn't sit at the top of the profile.
-      if (lineupsSubmitted && rubbers.length && rubbers.every((r) => r.decided)) return;
-      out.push({
-        leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
-        fixtureId: f.id, label: fixtureLabel(league, f),
-        opponentTeamId: oppTeam ? oppTeam.id : null,
-        opponentName: oppTeam ? oppTeam.name : "TBD",
-        opponentLogo: oppTeam ? oppTeam.logo || "" : "",
-        date: sched.date || "", time: sched.time || "",
-        lineupsSubmitted, score: { a: winsA, b: winsB },
-        rubbers,
-      });
-    });
+    logic.allFixturesOf(league).forEach((f) => consider(league, team, f, null));
+  });
+  // Players who aren't captains get their own matches too.
+  (user.claims || []).forEach((c) => {
+    if (c.leftAt) return;
+    const league = store.getLeague(c.leagueId);
+    if (!league || league.format === "pairs") return;
+    const team = league.teams.find((t) => t.id === c.teamId);
+    if (!team) return;
+    logic.allFixturesOf(league).forEach((f) => consider(league, team, f, c.playerId));
   });
   // Most recently played first — a fixture from last week waiting on a
   // score is more urgent than one from an hour ago.
@@ -7208,9 +7236,36 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
   const u = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
   const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
-  if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
+  // A signed-in player who actually played this match can enter its score too
+  // (not the captain's say-so): they're in this seed's pairs, either side.
+  // What they enter counts, until the captain or admin enters or changes it.
+  let rubberPlayer = null;
+  if (!isAdmin && !isPlayer && req.session.playerUser) {
+    const account = store.getUser(req.session.playerUser.id);
+    const inPair = (sel, pid) => !!(sel && sel.pairs && (sel.pairs[idx] || []).includes(pid));
+    const claim = account && (account.claims || []).find((c) => c.leagueId === league.id && !c.leftAt && (inPair(f.selectionA, c.playerId) || inPair(f.selectionB, c.playerId)));
+    if (claim) {
+      const t = league.teams.find((x) => x.id === claim.teamId);
+      const pl = t && t.players.find((x) => x.id === claim.playerId);
+      rubberPlayer = { name: pl ? pl.name : "A player", teamId: claim.teamId };
+    }
+  }
+  if (!isAdmin && !isPlayer && !rubberPlayer) return res.status(403).json({ error: "Not allowed." });
   if (f.finalized && !isAdmin) return res.status(400).json({ error: "This fixture is finalized — ask the admin to unlock it." });
   if (!f.selectionA.submitted || !f.selectionB.submitted) return res.status(400).json({ error: "Both line-ups must be submitted first." });
+  if (rubberPlayer) {
+    const r = f.rubbers[idx];
+    const filled = (v) => v !== null && v !== undefined && v !== "";
+    const hasScore = (r.sets || []).some((st) => filled(st[0]) || filled(st[1])) || (r.tb || []).some((v) => filled(v) && Number(v) > 0);
+    if (r.forfeited || (hasScore && r.scoreBy !== "player")) return res.status(403).json({ error: "This score was entered by your captain or the admin. Ask them to change it." });
+    // Same shapes the score form sends, and nothing else: a few sets of two
+    // numbers, plus an optional tie-break pair.
+    const okNum = (v) => v === null || v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 99);
+    const okPair = (pr) => Array.isArray(pr) && pr.length === 2 && okNum(pr[0]) && okNum(pr[1]);
+    const body = req.body || {};
+    if ((body.sets !== undefined && !(Array.isArray(body.sets) && body.sets.length <= 3 && body.sets.every(okPair))) || (body.tb !== undefined && !okPair(body.tb)))
+      return res.status(400).json({ error: "That score doesn't look right." });
+  }
 
   const before = { sets: f.rubbers[idx].sets, tb: f.rubbers[idx].tb };
   if (req.body.sets) f.rubbers[idx].sets = req.body.sets;
@@ -7224,7 +7279,17 @@ router.put("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx", (req, res) => 
     // The official result supersedes whatever the control room had jotted
     // down courtside (see the live-score route below).
     delete f.rubbers[idx].live;
-    logAudit(league, req, f, "score_edit", { seedIdx: idx, before, after, wasFinalized: f.finalized });
+    f.rubbers[idx].scoreBy = isAdmin ? "admin" : isPlayer ? "captain" : "player";
+    logAudit(league, req, f, "score_edit", { seedIdx: idx, before, after, wasFinalized: f.finalized, ...(rubberPlayer ? { actor: "Player — " + rubberPlayer.name } : {}) });
+    if (rubberPlayer) {
+      // The captains hear about it, with the way to correct it.
+      const text = logic.rubberScoreText(f.rubbers[idx]);
+      const seedWord = f.rubbers.length === 1 ? "the match" : "Seed " + (idx + 1);
+      if (text) {
+        const msg = `${rubberPlayer.name} entered ${text} for ${seedWord} in ${fixtureLabel(league, f)}. If that's wrong, correct it from Results.`;
+        [f.teamA, f.teamB].forEach((tid) => notify(league, tid, "result", msg, { round: f.round }));
+      }
+    }
   }
   // A score that settles the match means it's over — so it's finished on
   // Live Court Control too, whoever entered it (a captain from their

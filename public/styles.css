@@ -3011,3 +3011,4 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .mc-body{position:relative;}
 .mc-rate-edit{position:absolute;top:6px;right:6px;display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border-radius:50%;background:none;border:none;color:var(--text-dim,#64748B);cursor:pointer;min-height:0;}
 .mc-rate-edit:hover{background:var(--panel-2,#F1F4FA);color:var(--text,#12203A);}
+.pr-locked{font-size:11.5px;color:var(--text-dim,#64748B);margin-top:6px;text-align:center;}

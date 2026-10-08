@@ -4176,6 +4176,10 @@ async function renderAccountPendingResults() {
   const section = el("account-results-section");
   if (!items.length) { section.style.display = "none"; return; }
   section.style.display = "block";
+  // Captains see every match of theirs; a player who isn't a captain just gets
+  // their own game(s).
+  const onlyPlayer = items.every((r) => r.playerOnly);
+  el("account-results-title").innerHTML = onlyPlayer ? "Your match score" : 'Scores to enter <span class="tag">Captain</span>';
   el("account-results-scroll").innerHTML = items.map((r) => {
     const total = r.rubbers.length;
     const decided = r.rubbers.filter((rb) => rb.scoreText).length;
@@ -4189,10 +4193,13 @@ async function renderAccountPendingResults() {
           const scoreChip = rb.scoreText ? `<span class="pr-score-chip">${escapeHtml(rb.scoreText)}</span>` : '<span class="pr-score-chip pending">Not played</span>';
           const nameLine = (name, won) => `<div${won ? ' class="won"' : ""}>${escapeHtml(name)}</div>`;
           const btnLabel = rb.scoreText ? "Edit" : "Enter score";
+          const actionHtml = rb.locked
+            ? '<div class="pr-locked">Entered by your captain or the admin</div>'
+            : `<button type="button" class="pr-btn" data-seed="${rb.seed - 1}">${btnLabel}</button>`;
           return `<div class="pr-tile" data-league="${r.leagueId}" data-fixture="${r.fixtureId}">
             <div class="pr-tile-head"><span class="pr-seed-badge">${escapeHtml(seedLabel)}</span>${scoreChip}</div>
             <div class="pr-names">${nameLine(rb.pairA, rb.wonSide === "A")}${nameLine(rb.pairB, rb.wonSide === "B")}</div>
-            <button type="button" class="pr-btn" data-seed="${rb.seed - 1}">${btnLabel}</button>
+            ${actionHtml}
           </div>`;
         }).join("");
     return `<div class="pr-card">

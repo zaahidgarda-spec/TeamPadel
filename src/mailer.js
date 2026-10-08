@@ -92,6 +92,7 @@ const EMAIL_TYPE_LABELS = {
   news: "News room",
   potw: "Pair of the Week",
   forfeit: "Forfeit",
+  result: "Score entered",
 };
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
