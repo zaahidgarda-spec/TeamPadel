@@ -7909,6 +7909,41 @@ function adminRosterBlock(t) {
       };
       li.appendChild(goldBtn);
     }
+    // The same person entered twice (spelled two ways): fold this entry into the
+    // other one, keeping all of its matches and ratings.
+    if (myRole === "admin" && t.players.length > 1) {
+      const mergeBtn = document.createElement("button");
+      mergeBtn.className = "link"; mergeBtn.style.marginLeft = "8px"; mergeBtn.textContent = "Merge";
+      mergeBtn.title = "This is the same person as another player on this team";
+      mergeBtn.onclick = () => {
+        li.querySelectorAll(".merge-row").forEach((x) => x.remove());
+        li.style.flexWrap = "wrap";
+        const row = document.createElement("div");
+        row.className = "merge-row";
+        row.style.cssText = "flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;";
+        const pick = document.createElement("select");
+        pick.className = "inline-edit";
+        pick.innerHTML = t.players.filter((x) => x.id !== p.id).map((x) => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join("");
+        const go = document.createElement("button");
+        go.className = "secondary"; go.textContent = "Merge into this player";
+        go.onclick = async () => {
+          const target = t.players.find((x) => x.id === pick.value);
+          if (!confirm(`Merge "${p.name}" into "${target.name}"?\n\nAll of ${p.name}'s matches, ratings and account links move to ${target.name}, and ${p.name} is removed from the team. This can't be undone, so export a backup first if you're unsure.`)) return;
+          go.disabled = true;
+          try {
+            await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}/merge`, { method: "POST", body: { intoPlayerId: pick.value } });
+            await refreshLeague(); renderAdminRoster(); renderRoster();
+            showToast(`${p.name} merged into ${target.name}.`);
+          } catch (e) { alert(e.message); go.disabled = false; }
+        };
+        const cancel = document.createElement("button");
+        cancel.className = "link"; cancel.textContent = "Cancel"; cancel.onclick = () => row.remove();
+        const lbl = document.createElement("span"); lbl.className = "note"; lbl.textContent = p.name + " is the same person as:";
+        row.append(lbl, pick, go, cancel);
+        li.appendChild(row);
+      };
+      li.appendChild(mergeBtn);
+    }
     const del = document.createElement("button");
     del.className = "ghost"; del.innerHTML = "&times;";
     del.onclick = async () => {
