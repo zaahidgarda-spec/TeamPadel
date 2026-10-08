@@ -117,6 +117,26 @@ function buildNotificationEmail({ leagueName, leagueId, type, message, teamName 
   return { subject, text, html };
 }
 
+// The reminder to rate opponents after a match. It goes to players, not
+// captains, so it carries its own footer rather than the captain one.
+function buildRatingEmail({ message, count }) {
+  const link = `${SITE_URL}/?rate=1`;
+  const subject = count === 1 ? "Rate your opponent from your last match" : `Rate your ${count} opponents from your last match`;
+  const text = `${message}\n\nRate them now: ${link}\n\nYou get this because you have a player profile on Team Padel. Turn emails off any time in My Profile.`;
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#F3F5F9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F5F9;padding:24px 12px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#12203A;">
+<tr><td style="background:#0B1424;padding:16px 22px;color:#ffffff;font-size:13px;font-weight:700;letter-spacing:.12em;">TEAM PADEL</td></tr>
+<tr><td style="padding:24px 22px 8px;">
+<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#B8862B;">Rate your opponents</div>
+<p style="font-size:16px;line-height:1.5;margin:10px 0 0;">${escapeHtml(message)}</p>
+</td></tr>
+<tr><td style="padding:18px 22px 26px;"><a href="${escapeHtml(link)}" style="display:inline-block;background:#E8B34C;color:#1a1304;text-decoration:none;font-weight:700;font-size:14px;padding:12px 20px;border-radius:10px;">Rate now</a></td></tr>
+<tr><td style="padding:14px 22px;border-top:1px solid #E3E9F4;font-size:11.5px;line-height:1.5;color:#64748B;">You get this because you have a player profile on Team Padel. Turn emails off any time in My Profile.</td></tr>
+</table></td></tr></table></body></html>`;
+  return { subject, text, html };
+}
+
 // A plain-English reason for a failed send, for the person who pressed
 // "Send test email" — so the fix is obvious from the screen.
 function explainSendFailure(result) {
@@ -132,4 +152,4 @@ function explainSendFailure(result) {
   return "The email couldn't be sent (" + (code || why.slice(0, 80) || "unknown reason") + ").";
 }
 
-module.exports = { sendMail, isConfigured, buildNotificationEmail, explainSendFailure };
+module.exports = { sendMail, isConfigured, buildNotificationEmail, buildRatingEmail, explainSendFailure };

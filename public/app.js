@@ -421,6 +421,15 @@ async function boot() {
     switchHubTab("account");
     if (entryChoice === "create") el("show-account-signup").click();
   }
+  // The link in a rating reminder (email or push): straight to My Profile,
+  // where the rating prompt opens by itself.
+  if (rateLinkInUrl && !entryChoice) switchHubTab("account");
+  if (rateLinkInUrl) {
+    const params = new URLSearchParams(location.search);
+    params.delete("rate");
+    const rest = params.toString();
+    history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+  }
   renderAuctionBanner();
   renderAuctionLiveBanner();
   // Black while the splash/loading screen is up (matches it exactly, no
@@ -2795,6 +2804,7 @@ async function renderRatingsMonitorCard() {
     ? d.players.map((p) => `<div class="row" style="justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);"><span style="min-width:0;"><b>${escapeHtml(p.name)}</b><span class="note" style="display:block;">${escapeHtml([p.team, p.league].filter(Boolean).join(" · "))}</span></span><span class="note" style="text-align:right;white-space:nowrap;">${p.unlocked ? `Unlocked · avg ${p.avg === null ? "—" : p.avg.toFixed(1)} · ${p.count}` : `${p.count} of ${d.config.unlockAt}`}</span></div>`).join("")
     : '<p class="empty">No ratings yet.</p>';
   body.innerHTML = `
+    <div class="row" style="margin-bottom:12px;"><button class="secondary" id="ratings-invite-copy" type="button">Copy invite message for the players' chat</button></div>
     <div class="pd-stats" style="margin-bottom:14px;">${tile(t.ratings, "Ratings given")}${tile(t.raters, "People who rated")}${tile(t.playersRated, "Players rated")}${tile(t.unlocked, "Cards unlocked")}</div>
     <h3 style="margin:14px 0 4px;font-size:14px;">Reach</h3>
     ${line("Have a match to rate now", r.eligible)}
@@ -3292,6 +3302,7 @@ el("email-test-btn").onclick = async () => {
 // (it's kicked off at startup without awaiting, so it can resolve after
 // any synchronous check further down this file has already run).
 let resetTokenInUrl = new URLSearchParams(location.search).get("resetToken");
+const rateLinkInUrl = new URLSearchParams(location.search).get("rate") === "1";
 // "Continue with Google / Facebook": the buttons only appear for providers
 // this server has switched on, and a failed round trip comes back here as
 // ?authError=... to be shown where the other sign-in errors go. A brand-new
@@ -4243,7 +4254,7 @@ function playRatingSplash(q) {
   const matches = q.matches.map((m) => ({ ...m, opponents: m.opponents.filter((o) => !o.rated) })).filter((m) => m.opponents.length);
   if (!matches.length) return;
   const keys = matches.map((m) => m.key);
-  const intro = q.intro || matches.length > 1;
+  const intro = !q.direct && (q.intro || matches.length > 1);
   const splash = document.createElement("div");
   splash.className = "rs-splash";
   splash.setAttribute("role", "dialog");
@@ -4263,9 +4274,19 @@ function playRatingSplash(q) {
   const kick = splash.querySelector("#rs-kick");
   const sub = (id) => splash.querySelector(id);
   let mi = 0, oi = 0, scores = {}, sentAny = false, finished = false;
+  const ratedCount = {};
+  const totalOpps = matches.reduce((n, m) => n + m.opponents.length, 0);
 
-  const markDone = () => api("/players/ratings/done", { method: "POST", body: { matchKeys: keys } }).catch(() => {});
-  const remove = () => { document.removeEventListener("keydown", onKey); splash.remove(); };
+  // A match whose every opponent got rated is finished for good. Anything
+  // closed or skipped partway comes back on the next visit (a couple of
+  // times), and always stays rate-able from My Profile.
+  const markDone = () => {
+    const doneKeys = matches.filter((m) => (ratedCount[m.key] || 0) >= m.opponents.length).map((m) => m.key);
+    const backKeys = keys.filter((k) => !doneKeys.includes(k));
+    if (doneKeys.length) api("/players/ratings/done", { method: "POST", body: { matchKeys: doneKeys } }).catch(() => {});
+    if (backKeys.length) api("/players/ratings/done", { method: "POST", body: { matchKeys: backKeys, mode: "dismissed" } }).catch(() => {});
+  };
+  const remove = () => { document.removeEventListener("keydown", onKey); splash.remove(); onRatingSplashClosed(sentAny); };
   const closeNow = () => { if (finished) return; finished = true; markDone(); remove(); };
   const onKey = (e) => { if (e.key === "Escape") closeNow(); };
   document.addEventListener("keydown", onKey);
@@ -4287,7 +4308,7 @@ function playRatingSplash(q) {
         <div class="rs-row"><span>Result</span><b>${ratingResultWord(first)}${first.scoreText ? " " + escapeHtml(first.scoreText) : ""}</b></div>
         <div class="rs-row"><span>Takes</span><b>20 seconds · anonymous</b></div>
         <button type="button" class="rs-btn" id="rs-go">Rate ${escapeHtml(ratingPairNames(first.opponents))}</button>
-        <div class="rs-note">Close it and it’s gone for this match.</div>`;
+        <div class="rs-note">Not now? It stays waiting on My Profile.</div>`;
     }
     sheet.querySelector("#rs-go").onclick = rate;
     sheet.querySelector("#rs-go").focus();
@@ -4328,7 +4349,8 @@ function playRatingSplash(q) {
     const lastAll = lastOpp && mi === matches.length - 1;
     const next = !lastOpp ? m.opponents[oi + 1] : null;
     splash.classList.add("rs-rating");
-    kick.textContent = matches.length > 1 ? `Match ${mi + 1} of ${matches.length}` : "";
+    const doneBefore = matches.slice(0, mi).reduce((n, x) => n + x.opponents.length, 0) + oi;
+    kick.textContent = totalOpps > 1 ? `Player ${doneBefore + 1} of ${totalOpps}` : "";
     sheet.scrollTop = 0;
     sheet.innerHTML = `<div class="rs-who"><b>${escapeHtml(nameInitials(o.name))}</b><div><div class="n">${escapeHtml(o.name)}</div><div class="s">Player ${oi + 1} of ${m.opponents.length} · ${ratingResultWord(m)} ${escapeHtml(m.scoreText || "")}</div></div></div>
       ${RATING_ATTRS.map(([k, label]) => `<div class="rs-rw" data-row="${k}"><div class="rs-rh"><span>${label}</span><span class="rs-val" style="color:rgba(255,255,255,.4)">Skip</span></div><div class="rs-sg">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-k="${k}" data-n="${n}" aria-label="${label}: ${n}, ${RATING_WORDS[n]}"><i style="width:0"></i></button>`).join("")}</div></div>`).join("")}
@@ -4354,6 +4376,7 @@ function playRatingSplash(q) {
       try {
         await api("/players/ratings", { method: "POST", body: { matchKey: m.key, playerId: o.playerId, scores } });
         sentAny = true;
+        ratedCount[m.key] = (ratedCount[m.key] || 0) + 1;
         advance();
       } catch (e) {
         send.disabled = false;
@@ -4361,7 +4384,96 @@ function playRatingSplash(q) {
       }
     };
   }
-  cover();
+  // Tapped "Rate" on purpose: straight to the first player, no cover page.
+  if (q.direct) rate(); else cover();
+}
+// Everything someone can still rate, kept here so the strip, the locked card's
+// button and the per-match buttons all agree. `matches` is the full queue
+// (dismissed ones included); `pendingKeys` is for the match-card buttons.
+let accountRatingQueue = { matches: [], waiting: 0, progress: null };
+let accountRatePending = new Set();
+async function loadAccountRatingQueue() {
+  try {
+    const q = await api("/players/rating-queue?all=1");
+    accountRatingQueue = q || { matches: [], waiting: 0, progress: null };
+  } catch { accountRatingQueue = { matches: [], waiting: 0, progress: null }; }
+  accountRatePending = new Set(accountRatingQueue.matches.map((m) => m.key));
+  return accountRatingQueue;
+}
+// Opens the rating splash for specific matches (or all that are waiting).
+async function openRatingFor(keys) {
+  if (document.querySelector(".ps-splash, .rs-splash")) return;
+  const q = await loadAccountRatingQueue();
+  const matches = keys ? q.matches.filter((m) => keys.includes(m.key)) : q.matches;
+  if (!matches.length) { showToast("Nothing waiting to rate."); return; }
+  playRatingSplash({ intro: false, direct: true, matches });
+}
+// Runs when the rating splash closes: refresh what depends on the queue.
+async function onRatingSplashClosed(sentAny) {
+  if (!playerAccount) return;
+  await loadAccountRatingQueue();
+  renderAccountRatingStrip();
+  fillAttributeCta();
+  if (accountRedrawResults) accountRedrawResults();
+  if (sentAny) showToast("Thanks. Your ratings help everyone's player card unlock.");
+}
+let accountRedrawResults = null;
+// The strip at the top of My Profile: who's waiting to be rated, and the
+// one-tap route into it. Also offers to switch on phone reminders.
+async function renderAccountRatingStrip() {
+  const box = el("account-rating-strip");
+  if (!box) return;
+  const q = accountRatingQueue;
+  const cards = (accountAroundData && accountAroundData.cards) || [];
+  const parts = [];
+  if (q.waiting > 0) {
+    const first = q.matches[0];
+    const left = q.progress && !q.progress.unlocked ? Math.max(0, q.progress.needed - q.progress.count) : 0;
+    parts.push(`<div class="rate-strip"><div class="rate-strip-txt"><b>${q.waiting} player${q.waiting === 1 ? "" : "s"} waiting for your rating</b>
+      <span>${escapeHtml(ratingPairNames(first.opponents.filter((o) => !o.rated)))}${q.matches.length > 1 ? " and more" : ""}. Takes about 30 seconds, and it's anonymous.${left ? ` Ratings go both ways: ${left} more from opponents unlocks your player card.` : ""}</span></div>
+      <button type="button" class="rate-strip-btn" id="rate-strip-go">Rate now</button></div>`);
+  }
+  let pushRow = "";
+  if (cards.length && "serviceWorker" in navigator && "PushManager" in window && Notification.permission !== "denied") {
+    const st = await api("/players/push-status").catch(() => null);
+    if (st && st.pushAvailable) {
+      const reg = await navigator.serviceWorker.ready.catch(() => null);
+      const existing = reg ? await reg.pushManager.getSubscription() : null;
+      const on = !!(existing && st.endpoints.includes(existing.endpoint));
+      if (!on) pushRow = `<div class="rate-remind"><span>Get a reminder on this phone after each match</span><button type="button" class="secondary" id="rate-remind-btn">Turn on</button></div>`;
+    }
+  }
+  box.innerHTML = parts.join("") + pushRow;
+  box.style.display = box.innerHTML ? "block" : "none";
+  const go = el("rate-strip-go");
+  if (go) go.onclick = () => openRatingFor(null);
+  const remind = el("rate-remind-btn");
+  if (remind) remind.onclick = async () => {
+    remind.disabled = true;
+    try {
+      const st = await api("/players/push-status");
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") throw new Error("Notifications are blocked. Allow them in your browser's site settings to turn this on.");
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(st.key) });
+      }
+      await api("/players/push-subscribe", { method: "POST", body: { subscription: sub.toJSON() } });
+      showToast("Reminders are on for this phone.");
+    } catch (e) { alert(e.message || "Couldn't turn reminders on."); }
+    renderAccountRatingStrip();
+  };
+}
+// The locked attributes card has room for one button: straight into the
+// matches waiting to be rated.
+function fillAttributeCta() {
+  const slot = el("at-cta");
+  if (!slot) return;
+  if (accountRatingQueue.waiting > 0) {
+    slot.innerHTML = '<button type="button" id="at-cta-btn">Rate my opponents</button>';
+    el("at-cta-btn").onclick = () => openRatingFor(null);
+  } else slot.innerHTML = "";
 }
 // "Your attributes" on My Profile: the eight bars once 3 opponents have rated
 // this account, otherwise a progress meter toward that.
@@ -4409,11 +4521,19 @@ function attrBand(n) { return ATTR_BANDS.find((b) => n <= b.max) || ATTR_BANDS[A
 // player page. Only averages are ever shown, never who rated.
 function attributeCardHtml(a, own) {
   if (!a.unlocked) {
+    // The real card's shape with made-up numbers, blurred out and not
+    // readable (or selectable), so people can see what they're unlocking
+    // without anything real being shown. The progress sits on top.
+    const dummy = [3.6, 3.1, 4.2, 2.8, 3.9, 3.3, 4.4, 3.0];
+    const fake = attributeCardHtml({ unlocked: true, count: 0, needed: a.needed, attributes: RATING_ATTRS.map(([key, label], i) => ({ key, label, avg: dummy[i % dummy.length], n: 3 })) }, own);
+    const left = Math.max(0, a.needed - a.count);
     const msg = own
-      ? `After each match you can rate the players you faced, and they rate you. Your attributes unlock once ${a.needed} opponents have rated you.`
-      : `Attributes show once ${a.needed} opponents have rated them.`;
-    return `<div class="at-card"><div class="at-pips">${Array.from({ length: a.needed }, (_, i) => `<span class="${i < a.count ? "on" : ""}"></span>`).join("")}</div>
-      <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>${msg}</small></div></div>`;
+      ? `${left} more opponent rating${left === 1 ? "" : "s"} to unlock your card. Rate your opponents after each match and they rate you.`
+      : `Unlocks once ${a.needed} opponents have rated them. ${left} to go.`;
+    return `<div class="at-locked"><div class="at-blur" aria-hidden="true">${fake}</div>
+      <div class="at-lock-over"><div class="at-pips">${Array.from({ length: a.needed }, (_, i) => `<span class="${i < a.count ? "on" : ""}"></span>`).join("")}</div>
+        <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>${msg}</small></div>
+        ${own ? '<div class="at-cta" id="at-cta"></div>' : ""}</div></div>`;
   }
   const scaled = a.attributes.map((x) => ({ ...x, raw: x.avg === null ? null : attrTo20(x.avg) }));
   const rated = scaled.filter((x) => x.raw !== null);
@@ -4442,6 +4562,7 @@ async function renderAccountAttributes(cards) {
   try { a = await api("/players/attributes"); } catch { sec.style.display = "none"; return; }
   sec.style.display = "";
   el("account-attributes").innerHTML = attributeCardHtml(a, true);
+  fillAttributeCta();
 }
 // The same card on any player's page — open to everyone, like match history.
 async function renderPlayerModalAttributes(leagueId, playerId) {
@@ -4463,6 +4584,9 @@ async function renderAccountProfile() {
   renderAccountAvatar(cards);
   renderAccountPlayoffSplash(playoffSplash);
   maybePlayRatingSplash();
+  // Fetched alongside everything else; the strip, the locked card's button
+  // and the per-match buttons all wait on this one request.
+  const ratingQueueP = loadAccountRatingQueue().then(() => { renderAccountRatingStrip(); fillAttributeCta(); });
   renderAccountAttributes(cards);
   updatePhotoNudge(cards);
   renderAccountKitStrips();
@@ -4501,7 +4625,7 @@ async function renderAccountProfile() {
     meTeamId: card.teamId, meTeamName: card.teamName, meTeamLogo: card.teamLogo,
   }, r)))
     .sort((a, b) => whenOf(b) - whenOf(a));
-  const cardHtmlFor = (r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto, teamId: r.meTeamId, teamName: r.meTeamName, teamLogo: r.meTeamLogo }, { isPairs: r.isPairs, leagueTag: r.leagueName });
+  const cardHtmlFor = (r) => matchHistoryCardHtml(r, { leagueId: r.leagueId, name: r.mePlayerName, photo: r.mePhoto, teamId: r.meTeamId, teamName: r.meTeamName, teamLogo: r.meTeamLogo }, { isPairs: r.isPairs, leagueTag: r.leagueName, rateKey: r.fixtureId && !r.isPairs ? `${r.leagueId}:${r.fixtureId}:${r.seed - 1}` : "" });
   const seeAllBtn = el("account-form-see-all-btn");
   const filterBar = el("account-form-filter");
   const leagueChips = [...new Map(allResults.map((r) => [r.leagueId, r.leagueName]))];
@@ -4511,6 +4635,7 @@ async function renderAccountProfile() {
     const shown = list.slice(0, 8);
     c.innerHTML = shown.length ? shown.map(cardHtmlFor).join("") : '<p class="empty">No results yet.</p>';
     bindMatchCardLinks(c);
+    c.querySelectorAll(".mc-rate-btn").forEach((b) => { b.onclick = () => openRatingFor([b.dataset.rate]); });
     seeAllBtn.style.display = list.length > shown.length ? "inline-block" : "none";
     seeAllBtn.onclick = () => openAllMatchesModal(list.map(cardHtmlFor).join(""));
     filterBar.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.league === accountResultsFilter));
@@ -4520,6 +4645,8 @@ async function renderAccountProfile() {
     ? `<button type="button" data-league="all">All</button>${leagueChips.map(([id, name]) => `<button type="button" data-league="${escapeHtml(id)}">${escapeHtml(name)}</button>`).join("")}`
     : "";
   filterBar.querySelectorAll("button").forEach((b) => { b.onclick = () => { accountResultsFilter = b.dataset.league; drawResults(); }; });
+  accountRedrawResults = drawResults;
+  await ratingQueueP;
   drawResults();
 }
 // The stat strip — season record, how many leagues, a captain badge if
@@ -8183,6 +8310,35 @@ function myPushTeamId() {
   }
   return null;
 }
+// Captain's "get my team rating" card on the Notifications tab: one button
+// that reminds every player on the team who has an account, and a message to
+// paste in the team chat for everyone else.
+function renderRatingNudgeCard() {
+  const card = el("rating-nudge-card");
+  if (!card) return;
+  const teamId = myPushTeamId();
+  const show = !!teamId && league && league.format !== "pairs" && league.status !== "setup";
+  card.style.display = show ? "block" : "none";
+  if (!show) return;
+  const status = el("rating-nudge-status");
+  const shareText = `Rate your opponents from our last match on Team Padel (30 seconds, anonymous). Ratings go both ways: 3 ratings unlock your own player card. ${location.origin}/?rate=1`;
+  el("rating-nudge-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(shareText); showToast("Message copied. Paste it in your team chat."); } catch { prompt("Copy this message:", shareText); }
+  };
+  el("rating-nudge-btn").onclick = async () => {
+    const btn = el("rating-nudge-btn");
+    btn.disabled = true;
+    status.textContent = "Sending…";
+    try {
+      const r = await api(`/leagues/${currentLeagueId}/teams/${teamId}/rating-nudge`, { method: "POST" });
+      const bits = [];
+      bits.push(r.sentTo ? `Reminded ${r.sentTo} player${r.sentTo === 1 ? "" : "s"}.` : r.withAccount ? "Nobody has anything left to rate right now." : "No one on your team has an account yet.");
+      if (r.noAccount) bits.push(`${r.noAccount} ${r.noAccount === 1 ? "player has" : "players have"} no account yet. Copy the message below for the team chat.`);
+      status.textContent = bits.join(" ");
+    } catch (e) { status.textContent = e.message || "Couldn't send that just now."; }
+    btn.disabled = false;
+  };
+}
 function renderNotifyEmailCard() {
   const card = el("notify-email-input").closest(".card");
   const teamId = myPushTeamId();
@@ -8470,6 +8626,7 @@ el("account-push-code-btn").onclick = async () => {
 function renderNotificationsList() {
   renderNotifyEmailCard();
   renderPushCard();
+  renderRatingNudgeCard();
   const c = el("notifications-list");
   if (!c) return;
   if (myRole !== "captain" && myRole !== "admin") { c.innerHTML = '<p class="empty">Notifications are for team captains.</p>'; return; }
@@ -11216,7 +11373,7 @@ el("lc-view-board").classList.toggle("on", liveCourtView === "board");
 el("lc-view-timeline").classList.toggle("on", liveCourtView === "timeline");
 el("lc-view-table").classList.toggle("on", liveCourtView === "table");
 function renderFixtures() {
-  el("fixtures-signup-banner").style.display = (!playerAccount && !fixturesBannerDismissed) ? "flex" : "none";
+  applySignupBanner("fixtures-signup-banner", fixturesBannerDismissed);
   renderRoundNav("round-nav-fixtures");
   const c = el("fixtures-container");
   c.innerHTML = "";
@@ -15711,6 +15868,34 @@ function matchCardHtml(label, teamAId, teamBId, f) {
 
 /* ---------- Roster (read-only, except a captain can manage their own team) ---------- */
 
+// The sign-up nudge at the top of Fixtures and Players. It also doubles as
+// the nudge to claim a record: every signed-in player is someone who can rate
+// (and be rated), so someone with an account but no record in this league
+// gets "find your record" instead. Hidden for people who already have one.
+function applySignupBanner(id, dismissed) {
+  const banner = el(id);
+  const teamLeague = league && league.format !== "pairs";
+  const needsRecord = !!playerAccount && teamLeague && myRole !== "admin" && myClaimedPlayerIdsHere().length === 0;
+  const show = !dismissed && (!playerAccount || needsRecord);
+  banner.style.display = show ? "flex" : "none";
+  if (!show) return;
+  const txt = banner.querySelector(".txt");
+  const cta = banner.querySelector("button.primary");
+  banner.dataset.mode = playerAccount ? "claim" : "signup";
+  if (playerAccount) {
+    txt.innerHTML = "<b>Are you one of the players?</b><span>Find your record to rate your opponents and unlock your player card.</span>";
+    cta.textContent = "Find my record";
+  } else {
+    txt.innerHTML = "<b>Playing in this league?</b><span>Sign up to track your matches, rate your opponents and unlock your player card.</span>";
+    cta.textContent = "Sign up free";
+  }
+}
+function signupBannerGo() {
+  showHub();
+  switchHubTab("account");
+  // Someone already signed in goes straight to finding their record.
+  if (playerAccount) { const panel = el("claim-panel"); if (panel && panel.style.display === "none") openClaimPanel(); }
+}
 // In-memory only — dismissing just clears it for this visit, not
 // permanently, since a different session browsing this same roster is a
 // fresh chance to catch someone who hasn't signed up yet.
@@ -15719,10 +15904,7 @@ el("roster-signup-dismiss").onclick = () => {
   rosterBannerDismissed = true;
   el("roster-signup-banner").style.display = "none";
 };
-el("roster-signup-cta").onclick = () => {
-  showHub();
-  switchHubTab("account");
-};
+el("roster-signup-cta").onclick = signupBannerGo;
 // Same nudge, same reasoning, just on Fixtures too — someone browsing who's
 // actually playing tonight might land here first, before ever checking the
 // roster tab.
@@ -15731,10 +15913,7 @@ el("fixtures-signup-dismiss").onclick = () => {
   fixturesBannerDismissed = true;
   el("fixtures-signup-banner").style.display = "none";
 };
-el("fixtures-signup-cta").onclick = () => {
-  showHub();
-  switchHubTab("account");
-};
+el("fixtures-signup-cta").onclick = signupBannerGo;
 // A directory of crests, not a wall of chips — tapping a team opens the
 // same full team page the League Table's rows already open (see
 // openTeamModal), so a roster lives in exactly one place in the app
@@ -15742,7 +15921,7 @@ el("fixtures-signup-cta").onclick = () => {
 // their own team's crest gets the add/rename/remove controls inside that
 // same modal (openTeamModal appends ownRosterEditControls for them).
 function renderRoster() {
-  el("roster-signup-banner").style.display = (!playerAccount && !rosterBannerDismissed) ? "flex" : "none";
+  applySignupBanner("roster-signup-banner", rosterBannerDismissed);
   const c = el("roster-container");
   const scopedTeams = viewingGroupId ? league.teams.filter((t) => t.groupId === viewingGroupId) : league.teams;
   if (scopedTeams.length === 0) { c.innerHTML = '<div class="card"><p class="empty">No teams yet.</p></div>'; return; }
@@ -15919,7 +16098,7 @@ function parseScoreParts(score) {
 // (meaningless, un-seeded) "Seed N" note for a Vibora-style pairs league,
 // same as the rest of this profile.
 function matchHistoryCardHtml(r, me, opts) {
-  const { isPairs, leagueTag } = opts || {};
+  const { isPairs, leagueTag, rateKey } = opts || {};
   const dateBits = [r.date ? fmtDate(r.date) : "", r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ");
   const seedNote = isPairs ? "" : ` · Seed ${r.seed}`;
   const oppTeamRef = r.opponentTeamId ? { id: r.opponentTeamId, logo: r.opponentTeamLogo, name: r.opponentTeam } : null;
@@ -15989,6 +16168,7 @@ function matchHistoryCardHtml(r, me, opts) {
         ${scoreColHtml}${ratingDeltaHtml(r.ratingDelta)}
       </div>
       <div class="mc-vs-row">${teamLinkHtml(me.teamId, me.teamName, me.teamLogo)}<span class="mc-vs-sep">vs</span>${teamLinkHtml(r.opponentTeamId, r.opponentTeam, r.opponentTeamLogo)}</div>
+      ${rateKey && accountRatePending.has(rateKey) ? `<button type="button" class="mc-rate-btn" data-rate="${escapeHtml(rateKey)}">Rate opponents</button>` : ""}
     </div>
   </div>`;
 }
@@ -16817,3 +16997,11 @@ if ("serviceWorker" in navigator) {
     localStorage.setItem(seenKey, "true");
   } catch (e) { /* private mode, storage full, etc. — leave it showing */ }
 })();
+
+// Admin > Ratings: a ready-made message for the players' WhatsApp group.
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest && e.target.closest("#ratings-invite-copy");
+  if (!btn) return;
+  const text = `Claim your Team Padel player profile: after each match you can rate your opponents (30 seconds, anonymous), and 3 ratings unlock your own player card. ${location.origin}`;
+  try { await navigator.clipboard.writeText(text); showToast("Invite message copied."); } catch { prompt("Copy this message:", text); }
+});

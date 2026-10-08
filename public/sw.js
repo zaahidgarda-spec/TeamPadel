@@ -1,4 +1,4 @@
-const CACHE_NAME = "padel-league-shell-v3";
+const CACHE_NAME = "padel-league-shell-v4";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -42,6 +42,7 @@ self.addEventListener("push", (event) => {
       icon: "/images/icon-192.png",
       badge: "/images/icon-192.png",
       tag: data.type || "general",
+      data: { url: data.url || "/" },
     })
   );
 });
@@ -50,12 +51,17 @@ self.addEventListener("push", (event) => {
 // people already have the app open in a background tab when this fires.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || "/";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ("focus" in client) return client.focus();
+      // A notification that points somewhere specific (the rating reminder
+      // opens My Profile) goes there; a general one just focuses what's open.
+      if (target === "/") {
+        for (const client of clients) {
+          if ("focus" in client) return client.focus();
+        }
       }
-      return self.clients.openWindow("/");
+      return self.clients.openWindow(target);
     })
   );
 });

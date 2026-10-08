@@ -1503,6 +1503,14 @@ html.has-admin-bar .wrap{padding-top:54px;}
 .at-pips span{flex:1;height:8px;border-radius:4px;background:var(--panel-2);}
 .at-pips span.on{background:#E8B34C;}
 .at-lock{font-size:14px;color:var(--text);}
+.at-locked{position:relative;border-radius:var(--radius-lg);overflow:hidden;min-height:230px;}
+.at-blur{filter:blur(7px) saturate(.8);opacity:.9;pointer-events:none;user-select:none;-webkit-user-select:none;transform:scale(1.03);}
+.at-lock-over{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:6px;padding:16px;background:linear-gradient(180deg,rgba(11,11,15,.35),rgba(11,11,15,.72));color:#fff;}
+.at-lock-over .at-pips{width:100%;max-width:220px;}
+.at-lock-over .at-lock{color:#fff;font-size:16px;}
+.at-lock-over .at-lock small{color:rgba(255,255,255,.82);max-width:30ch;margin:4px auto 0;}
+.at-cta{margin-top:8px;}
+.at-cta button{background:#E8B34C;border:none;color:#1a1304;font-weight:700;border-radius:10px;padding:10px 18px;cursor:pointer;}
 .at-lock small{display:block;font-size:12px;color:var(--text-dim);margin-top:2px;}
 /* Football Manager style attribute panel: label left, coloured 1-20 badge right. */
 .fm-card{background:linear-gradient(160deg,#17171C,#0B0B0F);color:#fff;border:1px solid #3a3220;border-radius:var(--radius-lg);padding:10px;}
@@ -2989,3 +2997,14 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .pt-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .pt-name{display:flex;flex-direction:column;gap:2px;}
 .pt-name span{font-size:12px;color:var(--text-dim,#64748B);}
+
+.rate-strip{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:10px;border-radius:14px;background:linear-gradient(135deg,#17171C,#0B0B0F);border:1px solid #3a3220;color:#fff;}
+.rate-strip-txt{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;}
+.rate-strip-txt b{font-size:14.5px;}
+.rate-strip-txt span{font-size:12px;color:rgba(255,255,255,.78);line-height:1.35;}
+.rate-strip-btn{flex:none;background:#E8B34C;border:none;color:#1a1304;font-weight:700;border-radius:10px;padding:10px 16px;cursor:pointer;min-height:0;}
+.rate-remind{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;margin-bottom:10px;border:1px dashed var(--line);border-radius:12px;font-size:12.5px;color:var(--text-dim,#64748B);background:#fff;}
+.rate-remind button{min-height:0;padding:6px 12px;}
+.mc-rate-btn{display:block;width:100%;margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #E8B34C;background:#FFF8E8;color:#7A5A12;font-weight:700;font-size:13px;cursor:pointer;min-height:0;}
+.mc-rate-btn:hover{background:#FFF1CC;}
+@media (max-width:520px){.rate-strip{flex-direction:column;align-items:stretch;}.rate-strip-btn{width:100%;}}

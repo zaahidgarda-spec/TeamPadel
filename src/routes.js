@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
-const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, explainSendFailure } = require("./mailer");
+const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, buildRatingEmail, explainSendFailure } = require("./mailer");
 const oauth = require("./oauth");
 const accuracy = require("./accuracy");
 const testdata = require("./testdata");
@@ -6163,18 +6163,36 @@ function ratableMatchesFor(user) {
   // order they sit in the fixture list, later meaning more recent.
   return Array.from(byKey.values()).sort((a, b) => b.when - a.when || b.seq - a.seq).slice(0, RATING_QUEUE_SIZE);
 }
-router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
-  const user = store.getUser(req.session.playerUser.id);
+// A match that was dismissed (closed or skipped) comes back on the next
+// couple of visits rather than being gone for good — people who close it
+// once mostly just weren't ready. After this many dismissals it stops
+// popping up on its own, but stays rate-able from the match on My Profile.
+const RATING_MAX_DISMISSALS = 2;
+// The matches this account could still rate: finished, within the window and
+// with at least one opponent not yet rated. `all` includes ones already
+// dismissed or marked done — what the "Rate" buttons on My Profile use.
+function pendingRatingMatches(user, all) {
   const state = user.ratingState || {};
   const items = store.getPlayerRatings().items;
-  const matches = ratableMatchesFor(user)
-    .filter((m) => !(state.done && state.done[m.key]))
+  return ratableMatchesFor(user)
+    .filter((m) => all || (!(state.done && state.done[m.key]) && !((state.skips || {})[m.key] >= RATING_MAX_DISMISSALS)))
     .map((m) => ({
       ...m,
       opponents: m.opponents.map((o) => ({ ...o, rated: !!items[user.id + "|" + m.key + "|" + o.playerId] })),
     }))
     .filter((m) => m.opponents.some((o) => !o.rated));
-  res.json({ intro: !state.introSeen, matches });
+}
+router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const state = user.ratingState || {};
+  const all = req.query.all === "1";
+  const matches = pendingRatingMatches(user, all);
+  const card = attributeCardFor(user);
+  res.json({
+    intro: !state.introSeen, matches,
+    waiting: matches.reduce((n, m) => n + m.opponents.filter((o) => !o.rated).length, 0),
+    progress: { count: card.count, needed: card.needed, unlocked: card.unlocked },
+  });
 });
 router.post("/players/ratings", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
@@ -6205,12 +6223,148 @@ router.post("/players/ratings/done", requirePlayerUser, (req, res) => {
   const valid = new Set(ratableMatchesFor(user).map((m) => m.key));
   const state = user.ratingState || { done: {}, introSeen: false };
   state.done = state.done || {};
-  keys.forEach((k) => { if (valid.has(k)) state.done[k] = Date.now(); });
+  state.skips = state.skips || {};
+  // mode "dismissed" = closed or skipped without finishing: it comes back
+  // next visit, up to RATING_MAX_DISMISSALS times. Anything else (every
+  // opponent rated, or the legacy call) is final.
+  const dismissed = req.body && req.body.mode === "dismissed";
+  keys.forEach((k) => {
+    if (!valid.has(k)) return;
+    if (dismissed) state.skips[k] = (state.skips[k] || 0) + 1;
+    else state.done[k] = Date.now();
+  });
   state.introSeen = true;
   user.ratingState = state;
   store.saveUser(user.id, user);
   res.json({ ok: true });
 });
+
+/* ---------- Rating reminders ----------
+   After a fixture is finalized, every signed-in player who played in it hears
+   (email and/or push) that they have opponents to rate. Push and email are
+   each best-effort and independent: a missing mail service or an account
+   with no subscribed device just means that channel is skipped. */
+const RATING_REMIND_GAP_MS = 3 * 60 * 60 * 1000; // at most one automatic reminder per account in this window
+const RATING_NUDGE_GAP_MS = 12 * 60 * 60 * 1000; // a captain can nudge a team once per this window
+function ratingReminderText(user, matches) {
+  const n = matches.reduce((t, m) => t + m.opponents.filter((o) => !o.rated).length, 0);
+  const card = attributeCardFor(user);
+  const left = Math.max(0, card.needed - card.count);
+  const league = matches[0] ? matches[0].leagueName : "your match";
+  let msg = `Rate ${n === 1 ? "the player" : n + " players"} you faced in ${league}. It takes about 30 seconds and it's anonymous.`;
+  if (!card.unlocked) msg += ` Ratings go both ways: ${left} more from opponents unlocks your own player card.`;
+  return { n, message: msg };
+}
+// Sends one reminder to one account. Returns which channels it went down.
+async function sendRatingReminder(user, matches, { force } = {}) {
+  const now = Date.now();
+  if (!matches.length) return { email: false, push: false };
+  if (!force && user.ratingRemindedAt && now - user.ratingRemindedAt < RATING_REMIND_GAP_MS) return { email: false, push: false, skipped: "recent" };
+  const { n, message } = ratingReminderText(user, matches);
+  if (!n) return { email: false, push: false };
+  const sent = { email: false, push: false };
+  const subs = user.pushSubscriptions || [];
+  if (subs.length) {
+    try {
+      const { deadEndpoints, errors } = await sendPushToSubscriptions(subs, { title: "Rate your opponents", body: message, type: "rating", url: "/?rate=1" });
+      if (deadEndpoints.length) { user.pushSubscriptions = subs.filter((x) => !deadEndpoints.includes(x.endpoint)); }
+      sent.push = errors.length < subs.length;
+    } catch (e) { console.error("Rating push failed:", e.message); }
+  }
+  if (user.email && user.emailNotifications !== false && mailConfigured()) {
+    try {
+      const mail = buildRatingEmail({ message, count: n });
+      const r = await sendMail({ to: user.email, ...mail });
+      sent.email = !!(r && r.sent);
+    } catch (e) { console.error("Rating email failed:", e.message); }
+  }
+  if (sent.email || sent.push) user.ratingRemindedAt = now;
+  store.saveUser(user.id, user);
+  return sent;
+}
+// Called once a fixture is finalized (fire-and-forget): reminds each
+// signed-in player who played in it.
+function remindFixtureRatings(league, fixture) {
+  setImmediate(async () => {
+    try {
+      const prefix = league.id + ":" + fixture.id + ":";
+      const seen = new Set();
+      for (const team of league.teams) {
+        if (team.id !== fixture.teamA && team.id !== fixture.teamB) continue;
+        for (const p of team.players) {
+          const uid = p.claimedByUserId;
+          if (!uid || seen.has(uid)) continue;
+          seen.add(uid);
+          const user = store.getUser(uid);
+          if (!user) continue;
+          const claim = (user.claims || []).find((c) => c.leagueId === league.id && c.playerId === p.id);
+          if (!claim || claim.leftAt) continue;
+          const mine = pendingRatingMatches(user, true).filter((m) => m.key.startsWith(prefix));
+          if (!mine.length) continue;
+          user.ratingReminded = user.ratingReminded || {};
+          if (user.ratingReminded[fixture.id]) continue;
+          user.ratingReminded[fixture.id] = Date.now();
+          await sendRatingReminder(user, mine);
+        }
+      }
+    } catch (e) { console.error("Rating reminders failed:", e.message); }
+  });
+}
+// A captain (or admin) nudging their own team: everyone on it with an
+// account and something to rate gets a reminder now, and the reply says how
+// many players have no account yet, with a message ready to paste to them.
+router.post("/leagues/:leagueId/teams/:teamId/rating-nudge", requireAdminOrCaptain((req) => req.params.teamId), async (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league && league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const siteLink = (process.env.PUBLIC_URL || "https://teampadelsports.com").replace(/\/$/, "") + "/?rate=1";
+  const shareText = `Rate your opponents from our last match on Team Padel (30 seconds, anonymous). Ratings go both ways: 3 ratings unlock your own player card. ${siteLink}`;
+  const noAccount = team.players.filter((p) => !p.claimedByUserId).length;
+  const last = (league.ratingNudgedAt || {})[team.id] || 0;
+  if (Date.now() - last < RATING_NUDGE_GAP_MS) {
+    return res.status(429).json({ error: "You already nudged this team in the last 12 hours.", shareText, noAccount });
+  }
+  let sentTo = 0, withAccount = 0;
+  for (const p of team.players) {
+    const user = p.claimedByUserId && store.getUser(p.claimedByUserId);
+    if (!user) continue;
+    const claim = (user.claims || []).find((c) => c.leagueId === league.id && c.playerId === p.id);
+    if (!claim || claim.leftAt) continue;
+    withAccount++;
+    const mine = pendingRatingMatches(user, true).filter((m) => m.leagueId === league.id);
+    if (!mine.length) continue;
+    const r = await sendRatingReminder(user, mine, { force: true });
+    if (r.email || r.push) sentTo++;
+  }
+  if (!league.ratingNudgedAt) league.ratingNudgedAt = {};
+  league.ratingNudgedAt[team.id] = Date.now();
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, sentTo, withAccount, noAccount, shareText });
+});
+
+// Per-account web push (the existing push is per team, for captains): lets a
+// player get the rating reminder on their own phone. One entry per device.
+router.post("/players/push-subscribe", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const subscription = req.body && req.body.subscription;
+  if (!subscription || !subscription.endpoint) return res.status(400).json({ error: "Invalid subscription." });
+  user.pushSubscriptions = user.pushSubscriptions || [];
+  if (!user.pushSubscriptions.some((x) => x.endpoint === subscription.endpoint)) user.pushSubscriptions.push(subscription);
+  store.saveUser(user.id, user);
+  res.json({ ok: true });
+});
+router.post("/players/push-unsubscribe", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  const endpoint = req.body && req.body.endpoint;
+  user.pushSubscriptions = (user.pushSubscriptions || []).filter((x) => x.endpoint !== endpoint);
+  store.saveUser(user.id, user);
+  res.json({ ok: true });
+});
+router.get("/players/push-status", requirePlayerUser, (req, res) => {
+  const user = store.getUser(req.session.playerUser.id);
+  res.json({ endpoints: (user.pushSubscriptions || []).map((x) => x.endpoint), pushAvailable: !!getVapidPublicKey(), key: getVapidPublicKey(), emailAvailable: mailConfigured() && user.emailNotifications !== false });
+});
+
 // This account's own card: every rating given to any player record it has
 // claimed, averaged per attribute. Hidden entirely (just a progress count)
 // until it has RATINGS_TO_UNLOCK ratings, and once there are 5+ values for
@@ -7363,6 +7517,7 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
   f.finalized = true;
   f.finalizedAt = Date.now();
   logAudit(league, req, f, "finalize", {});
+  remindFixtureRatings(league, f);
   syncPlayoffs(league);
 
   // Once every regular-round fixture for this round is in, Pair of the Week

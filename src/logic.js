@@ -1305,6 +1305,7 @@ function playerMatchHistory(league, playerId, ratingsData) {
       const played = rubber.sets.length > 0 && !!(setWinner(rubber.sets[0]) && setWinner(rubber.sets[1]));
       if (!winner && !played) return;
       rows.push({
+        fixtureId: f.id,
         label: stageLabel(league, f),
         opponentTeam: oppTeam ? oppTeam.name : "?",
         opponentTeamId: oppTeam ? oppTeam.id : null,

@@ -394,6 +394,8 @@
             <div class="pd-scroll" id="account-tables-scroll"></div>
           </section>
 
+          <div id="account-rating-strip" style="display:none;"></div>
+
           <section class="pd-section" id="account-attributes-section" style="display:none;">
             <div class="pd-section-head"><h2>Your attributes</h2></div>
             <div id="account-attributes"></div>
@@ -1360,6 +1362,15 @@
       </div>
 
       <section class="view" id="view-notifications">
+        <div class="card" id="rating-nudge-card" style="display:none;">
+          <h2 class="section-title">Get your team rating</h2>
+          <p class="note" style="margin-bottom:10px;">Ratings go both ways: the more of your team rates, the sooner everyone's player card unlocks. This reminds every player on your team who has an account, once every 12 hours.</p>
+          <div class="row" style="flex-wrap:wrap;gap:8px;">
+            <button class="primary" id="rating-nudge-btn" type="button">Nudge my team to rate</button>
+            <button class="secondary" id="rating-nudge-copy" type="button">Copy message for the team chat</button>
+          </div>
+          <div class="note" id="rating-nudge-status" style="margin-top:8px;"></div>
+        </div>
         <div class="card" id="push-notify-card" style="display:none;">
           <h2 class="section-title">Push notifications</h2>
           <p class="note" style="margin-bottom:10px;" id="push-notify-note">Optional — get these notifications pushed straight to this device, even with the app closed.</p>
