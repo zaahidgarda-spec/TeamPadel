@@ -5026,7 +5026,7 @@ function renderAccountLeaguesList(cards) {
     key: card.leagueId + ":" + card.teamId, leagueId: card.leagueId, teamId: card.teamId, leagueName: card.leagueName,
     teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, seed: mostCommonCardSeed(card),
     isCaptain: captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId),
-    wrappedAvailable: !!card.wrappedAvailable, left: !!card.left, retired: !!card.retired, leftAt: card.leftAt || null,
+    wrappedAvailable: !!card.wrappedAvailable, left: !!card.left, retired: !!card.retired, extraRecords: card.extraRecords || [], leftAt: card.leftAt || null,
   })).concat(extraCaptaincies.map((cap) => ({
     key: cap.leagueId + ":" + cap.teamId, leagueId: cap.leagueId, teamId: cap.teamId, leagueName: cap.leagueName,
     teamName: cap.teamName, teamLogo: cap.teamLogo, playerId: null, seed: null, isCaptain: true, wrappedAvailable: false,
@@ -5068,6 +5068,7 @@ function renderAccountLeaguesList(cards) {
       <div class="al-detail-name">${escapeHtml(sel.leagueName)}</div>
       <div class="al-detail-team">${escapeHtml(sel.teamName)}${sel.seed ? " · Seed " + escapeHtml(sel.seed) : ""}</div>${role}
       ${leaveChoice}
+      ${sel.extraRecords && sel.extraRecords.length ? `<div class="al-extra">Also linked to this team: ${sel.extraRecords.map((r) => `<b>${escapeHtml(r.playerName)}</b> <button type="button" class="link" data-act="unlink-extra" data-pid="${escapeHtml(r.playerId)}">Unlink</button>`).join(" · ")}</div>` : ""}
       <div class="al-actions">
         <button type="button" class="primary" data-act="open">Open ${escapeHtml(sel.leagueName)}</button>
         ${sel.playerId && !sel.left ? '<button type="button" class="al-wrapped-btn" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
@@ -5106,6 +5107,14 @@ function renderAccountLeaguesList(cards) {
       if (act === "wrapped") return openWrappedModal(sel.leagueId, sel.playerId);
       if (act === "find") return showPanel("claim-panel", "account-search-input");
       if (act === "code") return showPanel("captain-panel", "account-captain-code");
+      if (act === "unlink-extra") {
+        const name = (sel.extraRecords.find((r) => r.playerId === btn.dataset.pid) || {}).playerName || "this record";
+        if (!confirm(`Unlink ${name} from your profile? Its matches leave your profile until you claim it again.`)) return;
+        await api(`/players/claims/${sel.leagueId}/${sel.teamId}/${btn.dataset.pid}`, { method: "DELETE" });
+        await markPlayerIndexClaimed(btn.dataset.pid, false);
+        await renderAccountProfile();
+        return;
+      }
       if (act === "leave-ask") { accountLeaveAsk = accountLeaveAsk === sel.key ? null : sel.key; return renderAccountLeaguesList(cards); }
       if (act === "leave-cancel") { accountLeaveAsk = null; return renderAccountLeaguesList(cards); }
       if (act === "left" || act === "rejoin") {

@@ -2767,6 +2767,33 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     if (!left) addFixtureTeam(league, team);
     return true;
   });
+  // Two records on the same team in the same league (a player entered twice on
+  // a roster, say) are one person here: fold the later ones into the first card
+  // so the team and league show once, with all of that person's matches. The
+  // other records are listed on the card so they can still be unlinked.
+  {
+    const primary = new Map();
+    for (let i = 0; i < cards.length; i++) {
+      const c = cards[i];
+      const key = c.leagueId + ":" + c.teamId;
+      const first = primary.get(key);
+      if (!first) { primary.set(key, c); continue; }
+      const seenRows = new Set(first.results.filter((r) => r.fixtureId).map((r) => r.fixtureId + ":" + r.seed));
+      c.results.forEach((r) => { if (!r.fixtureId || !seenRows.has(r.fixtureId + ":" + r.seed)) first.results.push(r); });
+      first.awards = first.awards.concat(c.awards);
+      first.championships = first.championships.concat(c.championships);
+      first.runnerUps = first.runnerUps.concat(c.runnerUps);
+      first.bestStreak = Math.max(first.bestStreak, c.bestStreak);
+      first.bagelCount += c.bagelCount;
+      first.wrappedAvailable = first.wrappedAvailable || c.wrappedAvailable;
+      first.potwPrompt = first.potwPrompt || c.potwPrompt;
+      first.upcoming = first.upcoming.concat(c.upcoming.filter((u) => !first.upcoming.some((x) => x.fixtureId === u.fixtureId && x.rubberIdx === u.rubberIdx)));
+      first.liveNow = first.liveNow || c.liveNow;
+      (first.extraRecords = first.extraRecords || []).push({ playerId: c.playerId, playerName: c.playerName });
+      cards.splice(i, 1);
+      i--;
+    }
+  }
   (user.captaincies || []).forEach((c) => {
     const league = store.getLeague(c.leagueId);
     const team = league && league.teams.find((t) => t.id === c.teamId);
