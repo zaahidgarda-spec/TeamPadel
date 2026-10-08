@@ -2764,6 +2764,11 @@ button.al-wrapped-btn:hover:not(:disabled){background:linear-gradient(135deg,#EA
 .al-role.cap{background:#0B1424;color:#fff;}
 .al-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
 .al-actions button{width:100%;}
+.al-past{margin:2px 0 8px;}
+.al-past-toggle{display:inline-flex;align-items:center;gap:6px;min-height:0;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:#475569;font-size:12px;font-weight:600;cursor:pointer;}
+.al-past-caret{font-size:10px;}
+.al-past-row{padding-top:8px;}
+.al-past-row .al-chip{width:68px;}
 .al-chip.left .al-ring{filter:grayscale(1);opacity:.6;}
 .al-chip.left b,.al-chip.left span:last-child{color:var(--text-dim,#64748B);}
 .al-detail-x{position:absolute;top:8px;right:8px;width:30px;height:30px;min-height:0;padding:0;border-radius:50%;border:1px solid var(--line);background:#fff;color:#475569;font-size:20px;line-height:1;cursor:pointer;}

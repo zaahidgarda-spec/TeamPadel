@@ -4840,6 +4840,7 @@ function mostCommonCardSeed(card) {
 // + at the end adds another (find your record, or enter a team code). Only
 // one thing is open at a time; a second tap on the same logo closes it.
 let accountLeagueSel = null; // "leagueId:teamId" of the open logo, "add", or null
+let accountPastOpen = false; // the folded "Past teams" row under Your Leagues
 let accountLeaveAsk = null;  // key of the logo whose "remove from my profile" choice is open
 // Which "leagueId:teamId" chips have already had their flashing Wrapped
 // ring dismissed — per-device, not per-account (same tradeoff as the
@@ -4883,9 +4884,21 @@ function renderAccountLeaguesList(cards) {
     ? `<img class="al-crest" style="width:${size}px;height:${size}px;" src="${logo}" alt="">`
     : `<span class="al-crest avatar-fb" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
   const wrappedSeen = wrappedSeenSet();
-  const chips = items.map((i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}${i.left ? " left" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
-      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}${i.retired ? " · past" : i.left ? " · left" : ""}</span></button>`).join("")
+  const chipHtml = (i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}${i.left ? " left" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
+      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}</span></button>`;
+  // Teams they've left (or that are gone from the league) move out of the
+  // main row into their own folded "Past teams" row — the history is all
+  // still there, but the row up top is only the teams they play for now.
+  const currentItems = items.filter((i) => !i.left);
+  const pastItems = items.filter((i) => i.left);
+  const pastSelected = pastItems.some((i) => i.key === accountLeagueSel);
+  if (pastSelected) accountPastOpen = true;
+  const chips = currentItems.map(chipHtml).join("")
     + `<button type="button" class="al-chip${accountLeagueSel === "add" ? " on" : ""}" data-key="add" aria-label="Add a league"><span class="al-ring al-add">+</span><b>Add</b><span>league</span></button>`;
+  const pastHtml = pastItems.length ? `<div class="al-past">
+      <button type="button" class="al-past-toggle" aria-expanded="${accountPastOpen}">Past teams · ${pastItems.length}<span class="al-past-caret">${accountPastOpen ? "&#9652;" : "&#9662;"}</span></button>
+      ${accountPastOpen ? `<div class="al-strip al-past-row">${pastItems.map(chipHtml).join("")}</div>` : ""}
+    </div>` : "";
   let detail = "";
   const sel = items.find((i) => i.key === accountLeagueSel);
   if (sel) {
@@ -4918,7 +4931,9 @@ function renderAccountLeaguesList(cards) {
         <button type="button" class="secondary" data-act="code">Enter a team code (captain)</button>
       </div></div>`;
   }
-  c.innerHTML = `<div class="al-strip">${chips}</div>${detail}`;
+  c.innerHTML = `<div class="al-strip">${chips}</div>${pastHtml}${detail}`;
+  const pastToggle = c.querySelector(".al-past-toggle");
+  if (pastToggle) pastToggle.onclick = () => { accountPastOpen = !accountPastOpen; renderAccountLeaguesList(cards); };
   c.querySelectorAll(".al-chip").forEach((chip) => {
     chip.onclick = () => {
       // The flashing ring is a "you've got a new Wrapped" nudge, not a
