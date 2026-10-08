@@ -2570,8 +2570,21 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
   // admin/captain — drop the now-dangling claim quietly rather than error.
   user.claims = user.claims.filter((claim) => {
     const league = store.getLeague(claim.leagueId);
-    const team = league && league.teams.find((t) => t.id === claim.teamId);
-    const player = team && team.players.find((p) => p.id === claim.playerId);
+    let team = league && league.teams.find((t) => t.id === claim.teamId);
+    let player = team && team.players.find((p) => p.id === claim.playerId);
+    // A team removed from the league for a later season (or a player taken
+    // off its roster) is no longer in the live league, but it's still in the
+    // archived season it played — and everything on this card (results,
+    // awards, rating) already reads across archived seasons. So the claim
+    // survives as a former team instead of being dropped, history intact.
+    let retired = false;
+    if (league && (!team || !player)) {
+      for (const snap of league.seasonHistory || []) {
+        const t = (snap.teams || []).find((x) => x.id === claim.teamId);
+        const pl = t && (t.players || []).find((x) => x.id === claim.playerId);
+        if (pl) { team = t; player = pl; retired = true; break; }
+      }
+    }
     if (!league || !team || !player) { changed = true; return false; }
     // A hidden league (data imported purely to feed ratings, not a real
     // league to manage here) never surfaces in any list on this site — the
@@ -2640,7 +2653,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // too few teams to meaningfully rank.
     const TABLE_CAP = 6;
     let standings = null;
-    if (leagueStatus(league) === "active" && league.teams.length > 1) {
+    if (!retired && leagueStatus(league) === "active" && league.teams.length > 1) {
       const officialRows = logic.computeStandings(league);
       const liveRows = logic.computeStandings(league, (f) => f.finalized || logic.fixtureScore(f).decided > 0);
       const officialRankById = new Map(officialRows.map((r, i) => [r.id, i + 1]));
@@ -2668,7 +2681,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // fixture (not just upcoming ones), since nothing marks a fixture
     // "live" ahead of time.
     let liveNow = null;
-    for (const f of logic.allFixturesOf(league)) {
+    for (const f of retired ? [] : logic.allFixturesOf(league)) {
       if (f.finalized || (f.teamA !== team.id && f.teamB !== team.id)) continue;
       const liveIdx = f.rubbers.findIndex((r) => r.startedAt && !r.completedAt);
       if (liveIdx === -1) continue;
@@ -2696,7 +2709,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // only ever shows once per league+round no matter how many times they
     // reload the page within that window.
     let potwPrompt = null;
-    const roundsHere = [...new Set(league.fixtures.map((f) => f.round))];
+    const roundsHere = retired || claim.leftAt ? [] : [...new Set(league.fixtures.map((f) => f.round))];
     for (const r of roundsHere) {
       const roundFixtures = league.fixtures.filter((f) => f.round === r);
       if (!roundFixtures.length || !roundFixtures.every((f) => f.finalized)) continue;
@@ -2721,13 +2734,13 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // "I've left this team": the record stays linked (so the history, awards
     // and rating all stay on this profile) but nothing about it is current
     // any more — no upcoming matches, no live table, no vote or line-up nudge.
-    const left = !!claim.leftAt;
+    const left = !!claim.leftAt || retired;
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
       isPairs: league.format === "pairs",
-      left, leftAt: claim.leftAt || null,
+      left, retired, leftAt: claim.leftAt || null,
       potwPrompt: left ? null : potwPrompt,
       upcoming: left ? [] : upcoming,
       // Same "flag only, fetch lazily" reasoning as the leagues hub's own
@@ -4575,12 +4588,18 @@ router.post("/leagues/:leagueId/season/reset", requireAdmin, (req, res) => {
       archivedAt: Date.now(),
       name: league.name,
       format: league.format,
-      teams: league.teams,
+      // Copied, not shared: in the server's in-memory store this snapshot and
+      // the live league would otherwise be the SAME team objects, so renaming
+      // a team or changing its roster for the next season would quietly
+      // rewrite the archived season too (and removing a team still left the
+      // archive pointing at live data). The schedule is carried into the new
+      // season too, so it needs its own copy for the same reason.
+      teams: JSON.parse(JSON.stringify(league.teams)),
       fixtures: league.fixtures,
       playoffs: league.playoffs,
       playoffFormat: league.playoffFormat,
       roundMeta: league.roundMeta,
-      schedule: league.schedule,
+      schedule: league.schedule ? JSON.parse(JSON.stringify(league.schedule)) : league.schedule,
       defaultVenue: league.defaultVenue,
       // Pair of the Week votes are keyed by round NUMBER, not by fixture —
       // without archiving them here and clearing the live copy below, the

@@ -4873,7 +4873,7 @@ function renderAccountLeaguesList(cards) {
     key: card.leagueId + ":" + card.teamId, leagueId: card.leagueId, teamId: card.teamId, leagueName: card.leagueName,
     teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, seed: mostCommonCardSeed(card),
     isCaptain: captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId),
-    wrappedAvailable: !!card.wrappedAvailable, left: !!card.left, leftAt: card.leftAt || null,
+    wrappedAvailable: !!card.wrappedAvailable, left: !!card.left, retired: !!card.retired, leftAt: card.leftAt || null,
   })).concat(extraCaptaincies.map((cap) => ({
     key: cap.leagueId + ":" + cap.teamId, leagueId: cap.leagueId, teamId: cap.teamId, leagueName: cap.leagueName,
     teamName: cap.teamName, teamLogo: cap.teamLogo, playerId: null, seed: null, isCaptain: true, wrappedAvailable: false,
@@ -4884,12 +4884,13 @@ function renderAccountLeaguesList(cards) {
     : `<span class="al-crest avatar-fb" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
   const wrappedSeen = wrappedSeenSet();
   const chips = items.map((i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}${i.left ? " left" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
-      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}${i.left ? " · left" : ""}</span></button>`).join("")
+      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}${i.retired ? " · past" : i.left ? " · left" : ""}</span></button>`).join("")
     + `<button type="button" class="al-chip${accountLeagueSel === "add" ? " on" : ""}" data-key="add" aria-label="Add a league"><span class="al-ring al-add">+</span><b>Add</b><span>league</span></button>`;
   let detail = "";
   const sel = items.find((i) => i.key === accountLeagueSel);
   if (sel) {
-    const role = sel.left ? `<span class="al-role">Left${sel.leftAt ? " " + escapeHtml(new Date(sel.leftAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })) : ""}</span>`
+    const role = sel.retired ? '<span class="al-role">Past season</span>'
+      : sel.left ? `<span class="al-role">Left${sel.leftAt ? " " + escapeHtml(new Date(sel.leftAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })) : ""}</span>`
       : sel.isCaptain ? '<span class="al-role cap">Captain</span>' : '<span class="al-role">Player</span>';
     const canRemove = !!sel.playerId;
     const leaveChoice = accountLeaveAsk === sel.key && canRemove ? `<div class="al-leave">
@@ -4905,7 +4906,7 @@ function renderAccountLeaguesList(cards) {
       <div class="al-actions">
         <button type="button" class="primary" data-act="open">Open ${escapeHtml(sel.leagueName)}</button>
         ${sel.playerId && !sel.left ? '<button type="button" class="al-wrapped-btn" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
-        ${sel.left ? '<button type="button" class="secondary" data-act="rejoin">I\'m back on this team</button>' : ""}
+        ${sel.left && !sel.retired ? '<button type="button" class="secondary" data-act="rejoin">I\'m back on this team</button>' : ""}
         ${canRemove ? '<button type="button" class="al-danger" data-act="leave-ask">Remove from my profile…</button>' : ""}
         ${sel.isCaptain && !sel.left ? '<button type="button" class="al-danger" data-act="stepdown">Stop being captain</button>' : ""}
       </div></div>`;
