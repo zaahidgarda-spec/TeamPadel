@@ -4255,7 +4255,8 @@ async function checkRatingSplash() {
   playRatingSplash({ ...q, matches: q.matches.slice(0, RATING_POPUP_SIZE) });
 }
 function playRatingSplash(q) {
-  const matches = q.matches.map((m) => ({ ...m, opponents: m.opponents.filter((o) => !o.rated) })).filter((m) => m.opponents.length);
+  const editing = !!q.edit;
+  const matches = q.matches.map((m) => ({ ...m, opponents: editing ? m.opponents : m.opponents.filter((o) => !o.rated) })).filter((m) => m.opponents.length);
   if (!matches.length) return;
   const keys = matches.map((m) => m.key);
   const intro = !q.direct && (q.intro || matches.length > 1);
@@ -4285,6 +4286,7 @@ function playRatingSplash(q) {
   // closed or skipped partway comes back on the next visit (a couple of
   // times), and always stays rate-able from My Profile.
   const markDone = () => {
+    if (editing) return; // changing a rating never changes what's waiting
     const doneKeys = matches.filter((m) => (ratedCount[m.key] || 0) >= m.opponents.length).map((m) => m.key);
     const backKeys = keys.filter((k) => !doneKeys.includes(k));
     if (doneKeys.length) api("/players/ratings/done", { method: "POST", body: { matchKeys: doneKeys } }).catch(() => {});
@@ -4342,7 +4344,7 @@ function playRatingSplash(q) {
     if (!sentAny) return remove();
     splash.classList.add("rs-rating");
     kick.textContent = "";
-    sheet.innerHTML = `<div class="rs-thanks"><b>Ratings sent</b><div class="rs-sub">Thanks. Nobody sees who rated them.</div></div>`;
+    sheet.innerHTML = `<div class="rs-thanks"><b>${editing ? "Rating updated" : "Ratings sent"}</b><div class="rs-sub">${editing ? "Your change is saved." : "Thanks. Nobody sees who rated them. Made a mistake? You can change a rating from that match on My Profile."}</div></div>`;
     setTimeout(remove, 1600);
     sheet.onclick = remove;
   };
@@ -4359,9 +4361,11 @@ function playRatingSplash(q) {
     sheet.innerHTML = `<div class="rs-who"><b>${escapeHtml(nameInitials(o.name))}</b><div><div class="n">${escapeHtml(o.name)}</div><div class="s">Player ${oi + 1} of ${m.opponents.length} · ${ratingResultWord(m)} ${escapeHtml(m.scoreText || "")}</div></div></div>
       ${RATING_ATTRS.map(([k, label]) => `<div class="rs-rw" data-row="${k}"><div class="rs-rh"><span>${label}</span><span class="rs-val" style="color:rgba(255,255,255,.4)">Skip</span></div><div class="rs-sg">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-k="${k}" data-n="${n}" aria-label="${label}: ${n}, ${RATING_WORDS[n]}"><i style="width:0"></i></button>`).join("")}</div></div>`).join("")}
       <div class="rs-err" id="rs-err">Skip anything you didn’t see.</div>
-      <button type="button" class="rs-btn" id="rs-send">${lastAll ? "Send ratings" : next ? "Send and rate " + escapeHtml(next.name.split(/\s+/)[0]) : "Send and next match"}</button>
-      <button type="button" class="rs-link" id="rs-skip">Skip ${escapeHtml(o.name.split(/\s+/)[0])}</button>`;
+      <button type="button" class="rs-btn" id="rs-send">${editing ? (lastAll ? "Save change" : "Save and next") : lastAll ? "Send ratings" : next ? "Send and rate " + escapeHtml(next.name.split(/\s+/)[0]) : "Send and next match"}</button>
+      <button type="button" class="rs-link" id="rs-skip">${editing ? "Keep " + escapeHtml(o.name.split(/\s+/)[0]) + "'s rating as it was" : "Skip " + escapeHtml(o.name.split(/\s+/)[0])}</button>`;
     sheet.onclick = null;
+    // Fixing a mistake: start from what was given, change what's wrong.
+    if (editing && o.scores) { scores = { ...o.scores }; Object.keys(scores).forEach(paintRow); }
     sheet.querySelectorAll(".rs-sg button").forEach((b) => {
       b.onclick = () => {
         const k = b.dataset.k, n = Number(b.dataset.n);
@@ -4396,17 +4400,26 @@ function playRatingSplash(q) {
 // (dismissed ones included); `pendingKeys` is for the match-card buttons.
 let accountRatingQueue = { matches: [], waiting: 0, progress: null };
 let accountRatePending = new Set();
+let accountRatedKeys = new Set();
 async function loadAccountRatingQueue() {
   try {
     const q = await api("/players/rating-queue?all=1");
     accountRatingQueue = q || { matches: [], waiting: 0, progress: null };
   } catch { accountRatingQueue = { matches: [], waiting: 0, progress: null }; }
   accountRatePending = new Set(accountRatingQueue.matches.map((m) => m.key));
+  accountRatedKeys = new Set(accountRatingQueue.editable || []);
   return accountRatingQueue;
 }
 // Opens the rating splash for specific matches (or all that are waiting).
-async function openRatingFor(keys) {
+async function openRatingFor(keys, edit) {
   if (document.querySelector(".ps-splash, .rs-splash")) return;
+  if (edit) {
+    const q = await api("/players/rating-queue?edit=1").catch(() => null);
+    const matches = ((q && q.matches) || []).filter((m) => !keys || keys.includes(m.key));
+    if (!matches.length) { showToast("No ratings to change on that match."); return; }
+    playRatingSplash({ intro: false, direct: true, edit: true, matches });
+    return;
+  }
   const q = await loadAccountRatingQueue();
   const matches = keys ? q.matches.filter((m) => keys.includes(m.key)) : q.matches;
   if (!matches.length) { showToast("Nothing waiting to rate."); return; }
@@ -4640,6 +4653,7 @@ async function renderAccountProfile() {
     c.innerHTML = shown.length ? shown.map(cardHtmlFor).join("") : '<p class="empty">No results yet.</p>';
     bindMatchCardLinks(c);
     c.querySelectorAll(".mc-rate-btn").forEach((b) => { b.onclick = () => openRatingFor([b.dataset.rate]); });
+    c.querySelectorAll(".mc-rate-edit").forEach((b) => { b.onclick = () => openRatingFor([b.dataset.rate], true); });
     seeAllBtn.style.display = list.length > shown.length ? "inline-block" : "none";
     seeAllBtn.onclick = () => openAllMatchesModal(list.map(cardHtmlFor).join(""));
     filterBar.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.league === accountResultsFilter));
@@ -16173,6 +16187,7 @@ function matchHistoryCardHtml(r, me, opts) {
       </div>
       <div class="mc-vs-row">${teamLinkHtml(me.teamId, me.teamName, me.teamLogo)}<span class="mc-vs-sep">vs</span>${teamLinkHtml(r.opponentTeamId, r.opponentTeam, r.opponentTeamLogo)}</div>
       ${rateKey && accountRatePending.has(rateKey) ? `<button type="button" class="mc-rate-btn" data-rate="${escapeHtml(rateKey)}">Rate opponents</button>` : ""}
+      ${rateKey && accountRatedKeys.has(rateKey) ? `<button type="button" class="mc-rate-edit" data-rate="${escapeHtml(rateKey)}">Change a rating</button>` : ""}
     </div>
   </div>`;
 }

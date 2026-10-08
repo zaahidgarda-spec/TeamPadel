@@ -3008,3 +3008,4 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .mc-rate-btn{display:block;width:100%;margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #E8B34C;background:#FFF8E8;color:#7A5A12;font-weight:700;font-size:13px;cursor:pointer;min-height:0;}
 .mc-rate-btn:hover{background:#FFF1CC;}
 @media (max-width:520px){.rate-strip{flex-direction:column;align-items:stretch;}.rate-strip-btn{width:100%;}}
+.mc-rate-edit{display:block;margin:6px auto 0;background:none;border:none;color:var(--accent,#2563EB);font-size:12.5px;text-decoration:underline;cursor:pointer;min-height:0;padding:4px;}

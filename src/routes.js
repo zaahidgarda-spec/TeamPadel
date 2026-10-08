@@ -6187,12 +6187,29 @@ function pendingRatingMatches(user, all) {
 }
 router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
+  const items = store.getPlayerRatings().items;
+  // edit=1: the ratings this account has already given (with the scores it
+  // gave), for fixing a mistake. Overwriting is just rating again.
+  if (req.query.edit === "1") {
+    const matches = ratableMatchesFor(user)
+      .map((m) => ({
+        ...m,
+        opponents: m.opponents
+          .map((o) => { const r = items[user.id + "|" + m.key + "|" + o.playerId]; return r ? { ...o, rated: true, scores: r.scores } : null; })
+          .filter(Boolean),
+      }))
+      .filter((m) => m.opponents.length);
+    return res.json({ intro: false, matches });
+  }
   const state = user.ratingState || {};
   const all = req.query.all === "1";
   const matches = pendingRatingMatches(user, all);
   const card = attributeCardFor(user);
   res.json({
     intro: !state.introSeen, matches,
+    // Matches with at least one rating already given, so My Profile can offer
+    // "change a rating" on them.
+    editable: all ? ratableMatchesFor(user).filter((m) => m.opponents.some((o) => items[user.id + "|" + m.key + "|" + o.playerId])).map((m) => m.key) : undefined,
     waiting: matches.reduce((n, m) => n + m.opponents.filter((o) => !o.rated).length, 0),
     progress: { count: card.count, needed: card.needed, unlocked: card.unlocked },
   });
