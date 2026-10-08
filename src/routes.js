@@ -6221,7 +6221,7 @@ router.post("/leagues/:leagueId/auction/bid", (req, res) => {
 // 1 Weak to 5 Elite, anonymous. A player's card only shows once they've
 // collected RATINGS_TO_UNLOCK ratings.
 const RATING_ATTRS = [
-  ["consistency", "Consistency"], ["defence", "Defence"], ["volleys", "Volleys"], ["vibora", "Vibora"],
+  ["consistency", "Consistency"], ["defence", "Defence"], ["coverage", "Court Coverage"], ["volleys", "Volleys"], ["vibora", "Vibora"],
   ["smash", "Smash"], ["lob", "Lob"], ["serve", "Serve"], ["mentality", "Mentality"],
 ];
 const RATINGS_TO_UNLOCK = 3;

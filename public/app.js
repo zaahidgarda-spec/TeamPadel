@@ -4231,7 +4231,7 @@ async function renderAccountPendingResults() {
 // It is the only place ratings can be given: rate, skip a player, or close
 // it, and that match never comes back. The server decides which matches are
 // still open (see /players/rating-queue — the last five finalized ones).
-const RATING_ATTRS = [["consistency", "Consistency"], ["defence", "Defence"], ["volleys", "Volleys"], ["vibora", "Vibora"], ["smash", "Smash"], ["lob", "Lob"], ["serve", "Serve"], ["mentality", "Mentality"]];
+const RATING_ATTRS = [["consistency", "Consistency"], ["defence", "Defence"], ["coverage", "Court Coverage"], ["volleys", "Volleys"], ["vibora", "Vibora"], ["smash", "Smash"], ["lob", "Lob"], ["serve", "Serve"], ["mentality", "Mentality"]];
 const RATING_WORDS = ["", "Weak", "Developing", "Solid", "Strong", "Elite"];
 const RATING_FILL = ["", "#E0584B", "#E8863A", "#5B9BE8", "#4FBF86", "#E8B34C"];
 const RATING_INK = ["", "#C0392B", "#C96A1B", "#2563EB", "#178A4C", "#A87708"];
@@ -4514,6 +4514,7 @@ const PLAYER_TYPES = {
   defence: { name: "The Wall", blurb: "Gets everything back" },
   consistency: { name: "Metronome", blurb: "Few errors, rarely beaten by mistakes" },
   mentality: { name: "Competitor", blurb: "Stays strong in the tight moments" },
+  coverage: { name: "Court Runner", blurb: "Covers every inch of the court" },
   all: { name: "All-Rounder", blurb: "No obvious weakness" },
 };
 function playerTypeOf(scaled) {
