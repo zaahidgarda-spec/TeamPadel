@@ -4466,13 +4466,15 @@ async function renderAccountProfile() {
   renderAccountAttributes(cards);
   updatePhotoNudge(cards);
   renderAccountKitStrips();
-  const matchNightNow = renderAccountNextMatch(cards);
-  renderAccountTables(cards);
+  // A team they've left keeps its history on the profile but isn't "now".
+  const currentCards = cards.filter((c) => !c.left);
+  const matchNightNow = renderAccountNextMatch(currentCards);
+  renderAccountTables(currentCards);
   positionAccountTablesSection(matchNightNow);
   const due = await api("/players/lineups-due").catch(() => []);
   renderAccountFixtures(fixtureCards || [], due);
-  renderAccountPotwNudge(cards);
-  renderAccountNeedsAttention(cards, due);
+  renderAccountPotwNudge(currentCards);
+  renderAccountNeedsAttention(currentCards, due);
   renderAccountLeaguesList(cards);
   await renderAccountStats(cards);
   renderAccountPushSection();
@@ -4529,7 +4531,7 @@ async function renderAccountStats(cards) {
   const losses = results.filter((r) => r.result === "L").length;
   const draws = results.length - wins - losses;
   const record = draws ? `${wins}–${draws}–${losses}` : `${wins}–${losses}`;
-  const seenLeagues = new Set(cards.map((c) => c.leagueId));
+  const seenLeagues = new Set(cards.filter((c) => !c.left).map((c) => c.leagueId));
   const totalAwards = cards.reduce((sum, card) => sum + card.awards.length, 0);
   const captaincies = playerAccount.captaincies || [];
   // No placeholder tile when there's nothing to show — most accounts never
@@ -4838,6 +4840,7 @@ function mostCommonCardSeed(card) {
 // + at the end adds another (find your record, or enter a team code). Only
 // one thing is open at a time; a second tap on the same logo closes it.
 let accountLeagueSel = null; // "leagueId:teamId" of the open logo, "add", or null
+let accountLeaveAsk = null;  // key of the logo whose "remove from my profile" choice is open
 // Which "leagueId:teamId" chips have already had their flashing Wrapped
 // ring dismissed — per-device, not per-account (same tradeoff as the
 // player/avatars index caches above): good enough for a one-time visual
@@ -4855,7 +4858,7 @@ function markWrappedSeen(key) {
 }
 function renderAccountLeaguesList(cards) {
   const seen = new Set();
-  const uniq = cards.filter((c) => (seen.has(c.leagueId) ? false : (seen.add(c.leagueId), true)));
+  const uniq = cards.filter((c) => { const k = c.leagueId + ":" + c.teamId; return seen.has(k) ? false : (seen.add(k), true); });
   const captaincies = playerAccount.captaincies || [];
   // A captaincy with no claimed player record in that league has no card to
   // attach to — it still gets its own logo so it stays visible (and removable).
@@ -4870,7 +4873,7 @@ function renderAccountLeaguesList(cards) {
     key: card.leagueId + ":" + card.teamId, leagueId: card.leagueId, teamId: card.teamId, leagueName: card.leagueName,
     teamName: card.teamName, teamLogo: card.teamLogo, playerId: card.playerId, seed: mostCommonCardSeed(card),
     isCaptain: captaincies.some((cap) => cap.leagueId === card.leagueId && cap.teamId === card.teamId),
-    wrappedAvailable: !!card.wrappedAvailable,
+    wrappedAvailable: !!card.wrappedAvailable, left: !!card.left, leftAt: card.leftAt || null,
   })).concat(extraCaptaincies.map((cap) => ({
     key: cap.leagueId + ":" + cap.teamId, leagueId: cap.leagueId, teamId: cap.teamId, leagueName: cap.leagueName,
     teamName: cap.teamName, teamLogo: cap.teamLogo, playerId: null, seed: null, isCaptain: true, wrappedAvailable: false,
@@ -4880,21 +4883,31 @@ function renderAccountLeaguesList(cards) {
     ? `<img class="al-crest" style="width:${size}px;height:${size}px;" src="${logo}" alt="">`
     : `<span class="al-crest avatar-fb" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</span>`;
   const wrappedSeen = wrappedSeenSet();
-  const chips = items.map((i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
-      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}</span></button>`).join("")
+  const chips = items.map((i) => `<button type="button" class="al-chip${accountLeagueSel === i.key ? " on" : ""}${i.left ? " left" : ""}" data-key="${i.key}" aria-pressed="${accountLeagueSel === i.key}">
+      <span class="al-ring${i.wrappedAvailable && !wrappedSeen.has(i.key) ? " wrapped-ready" : ""}">${crestHtml(i.teamLogo, i.teamName, 52)}</span><b>${escapeHtml(i.leagueName)}</b><span>${escapeHtml(i.teamName)}${i.left ? " · left" : ""}</span></button>`).join("")
     + `<button type="button" class="al-chip${accountLeagueSel === "add" ? " on" : ""}" data-key="add" aria-label="Add a league"><span class="al-ring al-add">+</span><b>Add</b><span>league</span></button>`;
   let detail = "";
   const sel = items.find((i) => i.key === accountLeagueSel);
   if (sel) {
-    const role = sel.isCaptain ? '<span class="al-role cap">Captain</span>' : '<span class="al-role">Player</span>';
-    detail = `<div class="al-detail">${crestHtml(sel.teamLogo, sel.teamName, 64)}
+    const role = sel.left ? `<span class="al-role">Left${sel.leftAt ? " " + escapeHtml(new Date(sel.leftAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })) : ""}</span>`
+      : sel.isCaptain ? '<span class="al-role cap">Captain</span>' : '<span class="al-role">Player</span>';
+    const canRemove = !!sel.playerId;
+    const leaveChoice = accountLeaveAsk === sel.key && canRemove ? `<div class="al-leave">
+        <div class="al-leave-title">Why remove ${escapeHtml(sel.teamName)}?</div>
+        ${sel.left ? "" : `<button type="button" class="al-leave-opt" data-act="left"><b>I've left this team</b><span>Keeps every match, award and rating on your profile as history. It stops showing as a current team.</span></button>`}
+        <button type="button" class="al-leave-opt danger" data-act="unlink"><b>This is the wrong profile</b><span>Unlinks the record from your account. Its matches and results leave your profile until you claim it again.</span></button>
+        <button type="button" class="link" data-act="leave-cancel">Cancel</button>
+      </div>` : "";
+    detail = `<div class="al-detail">${canRemove ? '<button type="button" class="al-detail-x" data-act="leave-ask" aria-label="Remove this team from my profile">&times;</button>' : ""}${crestHtml(sel.teamLogo, sel.teamName, 64)}
       <div class="al-detail-name">${escapeHtml(sel.leagueName)}</div>
       <div class="al-detail-team">${escapeHtml(sel.teamName)}${sel.seed ? " · Seed " + escapeHtml(sel.seed) : ""}</div>${role}
+      ${leaveChoice}
       <div class="al-actions">
         <button type="button" class="primary" data-act="open">Open ${escapeHtml(sel.leagueName)}</button>
-        ${sel.playerId ? '<button type="button" class="al-wrapped-btn" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
-        ${sel.playerId ? '<button type="button" class="al-danger" data-act="unlink">Unlink my record</button>' : ""}
-        ${sel.isCaptain ? '<button type="button" class="al-danger" data-act="stepdown">Stop being captain</button>' : ""}
+        ${sel.playerId && !sel.left ? '<button type="button" class="al-wrapped-btn" data-act="wrapped">&#127881; View your Season Wrapped</button>' : ""}
+        ${sel.left ? '<button type="button" class="secondary" data-act="rejoin">I\'m back on this team</button>' : ""}
+        ${canRemove ? '<button type="button" class="al-danger" data-act="leave-ask">Remove from my profile…</button>' : ""}
+        ${sel.isCaptain && !sel.left ? '<button type="button" class="al-danger" data-act="stepdown">Stop being captain</button>' : ""}
       </div></div>`;
   } else if (accountLeagueSel === "add") {
     detail = `<div class="al-detail"><div class="al-detail-name">Add a league</div>
@@ -4925,11 +4938,23 @@ function renderAccountLeaguesList(cards) {
       if (act === "wrapped") return openWrappedModal(sel.leagueId, sel.playerId);
       if (act === "find") return showPanel("claim-panel", "account-search-input");
       if (act === "code") return showPanel("captain-panel", "account-captain-code");
-      if (act === "unlink") {
+      if (act === "leave-ask") { accountLeaveAsk = accountLeaveAsk === sel.key ? null : sel.key; return renderAccountLeaguesList(cards); }
+      if (act === "leave-cancel") { accountLeaveAsk = null; return renderAccountLeaguesList(cards); }
+      if (act === "left" || act === "rejoin") {
+        const leaving = act === "left";
+        try {
+          await api(`/players/claims/${sel.leagueId}/${sel.teamId}/${sel.playerId}/left`, { method: "PUT", body: { left: leaving } });
+        } catch (e) { return alert(e.message || "Couldn't save that — try again."); }
+        accountLeaveAsk = null;
+        await refreshAccountStatus();
+        await renderAccountProfile();
+        showToast(leaving ? `${sel.teamName} moved to your past teams — your history is kept.` : `Welcome back to ${sel.teamName}.`);
+      } else if (act === "unlink") {
         if (!confirm(`Unlink your record for ${sel.teamName} (${sel.leagueName})? You'll need to find and claim it again to get your matches, results, and Season Wrapped back here.`)) return;
         await api(`/players/claims/${sel.leagueId}/${sel.teamId}/${sel.playerId}`, { method: "DELETE" });
         await markPlayerIndexClaimed(sel.playerId, false);
         accountLeagueSel = null;
+        accountLeaveAsk = null;
         await renderAccountProfile();
       } else if (act === "stepdown") {
         if (!confirm(`Stop managing ${sel.teamName} (${sel.leagueName}) as captain? You can regain captaincy any time with the team code.`)) return;

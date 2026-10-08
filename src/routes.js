@@ -1190,7 +1190,7 @@ router.get("/players/tonight-matches", (req, res) => {
   // here unchanged. An incognito-but-real league is NOT hidden, so it
   // isn't caught by this filter and shows normally.
   const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
-  const leagueIds = new Set((user.claims || []).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)));
+  const leagueIds = new Set((user.claims || []).filter((c) => !c.leftAt).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)));
   const leagues = Array.from(leagueIds)
     .map((id) => store.getLeague(id))
     .filter((l) => l && leagueStatus(l) === "active" && l.format !== "pairs");
@@ -2119,6 +2119,24 @@ router.post("/players/claim-requests", requirePlayerUser, (req, res) => {
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
+// "I've left this team" — the other way out of a league besides unlinking a
+// wrong record. The record stays claimed by this account, so every match,
+// award and rating stays on the profile (and nobody else can take it), but
+// the team stops counting as one of their current ones: no upcoming matches,
+// nudges or news, and any captaincy of it ends. {left:false} undoes it.
+router.put("/players/claims/:leagueId/:teamId/:playerId/left", requirePlayerUser, (req, res) => {
+  const { leagueId, teamId, playerId } = req.params;
+  const user = store.getUser(req.session.playerUser.id);
+  const claim = (user.claims || []).find((c) => c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId);
+  if (!claim) return res.status(404).json({ error: "That record isn't linked to your profile." });
+  if (req.body && req.body.left === false) delete claim.leftAt;
+  else {
+    claim.leftAt = Date.now();
+    user.captaincies = (user.captaincies || []).filter((c) => !(c.leagueId === leagueId && c.teamId === teamId));
+  }
+  store.saveUser(user.id, user);
+  res.json({ ok: true, leftAt: claim.leftAt || null });
+});
 router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, (req, res) => {
   const { leagueId, teamId, playerId } = req.params;
   const user = store.getUser(req.session.playerUser.id);
@@ -2700,20 +2718,25 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       changed = true;
       break;
     }
+    // "I've left this team": the record stays linked (so the history, awards
+    // and rating all stay on this profile) but nothing about it is current
+    // any more — no upcoming matches, no live table, no vote or line-up nudge.
+    const left = !!claim.leftAt;
     cards.push({
       leagueId: league.id, leagueName: league.name,
       teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
       playerId: player.id, playerName: player.name, photo: player.photo || "",
       isPairs: league.format === "pairs",
-      potwPrompt,
-      upcoming,
+      left, leftAt: claim.leftAt || null,
+      potwPrompt: left ? null : potwPrompt,
+      upcoming: left ? [] : upcoming,
       // Same "flag only, fetch lazily" reasoning as the leagues hub's own
       // hasCourtPhoto — this response already carries every league a
       // claimed record touches, so embedding the actual image here would
       // repeat the exact payload-size problem that flag was built to avoid.
       hasCourtPhoto: !!league.courtPhoto,
       venueName: league.defaultVenue || "",
-      standings,
+      standings: left ? null : standings,
       results,
       awards,
       championships,
@@ -2726,9 +2749,9 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
       ratingPlayed: ratingEntry ? ratingEntry.played : 0,
       ratingProvisional: ratingEntry ? ratingEntry.played < logic.ELO_PROVISIONAL_GAMES : null,
       isTeamOwner: (team.ownerIds || []).includes(player.id),
-      liveNow,
+      liveNow: left ? null : liveNow,
     });
-    addFixtureTeam(league, team);
+    if (!left) addFixtureTeam(league, team);
     return true;
   });
   (user.captaincies || []).forEach((c) => {
@@ -2757,7 +2780,7 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
 router.get("/players/news", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
   const hiddenLeagueIds = new Set(store.getIndex().filter((entry) => entry.hidden).map((entry) => entry.id));
-  const leagueIds = [...new Set((user.claims || []).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)))];
+  const leagueIds = [...new Set((user.claims || []).filter((c) => !c.leftAt).map((c) => c.leagueId).filter((id) => !hiddenLeagueIds.has(id)))];
   const posts = [];
   leagueIds.forEach((leagueId) => {
     const league = store.getLeague(leagueId);
@@ -7332,7 +7355,7 @@ router.post("/leagues/:leagueId/pair-of-week/:round/vote", (req, res) => {
   let myPlayerIds = [];
   if (req.session.playerUser) {
     const account = store.getUser(req.session.playerUser.id);
-    const mine = account ? (account.claims || []).filter((c) => c.leagueId === league.id) : [];
+    const mine = account ? (account.claims || []).filter((c) => c.leagueId === league.id && !c.leftAt) : [];
     if (mine.length) claimedPlayerId = mine[0].playerId;
     myPlayerIds = mine.map((c) => c.playerId);
   }

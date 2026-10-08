@@ -2764,6 +2764,17 @@ button.al-wrapped-btn:hover:not(:disabled){background:linear-gradient(135deg,#EA
 .al-role.cap{background:#0B1424;color:#fff;}
 .al-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
 .al-actions button{width:100%;}
+.al-chip.left .al-ring{filter:grayscale(1);opacity:.6;}
+.al-chip.left b,.al-chip.left span:last-child{color:var(--text-dim,#64748B);}
+.al-detail-x{position:absolute;top:8px;right:8px;width:30px;height:30px;min-height:0;padding:0;border-radius:50%;border:1px solid var(--line);background:#fff;color:#475569;font-size:20px;line-height:1;cursor:pointer;}
+.al-detail-x:hover{background:#F3F5F9;}
+.al-leave{margin-top:12px;display:flex;flex-direction:column;gap:8px;text-align:left;padding:12px;border-radius:12px;background:#F6F8FC;border:1px solid var(--line);}
+.al-leave-title{font-weight:700;font-size:13.5px;}
+.al-leave-opt{width:100%;text-align:left;display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);cursor:pointer;font:inherit;}
+.al-leave-opt b{font-size:13.5px;}
+.al-leave-opt span{font-size:12px;color:var(--text-dim,#64748B);font-weight:400;}
+.al-leave-opt:hover{border-color:var(--accent);}
+.al-leave-opt.danger b{color:#B42318;}
 .al-actions .al-danger{color:#B42318;border:1px solid #F3C6C1;background:#FFF6F5;border-radius:var(--radius,10px);font-weight:600;}
 
 /* Admin > Player accounts groups */
