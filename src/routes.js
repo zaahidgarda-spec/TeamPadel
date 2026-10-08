@@ -6278,6 +6278,9 @@ function ratableMatchesFor(user) {
         const ref = (team2, pid) => { const p = team2.players.find((x) => x.id === pid); return p ? { playerId: p.id, name: p.name } : null; };
         const opponents = (oppSel.pairs[idx] || []).map((pid) => ref(oppTeam, pid)).filter((o) => o && !mine.has(league.id + ":" + o.playerId));
         if (!opponents.length) return;
+        // The other half of this player's own pair, if there is one (a singles
+        // seed has none) — rated too, but at half weight (see attributeCardForKeys).
+        const partner = pair.filter((pid) => pid && pid !== c.playerId && !mine.has(league.id + ":" + pid)).map((pid) => ref(team, pid)).filter(Boolean)[0] || null;
         const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
         byKey.set(key, {
           key, leagueId: league.id, leagueName: league.name, fixtureId: f.id, idx, when, seq: seq++,
@@ -6285,7 +6288,7 @@ function ratableMatchesFor(user) {
           result: winner === null ? "D" : winner === mySide ? "W" : "L",
           scoreText: logic.rubberScoreText(rubber, mySide === "B"),
           mine: pair.map((pid) => ref(team, pid)).filter(Boolean),
-          opponents, myTeamName: team.name, oppTeamName: oppTeam.name,
+          opponents, partner, myTeamName: team.name, oppTeamName: oppTeam.name,
         });
       });
     });
@@ -6310,8 +6313,13 @@ function pendingRatingMatches(user, all) {
     .map((m) => ({
       ...m,
       opponents: m.opponents.map((o) => ({ ...o, rated: !!items[user.id + "|" + m.key + "|" + o.playerId] })),
+      partner: m.partner ? { ...m.partner, role: "partner", rated: !!items[user.id + "|" + m.key + "|" + m.partner.playerId] } : null,
     }))
-    .filter((m) => m.opponents.some((o) => !o.rated));
+    .filter((m) => m.opponents.some((o) => !o.rated) || (m.partner && !m.partner.rated));
+}
+// How many people still to rate across these matches (opponents and partners).
+function peopleWaiting(matches) {
+  return matches.reduce((n, m) => n + m.opponents.filter((o) => !o.rated).length + (m.partner && !m.partner.rated ? 1 : 0), 0);
 }
 router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
   const user = store.getUser(req.session.playerUser.id);
@@ -6320,13 +6328,13 @@ router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
   // gave), for fixing a mistake. Overwriting is just rating again.
   if (req.query.edit === "1") {
     const matches = ratableMatchesFor(user)
-      .map((m) => ({
-        ...m,
-        opponents: m.opponents
-          .map((o) => { const r = items[user.id + "|" + m.key + "|" + o.playerId]; return r ? { ...o, rated: true, scores: r.scores } : null; })
-          .filter(Boolean),
-      }))
-      .filter((m) => m.opponents.length);
+      .map((m) => {
+        const given = (pid) => items[user.id + "|" + m.key + "|" + pid];
+        const opponents = m.opponents.map((o) => { const r = given(o.playerId); return r ? { ...o, rated: true, scores: r.scores } : null; }).filter(Boolean);
+        const pr = m.partner && given(m.partner.playerId);
+        return { ...m, opponents, partner: pr ? { ...m.partner, role: "partner", rated: true, scores: pr.scores } : null };
+      })
+      .filter((m) => m.opponents.length || m.partner);
     return res.json({ intro: false, matches });
   }
   const state = user.ratingState || {};
@@ -6337,8 +6345,8 @@ router.get("/players/rating-queue", requirePlayerUser, (req, res) => {
     intro: !state.introSeen, matches,
     // Matches with at least one rating already given, so My Profile can offer
     // "change a rating" on them.
-    editable: all ? ratableMatchesFor(user).filter((m) => m.opponents.some((o) => items[user.id + "|" + m.key + "|" + o.playerId])).map((m) => m.key) : undefined,
-    waiting: matches.reduce((n, m) => n + m.opponents.filter((o) => !o.rated).length, 0),
+    editable: all ? ratableMatchesFor(user).filter((m) => m.opponents.some((o) => items[user.id + "|" + m.key + "|" + o.playerId]) || (m.partner && items[user.id + "|" + m.key + "|" + m.partner.playerId])).map((m) => m.key) : undefined,
+    waiting: peopleWaiting(matches),
     progress: { count: card.count, needed: card.needed, unlocked: card.unlocked },
   });
 });
@@ -6347,8 +6355,9 @@ router.post("/players/ratings", requirePlayerUser, (req, res) => {
   const { matchKey, playerId, scores } = req.body || {};
   const match = ratableMatchesFor(user).find((m) => m.key === matchKey);
   if (!match) return res.status(404).json({ error: "That match can't be rated." });
-  const opp = match.opponents.find((o) => o.playerId === playerId);
-  if (!opp) return res.status(400).json({ error: "You can only rate players you faced in that match." });
+  const opp = match.opponents.find((o) => o.playerId === playerId) || (match.partner && match.partner.playerId === playerId ? match.partner : null);
+  if (!opp) return res.status(400).json({ error: "You can only rate players you played with or against in that match." });
+  const role = match.partner && match.partner.playerId === playerId ? "partner" : "opponent";
   const clean = {};
   RATING_ATTRS.forEach(([k]) => {
     const v = scores && Number(scores[k]);
@@ -6357,7 +6366,7 @@ router.post("/players/ratings", requirePlayerUser, (req, res) => {
   if (!Object.keys(clean).length) return res.status(400).json({ error: "Rate at least one attribute." });
   const ratings = store.getPlayerRatings();
   ratings.items[user.id + "|" + match.key + "|" + opp.playerId] = {
-    raterId: user.id, matchKey: match.key, leagueId: match.leagueId, targetPlayerId: opp.playerId, scores: clean, at: Date.now(),
+    raterId: user.id, matchKey: match.key, leagueId: match.leagueId, targetPlayerId: opp.playerId, scores: clean, role, at: Date.now(),
   };
   store.savePlayerRatings(ratings);
   res.json({ ok: true });
@@ -6395,11 +6404,11 @@ router.post("/players/ratings/done", requirePlayerUser, (req, res) => {
 const RATING_REMIND_GAP_MS = 3 * 60 * 60 * 1000; // at most one automatic reminder per account in this window
 const RATING_NUDGE_GAP_MS = 12 * 60 * 60 * 1000; // a captain can nudge a team once per this window
 function ratingReminderText(user, matches) {
-  const n = matches.reduce((t, m) => t + m.opponents.filter((o) => !o.rated).length, 0);
+  const n = peopleWaiting(matches);
   const card = attributeCardFor(user);
   const left = Math.max(0, card.needed - card.count);
   const league = matches[0] ? matches[0].leagueName : "your match";
-  let msg = `Rate ${n === 1 ? "the player" : n + " players"} you faced in ${league}. It takes about 30 seconds and it's anonymous.`;
+  let msg = `Rate ${n === 1 ? "the player" : n + " players"} from your match in ${league}. It takes about 30 seconds and it's anonymous.`;
   if (!card.unlocked) msg += ` Ratings go both ways: ${left} more from opponents unlocks your own player card.`;
   return { n, message: msg };
 }
@@ -6521,23 +6530,32 @@ router.get("/players/push-status", requirePlayerUser, (req, res) => {
 function attributeCardFor(user) {
   return attributeCardForKeys(new Set((user.claims || []).map((c) => c.leagueId + ":" + c.playerId)));
 }
+// A partner's rating counts for half an opponent's. A card needs RATINGS_TO_UNLOCK
+// ratings from OPPONENTS to open, so friends playing together can't unlock one
+// on their own; once it's open, partner ratings fill in the numbers too.
+const PARTNER_RATING_WEIGHT = 0.5;
+const ATTR_FULL_AT = 3; // ratings of one attribute before it counts toward Overall and the player type
 function attributeCardForKeys(mine) {
   const mineRatings = Object.values(store.getPlayerRatings().items).filter((r) => mine.has(r.leagueId + ":" + r.targetPlayerId));
-  const count = mineRatings.length;
+  const count = mineRatings.filter((r) => r.role !== "partner").length; // opponent ratings (older ones have no role)
+  const partnerCount = mineRatings.length - count;
   if (count < RATINGS_TO_UNLOCK) return { count, needed: RATINGS_TO_UNLOCK, unlocked: false };
   const attributes = RATING_ATTRS.map(([key, label]) => {
-    let vals = mineRatings.map((r) => r.scores[key]).filter((v) => v);
-    if (vals.length >= 5) {
-      const sorted = vals.slice().sort((a, b) => a - b);
+    let rows = mineRatings.filter((r) => r.scores[key]).map((r) => ({ v: r.scores[key], w: r.role === "partner" ? PARTNER_RATING_WEIGHT : 1 }));
+    if (rows.length >= 5) {
+      const sorted = rows.map((x) => x.v).sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)];
-      vals = vals.filter((v) => Math.abs(v - median) < 3);
+      rows = rows.filter((x) => Math.abs(x.v - median) < 3);
     }
-    if (vals.length < RATINGS_TO_UNLOCK) return { key, label, avg: null, n: vals.length };
-    return { key, label, avg: Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10, n: vals.length };
+    if (!rows.length) return { key, label, avg: null, n: 0 };
+    const totalW = rows.reduce((t, x) => t + x.w, 0);
+    const avg = Math.round((rows.reduce((t, x) => t + x.v * x.w, 0) / totalW) * 10) / 10;
+    // Shown from the first rating, but flagged until enough people have rated it.
+    return { key, label, avg, n: rows.length, provisional: rows.length < ATTR_FULL_AT };
   });
-  const shown = attributes.filter((a) => a.avg !== null);
-  const overall = shown.length ? Math.min(99, Math.round((shown.reduce((s, a) => s + a.avg, 0) / shown.length) * 20)) : null;
-  return { count, needed: RATINGS_TO_UNLOCK, unlocked: true, attributes, overall };
+  const shown = attributes.filter((a) => a.avg !== null && !a.provisional);
+  const overall = shown.length ? Math.min(99, Math.round((shown.reduce((s2, a) => s2 + a.avg, 0) / shown.length) * 20)) : null;
+  return { count, partnerCount, needed: RATINGS_TO_UNLOCK, unlocked: true, attributes, overall };
 }
 // Trophy Room "new badge" splash. The badges themselves are worked out on the
 // client (see trophyTiles), each with a stable key; the server only remembers
@@ -6678,7 +6696,7 @@ router.get("/admin/ratings-overview", (req, res) => {
       e = { name, team, league: league ? league.name : "", count: 0, sum: 0, n: 0, last: 0 };
       byPlayer.set(id, e);
     }
-    e.count++;
+    if (r.role !== "partner") e.count++;
     e.last = Math.max(e.last, r.at || 0);
     Object.values(r.scores).forEach((v) => { e.sum += v; e.n++; });
     RATING_ATTRS.forEach(([k]) => { if (r.scores[k]) { attr[k].sum += r.scores[k]; attr[k].n++; } });

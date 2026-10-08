@@ -4263,7 +4263,13 @@ async function checkRatingSplash() {
 }
 function playRatingSplash(q) {
   const editing = !!q.edit;
-  const matches = q.matches.map((m) => ({ ...m, opponents: editing ? m.opponents : m.opponents.filter((o) => !o.rated) })).filter((m) => m.opponents.length);
+  // `people` is everyone to rate in a match, opponents first and your partner last;
+  // `opponents` stays the names shown on the cover and buttons.
+  const matches = q.matches.map((m) => {
+    const wantOpp = editing ? m.opponents : m.opponents.filter((o) => !o.rated);
+    const wantPartner = m.partner && (editing ? m.partner.rated : !m.partner.rated) ? [{ ...m.partner, role: "partner" }] : [];
+    return { ...m, people: wantOpp.concat(wantPartner), opponents: wantOpp.length ? wantOpp : m.opponents };
+  }).filter((m) => m.people.length);
   if (!matches.length) return;
   const keys = matches.map((m) => m.key);
   const intro = !q.direct && (q.intro || matches.length > 1);
@@ -4287,14 +4293,14 @@ function playRatingSplash(q) {
   const sub = (id) => splash.querySelector(id);
   let mi = 0, oi = 0, scores = {}, sentAny = false, finished = false;
   const ratedCount = {};
-  const totalOpps = matches.reduce((n, m) => n + m.opponents.length, 0);
+  const totalOpps = matches.reduce((n, m) => n + m.people.length, 0);
 
   // A match whose every opponent got rated is finished for good. Anything
   // closed or skipped partway comes back on the next visit (a couple of
   // times), and always stays rate-able from My Profile.
   const markDone = () => {
     if (editing) return; // changing a rating never changes what's waiting
-    const doneKeys = matches.filter((m) => (ratedCount[m.key] || 0) >= m.opponents.length).map((m) => m.key);
+    const doneKeys = matches.filter((m) => (ratedCount[m.key] || 0) >= m.people.length).map((m) => m.key);
     const backKeys = keys.filter((k) => !doneKeys.includes(k));
     if (doneKeys.length) api("/players/ratings/done", { method: "POST", body: { matchKeys: doneKeys } }).catch(() => {});
     if (backKeys.length) api("/players/ratings/done", { method: "POST", body: { matchKeys: backKeys, mode: "dismissed" } }).catch(() => {});
@@ -4343,7 +4349,7 @@ function playRatingSplash(q) {
   const advance = () => {
     const m = matches[mi];
     scores = {};
-    if (oi < m.opponents.length - 1) { oi++; return rate(); }
+    if (oi < m.people.length - 1) { oi++; return rate(); }
     mi++; oi = 0;
     if (mi < matches.length) return rate();
     finished = true;
@@ -4357,15 +4363,15 @@ function playRatingSplash(q) {
   };
 
   function rate() {
-    const m = matches[mi], o = m.opponents[oi];
-    const lastOpp = oi === m.opponents.length - 1;
+    const m = matches[mi], o = m.people[oi];
+    const lastOpp = oi === m.people.length - 1;
     const lastAll = lastOpp && mi === matches.length - 1;
-    const next = !lastOpp ? m.opponents[oi + 1] : null;
+    const next = !lastOpp ? m.people[oi + 1] : null;
     splash.classList.add("rs-rating");
-    const doneBefore = matches.slice(0, mi).reduce((n, x) => n + x.opponents.length, 0) + oi;
+    const doneBefore = matches.slice(0, mi).reduce((n, x) => n + x.people.length, 0) + oi;
     kick.textContent = totalOpps > 1 ? `Player ${doneBefore + 1} of ${totalOpps}` : "";
     sheet.scrollTop = 0;
-    sheet.innerHTML = `<div class="rs-who"><b>${escapeHtml(nameInitials(o.name))}</b><div><div class="n">${escapeHtml(o.name)}</div><div class="s">Player ${oi + 1} of ${m.opponents.length} · ${ratingResultWord(m)} ${escapeHtml(m.scoreText || "")}</div></div></div>
+    sheet.innerHTML = `<div class="rs-who"><b>${escapeHtml(nameInitials(o.name))}</b><div><div class="n">${escapeHtml(o.name)}</div><div class="s">${o.role === "partner" ? "Your partner · counts for half" : "Opponent " + (oi + 1) + " of " + m.people.filter((x) => x.role !== "partner").length} · ${ratingResultWord(m)} ${escapeHtml(m.scoreText || "")}</div></div></div>
       ${RATING_ATTRS.map(([k, label]) => `<div class="rs-rw" data-row="${k}"><div class="rs-rh"><span>${label}</span><span class="rs-val" style="color:rgba(255,255,255,.4)">Skip</span></div><div class="rs-sg">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-k="${k}" data-n="${n}" aria-label="${label}: ${n}, ${RATING_WORDS[n]}"><i style="width:0"></i></button>`).join("")}</div></div>`).join("")}
       <div class="rs-err" id="rs-err">Skip anything you didn’t see.</div>
       <button type="button" class="rs-btn" id="rs-send">${editing ? (lastAll ? "Save change" : "Save and next") : lastAll ? "Send ratings" : next ? "Send and rate " + escapeHtml(next.name.split(/\s+/)[0]) : "Send and next match"}</button>
@@ -4454,7 +4460,7 @@ async function renderAccountRatingStrip() {
     const first = q.matches[0];
     const left = q.progress && !q.progress.unlocked ? Math.max(0, q.progress.needed - q.progress.count) : 0;
     parts.push(`<div class="rate-strip"><div class="rate-strip-txt"><b>${q.waiting} player${q.waiting === 1 ? "" : "s"} waiting for your rating</b>
-      <span>${escapeHtml(ratingPairNames(first.opponents.filter((o) => !o.rated)))}${q.matches.length > 1 ? " and more" : ""}. Takes about 30 seconds, and it's anonymous.${left ? ` Ratings go both ways: ${left} more from opponents unlocks your player card.` : ""}</span></div>
+      <span>${escapeHtml(ratingPairNames([...first.opponents.filter((o) => !o.rated), ...(first.partner && !first.partner.rated ? [first.partner] : [])]))}${q.matches.length > 1 ? " and more" : ""}. Takes about 30 seconds, and it's anonymous.${left ? ` Ratings go both ways: ${left} more from opponents unlocks your player card.` : ""}</span></div>
       <button type="button" class="rate-strip-btn" id="rate-strip-go">Rate now</button></div>`);
   }
   let pushRow = "";
@@ -4560,23 +4566,26 @@ function attributeCardHtml(a, own) {
         <div class="at-lock"><b>${a.count} of ${a.needed}</b> opponent ratings<small>${msg}</small></div>
         ${own ? '<div class="at-cta" id="at-cta"></div>' : ""}</div></div>`;
   }
-  const scaled = a.attributes.map((x) => ({ ...x, raw: x.avg === null ? null : attrTo20(x.avg) }));
-  const rated = scaled.filter((x) => x.raw !== null);
+  const scaled = a.attributes.map((x) => ({ ...x, raw: x.avg === null ? null : attrTo20(x.avg), prov: !!x.provisional }));
+  // An attribute with only a rating or two shows, but doesn't count toward Overall,
+  // the highlight or the player type yet.
+  const rated = scaled.filter((x) => x.raw !== null && !x.prov);
   const meanRaw = rated.length ? rated.reduce((t, x) => t + x.raw, 0) / rated.length : null;
   const overall = meanRaw === null ? null : Math.round(meanRaw);
   // The strongest three (and only ones above the player's own average) get the highlight band.
   const keys = new Set(rated.slice().sort((x, y) => y.raw - x.raw).slice(0, 3).filter((x) => x.raw > meanRaw).map((x) => x.key));
-  const chip = (n) => n === null ? '<b class="fm-chip t-none">&ndash;</b>' : `<b class="fm-chip ${attrBand(n).cls}">${n}</b>`;
+  const chip = (n, prov) => n === null ? '<b class="fm-chip t-none">&ndash;</b>' : `<b class="fm-chip ${attrBand(n).cls}${prov ? " prov" : ""}">${n}</b>`;
   const rows = scaled.map((x) => {
     const n = x.raw === null ? null : Math.round(x.raw);
-    return `<div class="fm-row${keys.has(x.key) ? " key" : ""}" title="${x.avg === null ? "Needs more ratings" : x.avg.toFixed(1) + " out of 5"}"><span>${escapeHtml(x.label)}</span>${chip(n)}</div>`;
+    const tip = x.avg === null ? "Needs more ratings" : x.prov ? `Early: ${x.n} rating${x.n === 1 ? "" : "s"} so far` : x.avg.toFixed(1) + " out of 5";
+    return `<div class="fm-row${keys.has(x.key) ? " key" : ""}${x.prov ? " prov" : ""}" title="${tip}"><span>${escapeHtml(x.label)}${x.prov ? '<i class="fm-early">early</i>' : ""}</span>${chip(n, x.prov)}</div>`;
   }).join("");
   const legend = ATTR_BANDS.map((b) => `<span><i class="fm-chip ${b.cls}">${b.range.split("-")[0]}</i>${b.word} ${b.range}</span>`).join("");
   const type = a.count >= PLAYER_TYPE_MIN_RATINGS ? playerTypeOf(scaled) : null;
   const typeHtml = type
     ? `<em class="fm-type">${escapeHtml(type.name)}</em><small>${escapeHtml(type.blurb)}</small>`
     : a.count < PLAYER_TYPE_MIN_RATINGS ? `<small>Player type unlocks at ${PLAYER_TYPE_MIN_RATINGS} ratings (${a.count} so far)</small>` : "";
-  return `<div class="fm-card"><div class="fm-hd"><b>Attributes</b><span>Rated by ${a.count} opponents</span></div>
+  return `<div class="fm-card"><div class="fm-hd"><b>Attributes</b><span>Rated by ${a.count} opponents${a.partnerCount ? " and " + a.partnerCount + " partner" + (a.partnerCount === 1 ? "" : "s") : ""}</span></div>
     <div class="fm-overall"><div class="fm-ovl"><span>Overall</span>${typeHtml}</div>${chip(overall)}</div>
     <div class="fm-grid">${rows}</div><div class="fm-leg">${legend}</div></div>`;
 }
@@ -16238,7 +16247,7 @@ function matchHistoryCardHtml(r, me, opts) {
         ${scoreColHtml}${ratingDeltaHtml(r.ratingDelta)}
       </div>
       <div class="mc-vs-row">${teamLinkHtml(me.teamId, me.teamName, me.teamLogo)}<span class="mc-vs-sep">vs</span>${teamLinkHtml(r.opponentTeamId, r.opponentTeam, r.opponentTeamLogo)}</div>
-      ${rateKey && accountRatePending.has(rateKey) ? `<button type="button" class="mc-rate-btn" data-rate="${escapeHtml(rateKey)}">Rate opponents</button>` : ""}
+      ${rateKey && accountRatePending.has(rateKey) ? `<button type="button" class="mc-rate-btn" data-rate="${escapeHtml(rateKey)}">Rate players</button>` : ""}
       ${rateKey && accountRatedKeys.has(rateKey) ? `<button type="button" class="mc-rate-edit" data-rate="${escapeHtml(rateKey)}" aria-label="Edit the ratings you gave" title="Edit the ratings you gave"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>` : ""}
     </div>
   </div>`;
