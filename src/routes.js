@@ -6100,7 +6100,7 @@ const RATINGS_TO_UNLOCK = 3;
 // How many of someone's most recent finished matches stay rate-able (My Profile
 // shows them all); the pop-up on opening the app only ever shows the newest few
 // of these — see RATING_POPUP_SIZE in app.js.
-const RATING_QUEUE_SIZE = 12;
+const RATING_QUEUE_SIZE = 10;
 const RATING_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
 function ratingMatchTime(league, f, rubber) {
