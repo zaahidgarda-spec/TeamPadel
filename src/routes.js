@@ -608,7 +608,7 @@ function imageTooLarge(res, dataUrl) {
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
 // Payment details on a team or player record (see sanitize).
-const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken", "paidCents", "payments", "coveredByTeam", "lumpCents", "overpaidCents", "paidSoFarCents", "balanceCents"];
+const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken", "paidCents", "payments", "discountCents", "discountNote", "shareCents", "owedCents", "feeCents", "coveredByTeam", "lumpCents", "overpaidCents", "paidSoFarCents", "balanceCents"];
 function sanitize(league, req) {
   const user = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
@@ -629,7 +629,9 @@ function sanitize(league, req) {
     // claimRequest names who's contesting a record — only this league's
     // own admin has any business seeing that.
     const players = rest.players.map(({ payLinkToken, claimRequest, ...p }) => {
-      const visible = viewerIsThisTeam ? p : Object.fromEntries(Object.entries(p).filter(([k]) => !PAYMENT_FIELDS.includes(k)));
+      const visible = viewerIsThisTeam
+        ? (league.registrationFeeCents ? { ...p, shareCents: playerShareCents(league, t, p) } : p)
+        : Object.fromEntries(Object.entries(p).filter(([k]) => !PAYMENT_FIELDS.includes(k)));
       return isAdmin ? { ...visible, claimRequest } : visible;
     });
     return {
@@ -637,7 +639,7 @@ function sanitize(league, req) {
       // What's been paid toward the team's fee and what's left, whoever paid it
       // (the players or the team); the payment fields above are already stripped
       // for anyone who isn't this team's captain or the admin.
-      ...(viewerIsThisTeam && league.registrationFeeCents ? { paidSoFarCents: teamPaidCents(league, t), balanceCents: teamBalanceCents(league, t) } : {}),
+      ...(viewerIsThisTeam && league.registrationFeeCents ? { feeCents: teamFeeCents(league, t), paidSoFarCents: teamPaidCents(league, t), balanceCents: teamBalanceCents(league, t) } : {}),
       code: viewerIsThisTeam ? code : undefined,
       notifyEmail: viewerIsThisTeam ? notifyEmail : undefined,
       // Kit design (photos, sponsor placement, who's ordering) is as
@@ -4779,21 +4781,22 @@ router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
       owed += teamBalanceCents(league, team);
       if (!tracked || team.paymentStatus === "paid") return;
       const players = team.players.map((p) => ({
-        playerId: p.id, name: p.name, owedCents: playerOwedCents(league, team, p), paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team),
+        playerId: p.id, name: p.name, owedCents: playerOwedCents(league, team, p), paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team, p), discountCents: p.discountCents || 0,
       })).filter((p) => p.owedCents > 0);
       if (!players.length) return;
-      teams.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: fee, teamOwedCents: teamBalanceCents(league, team), players });
+      teams.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: teamFeeCents(league, team), teamOwedCents: teamBalanceCents(league, team), players });
     });
     // The bar: money in from teams that have paid in full, money in part from
     // teams still paying, and what's left. Each team gets a bar of its own.
     let fullPaid = 0, partPaid = 0;
     const teamBars = league.teams.map((team) => {
+      const tFee = teamFeeCents(league, team);
       const paid = teamPaidCents(league, team);
-      const complete = team.paymentStatus === "paid" || paid >= fee - 1;
-      if (complete) fullPaid += fee; else partPaid += paid;
-      return { teamId: team.id, teamName: team.name, feeCents: fee, paidCents: Math.min(paid, fee), complete, playerCount: team.players.length };
-    }).sort((a, b) => (a.paidCents / a.feeCents) - (b.paidCents / b.feeCents) || a.teamName.localeCompare(b.teamName));
-    const total = fee * league.teams.length;
+      const complete = team.paymentStatus === "paid" || paid >= tFee - 1;
+      if (complete) fullPaid += tFee; else partPaid += paid;
+      return { teamId: team.id, teamName: team.name, feeCents: tFee, baseFeeCents: fee, discountCents: team.discountCents || 0, discountNote: team.discountNote || "", paidCents: Math.min(paid, tFee), complete, playerCount: team.players.length };
+    }).sort((a, b) => ((a.feeCents ? a.paidCents / a.feeCents : 1) - (b.feeCents ? b.paidCents / b.feeCents : 1)) || a.teamName.localeCompare(b.teamName));
+    const total = teamBars.reduce((t, b) => t + b.feeCents, 0);
     leagues.push({
       leagueId: league.id, leagueName: league.name, feeCents: fee, tracked, collectedCents: collected, owedCents: owed, teamCount: league.teams.length,
       totalCents: total, fullPaidCents: fullPaid, partPaidCents: partPaid, teamsPaid: teamBars.filter((t) => t.complete).length, teamBars,
@@ -5943,9 +5946,25 @@ router.put("/leagues/:leagueId/court-settings", requireAdmin, (req, res) => {
    server-to-server ITN webhook confirms the payment (see /payfast/notify
    below) — landing back on the site is never itself proof of payment. */
 
-function playerShareCents(league, team) {
-  const n = team.players.length || 1;
-  return Math.round((league.registrationFeeCents || 0) / n);
+// A team or a single player can be given a discount. The team's fee is the
+// league's less the team's discount; each player's share is that split evenly,
+// less their own discount (which lowers what the team owes, not what the
+// others pay).
+function teamBaseFeeCents(league, team) {
+  return Math.max(0, (league.registrationFeeCents || 0) - Math.min(team.discountCents || 0, league.registrationFeeCents || 0));
+}
+function playerBaseShareCents(league, team) {
+  return Math.round(teamBaseFeeCents(league, team) / (team.players.length || 1));
+}
+function playerShareCents(league, team, p) {
+  const base = playerBaseShareCents(league, team);
+  return p ? Math.max(0, base - Math.min(p.discountCents || 0, base)) : base;
+}
+// What the team owes in total once every discount is taken off.
+function teamFeeCents(league, team) {
+  const base = playerBaseShareCents(league, team);
+  const playerDiscounts = team.players.reduce((t, p) => t + Math.min(p.discountCents || 0, base), 0);
+  return Math.max(0, teamBaseFeeCents(league, team) - playerDiscounts);
 }
 // Payments move freely between the team and its players: the team owes one fee,
 // and anything a player pays toward their share or the team pays as a lump sum
@@ -5955,12 +5974,12 @@ function playerShareCents(league, team) {
 // existed, their whole share if they were marked paid.
 function playerPaidCents(league, team, p) {
   if (p.paidCents != null) return p.paidCents;
-  return p.paymentStatus === "paid" && !p.coveredByTeam ? playerShareCents(league, team) : 0;
+  return p.paymentStatus === "paid" && !p.coveredByTeam ? playerShareCents(league, team, p) : 0;
 }
 // What's still owed on a player's share (nothing once the team's covered it).
 function playerOwedCents(league, team, p) {
   if (p.paymentStatus === "paid") return 0;
-  return Math.max(0, playerShareCents(league, team) - playerPaidCents(league, team, p));
+  return Math.max(0, playerShareCents(league, team, p) - playerPaidCents(league, team, p));
 }
 // Records one payment from a player — the whole share or just part of it.
 // Once their payments add up to the share they're paid in full.
@@ -5970,7 +5989,7 @@ function addPlayerPayment(league, team, p, cents, method, ref, at) {
   p.paidCents = total;
   p.paymentMethod = method; p.paymentRef = ref || null; p.paidAt = at;
   p.coveredByTeam = false;
-  p.paymentStatus = total >= playerShareCents(league, team) - 1 ? "paid" : "unpaid";
+  p.paymentStatus = total >= playerShareCents(league, team, p) - 1 ? "paid" : "unpaid";
   reconcileTeamPayment(league, team);
 }
 function resetPlayerPayments(p) {
@@ -5978,12 +5997,12 @@ function resetPlayerPayments(p) {
   p.paidCents = 0; p.payments = []; p.coveredByTeam = false;
 }
 function teamPaidCents(league, team) {
-  const fee = league.registrationFeeCents || 0;
+  const fee = teamFeeCents(league, team);
   if (team.paymentStatus === "paid") return fee;
   return (team.lumpCents || 0) + team.players.reduce((t, p) => t + playerPaidCents(league, team, p), 0);
 }
 function teamBalanceCents(league, team) {
-  return Math.max(0, (league.registrationFeeCents || 0) - teamPaidCents(league, team));
+  return Math.max(0, teamFeeCents(league, team) - teamPaidCents(league, team));
 }
 // The team fee is settled: everyone still unpaid is covered by it.
 function coverTeamPlayers(team, method, ref, at) {
@@ -5996,8 +6015,8 @@ function coverTeamPlayers(team, method, ref, at) {
 // Keeps the team's own status in step with what its players have paid: all the
 // shares in means the team is paid; a share taken back reopens it.
 function reconcileTeamPayment(league, team) {
-  const fee = league.registrationFeeCents || 0;
-  if (!fee) return;
+  if (!league.registrationFeeCents) return;
+  const fee = teamFeeCents(league, team);
   if (team.paymentStatus === "paid" && team.paymentMethod === "split") {
     if (teamPaidCents(league, { ...team, paymentStatus: "unpaid" }) < fee - 1) { team.paymentStatus = "unpaid"; team.paymentMethod = null; team.paidAt = null; }
     return;
@@ -6006,6 +6025,65 @@ function reconcileTeamPayment(league, team) {
     team.paymentStatus = "paid"; team.paymentMethod = "split"; team.paidAt = Date.now();
   }
 }
+// After a discount changes what someone owes: paid up if what they've put in now
+// covers it, or open again if a discount was taken away.
+function reconcilePlayerStatus(league, team, p) {
+  if (p.coveredByTeam) return;
+  const share = playerShareCents(league, team, p);
+  const paid = playerPaidCents(league, team, p);
+  if (p.paymentStatus !== "paid" && (share === 0 || (paid > 0 && paid >= share - 1))) {
+    p.paymentStatus = "paid"; p.paymentMethod = share === 0 ? "discount" : (p.paymentMethod || "manual"); p.paidAt = p.paidAt || Date.now();
+    if (p.paidCents == null) p.paidCents = 0;
+  } else if (p.paymentStatus === "paid" && p.paidCents != null && paid < share - 1) {
+    p.paymentStatus = "unpaid"; p.paymentMethod = null; p.paidAt = null;
+  }
+}
+// Reads "amountRands" or "percent" from a request into cents, against `baseCents`.
+function discountCentsFromBody(body, baseCents) {
+  const b = body || {};
+  let cents;
+  if (b.percent !== undefined && b.percent !== null && b.percent !== "") {
+    const pct = Number(b.percent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return { error: "A percentage must be between 0 and 100." };
+    cents = Math.round(baseCents * pct / 100);
+  } else {
+    const rands = Number(b.amountRands);
+    if (!Number.isFinite(rands) || rands < 0) return { error: "Enter an amount in rands, or a percentage." };
+    cents = Math.round(rands * 100);
+  }
+  if (cents > baseCents) return { error: `That's more than what's owed (R${(baseCents / 100).toFixed(2)}).` };
+  return { cents };
+}
+router.put("/leagues/:leagueId/teams/:teamId/discount", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const team = league && league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  const r = discountCentsFromBody(req.body, league.registrationFeeCents || 0);
+  if (r.error) return res.status(400).json({ error: r.error });
+  team.discountCents = r.cents || 0;
+  team.discountNote = cleanHubText(req.body && req.body.note, 120) || null;
+  if (!team.discountCents) { delete team.discountCents; delete team.discountNote; }
+  team.players.forEach((p) => reconcilePlayerStatus(league, team, p));
+  reconcileTeamPayment(league, team);
+  logAudit(league, req, null, "team_discount", { teamName: team.name, discountCents: team.discountCents || 0, note: team.discountNote || "" });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, discountCents: team.discountCents || 0, feeCents: teamFeeCents(league, team) });
+});
+router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/discount", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const { team, player } = league ? findTeamAndPlayer(league, req.params.teamId, req.params.playerId) : {};
+  if (!team || !player) return res.status(404).json({ error: "Player not found." });
+  const r = discountCentsFromBody(req.body, playerBaseShareCents(league, team));
+  if (r.error) return res.status(400).json({ error: r.error });
+  player.discountCents = r.cents || 0;
+  player.discountNote = cleanHubText(req.body && req.body.note, 120) || null;
+  if (!player.discountCents) { delete player.discountCents; delete player.discountNote; }
+  reconcilePlayerStatus(league, team, player);
+  reconcileTeamPayment(league, team);
+  logAudit(league, req, null, "player_discount", { playerName: player.name, teamName: team.name, discountCents: player.discountCents || 0, note: player.discountNote || "" });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, discountCents: player.discountCents || 0, shareCents: playerShareCents(league, team, player) });
+});
 function findTeamAndPlayer(league, teamId, playerId) {
   const team = league.teams.find((t) => t.id === teamId);
   const player = team && team.players.find((p) => p.id === playerId);
@@ -6087,7 +6165,7 @@ router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token", (req, res) => {
   }
   res.json({
     leagueName: league.name, teamName: team.name, teamLogo: team.logo || "",
-    amountCents: teamBalanceCents(league, team), feeCents: league.registrationFeeCents || 0,
+    amountCents: teamBalanceCents(league, team), feeCents: teamFeeCents(league, team),
     paid: team.paymentStatus === "paid" || teamBalanceCents(league, team) <= 0, paidAt: team.paidAt || null,
     // Same league-wide context as the per-player pay-link, so a team's
     // lump-sum link looks identical to an individual player's — see that
@@ -6177,8 +6255,8 @@ router.get("/leagues/:leagueId/teams/:teamId/players/:playerId/pay-link/:token",
   }
   res.json({
     leagueName: league.name, teamName: team.name, teamLogo: team.logo || "", playerName: player.name,
-    amountCents: playerOwedCents(league, team, player), shareCents: playerShareCents(league, team),
-    paidCents: player.paymentStatus === "paid" && !player.coveredByTeam && player.paidCents == null ? playerShareCents(league, team) : (player.paidCents || 0),
+    amountCents: playerOwedCents(league, team, player), shareCents: playerShareCents(league, team, player),
+    paidCents: player.paymentStatus === "paid" && !player.coveredByTeam && player.paidCents == null ? playerShareCents(league, team, player) : (player.paidCents || 0),
     paid: player.paymentStatus === "paid", paidAt: player.paidAt || null,
     // League-wide context — the venue photo (fetched lazily by the client
     // from GET /leagues/:leagueId/court-photo, same as a hub card, rather

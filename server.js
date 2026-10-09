@@ -254,7 +254,7 @@ app.get("/pay/:leagueId/:teamId/:playerId/:token", (req, res) => {
     const league = store.getLeague(leagueId);
     const { team, player } = league ? routes.findTeamAndPlayer(league, teamId, playerId) : {};
     if (league && team && player && player.payLinkToken === token) {
-      const amountRands = (routes.playerShareCents(league, team) / 100).toFixed(2);
+      const amountRands = (routes.playerShareCents(league, team, player) / 100).toFixed(2);
       title = `Payment link — R${amountRands}`;
       description = `${possessive(player.name)} share for ${team.name} · ${league.name} — tap to pay securely via PayFast.`;
     }

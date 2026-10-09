@@ -3184,3 +3184,5 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-nofee-name{font-weight:600;}
 .ah-nofee-set{display:flex;align-items:center;gap:6px;}
 .ah-nofee-set input{width:110px;}
+.disc-tag{display:inline-block;margin-left:8px;font-size:11px;font-weight:700;color:#17803D;background:#E5F5EA;border-radius:999px;padding:1px 8px;vertical-align:middle;}
+.ah-team-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:6px;}
