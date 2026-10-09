@@ -713,7 +713,10 @@ function sanitize(league, req) {
   // admin-gated /custom-charges endpoint below — never through this
   // general payload, same reasoning as kitShareToken/payLinkToken above.
   const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, customCharges, ...leagueRest } = league;
-  return { ...leagueRest, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote, seasonHistoryCount: (seasonHistory || []).length, kitShareLinkActive: !!kitShareToken };
+  // Players between teams: their names and photos only — payment details and
+  // pay-link tokens are never part of this public payload.
+  const freeAgents = (league.freeAgents || []).map(({ payLinkToken, claimRequest, paymentMode, paymentStatus, paymentMethod, paymentRef, paidAt, paidCents, payments, coveredByTeam, overpaidCents, ...p }) => p);
+  return { ...leagueRest, freeAgents, teams, fixtures, playoffs, adminRegistered: !!adminPasswordHash, potwByRound, myPotwVote, seasonHistoryCount: (seasonHistory || []).length, kitShareLinkActive: !!kitShareToken };
 }
 function sanitizeOne(f, isAdmin, teamId) {
   const copy = JSON.parse(JSON.stringify(f));
@@ -1846,12 +1849,15 @@ router.put("/players/email-notifications", (req, res) => {
 // record and keep their history.
 function archivedOnlyRecords(league) {
   const live = new Set();
-  league.teams.forEach((t) => t.players.forEach((p) => live.add(t.id + ":" + p.id)));
+  // A player who's been moved to another team (or is between teams) isn't a
+  // "past" record — he's still here, so his old-team copy isn't offered again.
+  league.teams.forEach((t) => t.players.forEach((p) => { live.add(t.id + ":" + p.id); live.add("*:" + p.id); }));
+  (league.freeAgents || []).forEach((p) => live.add("*:" + p.id));
   const found = new Map();
   (league.seasonHistory || []).forEach((snap) => {
     (snap.teams || []).forEach((t) => (t.players || []).forEach((p) => {
       const k = t.id + ":" + p.id;
-      if (live.has(k) || found.has(k)) return;
+      if (live.has(k) || live.has("*:" + p.id) || found.has(k)) return;
       found.set(k, { team: t, player: p, label: snap.label || "" });
     }));
   });
@@ -1862,6 +1868,9 @@ function archivedOnlyRecords(league) {
 function findRecord(league, teamId, playerId) {
   const live = findTeamAndPlayer(league, teamId, playerId);
   if (live.team && live.player) return { ...live, archived: false };
+  // Between teams for the new season: still his record, just not on a roster.
+  const between = (league.freeAgents || []).find((p) => p.id === playerId);
+  if (between) return { team: live.team || league.teams.find((t) => t.id === between.removedFromTeamId) || { id: teamId, name: "No team yet", players: [] }, player: between, archived: true };
   const hit = archivedOnlyRecords(league).find((r) => r.team.id === teamId && r.player.id === playerId);
   return hit ? { team: hit.team, player: hit.player, archived: true } : { team: null, player: null, archived: false };
 }
@@ -1881,6 +1890,14 @@ function allPlayersFlat({ includePast } = {}) {
       });
     });
     if (includePast) {
+      (league.freeAgents || []).forEach((p) => {
+        results.push({
+          leagueId: league.id, leagueName: league.name,
+          teamId: p.removedFromTeamId || "none", teamName: "No team yet", teamLogo: "",
+          playerId: p.id, playerName: p.name, photo: "",
+          claimedByUserId: p.claimedByUserId || null,
+        });
+      });
       archivedOnlyRecords(league).forEach(({ team, player: p, label }) => {
         results.push({
           leagueId: league.id, leagueName: league.name,
@@ -2617,6 +2634,11 @@ router.get("/players/profile", requirePlayerUser, (req, res) => {
     // awards, rating) already reads across archived seasons. So the claim
     // survives as a former team instead of being dropped, history intact.
     let retired = false;
+    if (league && team && !player) {
+      // Taken off the team for the new season and not placed yet.
+      const between = (league.freeAgents || []).find((x) => x.id === claim.playerId);
+      if (between) { player = between; retired = true; }
+    }
     if (league && (!team || !player)) {
       for (const snap of league.seasonHistory || []) {
         const t = (snap.teams || []).find((x) => x.id === claim.teamId);
@@ -4437,6 +4459,81 @@ router.delete(
     res.json({ ok: true });
   }
 );
+
+// Between seasons a player can be taken off a team without being deleted (he
+// goes into the league's "no team yet" list, with his history, photo and
+// account link intact) or moved straight to another team. Setup only, since
+// mid-season a roster change would rewrite who played what.
+function movePlayerBetweenTeams(league, player, fromTeam, toTeam) {
+  // Whatever he was on the old team doesn't carry: not an owner, not gold.
+  if (fromTeam) {
+    fromTeam.players = fromTeam.players.filter((p) => p.id !== player.id);
+    fromTeam.ownerIds = (fromTeam.ownerIds || []).filter((id) => id !== player.id);
+  }
+  league.freeAgents = (league.freeAgents || []).filter((p) => p.id !== player.id);
+  player.gold = false;
+  // A new team, a new fee: last season's payment record doesn't follow him.
+  player.paymentStatus = "unpaid"; player.paymentMethod = null; player.paymentRef = null; player.paidAt = null;
+  player.paidCents = 0; player.payments = []; player.coveredByTeam = false;
+  if (toTeam) {
+    delete player.removedFromTeamId; delete player.removedAt;
+    toTeam.players.push(player);
+  } else {
+    player.removedFromTeamId = fromTeam ? fromTeam.id : player.removedFromTeamId || null;
+    player.removedAt = Date.now();
+    league.freeAgents.push(player);
+  }
+  // Accounts linked to him follow him to the new team.
+  const oldTeamId = fromTeam ? fromTeam.id : player.removedFromTeamId;
+  if (toTeam) {
+    store.getUsersIndex().forEach(({ id }) => {
+      const user = store.getUser(id);
+      if (!user || !(user.claims || []).some((c) => c.leagueId === league.id && c.playerId === player.id)) return;
+      const seen = new Set();
+      user.claims = user.claims.map((c) => (c.leagueId === league.id && c.playerId === player.id ? { ...c, teamId: toTeam.id } : c))
+        .filter((c) => { const k = c.leagueId + ":" + c.teamId + ":" + c.playerId; if (seen.has(k)) return false; seen.add(k); return true; });
+      store.saveUser(user.id, user);
+    });
+  }
+  return oldTeamId;
+}
+function requireSetupTeamLeague(league, res) {
+  if (league.format === "pairs") { res.status(400).json({ error: "Moving players between teams isn't available for a Vibora league." }); return false; }
+  if (leagueStatus(league) !== "setup") { res.status(400).json({ error: "Players can be moved between seasons, before the new season starts." }); return false; }
+  return true;
+}
+router.post("/leagues/:leagueId/teams/:teamId/players/:playerId/move", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  if (!requireSetupTeamLeague(league, res)) return;
+  const from = league.teams.find((t) => t.id === req.params.teamId);
+  const player = from && from.players.find((p) => p.id === req.params.playerId);
+  if (!player) return res.status(404).json({ error: "Player not found on that team." });
+  const toId = req.body && req.body.toTeamId;
+  const to = toId ? league.teams.find((t) => t.id === toId) : null;
+  if (toId && !to) return res.status(404).json({ error: "That team isn't in this league." });
+  if (to && to.id === from.id) return res.status(400).json({ error: "He's already on that team." });
+  if (to && to.players.some((p) => p.name.toLowerCase() === player.name.toLowerCase())) return res.status(400).json({ error: `${to.name} already has a player called ${player.name}.` });
+  movePlayerBetweenTeams(league, player, from, to);
+  logAudit(league, req, null, to ? "player_transfer" : "player_remove_from_team", { playerName: player.name, teamName: from.name, toTeamName: to ? to.name : null });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+// Puts someone from the "no team yet" list on a team.
+router.post("/leagues/:leagueId/free-agents/:playerId/assign", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  if (!requireSetupTeamLeague(league, res)) return;
+  const player = (league.freeAgents || []).find((p) => p.id === req.params.playerId);
+  if (!player) return res.status(404).json({ error: "Player not found." });
+  const to = league.teams.find((t) => t.id === (req.body && req.body.toTeamId));
+  if (!to) return res.status(404).json({ error: "Choose a team." });
+  if (to.players.some((p) => p.name.toLowerCase() === player.name.toLowerCase())) return res.status(400).json({ error: `${to.name} already has a player called ${player.name}.` });
+  movePlayerBetweenTeams(league, player, null, to);
+  logAudit(league, req, null, "player_assign", { playerName: player.name, toTeamName: to.name });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
 
 // Every match-history reference to a player id that no longer has a roster
 // entry — the state left behind by a delete that happened before the

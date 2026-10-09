@@ -7854,6 +7854,39 @@ function renderAdminRoster() {
   c.innerHTML = "";
   if (league.teams.length === 0) { c.innerHTML = '<p class="empty">Add teams first.</p>'; return; }
   league.teams.forEach((t) => c.appendChild(adminRosterBlock(t)));
+  // Players taken off a team and not placed yet (see "Move" on a player).
+  const between = league.freeAgents || [];
+  if (between.length && league.format !== "pairs") {
+    const box = document.createElement("div");
+    box.className = "roster-team";
+    box.innerHTML = `<div class="roster-head"><div style="font-family:'Oswald',sans-serif;font-size:15px;text-transform:uppercase;">No team yet &middot; ${between.length}</div></div>
+      <p class="note" style="margin:4px 0 8px;">Taken off a team but kept as players, with their history. Put them on a team for the new season.</p>`;
+    const ul = document.createElement("ul"); ul.className = "plain";
+    between.forEach((p) => {
+      const li = document.createElement("li");
+      li.style.cssText = "flex-wrap:wrap;gap:8px;";
+      const was = league.teams.find((x) => x.id === p.removedFromTeamId);
+      li.innerHTML = `<span class="name-tag"><b>${escapeHtml(p.name)}</b>${was ? `<span class="note" style="margin-left:8px;">was ${escapeHtml(was.name)}</span>` : ""}</span>`;
+      const pick = document.createElement("select");
+      pick.className = "inline-edit";
+      pick.innerHTML = '<option value="">Add to team…</option>' + league.teams.map((x) => `<option value="${x.id}">${escapeHtml(x.name)}</option>`).join("");
+      const go = document.createElement("button");
+      go.className = "secondary"; go.textContent = "Add";
+      go.onclick = async () => {
+        if (!pick.value) return;
+        go.disabled = true;
+        try {
+          await api(`/leagues/${currentLeagueId}/free-agents/${p.id}/assign`, { method: "POST", body: { toTeamId: pick.value } });
+          await refreshLeague(); renderAdminRoster(); renderRoster();
+          showToast(`${p.name} added to ${(league.teams.find((x) => x.id === pick.value) || {}).name || "the team"}.`);
+        } catch (e) { alert(e.message); go.disabled = false; }
+      };
+      li.append(pick, go);
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    c.appendChild(box);
+  }
 }
 function adminRosterBlock(t) {
   const wrap = document.createElement("div");
@@ -7955,6 +7988,44 @@ function adminRosterBlock(t) {
         } catch (e) { alert(e.message); }
       };
       li.appendChild(goldBtn);
+    }
+    // Between seasons: take him off this team without deleting him, or move him
+    // to another team. His history, photo and account link go with him.
+    if (league.status === "setup" && league.format !== "pairs" && myRole === "admin") {
+      const moveBtn = document.createElement("button");
+      moveBtn.className = "link"; moveBtn.style.marginLeft = "8px"; moveBtn.textContent = "Move";
+      moveBtn.title = "Transfer to another team, or take off this team";
+      moveBtn.onclick = () => {
+        li.querySelectorAll(".move-row").forEach((x) => x.remove());
+        li.style.flexWrap = "wrap";
+        const row = document.createElement("div");
+        row.className = "move-row";
+        row.style.cssText = "flex-basis:100%;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;";
+        const pick = document.createElement("select");
+        pick.className = "inline-edit";
+        pick.innerHTML = '<option value="">Choose…</option>'
+          + league.teams.filter((x) => x.id !== t.id).map((x) => `<option value="${x.id}">Transfer to ${escapeHtml(x.name)}</option>`).join("")
+          + '<option value="__none">Take off this team (keep as a player)</option>';
+        const go = document.createElement("button");
+        go.className = "secondary"; go.textContent = "Do it";
+        go.onclick = async () => {
+          if (!pick.value) return;
+          const toTeamId = pick.value === "__none" ? null : pick.value;
+          const toName = toTeamId ? (league.teams.find((x) => x.id === toTeamId) || {}).name : null;
+          if (!confirm(toName ? `Transfer ${p.name} from ${t.name} to ${toName}?\n\nHis history, photo and profile link go with him.` : `Take ${p.name} off ${t.name}?\n\nHe isn't deleted: he stays as a player with no team, and you can put him on a team later.`)) return;
+          go.disabled = true;
+          try {
+            await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${p.id}/move`, { method: "POST", body: { toTeamId } });
+            await refreshLeague(); renderAdminRoster(); renderRoster();
+            showToast(toName ? `${p.name} moved to ${toName}.` : `${p.name} is off ${t.name}. Find him under "No team yet".`);
+          } catch (e) { alert(e.message); go.disabled = false; }
+        };
+        const cancel = document.createElement("button");
+        cancel.className = "link"; cancel.textContent = "Cancel"; cancel.onclick = () => row.remove();
+        row.append(pick, go, cancel);
+        li.appendChild(row);
+      };
+      li.appendChild(moveBtn);
     }
     const del = document.createElement("button");
     del.className = "ghost"; del.innerHTML = "&times;";
