@@ -6755,7 +6755,7 @@ function renderPayReceivedHtml() {
 
 /* ---------- Admin hub: one page for every league ---------- */
 const AH_AREAS = [
-  ["payment", "Payments", "Players"], ["sponsor", "Sponsors", "Money in"], ["court", "Courts", "Money out"],
+  ["sponsor", "Sponsors", "Sponsors"], ["court", "Courts", "Courts"],
   ["kit", "Kits", "Deliveries"], ["followup", "Follow-ups", "Tasks"], ["note", "Notes", "Quick"],
 ];
 const AH_TYPE_LABEL = { payment: "Payment", sponsor: "Sponsor", court: "Court", kit: "Kit", followup: "Follow-up", note: "Note" };
@@ -6765,7 +6765,7 @@ const AH_STAGES = {
 };
 const AH_MONEY = { payment: true, sponsor: true, court: true };
 let ahItems = [], ahLeagues = [], ahMe = { name: "Admin", fromAccount: false }, ahPayments = { teams: [], leagues: [] };
-let ahMoneyTab = "players", ahOpenRow = null, ahPlayersLimit = 40;
+let ahOpenLeague = null, ahOpenTeam = null;
 let ahLeague = "all", ahArea = "home", ahStatus = "open", ahMode = "list", ahSearch = "", ahCompType = "auto", ahEditing = null, ahHint = "";
 async function loadAdminHub() {
   if (!isOwner) return;
@@ -6887,7 +6887,7 @@ function bindAhItems(root) {
   });
 }
 function ahComposerHtml() {
-  const area = ahArea === "money" ? (ahMoneyTab === "players" ? "payment" : ahMoneyTab) : (ahArea !== "home" && ahArea !== "inbox" ? ahArea : null);
+  const area = ahArea !== "home" && ahArea !== "inbox" ? ahArea : null;
   if (area && ahCompType === "auto") ahCompType = area;
   const types = [["auto", "Auto"], ...Object.entries(AH_TYPE_LABEL)];
   return `<div class="card ah-composer">
@@ -6922,8 +6922,9 @@ function bindAhComposer(root) {
   };
 }
 function ahHeaderHtml() {
+  const title = '<div class="ah-title-row"><h2>Note Machine</h2><span class="ah-admin-tag">Admin only</span></div>';
   const who = ahMe.fromAccount ? `Signed in as <b>${escapeHtml(ahMe.name)}</b>` : `Notes say <b>${escapeHtml(ahMe.name)}</b> <button class="link" id="ah-setname" type="button">Set your name</button>`;
-  return `<div class="ah-head">
+  return `<div class="ah-head">${title}
     <div class="ah-who">${who}</div>
     <div class="ah-controls">
       <select id="ah-league" aria-label="League"><option value="all">All leagues</option>${ahLeagues.map((l) => `<option value="${l.id}"${l.id === ahLeague ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}</select>
@@ -6939,18 +6940,16 @@ function renderAdminHub() {
     const open = visible.filter(ahIsOpen);
     const overdue = open.filter(ahOverdue).length;
     html += `<button type="button" class="ah-inbox" id="ah-open-inbox"><b>Everything open</b><span>${open.length} item${open.length === 1 ? "" : "s"}${overdue ? ` · <em>${overdue} overdue</em>` : ""}</span></button>`;
+    html += ahPaymentsDashboardHtml();
     html += `<div class="ah-cards">${AH_AREAS.map(([k, l, tag]) => {
       const st = ahCardStats(k);
       return `<button type="button" class="ah-card t-${k}" data-area="${k}"><span class="ah-card-top"><b>${l}</b><span class="ah-pill t-${k}">${tag}</span></span><span class="ah-big">${st.big}</span><span class="ah-sub">${st.sub}</span>${st.extra ? `<span class="ah-flag">${st.extra}</span>` : ""}</button>`;
     }).join("")}</div>`;
     html += ahComposerHtml();
-  } else if (ahArea === "money") {
-    html += ahMoneyHtml();
-    html += ahComposerHtml();
   } else {
     const isInbox = ahArea === "inbox";
     const title = isInbox ? "Everything open" : (AH_AREAS.find((a) => a[0] === ahArea) || [0, ""])[1];
-    let list = visible.filter((i) => isInbox || i.type === ahArea);
+    let list = visible.filter((i) => isInbox || i.type === ahArea || (ahArea === "note" && i.type === "payment"));
     if (ahStatus === "open") list = list.filter(ahIsOpen); else if (ahStatus === "done") list = list.filter((i) => !ahIsOpen(i));
     // Overdue first, then pinned, then by due date, then newest.
     list.sort((a, b) => (ahOverdue(b) ? 1 : 0) - (ahOverdue(a) ? 1 : 0) || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || b.createdAt - a.createdAt);
@@ -6972,84 +6971,62 @@ function renderAdminHub() {
   const lg = root.querySelector("#ah-league"); if (lg) lg.onchange = () => { ahLeague = lg.value; renderAdminHub(); };
   const sr = root.querySelector("#ah-search"); if (sr) sr.oninput = () => { ahSearch = sr.value; const pos = sr.selectionStart; renderAdminHub(); const n = el("ah-search"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
   const sn = root.querySelector("#ah-setname"); if (sn) sn.onclick = async () => { const v = prompt("Your name, so notes show who made them:", ahMe.name === "Admin" ? "" : ahMe.name); if (v && v.trim()) { try { await ahApi("/name", { method: "POST", body: { name: v } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } } };
-  root.querySelectorAll(".ah-card").forEach((c) => { c.onclick = () => {
-    const a = c.dataset.area;
-    // Payments, Sponsors and Courts are tabs of one money sheet.
-    if (a === "payment" || a === "sponsor" || a === "court") { ahArea = "money"; ahMoneyTab = a === "payment" ? "players" : a; }
-    else ahArea = a;
-    ahStatus = "open"; ahMode = "list"; ahCompType = "auto"; ahOpenRow = null; renderAdminHub();
-  }; });
+  root.querySelectorAll(".ah-card").forEach((c) => { c.onclick = () => { ahArea = c.dataset.area; ahStatus = "open"; ahMode = "list"; ahCompType = "auto"; renderAdminHub(); }; });
   const inbox = root.querySelector("#ah-open-inbox"); if (inbox) inbox.onclick = () => { ahArea = "inbox"; ahStatus = "open"; ahCompType = "auto"; renderAdminHub(); };
   const back = root.querySelector("#ah-back"); if (back) back.onclick = () => { ahArea = "home"; ahCompType = "auto"; renderAdminHub(); };
   root.querySelectorAll(".ah-chips [data-s]").forEach((b) => { b.onclick = () => { ahStatus = b.dataset.s; renderAdminHub(); }; });
   root.querySelectorAll(".ah-chips [data-m]").forEach((b) => { b.onclick = () => { ahMode = b.dataset.m; renderAdminHub(); }; });
   bindAhItems(root);
   bindAhComposer(root);
-  bindAhMoney(root);
+  bindAhPayments(root);
 }
-function ahMoneyTotals() {
-  const lgs = ahPayments.leagues.filter((l) => l.tracked && (ahLeague === "all" || l.leagueId === ahLeague));
-  const playersIn = lgs.reduce((t, l) => t + l.collectedCents, 0), playersOwed = lgs.reduce((t, l) => t + l.owedCents, 0);
-  const vis = ahItems.filter(ahVisible);
-  const sum = (type, f) => vis.filter((i) => i.type === type).reduce((t, i) => t + f(i), 0);
-  const spoIn = sum("sponsor", (i) => i.paidCents || 0), spoOwed = sum("sponsor", (i) => (ahIsOpen(i) ? ahOwed(i) : 0));
-  const othIn = sum("payment", (i) => i.paidCents || 0), othOwed = sum("payment", (i) => (ahIsOpen(i) ? ahOwed(i) : 0));
-  const outPaid = sum("court", (i) => i.paidCents || 0), outOwed = sum("court", (i) => (ahIsOpen(i) ? ahOwed(i) : 0));
-  return { moneyIn: playersIn + spoIn + othIn, stillIn: playersOwed + spoOwed + othOwed, moneyOut: outPaid, stillOut: outOwed };
+// The payments dashboard: one bar per league, split into paid in full (green),
+// part paid (amber) and still owed (grey). Tap a league for a bar per team,
+// tap a team for the players who still owe.
+function ahBarHtml(paid, part, total) {
+  const pc = (n) => (total ? Math.max(0, Math.min(100, (n / total) * 100)) : 0);
+  return `<div class="ah-bar" role="img" aria-label="${Math.round(pc(paid + part))} percent paid"><i class="f-paid" style="width:${pc(paid)}%"></i><i class="f-part" style="width:${pc(part)}%"></i></div>`;
 }
-function ahMoneyRowHtml(who, sub, league, left, kind, key) {
-  const pill = left === null ? '<span class="ah-pill t-note">No amount</span>' : left === 0 ? '<span class="ah-pill t-sponsor">Paid</span>' : `<span class="ah-pill ${kind === "part" ? "t-payment" : "t-kit"}">${fmtRands(left)}</span>`;
-  return `<button type="button" class="ah-trow${ahOpenRow === key ? " open" : ""}" data-key="${escapeHtml(key)}"><span class="ah-t-who"><b>${escapeHtml(who)}</b>${sub ? `<span class="note">${escapeHtml(sub)}</span>` : ""}</span><span class="ah-t-league">${escapeHtml(league)}</span><span class="ah-t-left">${pill}</span></button>`;
-}
-function ahMoneyHtml() {
-  const tot = ahMoneyTotals();
-  const vis = ahItems.filter(ahVisible);
-  const tabs = [["players", "Players"], ["sponsor", "Sponsors"], ["court", "Courts"], ["payment", "Other"]];
-  const itemsFor = (type) => vis.filter((i) => i.type === type && (ahStatus === "all" || (ahStatus === "open") === ahIsOpen(i)));
-  const counts = { players: ahPaymentsVisible().reduce((t, r) => t + r.players.length, 0), sponsor: vis.filter((i) => i.type === "sponsor" && ahIsOpen(i)).length, court: vis.filter((i) => i.type === "court" && ahIsOpen(i)).length, payment: vis.filter((i) => i.type === "payment" && ahIsOpen(i)).length };
-  let html = `<div class="ah-area-head"><button type="button" class="link" id="ah-back">← All areas</button><h2>Money</h2></div>
-    <div class="ah-tiles"><div class="card"><div class="note">Money in</div><div class="ah-big">${fmtRands(tot.moneyIn)}</div><div class="note">${fmtRands(tot.stillIn)} still to come</div></div>
-    <div class="card"><div class="note">Money out</div><div class="ah-big">${fmtRands(tot.moneyOut)}</div><div class="note">${fmtRands(tot.stillOut)} still to pay</div></div></div>
-    <div class="ah-tabs">${tabs.map(([k, l]) => `<button type="button" class="ah-tab${ahMoneyTab === k ? " on" : ""}" data-tab="${k}">${l}${counts[k] ? ` <span>${counts[k]}</span>` : ""}</button>`).join("")}</div>`;
-  if (ahMoneyTab === "players") {
-    const lgs = ahPayments.leagues.filter((l) => ahLeague === "all" || l.leagueId === ahLeague);
-    html += `<details class="ah-counted"${lgs.some((l) => !l.tracked) ? " open" : ""}><summary>Leagues counted: ${lgs.filter((l) => l.tracked).length} of ${lgs.length}</summary>
-      ${lgs.map((l) => `<div class="ah-lrow"><span><b>${escapeHtml(l.leagueName)}</b><span class="note"> · ${fmtRands(l.feeCents)} a team · ${l.tracked ? `${fmtRands(l.collectedCents)} in, ${fmtRands(l.owedCents)} left` : "not counted"}</span></span><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="${l.tracked ? "0" : "1"}">${l.tracked ? "Stop counting" : "Count it"}</button></div>`).join("") || '<p class="note">No leagues have a fee set.</p>'}
-      <p class="note" style="margin:6px 0 0;">Fees paid by cash or EFT outside the app only show as owed until you record them. Count a league once you start recording its payments here.</p></details>`;
-    const q = ahSearch.trim().toLowerCase();
-    const rows = [];
-    ahPaymentsVisible().forEach((r) => r.players.forEach((p) => {
-      if (q && !(p.name + " " + r.teamName + " " + r.leagueName).toLowerCase().includes(q)) return;
-      rows.push({ r, p });
-    }));
-    rows.sort((a, b) => b.p.owedCents - a.p.owedCents || a.p.name.localeCompare(b.p.name));
-    const shown = rows.slice(0, ahPlayersLimit);
-    html += `<div class="ah-table"><div class="ah-trow head"><span class="ah-t-who">Who</span><span class="ah-t-league">League</span><span class="ah-t-left">Left</span></div>${shown.map(({ r, p }) => {
-      const key = `p:${r.leagueId}:${r.teamId}:${p.playerId}`;
-      const row = ahMoneyRowHtml(p.name, `${r.teamName}${p.paidCents ? ` · paid ${fmtRands(p.paidCents)}` : ""}`, r.leagueName, p.owedCents, p.paidCents ? "part" : "unpaid", key);
-      const open = ahOpenRow === key ? `<div class="ah-expand ah-prow" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}"><div class="note">Share ${fmtRands(p.shareCents)} · paid ${fmtRands(p.paidCents)} · owes ${fmtRands(p.owedCents)}</div><div class="ah-prow-btns"><button class="secondary ah-p-part" type="button">Record payment</button><button class="link ah-p-paid" type="button">Mark paid</button></div></div>` : "";
-      return row + open;
-    }).join("") || '<p class="empty" style="padding:12px;">Nobody owes anything in the leagues being counted.</p>'}</div>
-    ${rows.length > shown.length ? `<button class="secondary" id="ah-more" type="button" style="margin-top:8px;">Show ${Math.min(40, rows.length - shown.length)} more of ${rows.length - shown.length}</button>` : ""}`;
-  } else {
-    const items = itemsFor(ahMoneyTab).sort((a, b) => (ahOverdue(b) ? 1 : 0) - (ahOverdue(a) ? 1 : 0) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || b.createdAt - a.createdAt);
-    html += `<div class="ah-chips">${[["open", "Open"], ["done", "Done"], ["all", "All"]].map(([k, l]) => `<button type="button" class="ah-chip${ahStatus === k ? " on" : ""}" data-s="${k}">${l}</button>`).join("")}${ahMoneyTab === "sponsor" ? `<span class="ah-sep"></span>${[["list", "List"], ["pipeline", "Pipeline"]].map(([k, l]) => `<button type="button" class="ah-chip${ahMode === k ? " on" : ""}" data-m="${k}">${l}</button>`).join("")}` : ""}</div>`;
-    if (ahMoneyTab === "sponsor" && ahMode === "pipeline") {
-      html += `<div class="ah-pipe">${AH_STAGES.sponsor.map(([k, l]) => { const col = items.filter((i) => i.stage === k); return `<div class="ah-col"><div class="ah-col-head"><b>${l}</b><span>${col.length}</span></div>${col.map(ahItemHtml).join("") || '<div class="note">Empty</div>'}</div>`; }).join("")}</div>`;
-    } else {
-      html += `<div class="ah-table"><div class="ah-trow head"><span class="ah-t-who">Who</span><span class="ah-t-league">League</span><span class="ah-t-left">Left</span></div>${items.map((i) => {
-        const left = i.amountCents ? (ahIsOpen(i) ? ahOwed(i) : 0) : null;
-        const key = "i:" + i.id;
-        return ahMoneyRowHtml(i.title, i.dueDate ? (ahOverdue(i) ? "Overdue " : "Due ") + ahDue(i.dueDate) : "", ahLeagueName(i.leagueId) || "All", left, i.paidCents ? "part" : "unpaid", key) + (ahOpenRow === key ? `<div class="ah-expand">${ahItemHtml(i)}</div>` : "");
-      }).join("") || '<p class="empty" style="padding:12px;">Nothing here yet. Add one below.</p>'}</div>`;
+function ahPaymentsDashboardHtml() {
+  const lgs = ahPayments.leagues.filter((l) => ahLeague === "all" || l.leagueId === ahLeague);
+  const q = ahSearch.trim().toLowerCase();
+  const list = lgs.filter((l) => !q || l.leagueName.toLowerCase().includes(q));
+  const counted = list.filter((l) => l.tracked), off = list.filter((l) => !l.tracked);
+  const rowHtml = (l) => {
+    const open = ahOpenLeague === l.leagueId;
+    const pct = l.totalCents ? Math.round(((l.fullPaidCents + l.partPaidCents) / l.totalCents) * 100) : 0;
+    const left = Math.max(0, l.totalCents - l.fullPaidCents - l.partPaidCents);
+    let inner = "";
+    if (open) {
+      inner = `<div class="ah-teams">${l.teamBars.map((t) => {
+        const tOpen = ahOpenTeam === l.leagueId + ":" + t.teamId;
+        const tp = t.feeCents ? Math.round((t.paidCents / t.feeCents) * 100) : 0;
+        const owing = ahPayments.teams.find((x) => x.leagueId === l.leagueId && x.teamId === t.teamId);
+        return `<button type="button" class="ah-team-row${tOpen ? " open" : ""}" data-team-key="${l.leagueId}:${t.teamId}">
+            <span class="ah-team-name">${escapeHtml(t.teamName)}</span>
+            ${ahBarHtml(t.complete ? t.feeCents : 0, t.complete ? 0 : t.paidCents, t.feeCents)}
+            <span class="ah-team-pct">${t.complete ? "Paid" : tp + "%"}</span></button>
+          ${tOpen ? `<div class="ah-expand">${owing && owing.players.length ? owing.players.map((p) => `<div class="ah-prow" data-league="${l.leagueId}" data-team="${t.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}">
+              <span><b>${escapeHtml(p.name)}</b><br><span class="note">${p.paidCents ? `paid ${fmtRands(p.paidCents)} of ${fmtRands(p.shareCents)} · ` : ""}owes ${fmtRands(p.owedCents)}</span></span>
+              <span class="ah-prow-btns"><button class="secondary ah-p-part" type="button">Record payment</button><button class="link ah-p-paid" type="button">Mark paid</button></span></div>`).join("") : '<p class="note" style="margin:0;">Everyone on this team has paid.</p>'}</div>` : ""}`;
+      }).join("")}</div>`;
     }
-  }
-  return html;
+    return `<div class="ah-lrow2"><button type="button" class="ah-league-row${open ? " open" : ""}" data-league-open="${l.leagueId}">
+        <span class="ah-lr-top"><b>${escapeHtml(l.leagueName)}</b><span class="ah-lr-left">${left ? fmtRands(left) + " left" : "Paid in full"}</span></span>
+        ${ahBarHtml(l.fullPaidCents, l.partPaidCents, l.totalCents)}
+        <span class="ah-lr-sub"><span>${pct}% · ${l.teamsPaid} of ${l.teamCount} teams paid</span><span>${fmtRands(l.fullPaidCents + l.partPaidCents)} of ${fmtRands(l.totalCents)}</span></span>
+      </button>${inner}
+      <div class="ah-lr-foot"><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="0">Stop counting</button></div></div>`;
+  };
+  let html = `<div class="ah-block"><div class="ah-block-title">Payments by league</div>`;
+  html += counted.length ? counted.map(rowHtml).join("") : '<p class="note">No league is being counted yet. Switch one on below once you start recording its payments here.</p>';
+  html += `<div class="ah-legend"><span class="a">Paid in full</span><span class="b">Part paid</span><span>Still owed</span></div>`;
+  if (off.length) html += `<details class="ah-counted"><summary>Not counted: ${off.length}</summary>${off.map((l) => `<div class="ah-lrow"><span><b>${escapeHtml(l.leagueName)}</b><span class="note"> · ${fmtRands(l.feeCents)} a team</span></span><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="1">Count it</button></div>`).join("")}<p class="note" style="margin:6px 0 0;">Fees paid by cash or EFT outside the app only show as owed until you record them. Count a league once you start recording its payments here.</p></details>`;
+  return html + "</div>";
 }
-function bindAhMoney(root) {
-  root.querySelectorAll(".ah-tab").forEach((b) => { b.onclick = () => { ahMoneyTab = b.dataset.tab; ahOpenRow = null; ahCompType = "auto"; renderAdminHub(); }; });
-  root.querySelectorAll(".ah-trow[data-key]").forEach((b) => { b.onclick = () => { ahOpenRow = ahOpenRow === b.dataset.key ? null : b.dataset.key; renderAdminHub(); }; });
-  const more = root.querySelector("#ah-more"); if (more) more.onclick = () => { ahPlayersLimit += 40; renderAdminHub(); };
+function bindAhPayments(root) {
+  root.querySelectorAll("[data-league-open]").forEach((b) => { b.onclick = () => { ahOpenLeague = ahOpenLeague === b.dataset.leagueOpen ? null : b.dataset.leagueOpen; ahOpenTeam = null; renderAdminHub(); }; });
+  root.querySelectorAll("[data-team-key]").forEach((b) => { b.onclick = () => { ahOpenTeam = ahOpenTeam === b.dataset.teamKey ? null : b.dataset.teamKey; renderAdminHub(); }; });
   root.querySelectorAll(".ah-track").forEach((b) => {
     b.onclick = async () => { try { await ahApi("/league-tracking", { method: "PUT", body: { leagueId: b.dataset.league, track: b.dataset.on === "1" } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } };
   });

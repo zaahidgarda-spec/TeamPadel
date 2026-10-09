@@ -4711,7 +4711,20 @@ router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
       if (!players.length) return;
       teams.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: fee, teamOwedCents: teamBalanceCents(league, team), players });
     });
-    leagues.push({ leagueId: league.id, leagueName: league.name, feeCents: fee, tracked, collectedCents: collected, owedCents: owed, teamCount: league.teams.length });
+    // The bar: money in from teams that have paid in full, money in part from
+    // teams still paying, and what's left. Each team gets a bar of its own.
+    let fullPaid = 0, partPaid = 0;
+    const teamBars = league.teams.map((team) => {
+      const paid = teamPaidCents(league, team);
+      const complete = team.paymentStatus === "paid" || paid >= fee - 1;
+      if (complete) fullPaid += fee; else partPaid += paid;
+      return { teamId: team.id, teamName: team.name, feeCents: fee, paidCents: Math.min(paid, fee), complete, playerCount: team.players.length };
+    }).sort((a, b) => (a.paidCents / a.feeCents) - (b.paidCents / b.feeCents) || a.teamName.localeCompare(b.teamName));
+    const total = fee * league.teams.length;
+    leagues.push({
+      leagueId: league.id, leagueName: league.name, feeCents: fee, tracked, collectedCents: collected, owedCents: owed, teamCount: league.teams.length,
+      totalCents: total, fullPaidCents: fullPaid, partPaidCents: partPaid, teamsPaid: teamBars.filter((t) => t.complete).length, teamBars,
+    });
   });
   res.json({ teams, leagues });
 });
