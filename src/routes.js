@@ -6038,19 +6038,11 @@ function reconcilePlayerStatus(league, team, p) {
     p.paymentStatus = "unpaid"; p.paymentMethod = null; p.paidAt = null;
   }
 }
-// Reads "amountRands" or "percent" from a request into cents, against `baseCents`.
+// Reads a discount in rands from a request into cents, against `baseCents`.
 function discountCentsFromBody(body, baseCents) {
-  const b = body || {};
-  let cents;
-  if (b.percent !== undefined && b.percent !== null && b.percent !== "") {
-    const pct = Number(b.percent);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return { error: "A percentage must be between 0 and 100." };
-    cents = Math.round(baseCents * pct / 100);
-  } else {
-    const rands = Number(b.amountRands);
-    if (!Number.isFinite(rands) || rands < 0) return { error: "Enter an amount in rands, or a percentage." };
-    cents = Math.round(rands * 100);
-  }
+  const rands = Number(body && body.amountRands);
+  if (!Number.isFinite(rands) || rands < 0) return { error: "Enter the discount as an amount in rands." };
+  const cents = Math.round(rands * 100);
   if (cents > baseCents) return { error: `That's more than what's owed (R${(baseCents / 100).toFixed(2)}).` };
   return { cents };
 }

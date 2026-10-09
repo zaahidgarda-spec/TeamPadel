@@ -6855,16 +6855,16 @@ function renderPayReceivedHtml() {
 }
 
 /* ---------- Discounts ---------- */
-// Asks for a discount (rands or a percentage) and a reason, then saves it.
+// Asks for a discount as an amount in rands and a reason, then saves it.
 // Returns true when something was saved.
 async function askDiscount({ label, path, currentCents }) {
   const cur = currentCents ? ` It's R${(currentCents / 100).toFixed(2)} now.` : "";
-  const v = prompt(`Discount for ${label}.${cur}\nType an amount in rands (like 500) or a percentage (like 10%). Type 0 to remove it.`, "");
+  const v = prompt(`Discount for ${label}.${cur}\nType the amount in rands (like 500). Type 0 to remove it.`, "");
   if (v === null || !String(v).trim()) return false;
   const txt = String(v).trim();
+  if (/%/.test(txt) || !/^[Rr]?\s?\d[\d\s,]*(\.\d{1,2})?$/.test(txt)) { alert("Type the discount as an amount in rands, like 500."); return false; }
   const num = Number(txt.replace(/[^0-9.]/g, ""));
-  if (!(num >= 0) || txt.replace(/[^0-9.%]/g, "") === "") { alert("Type an amount or a percentage."); return false; }
-  const body = /%/.test(txt) ? { percent: num } : { amountRands: num };
+  const body = { amountRands: num };
   if (num > 0) { const note = prompt("Reason (optional), for example: committee member", ""); if (note && note.trim()) body.note = note.trim(); }
   try { await api(path, { method: "PUT", body }); return true; } catch (e) { alert(e.message); return false; }
 }
