@@ -712,7 +712,7 @@ function sanitize(league, req) {
   // its public route) is fetched exclusively through the dedicated
   // admin-gated /custom-charges endpoint below — never through this
   // general payload, same reasoning as kitShareToken/payLinkToken above.
-  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, customCharges, ...leagueRest } = league;
+  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, customCharges, adminNotes: _adminNotes, ...leagueRest } = league;
   // Players between teams: their names and photos only — payment details and
   // pay-link tokens are never part of this public payload.
   const freeAgents = (league.freeAgents || []).map(({ payLinkToken, claimRequest, paymentMode, paymentStatus, paymentMethod, paymentRef, paidAt, paidCents, payments, coveredByTeam, overpaidCents, ...p }) => p);
@@ -4531,6 +4531,82 @@ router.post("/leagues/:leagueId/free-agents/:playerId/assign", requireAdmin, (re
   if (to.players.some((p) => p.name.toLowerCase() === player.name.toLowerCase())) return res.status(400).json({ error: `${to.name} already has a player called ${player.name}.` });
   movePlayerBetweenTeams(league, player, null, to);
   logAudit(league, req, null, "player_assign", { playerName: player.name, toTeamName: to.name });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true });
+});
+
+/* ---------- Admin desk notes ----------
+   Free-form notes only the league admin can see (never in the public league
+   payload): typed in any words, filed under Payments, Kits or Other, and tied
+   to a player or team when they name one. */
+const NOTE_CATEGORIES = ["payments", "kits", "other"];
+function guessNoteCategory(text) {
+  const t = String(text || "").toLowerCase();
+  const kit = /\b(kit|kits|shirt|shirts|jersey|jerseys|size|sizes|xs|s|m|l|xl|xxl|xxxl|sleeve|sleeves|sponsor|name on (the )?back|number on|logo|print|printing)\b/;
+  const pay = /\b(paid|pay|pays|payment|payments|owe|owes|owing|owed|cash|eft|deposit|balance|part payment|instalment|installment|invoice|refund|outstanding|fee|fees|r\s?\d+)\b|\br\d/;
+  const k = kit.test(t), pm = pay.test(t);
+  // A note that mentions both goes with whichever shows up first.
+  if (k && pm) return t.search(kit) <= t.search(pay) ? "kits" : "payments";
+  if (k) return "kits";
+  if (pm) return "payments";
+  return "other";
+}
+// Finds a player (or, failing that, a team) named in the text. The longest
+// names are tried first so "Uwais Rajah" beats "Uwais".
+function guessNoteTarget(league, text) {
+  const t = " " + String(text || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ") + " ";
+  const players = league.teams.flatMap((team) => team.players.map((p) => ({ p, team })))
+    .filter(({ p }) => p.name && p.name.trim().length >= 3)
+    .sort((a, b) => b.p.name.length - a.p.name.length);
+  for (const { p, team } of players) {
+    const n = " " + p.name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() + " ";
+    if (t.includes(n)) return { playerId: p.id, teamId: team.id };
+  }
+  const teams = league.teams.slice().sort((a, b) => b.name.length - a.name.length);
+  for (const team of teams) {
+    const n = " " + team.name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() + " ";
+    if (n.trim().length >= 3 && t.includes(n)) return { playerId: null, teamId: team.id };
+  }
+  return { playerId: null, teamId: null };
+}
+router.get("/leagues/:leagueId/admin-notes", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  res.json((league.adminNotes || []).slice().sort((a, b) => b.createdAt - a.createdAt));
+});
+router.post("/leagues/:leagueId/admin-notes", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const text = String((req.body && req.body.text) || "").trim().slice(0, 1000);
+  if (!text) return res.status(400).json({ error: "Write something first." });
+  let { category, playerId, teamId } = req.body || {};
+  if (!NOTE_CATEGORIES.includes(category)) category = guessNoteCategory(text);
+  if (!playerId && !teamId) ({ playerId, teamId } = guessNoteTarget(league, text));
+  // A player given on its own brings its team along.
+  if (playerId && !teamId) { const t = league.teams.find((x) => x.players.some((p) => p.id === playerId)); teamId = t ? t.id : null; }
+  const note = { id: logic.uid(), text, category, playerId: playerId || null, teamId: teamId || null, done: false, createdAt: Date.now() };
+  if (!league.adminNotes) league.adminNotes = [];
+  league.adminNotes.push(note);
+  store.saveLeague(league.id, league);
+  res.json(note);
+});
+router.put("/leagues/:leagueId/admin-notes/:noteId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const note = league && (league.adminNotes || []).find((n) => n.id === req.params.noteId);
+  if (!note) return res.status(404).json({ error: "Note not found." });
+  const b = req.body || {};
+  if (b.text !== undefined) { const t = String(b.text).trim().slice(0, 1000); if (!t) return res.status(400).json({ error: "A note can't be empty." }); note.text = t; }
+  if (b.category !== undefined) { if (!NOTE_CATEGORIES.includes(b.category)) return res.status(400).json({ error: "Unknown category." }); note.category = b.category; }
+  if (b.playerId !== undefined) { note.playerId = b.playerId || null; if (note.playerId) { const t = league.teams.find((x) => x.players.some((p) => p.id === note.playerId)); if (t) note.teamId = t.id; } }
+  if (b.teamId !== undefined && b.playerId === undefined) { note.teamId = b.teamId || null; note.playerId = null; }
+  if (b.done !== undefined) note.done = !!b.done;
+  store.saveLeague(league.id, league);
+  res.json(note);
+});
+router.delete("/leagues/:leagueId/admin-notes/:noteId", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  league.adminNotes = (league.adminNotes || []).filter((n) => n.id !== req.params.noteId);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

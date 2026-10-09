@@ -5857,6 +5857,9 @@ function tabDefs() {
   // payment mode or pay) yet. The underlying split-payment logic is fully
   // built and working either way; this is purely a visibility/rollout
   // gate, same pattern as Toss/Ratings preview above.
+  // The admin desk: every player's payments (part payments included), kit notes
+  // and any note an admin types, filed by category. Admin only.
+  if (myRole === "admin") defs.push({ key: "desk", label: "Desk" });
   if (myRole === "admin") defs.push({ key: "pay", label: "Pay", wip: true });
   // Its own tab rather than a card buried at the bottom of Admin — a
   // captain never sees this (view-only, admin-only concern), so it's
@@ -6228,6 +6231,7 @@ function switchTab(key) {
   // that it actually is.
   if (key === "kit") renderKit();
   if (key === "auction") startAuctionRoom(); else stopAuctionRoom();
+  if (key === "desk") loadDeskNotes();
 }
 // Two tab rows instead of a dropdown — a division tab row (only shown when
 // there's more than one division) and a group tab row scoped to whichever
@@ -6504,7 +6508,7 @@ function renderAll() {
   renderPendingScoreBanner();
   renderPushPromptBanner();
   if (myRole === "admin") renderAdmin();
-  if (myRole === "admin") renderPay();
+  if (myRole === "admin") { renderPay(); renderDesk(); }
   if (myRole === "admin") renderAdminAuditLog();
   renderSelection();
   if (myRole === "admin") renderLiveCourtControl();
@@ -6744,6 +6748,208 @@ function renderPayReceivedHtml() {
       <span class="note">${r.paidAt ? new Date(r.paidAt).toLocaleDateString() : ""}</span>
     </div>
   `).join("")}</div>`;
+}
+
+/* ---------- Admin desk ---------- */
+const DESK_CATS = [["payments", "Payments"], ["kits", "Kits"], ["other", "Other"]];
+let deskNotes = [];
+let deskNotesLoaded = false;
+let deskNotesLeague = null;
+let deskFilter = "all";
+let deskCat = "auto";
+let deskTeamFilter = "all";
+let deskOpenPlayer = null;
+async function loadDeskNotes() {
+  if (myRole !== "admin" || !currentLeagueId) return;
+  try { deskNotes = await api(`/leagues/${currentLeagueId}/admin-notes`); deskNotesLoaded = true; deskNotesLeague = currentLeagueId; } catch { deskNotes = []; }
+  renderDesk();
+}
+function deskCatLabel(c) { return (DESK_CATS.find((x) => x[0] === c) || [c, c])[1]; }
+function deskNoteWhen(ms) {
+  const d = new Date(ms), now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  return same ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+function deskAboutLabel(n) {
+  const t = n.teamId && league.teams.find((x) => x.id === n.teamId);
+  const p = n.playerId && t && t.players.find((x) => x.id === n.playerId);
+  return p ? `${p.name} · ${t.name}` : t ? t.name : "";
+}
+function deskNoteHtml(n) {
+  const about = deskAboutLabel(n);
+  return `<div class="desk-note${n.done ? " done" : ""}" data-note="${n.id}">
+    <div class="desk-note-top"><span class="desk-pill cat-${n.category}">${deskCatLabel(n.category)}</span>${about ? `<span class="desk-about">${escapeHtml(about)}</span>` : ""}<span class="note" style="margin-left:auto;">${deskNoteWhen(n.createdAt)}</span></div>
+    <div class="desk-note-text">${escapeHtml(n.text).replace(/\n/g, "<br>")}</div>
+    <div class="desk-note-actions">
+      <select class="desk-note-cat" aria-label="Category">${DESK_CATS.map(([k, l]) => `<option value="${k}"${k === n.category ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <button class="link desk-note-done" type="button">${n.done ? "Reopen" : "Done"}</button>
+      <button class="link desk-note-edit" type="button">Edit</button>
+      <button class="link desk-note-del" type="button">Delete</button>
+    </div></div>`;
+}
+function bindDeskNotes(root) {
+  root.querySelectorAll(".desk-note").forEach((row) => {
+    const id = row.dataset.note;
+    const act = async (fn) => { try { await fn(); await loadDeskNotes(); } catch (e) { alert(e.message); } };
+    row.querySelector(".desk-note-cat").onchange = (e) => act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "PUT", body: { category: e.target.value } }));
+    row.querySelector(".desk-note-done").onclick = () => { const n = deskNotes.find((x) => x.id === id); act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "PUT", body: { done: !n.done } })); };
+    row.querySelector(".desk-note-edit").onclick = () => { const n = deskNotes.find((x) => x.id === id); const v = prompt("Edit note", n.text); if (v !== null && v.trim()) act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "PUT", body: { text: v } })); };
+    row.querySelector(".desk-note-del").onclick = () => { if (confirm("Delete this note?")) act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "DELETE" })); };
+  });
+}
+async function deskAddNote(text, opts) {
+  const body = { text, ...(opts || {}) };
+  const note = await api(`/leagues/${currentLeagueId}/admin-notes`, { method: "POST", body });
+  await loadDeskNotes();
+  return note;
+}
+function renderDesk() {
+  const root = el("view-desk");
+  if (!root || myRole !== "admin" || !league) return;
+  if (deskNotesLeague !== currentLeagueId) { deskNotes = []; deskNotesLoaded = false; deskOpenPlayer = null; deskTeamFilter = "all"; deskNotesLeague = currentLeagueId; loadDeskNotes(); }
+  const fee = league.registrationFeeCents || 0;
+  // ---- summary
+  let collected = 0, owed = 0, partN = 0;
+  league.teams.forEach((t) => {
+    const paid = t.paidSoFarCents != null ? t.paidSoFarCents : (t.paymentStatus === "paid" ? fee : 0);
+    collected += paid; owed += Math.max(0, fee - paid);
+    t.players.forEach((p) => { if (p.paymentStatus !== "paid" && t.paymentStatus !== "paid") { if ((p.paidCents || 0) > 0) partN++; } });
+  });
+  const openNotes = deskNotes.filter((n) => !n.done);
+  el("desk-summary-card").innerHTML = fee ? `<div class="desk-sum">
+      <div><div class="note">Collected</div><div class="desk-sum-n">${fmtRands(collected)}</div></div>
+      <div><div class="note">Still owed</div><div class="desk-sum-n">${fmtRands(owed)}</div></div>
+      <div><div class="note">Part paid</div><div class="desk-sum-n">${partN}</div></div>
+      <div><div class="note">Open notes</div><div class="desk-sum-n">${openNotes.length}</div></div>
+    </div>` : '<p class="note" style="margin:0;">No registration fee is set yet, so there are no payments to track. Notes still work below. Set the fee on the Pay tab.</p>';
+  // ---- composer
+  const about = el("desk-note-about");
+  const keepAbout = about.value;
+  about.innerHTML = '<option value="">Auto: pick it up from the note</option>'
+    + league.teams.map((t) => `<optgroup label="${escapeHtml(t.name)}"><option value="team:${t.id}">Whole team: ${escapeHtml(t.name)}</option>${t.players.map((p) => `<option value="player:${p.id}">${escapeHtml(p.name)}</option>`).join("")}</optgroup>`).join("");
+  about.value = keepAbout && [...about.options].some((o) => o.value === keepAbout) ? keepAbout : "";
+  const cats = el("desk-note-cats");
+  cats.innerHTML = '<span class="note">File under</span>' + [["auto", "Auto"], ...DESK_CATS].map(([k, l]) => `<button type="button" class="desk-chip${deskCat === k ? " on" : ""}" data-cat="${k}">${l}</button>`).join("");
+  cats.querySelectorAll(".desk-chip").forEach((b) => { b.onclick = () => { deskCat = b.dataset.cat; renderDesk(); }; });
+  el("desk-note-add").onclick = async () => {
+    const ta = el("desk-note-text");
+    const text = ta.value.trim();
+    if (!text) { el("desk-note-hint").textContent = "Write something first."; return; }
+    const sel = about.value;
+    const opts = {};
+    if (deskCat !== "auto") opts.category = deskCat;
+    if (sel.startsWith("player:")) opts.playerId = sel.slice(7);
+    if (sel.startsWith("team:")) opts.teamId = sel.slice(5);
+    try {
+      const note = await deskAddNote(text, opts);
+      ta.value = "";
+      const ab = deskAboutLabel(note);
+      el("desk-note-hint").textContent = `Filed under ${deskCatLabel(note.category)}${ab ? " for " + ab : ""}.`;
+    } catch (e) { el("desk-note-hint").textContent = e.message; }
+  };
+  // ---- notes list
+  const filt = el("desk-note-filter");
+  const shown = (deskOpenOnly() ? deskNotes.filter((n) => !n.done) : deskNotes);
+  filt.innerHTML = [["all", "All", shown.length], ...DESK_CATS.map(([k, l]) => [k, l, shown.filter((n) => n.category === k).length])]
+    .map(([k, l, c]) => `<button type="button" class="desk-chip${deskFilter === k ? " on" : ""}" data-f="${k}">${l} ${c}</button>`).join("");
+  filt.querySelectorAll(".desk-chip").forEach((b) => { b.onclick = () => { deskFilter = b.dataset.f; renderDesk(); }; });
+  el("desk-open-only").onchange = () => renderDesk();
+  const list = shown.filter((n) => deskFilter === "all" || n.category === deskFilter);
+  el("desk-notes-list").innerHTML = list.length ? list.map(deskNoteHtml).join("") : `<p class="empty">${deskNotesLoaded ? "No notes here yet." : "Loading…"}</p>`;
+  bindDeskNotes(el("desk-notes-list"));
+  // ---- players
+  const tf = el("desk-team-filter");
+  tf.innerHTML = '<option value="all">All teams</option>' + league.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  tf.value = league.teams.some((t) => t.id === deskTeamFilter) ? deskTeamFilter : "all";
+  tf.onchange = () => { deskTeamFilter = tf.value; renderDesk(); };
+  const teams = league.teams.filter((t) => deskTeamFilter === "all" || t.id === deskTeamFilter);
+  const box = el("desk-players");
+  box.innerHTML = teams.map((t) => deskTeamHtml(t, fee)).join("") || '<p class="empty">No teams yet.</p>';
+  box.querySelectorAll(".desk-prow-head").forEach((h) => { h.onclick = () => { const id = h.closest(".desk-prow").dataset.player; deskOpenPlayer = deskOpenPlayer === id ? null : id; renderDesk(); }; });
+  bindDeskPlayerPanels(box);
+}
+function deskOpenOnly() { const c = el("desk-open-only"); return !!(c && c.checked); }
+function deskPlayerPayState(t, p, fee) {
+  const share = fee ? Math.round(fee / (t.players.length || 1)) : 0;
+  const isPaid = p.paymentStatus === "paid";
+  const own = p.paidCents != null ? p.paidCents : (isPaid && !p.coveredByTeam ? share : 0);
+  const part = !isPaid && own > 0;
+  return { share, isPaid, own, part, left: Math.max(0, share - own) };
+}
+function deskTeamHtml(t, fee) {
+  const paid = t.paidSoFarCents != null ? t.paidSoFarCents : (t.paymentStatus === "paid" ? fee : 0);
+  const pct = fee ? Math.min(100, Math.round((paid / fee) * 100)) : 0;
+  return `<div class="desk-team">
+    <div class="desk-team-head"><strong>${escapeHtml(t.name)}</strong><span class="note">${fee ? `${fmtRands(paid)} of ${fmtRands(fee)}` : ""}</span></div>
+    ${fee ? `<div class="desk-bar"><i style="width:${pct}%"></i></div>` : ""}
+    ${t.players.map((p) => deskPlayerHtml(t, p, fee)).join("") || '<p class="empty">No players.</p>'}
+  </div>`;
+}
+function deskPlayerHtml(t, p, fee) {
+  const st = deskPlayerPayState(t, p, fee);
+  const mine = deskNotes.filter((n) => n.playerId === p.id && !n.done);
+  const c = (k) => mine.filter((n) => n.category === k).length;
+  const pill = !fee ? "" : st.isPaid ? '<span class="desk-pill pay-paid">Paid</span>' : st.part ? `<span class="desk-pill pay-part">${fmtRands(st.own)} of ${fmtRands(st.share)}</span>` : '<span class="desk-pill pay-unpaid">Unpaid</span>';
+  const chips = (c("kits") ? `<span class="desk-mini cat-kits">Kit ${c("kits")}</span>` : "") + (c("payments") ? `<span class="desk-mini cat-payments">Pay ${c("payments")}</span>` : "") + (c("other") ? `<span class="desk-mini cat-other">Note ${c("other")}</span>` : "");
+  const open = deskOpenPlayer === p.id;
+  return `<div class="desk-prow${open ? " open" : ""}" data-team="${t.id}" data-player="${p.id}">
+    <div class="desk-prow-head"><span class="desk-pname">${escapeHtml(p.name)}</span><span class="desk-prow-right">${chips}${pill}</span></div>
+    ${open ? deskPlayerPanelHtml(t, p, fee, st) : ""}
+  </div>`;
+}
+function deskPlayerPanelHtml(t, p, fee, st) {
+  const ledger = (p.payments && p.payments.length)
+    ? p.payments.map((x) => `<div class="desk-ledger-row"><span>${fmtRands(x.cents)} · ${paymentMethodLabel(x.method)}</span><span class="note">${x.at ? new Date(x.at).toLocaleDateString() : ""}${x.ref ? " · Ref " + escapeHtml(x.ref) : ""}</span></div>`).join("")
+    : st.isPaid && !p.coveredByTeam ? `<div class="desk-ledger-row"><span>${fmtRands(st.share)} · ${paymentMethodLabel(p.paymentMethod)}</span><span class="note">${p.paidAt ? new Date(p.paidAt).toLocaleDateString() : ""}</span></div>` : "";
+  const payHtml = fee ? `
+    <div class="desk-section"><div class="desk-section-title">Payments</div>
+      <div class="note">Share ${fmtRands(st.share)} · paid ${fmtRands(st.isPaid && p.coveredByTeam ? 0 : st.own)}${st.isPaid && p.coveredByTeam ? " · covered by the team" : ` · left ${fmtRands(st.isPaid ? 0 : st.left)}`}</div>
+      ${ledger || '<div class="note">Nothing paid yet.</div>'}
+      <div class="desk-btns">
+        ${st.isPaid ? (p.coveredByTeam ? "" : '<button class="link desk-pay-mark" data-paid="false" type="button">Mark unpaid</button>')
+          : `<button class="secondary desk-pay-part" data-left="${st.left}" type="button">Record payment</button><button class="link desk-pay-mark" data-paid="true" type="button">Mark paid</button>${st.part ? '<button class="link desk-pay-mark" data-paid="false" type="button">Reset</button>' : ""}<button class="link desk-pay-copy" type="button">Copy pay link</button>`}
+      </div></div>` : "";
+  const mine = deskNotes.filter((n) => n.playerId === p.id);
+  const groups = DESK_CATS.map(([k, l]) => {
+    const ns = mine.filter((n) => n.category === k);
+    return `<div class="desk-section"><div class="desk-section-title">${l === "Kits" ? "Kit notes" : l === "Payments" ? "Payment notes" : "Other notes"}</div>${ns.length ? ns.map(deskNoteHtml).join("") : '<div class="note">None.</div>'}</div>`;
+  }).join("");
+  return `<div class="desk-panel">
+    ${payHtml}
+    <div class="desk-section"><div class="desk-section-title">Add a note for ${escapeHtml(p.name)}</div>
+      <div class="desk-add"><input type="text" class="desk-player-note" placeholder="Anything: kit size, a promise to pay…" maxlength="1000">
+        <select class="desk-player-cat"><option value="">Auto</option>${DESK_CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
+        <button class="primary desk-player-add" type="button">Add</button></div></div>
+    ${groups}
+  </div>`;
+}
+function bindDeskPlayerPanels(box) {
+  box.querySelectorAll(".desk-prow.open").forEach((row) => {
+    const teamId = row.dataset.team, playerId = row.dataset.player;
+    row.querySelectorAll(".desk-pay-mark").forEach((b) => {
+      b.onclick = async () => {
+        try { await api(`/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/payment-status`, { method: "PUT", body: { paid: b.dataset.paid === "true" } }); await refreshLeague(); renderDesk(); renderPay(); } catch (e) { alert(e.message); }
+      };
+    });
+    const part = row.querySelector(".desk-pay-part");
+    if (part) part.onclick = async () => {
+      const left = Number(part.dataset.left) / 100;
+      const v = prompt(`How much did they pay? (up to R${left.toFixed(2)} left)`, left.toFixed(2));
+      if (v === null) return;
+      try { await api(`/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/payments`, { method: "POST", body: { amountRands: Number(String(v).replace(/[^0-9.]/g, "")) } }); await refreshLeague(); renderDesk(); renderPay(); } catch (e) { alert(e.message); }
+    };
+    const copy = row.querySelector(".desk-pay-copy");
+    if (copy) copy.onclick = () => copyTextWhenReady(api(`/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/pay-link`).then((d) => d.url), copy);
+    const add = row.querySelector(".desk-player-add");
+    if (add) add.onclick = async () => {
+      const input = row.querySelector(".desk-player-note");
+      const text = input.value.trim();
+      if (!text) return;
+      const category = row.querySelector(".desk-player-cat").value;
+      try { await deskAddNote(text, { playerId, ...(category ? { category } : {}) }); } catch (e) { alert(e.message); }
+    };
+    bindDeskNotes(row);
+  });
 }
 function renderPay() {
   el("pay-sandbox-banner").style.display = PAYFAST_SANDBOX ? "block" : "none";
