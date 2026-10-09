@@ -3502,7 +3502,7 @@ function playerSearchRowHtml(r, actionHtml, avatars) {
   const logo = (avatars && (avatars.playerPhotos[r.playerId] || avatars.teamLogos[r.teamId])) || r.teamLogo || "";
   return `<div class="player-search-row" data-league="${r.leagueId}" data-team="${r.teamId}" data-player="${r.playerId}">
     ${avatarHtml({ logo, name: r.playerName })}
-    <div class="info"><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}</div></div>
+    <div class="info"><strong>${escapeHtml(r.playerName)}</strong><div class="note">${escapeHtml(r.teamName)} · ${escapeHtml(r.leagueName)}${r.pastSeason ? ' · <span class="ps-past">past season</span>' : ""}</div></div>
     ${actionHtml}
   </div>`;
 }
@@ -3515,7 +3515,7 @@ function playerSearchRowHtml(r, actionHtml, avatars) {
 // switchHubTab) so it's often already in hand by the time anyone types.
 let playerIndexPromise = null;
 let playerIndexReady = false;
-const PLAYER_INDEX_STORAGE_KEY = "padel-player-index-v1";
+const PLAYER_INDEX_STORAGE_KEY = "padel-player-index-v2";
 function readPlayerIndexCache() {
   try {
     const stored = JSON.parse(localStorage.getItem(PLAYER_INDEX_STORAGE_KEY) || "null");
@@ -3601,7 +3601,18 @@ async function markPlayerIndexClaimed(playerId, claimed) {
 const PLAYER_SEARCH_MAX_ROWS = 12;
 function filterPlayerIndex(all, qRaw) {
   const q = qRaw.trim().toLowerCase();
-  return q ? all.filter((p) => p.playerName.toLowerCase().includes(q)).slice(0, PLAYER_SEARCH_MAX_ROWS) : [];
+  if (!q) return [];
+  const exact = all.filter((p) => p.playerName.toLowerCase().includes(q));
+  if (exact.length || !/\s/.test(q)) return exact.slice(0, PLAYER_SEARCH_MAX_ROWS);
+  // A full name that matches nothing (the record may just say "Uwais"): fall
+  // back to records that match any word of it, most matching words first.
+  const words = q.split(/\s+/).filter((w) => w.length >= 3);
+  return all
+    .map((p) => ({ p, hits: words.filter((w) => p.playerName.toLowerCase().split(/\s+/).some((t) => t.startsWith(w))).length }))
+    .filter((x) => x.hits)
+    .sort((a, b) => b.hits - a.hits)
+    .map((x) => x.p)
+    .slice(0, PLAYER_SEARCH_MAX_ROWS);
 }
 // ONE search path for every place a player is looked up — claiming a
 // record and the Search players tab both go through here: same index, same

@@ -1836,7 +1836,32 @@ router.put("/players/email-notifications", (req, res) => {
 // a truly hidden league (import-only, feeds ratings but was never a real
 // league to browse or claim into) — same distinction every other
 // hidden-league check in this file makes.
-function allPlayersFlat() {
+// Players on a team that's no longer in the league (or off a roster since),
+// found in an archived season — newest season first, each record once. They
+// stay claimable so someone whose team sat a season out can still find their
+// record and keep their history.
+function archivedOnlyRecords(league) {
+  const live = new Set();
+  league.teams.forEach((t) => t.players.forEach((p) => live.add(t.id + ":" + p.id)));
+  const found = new Map();
+  (league.seasonHistory || []).forEach((snap) => {
+    (snap.teams || []).forEach((t) => (t.players || []).forEach((p) => {
+      const k = t.id + ":" + p.id;
+      if (live.has(k) || found.has(k)) return;
+      found.set(k, { team: t, player: p, label: snap.label || "" });
+    }));
+  });
+  return [...found.values()];
+}
+// A record by team and player id: on the live roster first, otherwise in the
+// newest archived season that has it.
+function findRecord(league, teamId, playerId) {
+  const live = findTeamAndPlayer(league, teamId, playerId);
+  if (live.team && live.player) return { ...live, archived: false };
+  const hit = archivedOnlyRecords(league).find((r) => r.team.id === teamId && r.player.id === playerId);
+  return hit ? { team: hit.team, player: hit.player, archived: true } : { team: null, player: null, archived: false };
+}
+function allPlayersFlat({ includePast } = {}) {
   const results = [];
   store.getIndex().filter((entry) => !entry.hidden).forEach((entry) => {
     const league = store.getLeague(entry.id);
@@ -1851,6 +1876,17 @@ function allPlayersFlat() {
         });
       });
     });
+    if (includePast) {
+      archivedOnlyRecords(league).forEach(({ team, player: p, label }) => {
+        results.push({
+          leagueId: league.id, leagueName: league.name,
+          teamId: team.id, teamName: team.name, teamLogo: team.logo || "",
+          playerId: p.id, playerName: p.name, photo: "",
+          claimedByUserId: p.claimedByUserId || null,
+          pastSeason: true, seasonLabel: label,
+        });
+      });
+    }
   });
   return results;
 }
@@ -1899,11 +1935,11 @@ router.get("/teams/search-index", requirePlayerUser, (req, res) => {
 // trivial in-memory scan. The client already falls back to a plain
 // initials avatar with no logo, so this is a pure payload-size win.
 function searchPlayersAcrossLeagues(q) {
-  return allPlayersFlat()
+  return allPlayersFlat({ includePast: true })
     .filter((p) => p.playerName.toLowerCase().includes(q))
     .map((p) => ({
       leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
-      playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
+      playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId, pastSeason: !!p.pastSeason,
     }))
     .slice(0, 30);
 }
@@ -1969,9 +2005,10 @@ router.get("/players/search", requirePlayerUser, (req, res) => {
 // this hosting, per keystroke once debounced) — see loadPlayerIndex in
 // app.js. No `q`/cap here since the client owns the filtering now.
 router.get("/players/search-index", requirePlayerUser, (req, res) => {
-  res.json(allPlayersFlat().map((p) => ({
+  res.json(allPlayersFlat({ includePast: true }).map((p) => ({
     leagueId: p.leagueId, leagueName: p.leagueName, teamId: p.teamId, teamName: p.teamName,
     playerId: p.playerId, playerName: p.playerName, claimed: !!p.claimedByUserId,
+    ...(p.pastSeason ? { pastSeason: true } : {}),
   })));
 });
 
@@ -2030,9 +2067,8 @@ function shareAccountPhoto(user) {
 function claimPlayerRecord(user, leagueId, teamId, playerId) {
   const league = store.getLeague(leagueId);
   if (!league) throw new Error("League not found.");
-  const team = league.teams.find((t) => t.id === teamId);
+  const { team, player } = findRecord(league, teamId, playerId);
   if (!team) throw new Error("Team not found.");
-  const player = team.players.find((p) => p.id === playerId);
   if (!player) throw new Error("Player not found.");
   if (player.claimedByUserId && player.claimedByUserId !== user.id) {
     // Already claimed by someone else is only a hard conflict if that
@@ -2143,8 +2179,7 @@ router.delete("/players/claims/:leagueId/:teamId/:playerId", requirePlayerUser, 
   user.claims = user.claims.filter((c) => !(c.leagueId === leagueId && c.teamId === teamId && c.playerId === playerId));
   store.saveUser(user.id, user);
   const league = store.getLeague(leagueId);
-  const team = league && league.teams.find((t) => t.id === teamId);
-  const player = team && team.players.find((p) => p.id === playerId);
+  const { player } = league ? findRecord(league, teamId, playerId) : {};
   if (player && player.claimedByUserId === user.id) {
     player.claimedByUserId = null;
     store.saveLeague(league.id, league);

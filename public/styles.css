@@ -3018,3 +3018,4 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .fm-chip.prov{background:transparent !important;box-shadow:inset 0 0 0 1.5px currentColor;opacity:.85;}
 .fm-early{font-style:normal;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;margin-left:6px;padding:1px 5px;border-radius:999px;border:1px solid rgba(232,179,76,.55);color:#E8B34C;vertical-align:middle;}
 .fm-chip.prov.t0{color:#E0584B}.fm-chip.prov.t1{color:#E8A93F}.fm-chip.prov.t2{color:#6C98E8}.fm-chip.prov.t3{color:#7BD35A}.fm-chip.prov.t4{color:#5FD08A}
+.ps-past{color:#7A5A12;background:#FFF1CC;border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:600;}
