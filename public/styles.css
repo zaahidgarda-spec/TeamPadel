@@ -3115,3 +3115,23 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-prow{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding:8px 0;margin-top:8px;}
 .ah-prow-btns{display:flex;gap:12px;flex-wrap:wrap;}
 @media (min-width:700px){.ah-cards{grid-template-columns:repeat(3,minmax(0,1fr));}.ah-pipe{grid-template-columns:repeat(4,minmax(0,1fr));}}
+
+.ah-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:8px 0 12px;}
+.ah-tiles .ah-big{font-size:20px;margin:2px 0;}
+.ah-tabs{display:flex;gap:16px;border-bottom:1px solid var(--line);margin-bottom:10px;overflow-x:auto;}
+.ah-tab{min-height:0;background:none;border:none;border-bottom:2px solid transparent;border-radius:0;padding:6px 0;color:var(--text-dim,#64748B);font:inherit;cursor:pointer;white-space:nowrap;}
+.ah-tab.on{color:var(--text);font-weight:700;border-bottom-color:#2563EB;}
+.ah-tab span{font-size:11px;color:var(--text-dim,#64748B);margin-left:2px;}
+.ah-table{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.ah-trow{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) auto;gap:8px;align-items:center;width:100%;text-align:left;padding:10px 12px;border:none;border-top:1px solid var(--line);background:#fff;font:inherit;color:var(--text);cursor:pointer;min-height:0;border-radius:0;}
+.ah-trow.head{cursor:default;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim,#64748B);border-top:none;background:#F6F8FC;font-weight:700;}
+.ah-trow.open{background:#F3F7FF;}
+.ah-t-who{display:flex;flex-direction:column;min-width:0;}
+.ah-t-who .note{font-size:11.5px;}
+.ah-t-league{font-size:12px;color:var(--text-dim,#64748B);}
+.ah-t-left{text-align:right;}
+.ah-expand{padding:8px 12px 12px;background:#F3F7FF;border-top:1px solid var(--line);}
+.ah-expand .ah-item{margin-top:0;}
+.ah-counted{margin:0 0 10px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:8px 12px;}
+.ah-counted summary{cursor:pointer;font-weight:600;font-size:13px;}
+.ah-lrow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line);margin-top:6px;font-size:13px;}

@@ -4683,25 +4683,44 @@ router.delete("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
   store.saveAdminHub(hub);
   res.json({ ok: true });
 });
-// What players across every league still owe (from each league's own payment
-// records), for the hub's Payments area.
+// What players across every league owe and have paid (from each league's own
+// payment records), for the hub's Money sheet. A league only counts once
+// payments are being tracked there: switched on by an admin, or automatically
+// once any payment has been recorded, so fees collected by cash outside the app
+// don't show up as "owed".
+function leagueTracksFees(league) {
+  if (league.hubTrackFees !== undefined) return !!league.hubTrackFees;
+  return league.teams.some((t) => t.paymentStatus === "paid" || (t.lumpCents || 0) > 0 || t.players.some((p) => (p.paidCents || 0) > 0 || p.paymentStatus === "paid"));
+}
 router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
-  const out = [];
+  const teams = [], leagues = [];
   store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
     const league = store.getLeague(entry.id);
     if (!league || !league.registrationFeeCents || league.format === "pairs") return;
     const fee = league.registrationFeeCents;
+    const tracked = leagueTracksFees(league);
+    let collected = 0, owed = 0;
     league.teams.forEach((team) => {
-      if (team.paymentStatus === "paid") return;
-      const players = team.players.map((p) => {
-        const owed = playerOwedCents(league, team, p);
-        return { playerId: p.id, name: p.name, owedCents: owed, paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team) };
-      }).filter((p) => p.owedCents > 0);
+      const paid = teamPaidCents(league, team);
+      collected += paid;
+      owed += teamBalanceCents(league, team);
+      if (!tracked || team.paymentStatus === "paid") return;
+      const players = team.players.map((p) => ({
+        playerId: p.id, name: p.name, owedCents: playerOwedCents(league, team, p), paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team),
+      })).filter((p) => p.owedCents > 0);
       if (!players.length) return;
-      out.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: fee, teamOwedCents: teamBalanceCents(league, team), players });
+      teams.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: fee, teamOwedCents: teamBalanceCents(league, team), players });
     });
+    leagues.push({ leagueId: league.id, leagueName: league.name, feeCents: fee, tracked, collectedCents: collected, owedCents: owed, teamCount: league.teams.length });
   });
-  res.json(out);
+  res.json({ teams, leagues });
+});
+router.put("/admin/hub/league-tracking", requireOwnerSession, (req, res) => {
+  const league = store.getLeague(req.body && req.body.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  league.hubTrackFees = !!(req.body && req.body.track);
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, tracked: league.hubTrackFees });
 });
 
 /* ---------- Admin desk notes ----------
