@@ -3173,3 +3173,9 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ab-note-cats{display:flex;flex-wrap:wrap;gap:6px;}
 .ab-cat{min-height:0;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12.5px;cursor:pointer;color:var(--text);}
 .ab-cat.on{background:#EAF1FF;border-color:#9DB8F2;color:#1D4ED8;font-weight:700;}
+.ah-lr-foot{gap:6px 16px;flex-wrap:wrap;}.ah-lrow2:has(.ah-league-row.open) .ah-lr-foot{display:flex;}.ah-reset{color:#B42318;}
+.ah-sponsor-fields{display:flex;flex-direction:column;gap:8px;}
+.ah-group{margin-top:12px;}
+.ah-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:4px;}
+.ah-group-head b{font-size:13px;letter-spacing:.04em;text-transform:uppercase;}
+.ab-note-sponsor{display:flex;gap:8px;flex-wrap:wrap;}.ab-note-sponsor>*{flex:1;min-width:140px;}.ab-note-sponsor [hidden]{display:none;}

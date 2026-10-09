@@ -67,6 +67,11 @@
   <div class="ab-note-panel" id="ab-note-panel" role="dialog" aria-label="Quick note" hidden>
     <textarea id="ab-note-text" rows="3" maxlength="2000" placeholder="Quick note. It files itself in the Note Machine: 'Kit box 4 arrived', 'Chase Acme', 'Pay Sandton R3200 by friday'…"></textarea>
     <div class="ab-note-cats" id="ab-note-cats" role="group" aria-label="Category"></div>
+    <div class="ab-note-sponsor" id="ab-note-sponsor" hidden>
+      <select id="ab-note-scope" aria-label="Kind of sponsor"><option value="league">League sponsor</option><option value="team">Team sponsor</option><option value="region">Region sponsor</option></select>
+      <select id="ab-note-team" aria-label="Team" hidden></select>
+      <input id="ab-note-region" type="text" maxlength="80" placeholder="Which region?" hidden>
+    </div>
     <div class="ab-note-row">
       <select id="ab-note-league" aria-label="League"></select>
       <button type="button" class="primary" id="ab-note-add">Add</button>

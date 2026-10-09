@@ -712,7 +712,7 @@ function sanitize(league, req) {
   // its public route) is fetched exclusively through the dedicated
   // admin-gated /custom-charges endpoint below — never through this
   // general payload, same reasoning as kitShareToken/payLinkToken above.
-  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, customCharges, adminNotes: _adminNotes, ...leagueRest } = league;
+  const { adminPasswordHash, potwVotes, potwNotified, auditLog, seasonHistory, kitShareToken, customCharges, adminNotes: _adminNotes, paymentsBackup: _paymentsBackup, ...leagueRest } = league;
   // Players between teams: their names and photos only — payment details and
   // pay-link tokens are never part of this public payload.
   const freeAgents = (league.freeAgents || []).map(({ payLinkToken, claimRequest, paymentMode, paymentStatus, paymentMethod, paymentRef, paidAt, paidCents, payments, coveredByTeam, overpaidCents, ...p }) => p);
@@ -4558,6 +4558,8 @@ const HUB_STAGES = {
   sponsor: ["pitched", "agreed", "invoiced", "paid"],
 };
 const HUB_MONEY = { payment: "in", sponsor: "in", court: "out" };
+// Sponsors come in three kinds: a team's own, a league's, or a region's.
+const SPONSOR_SCOPES = ["team", "league", "region"];
 function guessHubType(text) {
   const t = String(text || "").toLowerCase();
   if (/\b(sponsor|sponsors|sponsorship|invoice|invoiced)\b/.test(t)) return "sponsor";
@@ -4605,6 +4607,8 @@ function applyHubFields(item, b, league) {
   if (b.qty !== undefined) { const q = Math.round(Number(b.qty)); item.qty = Number.isFinite(q) && q > 0 ? q : null; }
   if (b.status !== undefined) item.status = b.status === "done" ? "done" : "open";
   if (b.pinned !== undefined) item.pinned = !!b.pinned;
+  if (b.sponsorScope !== undefined && SPONSOR_SCOPES.includes(b.sponsorScope)) item.sponsorScope = b.sponsorScope;
+  if (b.region !== undefined) item.region = cleanHubText(b.region, 80) || null;
   if (b.stage !== undefined && HUB_STAGES[item.type] && HUB_STAGES[item.type].includes(b.stage)) item.stage = b.stage;
   return item;
 }
@@ -4613,7 +4617,10 @@ router.get("/admin/hub", requireOwnerSession, (req, res) => {
   res.json({
     me: { name: adminActorName(req), fromAccount: !!(req.session.playerUser && store.getUser(req.session.playerUser.id)) },
     items: (hub.items || []).map(hubItemView).sort((a, b) => b.createdAt - a.createdAt),
-    leagues: store.getIndex().filter((e) => !e.hidden).map((e) => ({ id: e.id, name: e.name })),
+    leagues: store.getIndex().filter((e) => !e.hidden).map((e) => {
+      const l = store.getLeague(e.id);
+      return { id: e.id, name: e.name, teams: l ? l.teams.map((t) => ({ id: t.id, name: t.name })) : [] };
+    }),
   });
 });
 router.post("/admin/hub/name", requireOwnerSession, (req, res) => {
@@ -4640,6 +4647,12 @@ router.post("/admin/hub/items", requireOwnerSession, (req, res) => {
   if (b.amountRands === undefined) item.amountCents = HUB_MONEY[type] ? parseHubAmountCents(text) : null;
   if (b.dueDate === undefined) item.dueDate = parseHubDue(text);
   applyHubFields(item, { ...b, title: undefined, text: undefined }, null);
+  if (type === "sponsor" && !item.sponsorScope) {
+    // Not said outright: a team if one's named, else the league if there is one,
+    // else a region ("region" in the words also points there).
+    const t = text.toLowerCase();
+    item.sponsorScope = /\bregion(al)?\b/.test(t) ? "region" : item.teamId || /\bteam sponsor/.test(t) ? "team" : item.leagueId ? "league" : "region";
+  }
   const hub = store.getAdminHub();
   hub.items = hub.items || [];
   hub.items.push(item);
@@ -4653,6 +4666,7 @@ router.put("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
   const b = req.body || {};
   if (b.type !== undefined && HUB_TYPES.includes(b.type) && b.type !== item.type) {
     item.type = b.type; item.direction = HUB_MONEY[b.type] || null;
+    if (b.type === "sponsor" && !item.sponsorScope) item.sponsorScope = item.teamId ? "team" : item.leagueId ? "league" : "region";
     item.stage = HUB_STAGES[b.type] ? (HUB_STAGES[b.type].includes(item.stage) ? item.stage : HUB_STAGES[b.type][0]) : null;
   }
   applyHubFields(item, b, null);
@@ -4681,6 +4695,60 @@ router.delete("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
   const hub = store.getAdminHub();
   hub.items = (hub.items || []).filter((x) => x.id !== req.params.id);
   store.saveAdminHub(hub);
+  res.json({ ok: true });
+});
+// Wipes every recorded payment in one league (teams and players, part payments
+// and ledgers) back to unpaid, for starting a fresh collection. What's cleared is
+// saved first so the last reset can be undone.
+const RESET_PAYMENT_FIELDS = ["paymentStatus", "paymentMethod", "paymentRef", "paidAt", "paidCents", "payments", "coveredByTeam", "lumpCents", "lumpRefs", "overpaidCents"];
+function snapshotPayments(league) {
+  const pick = (o) => Object.fromEntries(RESET_PAYMENT_FIELDS.filter((k) => o[k] !== undefined).map((k) => [k, JSON.parse(JSON.stringify(o[k]))]));
+  return league.teams.map((t) => ({ teamId: t.id, team: pick(t), players: t.players.map((p) => ({ playerId: p.id, ...pick(p) })) }));
+}
+router.post("/leagues/:leagueId/payments/reset", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  let teamsPaid = 0, playersPaid = 0;
+  league.teams.forEach((t) => {
+    if (t.paymentStatus === "paid" || (t.lumpCents || 0) > 0) teamsPaid++;
+    t.players.forEach((p) => { if (p.paymentStatus === "paid" || (p.paidCents || 0) > 0) playersPaid++; });
+  });
+  const wasTracked = leagueTracksFees(league);
+  league.paymentsBackup = { at: Date.now(), by: adminActorName(req), teams: snapshotPayments(league), teamsPaid, playersPaid };
+  league.teams.forEach((t) => {
+    t.paymentStatus = "unpaid"; t.paymentMethod = null; t.paymentRef = null; t.paidAt = null;
+    delete t.lumpCents; delete t.lumpRefs; delete t.overpaidCents;
+    t.players.forEach((p) => {
+      p.paymentStatus = "unpaid"; p.paymentMethod = null; p.paymentRef = null; p.paidAt = null;
+      p.paidCents = 0; p.payments = []; p.coveredByTeam = false; delete p.overpaidCents;
+    });
+  });
+  // Starting a fresh collection: the league stays on the Note Machine, now at zero.
+  if (wasTracked) league.hubTrackFees = true;
+  logAudit(league, req, null, "payments_reset", { teamsPaid, playersPaid });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, teamsPaid, playersPaid });
+});
+router.post("/leagues/:leagueId/payments/undo-reset", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const backup = league && league.paymentsBackup;
+  if (!backup) return res.status(400).json({ error: "There's no reset to undo." });
+  league.teams.forEach((t) => {
+    const b = backup.teams.find((x) => x.teamId === t.id);
+    if (!b) return;
+    RESET_PAYMENT_FIELDS.forEach((k) => { delete t[k]; });
+    Object.assign(t, JSON.parse(JSON.stringify(b.team)));
+    t.players.forEach((p) => {
+      const bp = b.players.find((x) => x.playerId === p.id);
+      if (!bp) return;
+      RESET_PAYMENT_FIELDS.forEach((k) => { delete p[k]; });
+      const { playerId: _id, ...fields } = JSON.parse(JSON.stringify(bp));
+      Object.assign(p, fields);
+    });
+  });
+  logAudit(league, req, null, "payments_reset_undone", { teamsPaid: backup.teamsPaid, playersPaid: backup.playersPaid });
+  delete league.paymentsBackup;
+  store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
 // What players across every league owe and have paid (from each league's own
@@ -4724,6 +4792,7 @@ router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
     leagues.push({
       leagueId: league.id, leagueName: league.name, feeCents: fee, tracked, collectedCents: collected, owedCents: owed, teamCount: league.teams.length,
       totalCents: total, fullPaidCents: fullPaid, partPaidCents: partPaid, teamsPaid: teamBars.filter((t) => t.complete).length, teamBars,
+      canUndoReset: !!league.paymentsBackup, resetAt: league.paymentsBackup ? league.paymentsBackup.at : null, resetBy: league.paymentsBackup ? league.paymentsBackup.by : null,
     });
   });
   res.json({ teams, leagues });
