@@ -1769,6 +1769,13 @@ function updateAdminBar() {
 // small box that files straight into the Note Machine, so nothing is lost
 // while you're in the middle of something else.
 let quickNoteLeagues = null;
+let quickNoteType = "auto";
+function renderQuickNoteCats() {
+  const cats = [["auto", "Auto"], ["payment", "Payment"], ["sponsor", "Sponsor"], ["court", "Court"], ["kit", "Kit"], ["followup", "Follow-up"], ["note", "Note"]];
+  const box = el("ab-note-cats");
+  box.innerHTML = cats.map(([k, l]) => `<button type="button" class="ab-cat${quickNoteType === k ? " on" : ""}" data-t="${k}" aria-pressed="${quickNoteType === k}">${l}</button>`).join("");
+  box.querySelectorAll(".ab-cat").forEach((b) => { b.onclick = () => { quickNoteType = b.dataset.t; renderQuickNoteCats(); el("ab-note-text").focus(); }; });
+}
 function closeQuickNote() {
   const panel = el("ab-note-panel");
   if (!panel || panel.hidden) return;
@@ -1782,6 +1789,8 @@ async function openQuickNote() {
   const here = inLeagueView() ? currentLeagueId : "";
   el("ab-note-league").innerHTML = '<option value="">All leagues</option>' + quickNoteLeagues.map((l) => `<option value="${l.id}"${l.id === here ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
   el("ab-note-hint").textContent = "";
+  quickNoteType = "auto";
+  renderQuickNoteCats();
   panel.hidden = false;
   el("admin-bar-note").setAttribute("aria-expanded", "true");
   el("ab-note-text").focus();
@@ -1793,11 +1802,13 @@ el("ab-note-add").onclick = async () => {
   const text = ta.value.trim();
   if (!text) { el("ab-note-hint").textContent = "Write something first."; return; }
   const body = { text };
+  if (quickNoteType !== "auto") body.type = quickNoteType;
   const lg = el("ab-note-league").value; if (lg) body.leagueId = lg;
   el("ab-note-add").disabled = true;
   try {
     const it = await api("/admin/hub/items", { method: "POST", body });
     ta.value = "";
+    quickNoteType = "auto"; renderQuickNoteCats();
     el("ab-note-hint").textContent = `Filed under ${AH_TYPE_LABEL[it.type] || it.type} by ${it.createdBy}.`;
     // If the Note Machine is open behind this, it picks the new note up.
     if (document.querySelector("#hub-view-adminhub.active")) loadAdminHub();
@@ -1806,7 +1817,13 @@ el("ab-note-add").onclick = async () => {
 };
 el("ab-note-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") el("ab-note-add").click(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeQuickNote(); });
-document.addEventListener("click", (e) => { if (!e.target.closest("#ab-note-panel") && !e.target.closest("#admin-bar-note")) closeQuickNote(); });
+// Picking a category redraws the chips, so the clicked button may already be
+// gone from the page by now: judge by the path the click took, not the element.
+document.addEventListener("click", (e) => {
+  const path = e.composedPath ? e.composedPath() : [];
+  if (path.includes(el("ab-note-panel")) || path.includes(el("admin-bar-note"))) return;
+  closeQuickNote();
+});
 async function pollAdminBar() {
   if (!isOwner || document.hidden) return;
   const data = await api("/admin/control-room").catch(() => null);

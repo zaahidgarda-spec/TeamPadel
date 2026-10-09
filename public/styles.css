@@ -3170,3 +3170,6 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ab-note-row{display:flex;gap:8px;align-items:center;}
 .ab-note-row select{flex:1;min-width:0;}
 .ab-note-foot{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:12px;color:var(--text-dim,#64748B);}
+.ab-note-cats{display:flex;flex-wrap:wrap;gap:6px;}
+.ab-cat{min-height:0;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12.5px;cursor:pointer;color:var(--text);}
+.ab-cat.on{background:#EAF1FF;border-color:#9DB8F2;color:#1D4ED8;font-weight:700;}
