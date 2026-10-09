@@ -1755,6 +1755,8 @@ function updateAdminBar() {
   const leagueAdmin = inLeague && myRole === "admin" && league.format !== "pairs";
   const show = isOwner || leagueAdmin;
   el("admin-bar").style.display = show ? "flex" : "none";
+  el("admin-bar-note").style.display = isOwner ? "" : "none";
+  if (!isOwner) closeQuickNote();
   document.documentElement.classList.toggle("has-admin-bar", show);
   if (!show) return;
   const n = inLeague && !isOwner ? currentLeagueLiveCount() : Math.max(adminBarLive, inLeague ? currentLeagueLiveCount() : 0);
@@ -1763,6 +1765,48 @@ function updateAdminBar() {
   badge.style.display = n > 0 ? "" : "none";
   badge.textContent = n;
 }
+// A note from anywhere in the app: the "+ Note" button in the admin bar opens a
+// small box that files straight into the Note Machine, so nothing is lost
+// while you're in the middle of something else.
+let quickNoteLeagues = null;
+function closeQuickNote() {
+  const panel = el("ab-note-panel");
+  if (!panel || panel.hidden) return;
+  panel.hidden = true;
+  el("admin-bar-note").setAttribute("aria-expanded", "false");
+}
+async function openQuickNote() {
+  const panel = el("ab-note-panel");
+  if (!panel.hidden) return closeQuickNote();
+  if (!quickNoteLeagues) quickNoteLeagues = (await api("/admin/hub").catch(() => ({ leagues: [] }))).leagues;
+  const here = inLeagueView() ? currentLeagueId : "";
+  el("ab-note-league").innerHTML = '<option value="">All leagues</option>' + quickNoteLeagues.map((l) => `<option value="${l.id}"${l.id === here ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
+  el("ab-note-hint").textContent = "";
+  panel.hidden = false;
+  el("admin-bar-note").setAttribute("aria-expanded", "true");
+  el("ab-note-text").focus();
+}
+el("admin-bar-note").onclick = openQuickNote;
+el("ab-note-open").onclick = () => { closeQuickNote(); showHub(); switchHubTab("adminhub"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+el("ab-note-add").onclick = async () => {
+  const ta = el("ab-note-text");
+  const text = ta.value.trim();
+  if (!text) { el("ab-note-hint").textContent = "Write something first."; return; }
+  const body = { text };
+  const lg = el("ab-note-league").value; if (lg) body.leagueId = lg;
+  el("ab-note-add").disabled = true;
+  try {
+    const it = await api("/admin/hub/items", { method: "POST", body });
+    ta.value = "";
+    el("ab-note-hint").textContent = `Filed under ${AH_TYPE_LABEL[it.type] || it.type} by ${it.createdBy}.`;
+    // If the Note Machine is open behind this, it picks the new note up.
+    if (document.querySelector("#hub-view-adminhub.active")) loadAdminHub();
+  } catch (e) { el("ab-note-hint").textContent = e.message; }
+  el("ab-note-add").disabled = false;
+};
+el("ab-note-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") el("ab-note-add").click(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeQuickNote(); });
+document.addEventListener("click", (e) => { if (!e.target.closest("#ab-note-panel") && !e.target.closest("#admin-bar-note")) closeQuickNote(); });
 async function pollAdminBar() {
   if (!isOwner || document.hidden) return;
   const data = await api("/admin/control-room").catch(() => null);

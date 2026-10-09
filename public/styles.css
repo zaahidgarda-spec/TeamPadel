@@ -3161,3 +3161,12 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-dim,#64748B);margin:8px 2px 0;}
 .ah-legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;background:#DCE2EC;vertical-align:-1px;}
 .ah-legend .a::before{background:#1F9D55;}.ah-legend .b::before{background:#E5A200;}
+
+/* Quick note from the admin bar */
+.admin-bar .ab-note-btn{background:transparent;border-style:dashed;}
+.ab-note-panel{position:fixed;top:50px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));z-index:61;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 40px rgba(6,11,24,.28);padding:12px;display:flex;flex-direction:column;gap:8px;}
+.ab-note-panel[hidden]{display:none;}
+.ab-note-panel textarea{width:100%;}
+.ab-note-row{display:flex;gap:8px;align-items:center;}
+.ab-note-row select{flex:1;min-width:0;}
+.ab-note-foot{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:12px;color:var(--text-dim,#64748B);}

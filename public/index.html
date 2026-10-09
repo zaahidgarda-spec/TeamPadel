@@ -61,7 +61,16 @@
 <div class="wrap">
   <div class="admin-bar" id="admin-bar" style="display:none;">
     <button type="button" class="ab-tag" id="admin-bar-tag">Admin</button><span class="ab-sp"></span>
+    <button type="button" class="ab-btn ab-note-btn" id="admin-bar-note" style="display:none;" aria-haspopup="dialog" aria-expanded="false">+ Note</button>
     <button type="button" class="ab-btn" id="admin-bar-btn"><span class="ab-dot"></span>Control room<span class="ab-n" id="admin-bar-n" style="display:none;"></span></button>
+  </div>
+  <div class="ab-note-panel" id="ab-note-panel" role="dialog" aria-label="Quick note" hidden>
+    <textarea id="ab-note-text" rows="3" maxlength="2000" placeholder="Quick note. It files itself in the Note Machine: 'Kit box 4 arrived', 'Chase Acme', 'Pay Sandton R3200 by friday'…"></textarea>
+    <div class="ab-note-row">
+      <select id="ab-note-league" aria-label="League"></select>
+      <button type="button" class="primary" id="ab-note-add">Add</button>
+    </div>
+    <div class="ab-note-foot"><span id="ab-note-hint"></span><button type="button" class="link" id="ab-note-open">Open Note Machine</button></div>
   </div>
   <div id="install-banner" class="install-banner" style="display:none;">
     <svg class="install-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
