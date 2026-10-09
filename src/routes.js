@@ -4764,8 +4764,13 @@ router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
   const teams = [], leagues = [];
   store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
     const league = store.getLeague(entry.id);
-    if (!league || !league.registrationFeeCents || league.format === "pairs") return;
-    const fee = league.registrationFeeCents;
+    if (!league || league.format === "pairs") return;
+    const fee = league.registrationFeeCents || 0;
+    // No payment amount set yet: listed so it can be set, with nothing to count.
+    if (!fee) {
+      leagues.push({ leagueId: league.id, leagueName: league.name, feeCents: 0, noFee: true, tracked: false, collectedCents: 0, owedCents: 0, teamCount: league.teams.length, totalCents: 0, fullPaidCents: 0, partPaidCents: 0, teamsPaid: 0, teamBars: [] });
+      return;
+    }
     const tracked = leagueTracksFees(league);
     let collected = 0, owed = 0;
     league.teams.forEach((team) => {

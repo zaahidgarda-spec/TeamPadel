@@ -3179,3 +3179,8 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:4px;}
 .ah-group-head b{font-size:13px;letter-spacing:.04em;text-transform:uppercase;}
 .ab-note-sponsor{display:flex;gap:8px;flex-wrap:wrap;}.ab-note-sponsor>*{flex:1;min-width:140px;}.ab-note-sponsor [hidden]{display:none;}
+.ah-nofee{border:1px solid #E5A200;background:#FFF8E6;border-radius:12px;padding:10px 12px;margin-bottom:10px;}
+.ah-nofee-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(229,162,0,.35);}
+.ah-nofee-name{font-weight:600;}
+.ah-nofee-set{display:flex;align-items:center;gap:6px;}
+.ah-nofee-set input{width:110px;}

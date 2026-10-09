@@ -7131,7 +7131,8 @@ function ahPaymentsDashboardHtml() {
   const lgs = ahPayments.leagues.filter((l) => ahLeague === "all" || l.leagueId === ahLeague);
   const q = ahSearch.trim().toLowerCase();
   const list = lgs.filter((l) => !q || l.leagueName.toLowerCase().includes(q));
-  const counted = list.filter((l) => l.tracked), off = list.filter((l) => !l.tracked);
+  const noFee = list.filter((l) => l.noFee);
+  const counted = list.filter((l) => l.tracked && !l.noFee), off = list.filter((l) => !l.tracked && !l.noFee);
   const rowHtml = (l) => {
     const open = ahOpenLeague === l.leagueId;
     const pct = l.totalCents ? Math.round(((l.fullPaidCents + l.partPaidCents) / l.totalCents) * 100) : 0;
@@ -7156,11 +7157,17 @@ function ahPaymentsDashboardHtml() {
         ${ahBarHtml(l.fullPaidCents, l.partPaidCents, l.totalCents)}
         <span class="ah-lr-sub"><span>${pct}% · ${l.teamsPaid} of ${l.teamCount} teams paid</span><span>${fmtRands(l.fullPaidCents + l.partPaidCents)} of ${fmtRands(l.totalCents)}</span></span>
       </button>${inner}
-      <div class="ah-lr-foot"><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="0">Stop counting</button>
+      <div class="ah-lr-foot"><span class="note">${fmtRands(l.feeCents)} a team</span><button class="link ah-setfee" type="button" data-league="${l.leagueId}" data-name="${escapeHtml(l.leagueName)}" data-fee="${l.feeCents / 100}">Change amount</button><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="0">Stop counting</button>
         <button class="link ah-reset" type="button" data-league="${l.leagueId}" data-name="${escapeHtml(l.leagueName)}">Reset payments</button>
         ${l.canUndoReset ? `<button class="link ah-undo" type="button" data-league="${l.leagueId}">Undo reset (${escapeHtml(l.resetBy || "admin")}, ${ahWhen(l.resetAt)})</button>` : ""}</div></div>`;
   };
   let html = `<div class="ah-block"><div class="ah-block-title">Payments by league</div>`;
+  if (noFee.length) {
+    html += `<div class="ah-nofee"><b>${noFee.length} league${noFee.length === 1 ? " has" : "s have"} no payment amount yet</b>
+      <p class="note" style="margin:2px 0 8px;">Set what each team pays so its bar can start. You can change it later.</p>
+      ${noFee.map((l) => `<div class="ah-nofee-row" data-league="${l.leagueId}"><span class="ah-nofee-name">${escapeHtml(l.leagueName)}<span class="note"> · ${l.teamCount} team${l.teamCount === 1 ? "" : "s"}</span></span>
+        <span class="ah-nofee-set"><span class="note">R</span><input type="number" inputmode="decimal" min="1" step="1" placeholder="per team" aria-label="Payment amount per team for ${escapeHtml(l.leagueName)}"><button class="primary ah-fee-save" type="button">Set</button></span></div>`).join("")}</div>`;
+  }
   html += counted.length ? counted.map(rowHtml).join("") : '<p class="note">No league is being counted yet. Switch one on below once you start recording its payments here.</p>';
   html += `<div class="ah-legend"><span class="a">Paid in full</span><span class="b">Part paid</span><span>Still owed</span></div>`;
   if (off.length) html += `<details class="ah-counted"><summary>Not counted: ${off.length}</summary>${off.map((l) => `<div class="ah-lrow"><span><b>${escapeHtml(l.leagueName)}</b><span class="note"> · ${fmtRands(l.feeCents)} a team</span></span><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="1">Count it</button></div>`).join("")}<p class="note" style="margin:6px 0 0;">Fees paid by cash or EFT outside the app only show as owed until you record them. Count a league once you start recording its payments here.</p></details>`;
@@ -7171,6 +7178,28 @@ function bindAhPayments(root) {
   root.querySelectorAll("[data-team-key]").forEach((b) => { b.onclick = () => { ahOpenTeam = ahOpenTeam === b.dataset.teamKey ? null : b.dataset.teamKey; renderAdminHub(); }; });
   root.querySelectorAll(".ah-track").forEach((b) => {
     b.onclick = async () => { try { await ahApi("/league-tracking", { method: "PUT", body: { leagueId: b.dataset.league, track: b.dataset.on === "1" } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } };
+  });
+  const saveFee = async (leagueId, rands) => {
+    if (!(rands > 0)) { alert("Enter an amount in rands."); return; }
+    try {
+      await api(`/leagues/${leagueId}/registration-fee`, { method: "PUT", body: { amountRands: rands } });
+      // Setting an amount means this league is being collected, so it's counted from now.
+      await ahApi("/league-tracking", { method: "PUT", body: { leagueId, track: true } });
+      showToast("Payment amount saved.");
+      await ahRefreshAndRender();
+    } catch (e) { alert(e.message); }
+  };
+  root.querySelectorAll(".ah-nofee-row").forEach((row) => {
+    const input = row.querySelector("input");
+    row.querySelector(".ah-fee-save").onclick = () => saveFee(row.dataset.league, Number(input.value));
+    input.onkeydown = (e) => { if (e.key === "Enter") saveFee(row.dataset.league, Number(input.value)); };
+  });
+  root.querySelectorAll(".ah-setfee").forEach((b) => {
+    b.onclick = () => {
+      const v = prompt(`What does each team in ${b.dataset.name} pay? (rands)`, b.dataset.fee);
+      if (v === null) return;
+      saveFee(b.dataset.league, Number(String(v).replace(/[^0-9.]/g, "")));
+    };
   });
   root.querySelectorAll(".ah-reset").forEach((b) => {
     b.onclick = async () => {
