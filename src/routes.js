@@ -608,7 +608,7 @@ function imageTooLarge(res, dataUrl) {
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
 // Payment details on a team or player record (see sanitize).
-const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken"];
+const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken", "paidCents", "coveredByTeam", "lumpCents", "overpaidCents", "paidSoFarCents", "balanceCents"];
 function sanitize(league, req) {
   const user = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
@@ -634,6 +634,10 @@ function sanitize(league, req) {
     });
     return {
       ...rest, players,
+      // What's been paid toward the team's fee and what's left, whoever paid it
+      // (the players or the team); the payment fields above are already stripped
+      // for anyone who isn't this team's captain or the admin.
+      ...(viewerIsThisTeam && league.registrationFeeCents ? { paidSoFarCents: teamPaidCents(league, t), balanceCents: teamBalanceCents(league, t) } : {}),
       code: viewerIsThisTeam ? code : undefined,
       notifyEmail: viewerIsThisTeam ? notifyEmail : undefined,
       // Kit design (photos, sponsor placement, who's ordering) is as
@@ -5494,12 +5498,40 @@ function playerShareCents(league, team) {
   const n = team.players.length || 1;
   return Math.round((league.registrationFeeCents || 0) / n);
 }
-// True once switching modes would orphan a payment already made — a lump
-// payment already taken, or any one player already paid their share.
-function paymentModeLocked(team) {
-  if (team.paymentMode === "team") return team.paymentStatus === "paid";
-  if (team.paymentMode === "split") return team.players.some((p) => p.paymentStatus === "paid");
-  return false;
+// Payments move freely between the team and its players: the team owes one fee,
+// and anything a player pays toward their share or the team pays as a lump sum
+// both count against it. Nothing is locked to one way of paying.
+function playerPaidCents(league, team, p) {
+  if (p.paymentStatus !== "paid" || p.coveredByTeam) return 0;
+  return p.paidCents != null ? p.paidCents : playerShareCents(league, team);
+}
+function teamPaidCents(league, team) {
+  const fee = league.registrationFeeCents || 0;
+  if (team.paymentStatus === "paid") return fee;
+  return (team.lumpCents || 0) + team.players.reduce((t, p) => t + playerPaidCents(league, team, p), 0);
+}
+function teamBalanceCents(league, team) {
+  return Math.max(0, (league.registrationFeeCents || 0) - teamPaidCents(league, team));
+}
+// The team fee is settled: everyone still unpaid is covered by it.
+function coverTeamPlayers(team, method, ref, at) {
+  team.players.forEach((p) => {
+    if (p.paymentStatus === "paid") return;
+    p.paymentStatus = "paid"; p.paymentMethod = method; p.paymentRef = ref || null; p.paidAt = at; p.coveredByTeam = true;
+  });
+}
+// Keeps the team's own status in step with what its players have paid: all the
+// shares in means the team is paid; a share taken back reopens it.
+function reconcileTeamPayment(league, team) {
+  const fee = league.registrationFeeCents || 0;
+  if (!fee) return;
+  if (team.paymentStatus === "paid" && team.paymentMethod === "split") {
+    if (teamPaidCents(league, { ...team, paymentStatus: "unpaid" }) < fee - 1) { team.paymentStatus = "unpaid"; team.paymentMethod = null; team.paidAt = null; }
+    return;
+  }
+  if (team.paymentStatus !== "paid" && teamPaidCents(league, team) >= fee - 1) {
+    team.paymentStatus = "paid"; team.paymentMethod = "split"; team.paidAt = Date.now();
+  }
 }
 function findTeamAndPlayer(league, teamId, playerId) {
   const team = league.teams.find((t) => t.id === teamId);
@@ -5525,9 +5557,6 @@ router.put("/leagues/:leagueId/teams/:teamId/payment-mode", requireAdminOrCaptai
   if (!team) return res.status(404).json({ error: "Team not found." });
   const mode = req.body.mode;
   if (mode !== "team" && mode !== "split") return res.status(400).json({ error: "Invalid payment mode." });
-  if (team.paymentMode && team.paymentMode !== mode && paymentModeLocked(team)) {
-    return res.status(400).json({ error: "Can't change how this team pays — someone's already paid under the current mode." });
-  }
   team.paymentMode = mode;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
@@ -5539,11 +5568,10 @@ router.get("/leagues/:leagueId/teams/:teamId/pay/checkout", requireAdminOrCaptai
   const team = league.teams.find((t) => t.id === req.params.teamId);
   if (!team) return res.status(404).json({ error: "Team not found." });
   if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
-  if (team.paymentMode !== "team") return res.status(400).json({ error: "This team is set to pay per-player, not as one lump sum." });
-  if (team.paymentStatus === "paid") return res.status(400).json({ error: "This team is already marked as paid." });
+  if (team.paymentStatus === "paid" || teamBalanceCents(league, team) <= 0) return res.status(400).json({ error: "This team is already marked as paid." });
   const base = `${req.protocol}://${req.get("host")}`;
   const checkout = payfast.buildCheckout({
-    amountRands: league.registrationFeeCents / 100,
+    amountRands: teamBalanceCents(league, team) / 100,
     itemName: `${league.name} registration — ${team.name}`.slice(0, 100),
     returnUrl: `${base}/#league/${league.id}`,
     cancelUrl: `${base}/#league/${league.id}`,
@@ -5586,7 +5614,8 @@ router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token", (req, res) => {
   }
   res.json({
     leagueName: league.name, teamName: team.name, teamLogo: team.logo || "",
-    amountCents: league.registrationFeeCents || 0, paid: team.paymentStatus === "paid", paidAt: team.paidAt || null,
+    amountCents: teamBalanceCents(league, team), feeCents: league.registrationFeeCents || 0,
+    paid: team.paymentStatus === "paid" || teamBalanceCents(league, team) <= 0, paidAt: team.paidAt || null,
     // Same league-wide context as the per-player pay-link, so a team's
     // lump-sum link looks identical to an individual player's — see that
     // route's comment for why the photo itself isn't embedded here.
@@ -5604,11 +5633,10 @@ router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token/checkout", (req, re
     return res.status(404).json({ error: "This payment link is invalid." });
   }
   if (!league.registrationFeeCents) return res.status(400).json({ error: "This league has no registration fee set." });
-  if (team.paymentMode !== "team") return res.status(400).json({ error: "This team is set to pay per-player, not as one lump sum." });
-  if (team.paymentStatus === "paid") return res.status(400).json({ error: "This team is already marked as paid." });
+  if (team.paymentStatus === "paid" || teamBalanceCents(league, team) <= 0) return res.status(400).json({ error: "This team is already marked as paid." });
   const base = `${req.protocol}://${req.get("host")}`;
   const checkout = payfast.buildCheckout({
-    amountRands: league.registrationFeeCents / 100,
+    amountRands: teamBalanceCents(league, team) / 100,
     itemName: `${league.name} registration — ${team.name}`.slice(0, 100),
     returnUrl: `${base}/#pay-link-team/${league.id}/${team.id}/${team.payLinkToken}`,
     cancelUrl: `${base}/#pay-link-team/${league.id}/${team.id}/${team.payLinkToken}`,
@@ -5631,6 +5659,17 @@ router.put("/leagues/:leagueId/teams/:teamId/payment-status", requireAdmin, (req
   team.paymentMethod = paid ? "manual" : null;
   team.paymentRef = paid ? null : team.paymentRef;
   team.paidAt = paid ? Date.now() : null;
+  if (paid) {
+    coverTeamPlayers(team, "manual", null, team.paidAt);
+  } else {
+    // Taking the team payment back also takes back the shares it covered;
+    // anything a player paid themselves stays paid.
+    team.lumpCents = 0;
+    team.players.forEach((p) => {
+      if (!p.coveredByTeam) return;
+      p.paymentStatus = "unpaid"; p.paymentMethod = null; p.paymentRef = null; p.paidAt = null; p.coveredByTeam = false;
+    });
+  }
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -5712,6 +5751,9 @@ router.put("/leagues/:leagueId/teams/:teamId/players/:playerId/payment-status", 
   player.paymentMethod = paid ? "manual" : null;
   player.paymentRef = paid ? null : player.paymentRef;
   player.paidAt = paid ? Date.now() : null;
+  player.paidCents = null;
+  player.coveredByTeam = false;
+  reconcileTeamPayment(league, team);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });
@@ -6756,6 +6798,18 @@ router.post("/payfast/notify", express.raw({ type: "application/x-www-form-urlen
     if (playerId) {
       const player = team.players.find((p) => p.id === playerId);
       if (!player) return console.error("PayFast ITN: unknown player", playerId);
+      // PayFast retries an ITN until it gets a 200, so the same payment can
+      // arrive twice — never count one payment reference twice.
+      if (fields.pf_payment_id && player.paymentRef === fields.pf_payment_id && player.paymentStatus === "paid") return;
+      // Already settled (their share was covered by the team, or paid another
+      // way) before this payment landed: keep the record straight and flag the
+      // extra money so it can be refunded, rather than counting it twice.
+      if (player.paymentStatus === "paid") {
+        player.overpaidCents = (player.overpaidCents || 0) + Math.round(paidRands * 100);
+        console.error(`PayFast ITN: player ${playerId} was already paid — ${paidRands} to refund`);
+        store.saveLeague(league.id, league);
+        return;
+      }
       const expectedRands = playerShareCents(league, team) / 100;
       if (Math.abs(paidRands - expectedRands) > 0.01) {
         return console.error(`PayFast ITN: amount mismatch for player ${playerId} — expected ${expectedRands}, got ${paidRands}`);
@@ -6764,15 +6818,29 @@ router.post("/payfast/notify", express.raw({ type: "application/x-www-form-urlen
       player.paymentMethod = "payfast";
       player.paymentRef = fields.pf_payment_id || null;
       player.paidAt = Date.now();
+      player.paidCents = Math.round(paidRands * 100);
+      player.coveredByTeam = false;
+      reconcileTeamPayment(league, team);
     } else {
-      const expectedRands = (league.registrationFeeCents || 0) / 100;
-      if (Math.abs(paidRands - expectedRands) > 0.01) {
-        return console.error(`PayFast ITN: amount mismatch for team ${teamId} — expected ${expectedRands}, got ${paidRands}`);
+      const seenRefs = team.lumpRefs || [];
+      if (fields.pf_payment_id && (team.paymentRef === fields.pf_payment_id || seenRefs.includes(fields.pf_payment_id))) return;
+      // The team pays what's still owed (the fee less whatever players have
+      // paid). If that's covered, the team is settled and any unpaid players are
+      // covered by it; an amount short of that is credited and the rest stays due.
+      const owed = teamBalanceCents(league, team);
+      const paidCents = Math.round(paidRands * 100);
+      team.lumpRefs = seenRefs.concat(fields.pf_payment_id || []);
+      if (paidCents >= owed - 1) {
+        if (paidCents > owed + 1) team.overpaidCents = (team.overpaidCents || 0) + (paidCents - owed);
+        team.paymentStatus = "paid";
+        team.paymentMethod = "payfast";
+        team.paymentRef = fields.pf_payment_id || null;
+        team.paidAt = Date.now();
+        coverTeamPlayers(team, "payfast", fields.pf_payment_id, team.paidAt);
+      } else {
+        team.lumpCents = (team.lumpCents || 0) + paidCents;
+        console.error(`PayFast ITN: team ${teamId} paid ${paidCents}c of ${owed}c owed — credited, balance remains`);
       }
-      team.paymentStatus = "paid";
-      team.paymentMethod = "payfast";
-      team.paymentRef = fields.pf_payment_id || null;
-      team.paidAt = Date.now();
     }
     store.saveLeague(league.id, league);
   } catch (e) {

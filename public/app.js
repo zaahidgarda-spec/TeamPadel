@@ -621,7 +621,7 @@ async function openPayLinkTeam(leagueId, teamId, token) {
       <div class="pay-hero pay-hero-done${photoHeader ? " pay-link-lower" : ""}">
         <div class="pay-hero-check">&#10003;</div>
         <div class="pay-hero-label">${escapeHtml(data.teamName)} is all paid up</div>
-        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
+        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.feeCents != null ? data.feeCents : data.amountCents)}</div>
         ${photoHeader ? "" : teamLine}
         ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
       </div>
@@ -633,8 +633,9 @@ async function openPayLinkTeam(leagueId, teamId, token) {
   content.innerHTML = `
     ${photoHeader}
     <div class="pay-hero${photoHeader ? " pay-link-lower" : ""}">
-      <div class="pay-hero-label">${escapeHtml(possessive(data.teamName))} season fee</div>
+      <div class="pay-hero-label">${escapeHtml(possessive(data.teamName))} ${data.feeCents && data.amountCents < data.feeCents ? "remaining season fee" : "season fee"}</div>
       <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
+      ${data.feeCents && data.amountCents < data.feeCents ? `<div class="pay-hero-secure">Some players have already paid their share of ${fmtRands(data.feeCents)}.</div>` : ""}
       ${photoHeader ? "" : teamLine}
       <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
       <div class="error" id="pay-link-error"></div>
@@ -6538,15 +6539,6 @@ function submitPayfastCheckout(checkout) {
   document.body.appendChild(form);
   form.submit();
 }
-function paymentModeChooserHtml(teamId) {
-  return `
-    <p class="note" style="margin-bottom:8px;">Choose how this team pays before anyone can pay.</p>
-    <div class="row">
-      <button class="secondary pay-mode-btn" type="button" data-team="${teamId}" data-mode="team">One payment for the team</button>
-      <button class="secondary pay-mode-btn" type="button" data-team="${teamId}" data-mode="split">Split among players</button>
-    </div>
-  `;
-}
 // "via PayFast" for a real gateway payment, "marked manually" for an
 // admin's own paid/unpaid toggle — paymentMethod is tracked specifically so
 // this distinction stays visible everywhere a paid status shows, not just
@@ -6558,35 +6550,38 @@ function paymentMethodLabel(method) {
 // single lump-sum flow ("team" mode), or a per-player list ("split" mode).
 // isAdminView adds the manual paid/unpaid escape hatch a captain doesn't get.
 function teamPayDetailHtml(t, isAdminView) {
-  if (!t.paymentMode) return paymentModeChooserHtml(t.id);
-  if (t.paymentMode === "team") {
-    if (t.paymentStatus === "paid") {
-      return `<p class="note">✓ Paid · ${paymentMethodLabel(t.paymentMethod)}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
-        + (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "");
-    }
-    return `
-      <p>Registration fee: <strong>${fmtRands(league.registrationFeeCents)}</strong></p>
-      <button class="primary pay-now-btn" type="button">Pay with PayFast</button>
-      <button class="link pay-team-link-copy-btn" type="button">Copy pay link</button>
-      ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark paid manually</button>` : ""}
-      <div class="error pay-now-error"></div>
-    `;
-  }
-  // split — each player owes an even share, paid only via a link an admin
-  // or captain generates and sends them (see the "Copy pay link" button
-  // below) — never something a player sees or self-serves from their own
-  // My Profile.
-  const share = league.registrationFeeCents ? Math.round(league.registrationFeeCents / (t.players.length || 1)) : 0;
+  const fee = league.registrationFeeCents || 0;
+  const share = fee ? Math.round(fee / (t.players.length || 1)) : 0;
+  const teamPaid = t.paymentStatus === "paid";
+  const paidSoFar = t.paidSoFarCents != null ? t.paidSoFarCents : (teamPaid ? fee : 0);
+  const balance = t.balanceCents != null ? t.balanceCents : Math.max(0, fee - paidSoFar);
+  const pct = fee ? Math.min(100, Math.round((paidSoFar / fee) * 100)) : 0;
+  // One team fee, paid however suits: the players each pay their share, the team
+  // pays what's left in one go, or any mix — what's paid counts against the
+  // same total, and whatever's still owed is what the team's own button charges.
+  const head = teamPaid
+    ? `<p class="note">&#10003; Team fee paid in full${t.paymentMethod === "split" ? " by the players" : " · " + paymentMethodLabel(t.paymentMethod)}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
+    : `<p>Team fee <strong>${fmtRands(fee)}</strong> · paid so far <strong>${fmtRands(paidSoFar)}</strong> · <strong>${fmtRands(balance)}</strong> still to pay</p>
+       <div class="pay-summary-track" style="margin:6px 0 10px;"><div class="pay-summary-fill" style="width:${pct}%;"></div></div>`;
+  const teamActions = teamPaid
+    ? (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark team unpaid</button>` : "")
+    : `<button class="primary pay-now-btn" type="button">Pay ${balance < fee ? "the remaining " : ""}${fmtRands(balance)} for the team</button>
+       <button class="link pay-team-link-copy-btn" type="button">Copy team pay link</button>
+       ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark team paid manually</button>` : ""}
+       <div class="error pay-now-error"></div>`;
+  // Each player's own share, paid through a link an admin or captain sends them
+  // (never self-served from their own My Profile).
   const rows = t.players.map((p) => `
     <div class="notif-row" data-player="${p.id}">
-      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${fmtRands(share)}${p.paymentStatus === "paid" ? ` · Paid · ${paymentMethodLabel(p.paymentMethod)}` : ""}</div></div>
+      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${fmtRands(share)}${p.paymentStatus === "paid" ? ` · Paid · ${p.coveredByTeam ? "covered by the team" : paymentMethodLabel(p.paymentMethod)}` : ""}</div></div>
       <span class="badge ${p.paymentStatus === "paid" ? "done" : "outstanding"}">${p.paymentStatus === "paid" ? "Paid" : "Unpaid"}</span>
       ${p.paymentStatus === "paid"
-        ? (isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
+        ? (isAdminView && !p.coveredByTeam ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
         : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>` : ""}`}
     </div>
   `).join("");
-  return `<div class="combine-claim-list">${rows}</div>`;
+  return `${head}<div class="pay-team-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">${teamActions}</div>
+    <div class="combine-claim-list">${rows}</div>`;
 }
 // Wires up every interactive element teamPayDetailHtml can render, for
 // whichever container it was just injected into (the admin's per-team
@@ -6657,17 +6652,16 @@ function renderPaySummaryHtml() {
   if (!fee) return "";
   let totalCollected = 0, payfastN = 0, manualN = 0, unpaidN = 0;
   league.teams.forEach((t) => {
-    if (t.paymentMode === "team") {
-      if (t.paymentStatus === "paid") { totalCollected += fee; (t.paymentMethod === "payfast" ? payfastN++ : manualN++); }
-      else unpaidN++;
-    } else if (t.paymentMode === "split") {
-      const share = Math.round(fee / (t.players.length || 1));
-      t.players.forEach((p) => {
-        if (p.paymentStatus === "paid") { totalCollected += share; (p.paymentMethod === "payfast" ? payfastN++ : manualN++); }
-        else unpaidN++;
-      });
+    const paid = t.paidSoFarCents != null ? t.paidSoFarCents : (t.paymentStatus === "paid" ? fee : 0);
+    totalCollected += paid;
+    if (t.paymentStatus === "paid") {
+      // A team that settled in one go is one payment; one the players paid up
+      // between them counts each player's own.
+      if (t.paymentMethod === "split") t.players.forEach((p) => { (p.paymentMethod === "payfast" ? payfastN++ : manualN++); });
+      else (t.paymentMethod === "payfast" ? payfastN++ : manualN++);
     } else {
-      unpaidN++; // mode not chosen yet — the team's whole fee is still outstanding
+      t.players.forEach((p) => { if (p.paymentStatus === "paid" && !p.coveredByTeam) (p.paymentMethod === "payfast" ? payfastN++ : manualN++); });
+      unpaidN++;
     }
   });
   const totalExpected = fee * league.teams.length;
@@ -6694,16 +6688,20 @@ function renderPaySummaryHtml() {
 // needed just to look at what's come in.
 function renderPayReceivedHtml() {
   const rows = [];
+  const fee = league.registrationFeeCents || 0;
   league.teams.forEach((t) => {
-    if (t.paymentMode === "team" && t.paymentStatus === "paid") {
-      rows.push({ name: t.name, meta: "Team payment", amount: league.registrationFeeCents || 0, method: t.paymentMethod, paidAt: t.paidAt, ref: t.paymentRef });
-    } else if (t.paymentMode === "split") {
-      const share = league.registrationFeeCents ? Math.round(league.registrationFeeCents / (t.players.length || 1)) : 0;
-      t.players.forEach((p) => {
-        if (p.paymentStatus === "paid") {
-          rows.push({ name: p.name, meta: t.name, amount: share, method: p.paymentMethod, paidAt: p.paidAt, ref: p.paymentRef });
-        }
-      });
+    // Individual shares first; a team lump sum covers whatever wasn't paid
+    // individually, so it's the fee less those shares.
+    let individual = 0;
+    t.players.forEach((p) => {
+      if (p.paymentStatus === "paid" && !p.coveredByTeam) {
+        const amt = p.paidCents != null ? p.paidCents : (fee ? Math.round(fee / (t.players.length || 1)) : 0);
+        individual += amt;
+        rows.push({ name: p.name, meta: t.name, amount: amt, method: p.paymentMethod, paidAt: p.paidAt, ref: p.paymentRef });
+      }
+    });
+    if (t.paymentStatus === "paid" && t.paymentMethod !== "split") {
+      rows.push({ name: t.name, meta: individual ? "Team payment for the rest" : "Team payment", amount: Math.max(0, fee - individual), method: t.paymentMethod, paidAt: t.paidAt, ref: t.paymentRef });
     }
   });
   if (!rows.length) return '<p class="empty">No payments recorded yet.</p>';
@@ -6736,9 +6734,8 @@ function renderPay() {
     renderPayCustomSubview();
     const list = el("pay-teams-list");
     list.innerHTML = league.teams.map((t) => {
-      const summary = !t.paymentMode ? "Payment method not chosen"
-        : t.paymentMode === "team" ? (t.paymentStatus === "paid" ? "Paid" : "Unpaid")
-        : `${t.players.filter((p) => p.paymentStatus === "paid").length} of ${t.players.length} players paid`;
+      const summary = t.paymentStatus === "paid" ? "Paid in full"
+        : `${fmtRands(t.paidSoFarCents || 0)} of ${fmtRands(league.registrationFeeCents || 0)} paid`;
       return `
         <div class="pay-team-block" data-team="${t.id}" style="padding:14px 0;border-bottom:1px solid var(--line);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
