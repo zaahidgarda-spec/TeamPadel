@@ -4535,6 +4535,175 @@ router.post("/leagues/:leagueId/free-agents/:playerId/assign", requireAdmin, (re
   res.json({ ok: true });
 });
 
+/* ---------- Admin hub (one page for every league) ----------
+   Notes, player payments, sponsor money, court bills, follow-ups and kit
+   deliveries in one place. Site owner only. Every item records which admin
+   created or last changed it, by name. */
+// The name to put on what an admin does: the player account they're signed in
+// with if any, otherwise a name they've set for this session.
+function adminActorName(req) {
+  const pu = req.session && req.session.playerUser;
+  const user = pu && store.getUser(pu.id);
+  if (user && user.name) return user.name;
+  if (req.session && req.session.adminName) return req.session.adminName;
+  return "Admin";
+}
+function requireOwnerSession(req, res, next) {
+  if (!req.session || !req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
+  next();
+}
+const HUB_TYPES = ["note", "payment", "sponsor", "court", "kit", "followup"];
+const HUB_STAGES = {
+  kit: ["ordered", "received", "handed", "problem"],
+  sponsor: ["pitched", "agreed", "invoiced", "paid"],
+};
+const HUB_MONEY = { payment: "in", sponsor: "in", court: "out" };
+function guessHubType(text) {
+  const t = String(text || "").toLowerCase();
+  if (/\b(sponsor|sponsors|sponsorship|invoice|invoiced)\b/.test(t)) return "sponsor";
+  if (/\b(court|courts|venue|hire|booking|bookings)\b/.test(t)) return "court";
+  if (/\b(kit|kits|shirt|shirts|jersey|jerseys|box|boxes|delivery|printer|printing|received)\b/.test(t)) return "kit";
+  if (/\b(chase|follow up|follow-up|followup|remind|reminder|call|email|ask|check with|waiting on)\b/.test(t)) return "followup";
+  if (/\b(paid|pay|pays|owe|owes|owing|eft|deposit|instalment|installment)\b|\br\s?\d/.test(t)) return "payment";
+  return "note";
+}
+// "R 3 200", "R3200", "R1,500.50" → cents (null when there's no amount).
+function parseHubAmountCents(text) {
+  const m = String(text || "").match(/\br\s?(\d[\d\s,]*(?:\.\d{1,2})?)/i);
+  if (!m) return null;
+  const n = Number(m[1].replace(/[\s,]/g, ""));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+// today / tomorrow / a weekday name → yyyy-mm-dd (next one), else null.
+function parseHubDue(text) {
+  const t = String(text || "").toLowerCase();
+  const day = (offset) => { const d = new Date(Date.now() + offset * 86400000); return d.toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }); };
+  if (/\btoday\b/.test(t)) return day(0);
+  if (/\btomorrow\b/.test(t)) return day(1);
+  const names = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const idx = names.findIndex((n) => new RegExp("\\b" + n.slice(0, 3) + "(" + n.slice(3) + ")?\\b").test(t));
+  if (idx === -1) return null;
+  const todayIdx = new Date(day(0) + "T12:00:00").getDay();
+  return day(((idx - todayIdx + 7) % 7) || 7);
+}
+function hubItemView(item) {
+  const paid = (item.payments || []).reduce((t, x) => t + x.cents, 0);
+  return { ...item, paidCents: paid };
+}
+function cleanHubText(v, max) { return String(v == null ? "" : v).trim().slice(0, max); }
+function applyHubFields(item, b, league) {
+  if (b.title !== undefined) item.title = cleanHubText(b.title, 200);
+  if (b.text !== undefined) item.text = cleanHubText(b.text, 2000);
+  if (b.leagueId !== undefined) item.leagueId = b.leagueId && store.getLeague(b.leagueId) ? b.leagueId : null;
+  if (b.teamId !== undefined) item.teamId = b.teamId || null;
+  if (b.playerId !== undefined) item.playerId = b.playerId || null;
+  if (b.amountRands !== undefined) {
+    const c = Math.round(Number(b.amountRands) * 100);
+    item.amountCents = Number.isFinite(c) && c > 0 ? c : null;
+  }
+  if (b.dueDate !== undefined) item.dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.dueDate)) ? b.dueDate : null;
+  if (b.qty !== undefined) { const q = Math.round(Number(b.qty)); item.qty = Number.isFinite(q) && q > 0 ? q : null; }
+  if (b.status !== undefined) item.status = b.status === "done" ? "done" : "open";
+  if (b.pinned !== undefined) item.pinned = !!b.pinned;
+  if (b.stage !== undefined && HUB_STAGES[item.type] && HUB_STAGES[item.type].includes(b.stage)) item.stage = b.stage;
+  return item;
+}
+router.get("/admin/hub", requireOwnerSession, (req, res) => {
+  const hub = store.getAdminHub();
+  res.json({
+    me: { name: adminActorName(req), fromAccount: !!(req.session.playerUser && store.getUser(req.session.playerUser.id)) },
+    items: (hub.items || []).map(hubItemView).sort((a, b) => b.createdAt - a.createdAt),
+    leagues: store.getIndex().filter((e) => !e.hidden).map((e) => ({ id: e.id, name: e.name })),
+  });
+});
+router.post("/admin/hub/name", requireOwnerSession, (req, res) => {
+  const name = cleanHubText(req.body && req.body.name, 40);
+  if (!name) return res.status(400).json({ error: "Enter your name." });
+  req.session.adminName = name;
+  res.json({ ok: true, name: adminActorName(req) });
+});
+router.post("/admin/hub/items", requireOwnerSession, (req, res) => {
+  const b = req.body || {};
+  const text = cleanHubText(b.text || b.title, 2000);
+  if (!text) return res.status(400).json({ error: "Write something first." });
+  const type = HUB_TYPES.includes(b.type) ? b.type : guessHubType(text);
+  const now = Date.now();
+  const who = adminActorName(req);
+  const item = {
+    id: logic.uid(), type, title: cleanHubText(b.title || text, 200), text: b.title ? cleanHubText(b.text, 2000) : "",
+    leagueId: null, teamId: null, playerId: null, amountCents: null, dueDate: null, qty: null,
+    status: "open", pinned: false, payments: [], direction: HUB_MONEY[type] || null,
+    stage: HUB_STAGES[type] ? HUB_STAGES[type][0] : null,
+    createdAt: now, createdBy: who, updatedAt: now, updatedBy: who,
+  };
+  // Amount and due date can be written straight into the text ("Pay Sandton R3200 by friday").
+  if (b.amountRands === undefined) item.amountCents = HUB_MONEY[type] ? parseHubAmountCents(text) : null;
+  if (b.dueDate === undefined) item.dueDate = parseHubDue(text);
+  applyHubFields(item, { ...b, title: undefined, text: undefined }, null);
+  const hub = store.getAdminHub();
+  hub.items = hub.items || [];
+  hub.items.push(item);
+  store.saveAdminHub(hub);
+  res.json(hubItemView(item));
+});
+router.put("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
+  const hub = store.getAdminHub();
+  const item = (hub.items || []).find((x) => x.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Item not found." });
+  const b = req.body || {};
+  if (b.type !== undefined && HUB_TYPES.includes(b.type) && b.type !== item.type) {
+    item.type = b.type; item.direction = HUB_MONEY[b.type] || null;
+    item.stage = HUB_STAGES[b.type] ? (HUB_STAGES[b.type].includes(item.stage) ? item.stage : HUB_STAGES[b.type][0]) : null;
+  }
+  applyHubFields(item, b, null);
+  if (b.title !== undefined && !item.title) return res.status(400).json({ error: "An item needs some text." });
+  item.updatedAt = Date.now(); item.updatedBy = adminActorName(req);
+  store.saveAdminHub(hub);
+  res.json(hubItemView(item));
+});
+// Money in or out against an item: a sponsor instalment received, a part
+// payment to a court. Adds up; the item is done once it's all paid.
+router.post("/admin/hub/items/:id/payments", requireOwnerSession, (req, res) => {
+  const hub = store.getAdminHub();
+  const item = (hub.items || []).find((x) => x.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "Item not found." });
+  const cents = Math.round(Number(req.body && req.body.amountRands) * 100);
+  if (!Number.isFinite(cents) || cents <= 0) return res.status(400).json({ error: "Enter an amount in rands." });
+  const paid = (item.payments || []).reduce((t, x) => t + x.cents, 0);
+  if (item.amountCents && paid + cents > item.amountCents) return res.status(400).json({ error: `That's more than what's left (R${((item.amountCents - paid) / 100).toFixed(2)}).` });
+  item.payments = (item.payments || []).concat([{ cents, at: Date.now(), by: adminActorName(req) }]);
+  if (item.amountCents && paid + cents >= item.amountCents) { item.status = "done"; if (item.type === "sponsor") item.stage = "paid"; }
+  item.updatedAt = Date.now(); item.updatedBy = adminActorName(req);
+  store.saveAdminHub(hub);
+  res.json(hubItemView(item));
+});
+router.delete("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
+  const hub = store.getAdminHub();
+  hub.items = (hub.items || []).filter((x) => x.id !== req.params.id);
+  store.saveAdminHub(hub);
+  res.json({ ok: true });
+});
+// What players across every league still owe (from each league's own payment
+// records), for the hub's Payments area.
+router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
+  const out = [];
+  store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
+    const league = store.getLeague(entry.id);
+    if (!league || !league.registrationFeeCents || league.format === "pairs") return;
+    const fee = league.registrationFeeCents;
+    league.teams.forEach((team) => {
+      if (team.paymentStatus === "paid") return;
+      const players = team.players.map((p) => {
+        const owed = playerOwedCents(league, team, p);
+        return { playerId: p.id, name: p.name, owedCents: owed, paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team) };
+      }).filter((p) => p.owedCents > 0);
+      if (!players.length) return;
+      out.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: fee, teamOwedCents: teamBalanceCents(league, team), players });
+    });
+  });
+  res.json(out);
+});
+
 /* ---------- Admin desk notes ----------
    Free-form notes only the league admin can see (never in the public league
    payload): typed in any words, filed under Payments, Kits or Other, and tied
@@ -4584,7 +4753,7 @@ router.post("/leagues/:leagueId/admin-notes", requireAdmin, (req, res) => {
   if (!playerId && !teamId) ({ playerId, teamId } = guessNoteTarget(league, text));
   // A player given on its own brings its team along.
   if (playerId && !teamId) { const t = league.teams.find((x) => x.players.some((p) => p.id === playerId)); teamId = t ? t.id : null; }
-  const note = { id: logic.uid(), text, category, playerId: playerId || null, teamId: teamId || null, done: false, createdAt: Date.now() };
+  const note = { id: logic.uid(), text, category, playerId: playerId || null, teamId: teamId || null, done: false, createdAt: Date.now(), by: adminActorName(req) };
   if (!league.adminNotes) league.adminNotes = [];
   league.adminNotes.push(note);
   store.saveLeague(league.id, league);
@@ -4600,6 +4769,7 @@ router.put("/leagues/:leagueId/admin-notes/:noteId", requireAdmin, (req, res) =>
   if (b.playerId !== undefined) { note.playerId = b.playerId || null; if (note.playerId) { const t = league.teams.find((x) => x.players.some((p) => p.id === note.playerId)); if (t) note.teamId = t.id; } }
   if (b.teamId !== undefined && b.playerId === undefined) { note.teamId = b.teamId || null; note.playerId = null; }
   if (b.done !== undefined) note.done = !!b.done;
+  note.updatedBy = adminActorName(req); note.updatedAt = Date.now();
   store.saveLeague(league.id, league);
   res.json(note);
 });
