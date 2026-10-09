@@ -556,7 +556,7 @@ async function openPayLink(leagueId, teamId, playerId, token) {
       <div class="pay-hero pay-hero-done${photoHeader ? " pay-link-lower" : ""}">
         <div class="pay-hero-check">&#10003;</div>
         <div class="pay-hero-label">${escapeHtml(data.playerName)}, you're all paid up</div>
-        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.amountCents)}</div>
+        <div class="pay-hero-amount" style="font-size:36px;">${fmtRands(data.shareCents != null ? data.shareCents : data.amountCents)}</div>
         ${photoHeader ? "" : teamLine}
         ${data.paidAt ? `<div class="pay-hero-secure">Paid ${new Date(data.paidAt).toLocaleDateString()}</div>` : ""}
       </div>
@@ -565,12 +565,16 @@ async function openPayLink(leagueId, teamId, playerId, token) {
     return;
   }
   const sandboxNote = PAYFAST_SANDBOX ? '<p class="note" style="margin-top:14px;text-align:center;"><strong>Test mode.</strong> This goes through PayFast\'s sandbox, not a real transaction.</p>' : "";
+  const partDone = data.paidCents > 0 && data.amountCents < data.shareCents;
+  const canPart = data.amountCents > 1000; // part payments need at least R10 and something left to split
   content.innerHTML = `
     ${photoHeader}
     <div class="pay-hero${photoHeader ? " pay-link-lower" : ""}">
-      <div class="pay-hero-label">${escapeHtml(possessive(data.playerName))} season fee</div>
+      <div class="pay-hero-label">${escapeHtml(possessive(data.playerName))} ${partDone ? "remaining season fee" : "season fee"}</div>
       <div class="pay-hero-amount">${fmtRands(data.amountCents)}</div>
+      ${partDone ? `<div class="pay-hero-secure">You've paid ${fmtRands(data.paidCents)} of ${fmtRands(data.shareCents)}.</div>` : ""}
       ${photoHeader ? "" : teamLine}
+      ${canPart ? `<label class="pay-part-row" for="pay-part-amount">Paying less today? <span>R <input type="number" inputmode="decimal" id="pay-part-amount" min="10" max="${(data.amountCents / 100).toFixed(2)}" step="0.01" value="${(data.amountCents / 100).toFixed(2)}"></span></label>` : ""}
       <button class="primary pay-hero-btn" type="button" id="pay-link-btn">Pay with PayFast</button>
       <div class="error" id="pay-link-error"></div>
       <div class="pay-hero-secure">&#128274; Secured by PayFast</div>
@@ -581,7 +585,9 @@ async function openPayLink(leagueId, teamId, playerId, token) {
   el("pay-link-btn").onclick = async () => {
     el("pay-link-error").textContent = "";
     try {
-      const checkout = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}/checkout`);
+      const partInput = el("pay-part-amount");
+      const qs = partInput && partInput.value ? "?amount=" + encodeURIComponent(partInput.value) : "";
+      const checkout = await api(`/leagues/${leagueId}/teams/${teamId}/players/${playerId}/pay-link/${token}/checkout${qs}`);
       submitPayfastCheckout(checkout);
     } catch (e) { el("pay-link-error").textContent = e.message; }
   };
@@ -6571,15 +6577,24 @@ function teamPayDetailHtml(t, isAdminView) {
        <div class="error pay-now-error"></div>`;
   // Each player's own share, paid through a link an admin or captain sends them
   // (never self-served from their own My Profile).
-  const rows = t.players.map((p) => `
+  const rows = t.players.map((p) => {
+    const isPaid = p.paymentStatus === "paid";
+    const own = p.paidCents != null ? p.paidCents : (isPaid && !p.coveredByTeam ? share : 0);
+    const part = !isPaid && own > 0;
+    const left = Math.max(0, share - own);
+    const note = isPaid ? `${fmtRands(share)} · Paid · ${p.coveredByTeam ? "covered by the team" : paymentMethodLabel(p.paymentMethod)}`
+      : part ? `${fmtRands(own)} of ${fmtRands(share)} paid · ${fmtRands(left)} left`
+      : fmtRands(share);
+    const actions = isPaid
+      ? (isAdminView && !p.coveredByTeam ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
+      : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-part-btn" type="button" data-left="${left}">Record payment</button><button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>${part ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Reset</button>` : ""}` : ""}`;
+    return `
     <div class="notif-row" data-player="${p.id}">
-      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${fmtRands(share)}${p.paymentStatus === "paid" ? ` · Paid · ${p.coveredByTeam ? "covered by the team" : paymentMethodLabel(p.paymentMethod)}` : ""}</div></div>
-      <span class="badge ${p.paymentStatus === "paid" ? "done" : "outstanding"}">${p.paymentStatus === "paid" ? "Paid" : "Unpaid"}</span>
-      ${p.paymentStatus === "paid"
-        ? (isAdminView && !p.coveredByTeam ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
-        : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>` : ""}`}
-    </div>
-  `).join("");
+      <div><strong>${escapeHtml(p.name)}</strong><div class="note">${note}</div></div>
+      <span class="badge ${isPaid ? "done" : part ? "part" : "outstanding"}">${isPaid ? "Paid" : part ? "Part paid" : "Unpaid"}</span>
+      ${actions ? `<div class="pay-row-actions">${actions}</div>` : ""}
+    </div>`;
+  }).join("");
   return `${head}<div class="pay-team-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">${teamActions}</div>
     <div class="combine-claim-list">${rows}</div>`;
 }
@@ -6623,12 +6638,24 @@ function bindPayDetailHandlers(container, t) {
   }
   container.querySelectorAll(".notif-row[data-player]").forEach((row) => {
     const playerId = row.dataset.player;
-    const toggle = row.querySelector(".pay-player-toggle-btn");
-    if (toggle) {
+    row.querySelectorAll(".pay-player-toggle-btn").forEach((toggle) => {
       toggle.onclick = async () => {
         const paid = toggle.dataset.paid === "true";
         await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/payment-status`, { method: "PUT", body: { paid } }).catch(() => {});
         await refreshLeague(); renderPay();
+      };
+    });
+    const partBtn = row.querySelector(".pay-player-part-btn");
+    if (partBtn) {
+      partBtn.onclick = async () => {
+        const left = Number(partBtn.dataset.left) / 100;
+        const v = prompt(`How much did they pay? (up to R${left.toFixed(2)} left)`, left.toFixed(2));
+        if (v === null) return;
+        const amountRands = Number(String(v).replace(/[^0-9.]/g, ""));
+        try {
+          await api(`/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/payments`, { method: "POST", body: { amountRands } });
+          await refreshLeague(); renderPay();
+        } catch (e) { alert(e.message); }
       };
     }
     const copyBtn = row.querySelector(".pay-link-copy-btn");
@@ -6694,7 +6721,9 @@ function renderPayReceivedHtml() {
     // individually, so it's the fee less those shares.
     let individual = 0;
     t.players.forEach((p) => {
-      if (p.paymentStatus === "paid" && !p.coveredByTeam) {
+      if (p.payments && p.payments.length) {
+        p.payments.forEach((x) => { individual += x.cents; rows.push({ name: p.name, meta: t.name + (p.payments.length > 1 || (p.paymentStatus !== "paid") ? " · part payment" : ""), amount: x.cents, method: x.method, paidAt: x.at, ref: x.ref }); });
+      } else if (p.paymentStatus === "paid" && !p.coveredByTeam) {
         const amt = p.paidCents != null ? p.paidCents : (fee ? Math.round(fee / (t.players.length || 1)) : 0);
         individual += amt;
         rows.push({ name: p.name, meta: t.name, amount: amt, method: p.paymentMethod, paidAt: p.paidAt, ref: p.paymentRef });
