@@ -3135,3 +3135,4 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-counted{margin:0 0 10px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:8px 12px;}
 .ah-counted summary{cursor:pointer;font-weight:600;font-size:13px;}
 .ah-lrow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line);margin-top:6px;font-size:13px;}
+.ah-tiles .card{margin:0;}
