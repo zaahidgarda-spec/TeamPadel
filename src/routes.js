@@ -4561,6 +4561,7 @@ function hubExcludedLeagueIds() {
   return new Set(store.getIndex().filter((e) => hubExcludedLeague(e.name)).map((e) => e.id));
 }
 const HUB_TYPES = ["note", "payment", "sponsor", "court", "kit", "followup"];
+const HUB_PRIORITIES = ["urgent", "high", "normal", "low"];
 const HUB_STAGES = {
   kit: ["ordered", "received", "handed", "problem"],
   sponsor: ["pitched", "agreed", "invoiced", "paid"],
@@ -4615,6 +4616,7 @@ function applyHubFields(item, b, league) {
   if (b.qty !== undefined) { const q = Math.round(Number(b.qty)); item.qty = Number.isFinite(q) && q > 0 ? q : null; }
   if (b.status !== undefined) item.status = b.status === "done" ? "done" : "open";
   if (b.pinned !== undefined) item.pinned = !!b.pinned;
+  if (b.priority !== undefined && HUB_PRIORITIES.includes(b.priority)) item.priority = b.priority;
   if (b.sponsorScope !== undefined && SPONSOR_SCOPES.includes(b.sponsorScope)) item.sponsorScope = b.sponsorScope;
   if (b.region !== undefined) item.region = cleanHubText(b.region, 80) || null;
   if (b.stage !== undefined && HUB_STAGES[item.type] && HUB_STAGES[item.type].includes(b.stage)) item.stage = b.stage;
@@ -4648,7 +4650,7 @@ router.post("/admin/hub/items", requireOwnerSession, (req, res) => {
   const item = {
     id: logic.uid(), type, title: cleanHubText(b.title || text, 200), text: b.title ? cleanHubText(b.text, 2000) : "",
     leagueId: null, teamId: null, playerId: null, amountCents: null, dueDate: null, qty: null,
-    status: "open", pinned: false, payments: [], direction: HUB_MONEY[type] || null,
+    status: "open", pinned: false, priority: HUB_PRIORITIES.includes(b.priority) ? b.priority : "normal", payments: [], direction: HUB_MONEY[type] || null,
     stage: HUB_STAGES[type] ? HUB_STAGES[type][0] : null,
     createdAt: now, createdBy: who, updatedAt: now, updatedBy: who,
   };

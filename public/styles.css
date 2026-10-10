@@ -3186,3 +3186,8 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-nofee-set input{width:110px;}
 .disc-tag{display:inline-block;margin-left:8px;font-size:11px;font-weight:700;color:#17803D;background:#E5F5EA;border-radius:999px;padding:1px 8px;vertical-align:middle;}
 .ah-team-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:6px;}
+.ah-prio{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;letter-spacing:.02em;}
+.ah-prio.p-urgent{background:#D64533;color:#fff;}.ah-prio.p-high{background:#FFE2A8;color:#7A4B00;}.ah-prio.p-low{background:#EEF1F6;color:#64748B;}
+.ah-prio-chip.p-urgent.on{background:#FDE6DE;border-color:#D64533;color:#B42318;}.ah-prio-chip.p-high.on{background:#FFF1CC;border-color:#E5A200;color:#7A4B00;}.ah-prio-chip.p-low.on{background:#EEF1F6;border-color:#94A3B8;color:#475569;}
+.ah-item:has(.ah-prio.p-urgent){border-left:4px solid #D64533;}
+.ah-prio-sel{min-height:0;padding:3px 6px;font-size:12px;}
