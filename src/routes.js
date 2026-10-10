@@ -6933,14 +6933,23 @@ function ratableMatchesFor(user) {
   (user.claims || []).forEach((c) => {
     if (hidden.has(c.leagueId)) return;
     const league = store.getLeague(c.leagueId);
-    const team = league && league.teams.find((t) => t.id === c.teamId);
-    if (!team) return;
-    logic.allFixturesOf(league).forEach((f) => {
+    if (!league) return;
+    // The live season, plus every season already ended: closing a league (End
+    // season) archives its matches, but they stay rate-able within the window.
+    // Same team ids carry over; a snapshot is matched by the player's roster spot.
+    const sources = [];
+    const liveTeam = league.teams.find((t) => t.id === c.teamId);
+    if (liveTeam) sources.push({ src: league, team: liveTeam });
+    (league.seasonHistory || []).forEach((snap) => {
+      const t = (snap.teams || []).find((x) => x.players.some((p) => p.id === c.playerId));
+      if (t) sources.push({ src: snap, team: t });
+    });
+    sources.forEach(({ src, team }) => logic.allFixturesOf(src).forEach((f) => {
       if (!f || !f.finalized || (f.teamA !== team.id && f.teamB !== team.id)) return;
       const mySide = f.teamA === team.id ? "A" : "B";
       const mySel = mySide === "A" ? f.selectionA : f.selectionB;
       const oppSel = mySide === "A" ? f.selectionB : f.selectionA;
-      const oppTeam = league.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
+      const oppTeam = src.teams.find((t) => t.id === (mySide === "A" ? f.teamB : f.teamA));
       if (!mySel || !oppSel || !oppTeam) return;
       (mySel.pairs || []).forEach((pair, idx) => {
         if (!pair || !pair.includes(c.playerId)) return;
@@ -6951,7 +6960,7 @@ function ratableMatchesFor(user) {
         if (!winner && !played) return;
         const key = league.id + ":" + f.id + ":" + idx;
         if (byKey.has(key)) return;
-        const when = ratingMatchTime(league, f, rubber);
+        const when = ratingMatchTime(src, f, rubber);
         if (when && when < cutoff) return;
         const ref = (team2, pid) => { const p = team2.players.find((x) => x.id === pid); return p ? { playerId: p.id, name: p.name } : null; };
         const opponents = (oppSel.pairs[idx] || []).map((pid) => ref(oppTeam, pid)).filter((o) => o && !mine.has(league.id + ":" + o.playerId));
@@ -6959,17 +6968,17 @@ function ratableMatchesFor(user) {
         // The other half of this player's own pair, if there is one (a singles
         // seed has none) — rated too, but at half weight (see attributeCardForKeys).
         const partner = pair.filter((pid) => pid && pid !== c.playerId && !mine.has(league.id + ":" + pid)).map((pid) => ref(team, pid)).filter(Boolean)[0] || null;
-        const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+        const sched = (src.schedule && src.schedule[logic.stageKeyFor(f)]) || {};
         byKey.set(key, {
           key, leagueId: league.id, leagueName: league.name, fixtureId: f.id, idx, when, seq: seq++,
-          date: sched.date || f.date || "", label: logic.stageLabel(league, f),
+          date: sched.date || f.date || "", label: logic.stageLabel(src, f),
           result: winner === null ? "D" : winner === mySide ? "W" : "L",
           scoreText: logic.rubberScoreText(rubber, mySide === "B"),
           mine: pair.map((pid) => ref(team, pid)).filter(Boolean),
           opponents, partner, myTeamName: team.name, oppTeamName: oppTeam.name,
         });
       });
-    });
+    }));
   });
   // Newest first; matches with no usable date (older data) fall back to the
   // order they sit in the fixture list, later meaning more recent.
