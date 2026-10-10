@@ -4554,6 +4554,12 @@ function requireOwnerSession(req, res, next) {
   if (!req.session || !req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   next();
 }
+// The leagues Team Padel runs itself aren't managed through the Note Machine.
+// Anything already filed against them stays saved, just out of sight here.
+function hubExcludedLeague(name) { return /premier league|business class/i.test(String(name || "")); }
+function hubExcludedLeagueIds() {
+  return new Set(store.getIndex().filter((e) => hubExcludedLeague(e.name)).map((e) => e.id));
+}
 const HUB_TYPES = ["note", "payment", "sponsor", "court", "kit", "followup"];
 const HUB_STAGES = {
   kit: ["ordered", "received", "handed", "problem"],
@@ -4598,7 +4604,7 @@ function cleanHubText(v, max) { return String(v == null ? "" : v).trim().slice(0
 function applyHubFields(item, b, league) {
   if (b.title !== undefined) item.title = cleanHubText(b.title, 200);
   if (b.text !== undefined) item.text = cleanHubText(b.text, 2000);
-  if (b.leagueId !== undefined) item.leagueId = b.leagueId && store.getLeague(b.leagueId) ? b.leagueId : null;
+  if (b.leagueId !== undefined) item.leagueId = b.leagueId && store.getLeague(b.leagueId) && !hubExcludedLeagueIds().has(b.leagueId) ? b.leagueId : null;
   if (b.teamId !== undefined) item.teamId = b.teamId || null;
   if (b.playerId !== undefined) item.playerId = b.playerId || null;
   if (b.amountRands !== undefined) {
@@ -4616,10 +4622,11 @@ function applyHubFields(item, b, league) {
 }
 router.get("/admin/hub", requireOwnerSession, (req, res) => {
   const hub = store.getAdminHub();
+  const excluded = hubExcludedLeagueIds();
   res.json({
     me: { name: adminActorName(req), fromAccount: !!(req.session.playerUser && store.getUser(req.session.playerUser.id)) },
-    items: (hub.items || []).map(hubItemView).sort((a, b) => b.createdAt - a.createdAt),
-    leagues: store.getIndex().filter((e) => !e.hidden).map((e) => {
+    items: (hub.items || []).filter((i) => !(i.leagueId && excluded.has(i.leagueId))).map(hubItemView).sort((a, b) => b.createdAt - a.createdAt),
+    leagues: store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).map((e) => {
       const l = store.getLeague(e.id);
       return { id: e.id, name: e.name, teams: l ? l.teams.map((t) => ({ id: t.id, name: t.name })) : [] };
     }),
@@ -4764,7 +4771,7 @@ function leagueTracksFees(league) {
 }
 router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
   const teams = [], leagues = [];
-  store.getIndex().filter((e) => !e.hidden).forEach((entry) => {
+  store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).forEach((entry) => {
     const league = store.getLeague(entry.id);
     if (!league || league.format === "pairs") return;
     const fee = league.registrationFeeCents || 0;
