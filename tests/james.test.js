@@ -239,3 +239,20 @@ test("a payment by the team as a whole is a change James can propose", () => {
   const off = J.permissions(J.mergePermissions({}, { write: { payments: false } }));
   assert.deepStrictEqual(J.cleanChanges([{ kind: "pay_team_record", leagueId: "L1", teamName: "Wolves", amountRands: 600 }], off), []);
 });
+
+test("cost counts cached reads at a tenth and cache writes at 1.25 times", () => {
+  const plain = J.costUsd("claude-sonnet-5-5", { input_tokens: 10000, output_tokens: 0 });
+  assert.ok(Math.abs(plain - 0.02) < 1e-9);
+  const cachedRead = J.costUsd("claude-sonnet-5-5", { input_tokens: 0, cache_read_input_tokens: 10000, output_tokens: 0 });
+  assert.ok(Math.abs(cachedRead - 0.002) < 1e-9);
+  const write = J.costUsd("claude-sonnet-5-5", { input_tokens: 0, cache_creation_input_tokens: 10000, output_tokens: 0 });
+  assert.ok(Math.abs(write - 0.025) < 1e-9);
+});
+
+test("the lookup tools exist and the data block is marked for caching", () => {
+  assert.deepStrictEqual([J.FIND_TOOL.name, J.DETAILS_TOOL.name, J.LOOK_TOOL.name].sort(), ["find_people", "league_details", "look_at_team_images"]);
+  assert.ok(["find_people", "league_details", "look_at_team_images"].every((n) => J.SERVER_TOOLS.has(n)));
+  assert.ok(!J.SERVER_TOOLS.has("propose_changes"));
+  const sys = J.systemPrompt("{}");
+  assert.strictEqual(sys[1].cache_control.type, "ephemeral");
+});

@@ -7578,6 +7578,7 @@ function ahJamesTurnHtml(t, ti) {
   if (t.logos && t.logos.length) h += ahJamesLogosHtml(t, ti);
   if (t.posters && t.posters.length) h += ahJamesPostersHtml(t, ti);
   h += ahJamesMessagesBlockHtml(t, ti);
+  if (t.cost) h += `<div class="ahj-cost">This reply cost about ${ahDollars(t.cost)}</div>`;
   return h;
 }
 const AH_JAMES_PERMS = {
@@ -7620,7 +7621,7 @@ async function ahJamesSend(text, opts) {
   ahJRender(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
-    ahJ.thread.push({ role: "james", at: Date.now(), request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
+    ahJ.thread.push({ role: "james", at: Date.now(), cost: r.cost || 0, request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
     if (opts && opts.voice) ahSpeak(ahSpeakText(r));
   } catch (e) { ahJ.error = e.message || "James hit a problem."; if (opts && opts.voice) ahSpeak("Sorry, I hit a problem. " + (ahJ.error || "").slice(0, 120)); }

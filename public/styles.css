@@ -3506,3 +3506,4 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .leo-refs{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;}
 .leo-refs label{display:inline-flex;gap:6px;align-items:center;cursor:pointer;font-weight:600;}
 .leo-refs input{width:16px;height:16px;accent-color:#8A4FD0;}
+.ahj-cost{font-size:11px;color:#94A3B8;align-self:flex-start;margin:-4px 0 2px 4px;}

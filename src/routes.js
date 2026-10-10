@@ -4949,20 +4949,7 @@ function jamesChangesToday(actor, now) {
   const day = james.saNow(now).day;
   return (store.getJamesLog().sets || []).filter((s) => s.by === actor && james.saNow(s.at).day === day).reduce((n, s) => n + s.changes.length, 0);
 }
-function jamesContext(perms) {
-  const hub = store.getAdminHub();
-  const excluded = hubExcludedLeagueIds();
-  const categories = hubCategories(hub).map((c) => ({ id: c.id, name: c.name }));
-  // Hidden leagues are included (marked), so James can carry on setting up one he created.
-  const entries = store.getIndex().filter((e) => !hubExcludedLeague(e.name));
-  const hiddenIds = new Set(entries.filter((e) => e.hidden).map((e) => e.id));
-  const full = entries.map((e) => store.getLeague(e.id)).filter(Boolean);
-  const leagues = full.map((l) => ({ id: l.id, name: l.name, teams: l.teams.map((t) => ({ id: t.id, name: t.name })) }));
-  const pay = perms.read.payments ? hubPaymentsData() : null;
-  const leagueName = (id) => (leagues.find((l) => l.id === id) || {}).name || null;
-  const catName = (id) => (categories.find((c) => c.id === id) || {}).name || null;
-  const R = (c) => Math.round(c) / 100;
-  const roundsOf = (l, cap) => {
+function jamesRoundsOf(l, cap) {
     const byRound = new Map();
     l.fixtures.forEach((f) => { if (!byRound.has(f.round)) byRound.set(f.round, []); byRound.get(f.round).push(f); });
     const rounds = Array.from(byRound.keys()).sort((a, b) => a - b).map((n) => {
@@ -4990,17 +4977,27 @@ function jamesContext(perms) {
     const upcoming = rounds.filter((r) => !r.done).slice(0, cap);
     const lastDone = rounds.filter((r) => r.done).slice(-2);
     return lastDone.concat(upcoming).map(({ done: _d, ...r }) => r);
-  };
+  }
+function jamesContext(perms) {
+  const hub = store.getAdminHub();
+  const excluded = hubExcludedLeagueIds();
+  const categories = hubCategories(hub).map((c) => ({ id: c.id, name: c.name }));
+  // Hidden leagues are included (marked), so James can carry on setting up one he created.
+  const entries = store.getIndex().filter((e) => !hubExcludedLeague(e.name));
+  const hiddenIds = new Set(entries.filter((e) => e.hidden).map((e) => e.id));
+  const full = entries.map((e) => store.getLeague(e.id)).filter(Boolean);
+  const leagues = full.map((l) => ({ id: l.id, name: l.name, teams: l.teams.map((t) => ({ id: t.id, name: t.name })) }));
+  const pay = perms.read.payments ? hubPaymentsData() : null;
+  const leagueName = (id) => (leagues.find((l) => l.id === id) || {}).name || null;
+  const catName = (id) => (categories.find((c) => c.id === id) || {}).name || null;
+  const R = (c) => Math.round(c) / 100;
   const build = (level) => {
-    const playerCap = level ? 5 : 12, noteCap = level ? 30 : 60, roundCap = level ? 2 : 4;
+    const playerCap = level ? 5 : 12, noteCap = level ? 30 : 60;
     const base = {
       today: `${new Date(james.saNow().day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })} ${james.saNow().day}`,
       categories,
-      leagues: full.map((l) => ({ id: l.id, name: l.name, ...(hiddenIds.has(l.id) ? { hiddenFromPublic: true } : {}), status: leagueStatus(l), format: l.format, scoring: l.format === "pairs" ? "best of 3 sets" : "each seed is 2 sets; if they split one set each, a match tie-break to 10 (win by 2) decides it, given as tb" + (l.singlesDecider ? "; seed 5 is a single tie-break to 10, no sets" : ""), teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null, courtNames: l.courtNames && l.courtNames.some(Boolean) ? l.courtNames : undefined, defaultVenue: l.defaultVenue || undefined, playoffs: l.playoffFormat || "none", singlesDecider: l.singlesDecider ? true : undefined, teamCount: l.teams.length })),
+      leagues: full.map((l) => ({ id: l.id, name: l.name, ...(hiddenIds.has(l.id) ? { hiddenFromPublic: true } : {}), status: leagueStatus(l), format: l.format, scoring: l.format === "pairs" ? "best of 3 sets" : "each seed is 2 sets; if they split one set each, a match tie-break to 10 (win by 2) decides it, given as tb" + (l.singlesDecider ? "; seed 5 is a single tie-break to 10, no sets" : ""), teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null, courtNames: l.courtNames && l.courtNames.some(Boolean) ? l.courtNames : undefined, defaultVenue: l.defaultVenue || undefined, playoffs: l.playoffFormat || "none", singlesDecider: l.singlesDecider ? true : undefined, teamCount: l.teams.length, playerCount: l.teams.reduce((n, t) => n + t.players.length, 0) })),
     };
-    if (perms.read.rosters) {
-      base.rosters = full.map((l) => ({ leagueId: l.id, teams: l.teams.map((t) => ({ id: t.id, name: t.name, ...(t.logo ? { hasLogo: true } : {}), ...(t.kit && t.kit.front ? { kitFront: true } : {}), ...(t.kit && t.kit.back ? { kitBack: true } : {}), players: t.players.map((p) => ({ id: p.id, name: p.name })) })), noTeamYet: (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name })) }));
-    } else base.leagueTeams = leagues;
     if (pay) {
       base.payments = pay.leagues.map((l) => ({
         league: l.leagueName, leagueId: l.leagueId, feePerTeamRands: l.feeCents / 100, noFeeSetYet: !!l.noFee, paymentsTracked: !!l.tracked,
@@ -5011,7 +5008,6 @@ function jamesContext(perms) {
         })),
       }));
     }
-    if (perms.read.fixtures) base.fixtures = full.filter((l) => l.fixtures.length).map((l) => ({ league: l.name, leagueId: l.id, rounds: roundsOf(l, roundCap) }));
     base.openNotes = (hub.items || []).filter((i) => i.status !== "done" && !(i.leagueId && excluded.has(i.leagueId)))
       .sort((a, b) => b.createdAt - a.createdAt).slice(0, noteCap).map((i) => ({
         id: i.id, title: i.title, type: i.type, priority: i.priority || "normal", due: i.dueDate || null, league: leagueName(i.leagueId), category: catName(i.categoryId),
@@ -5083,6 +5079,58 @@ router.put("/admin/james/permissions", requireOwnerSession, (req, res) => {
   store.saveJamesSettings(next);
   res.json({ permissions: james.permissions(next) });
 });
+// The read-only lookups James can ask for. The server answers them itself and hands the result back as a
+// tool result, so the summary sent with every request stays small.
+function jamesLeagueList() { return store.getIndex().filter((e) => !hubExcludedLeague(e.name)).map((e) => store.getLeague(e.id)).filter(Boolean); }
+function jamesFindPeople(input, perms) {
+  if (!perms.read.rosters) return { text: "You aren't allowed to see teams and players. Say so to the admin.", error: true };
+  const q = String(input.query || "").trim().toLowerCase();
+  if (q.length < 2) return { text: "Give at least 2 letters to search for.", error: true };
+  const rows = [], teamRows = [];
+  jamesLeagueList().forEach((l) => {
+    if (input.leagueId && l.id !== input.leagueId) return;
+    l.teams.forEach((t) => {
+      if (t.name.toLowerCase().includes(q)) teamRows.push({ league: l.name, leagueId: l.id, team: t.name, teamId: t.id, players: t.players.length });
+      t.players.forEach((p) => { if (p.name.toLowerCase().includes(q)) rows.push({ league: l.name, leagueId: l.id, team: t.name, teamId: t.id, player: p.name, playerId: p.id }); });
+    });
+    (l.freeAgents || []).forEach((p) => { if (p.name.toLowerCase().includes(q)) rows.push({ league: l.name, leagueId: l.id, team: "(no team yet)", teamId: null, player: p.name, playerId: p.id }); });
+  });
+  const out = { teams: teamRows.slice(0, 15), players: rows.slice(0, 25) };
+  const more = Math.max(0, teamRows.length - 15) + Math.max(0, rows.length - 25);
+  return { text: JSON.stringify(out) + (more ? ` ... and ${more} more matches. Narrow the search (a longer name, or a leagueId).` : "") };
+}
+function jamesLeagueDetails(input, perms) {
+  const l = jamesLeagueList().find((x) => x.id === input.leagueId);
+  if (!l) return { text: "I can't find that league (or it's outside Cerebro).", error: true };
+  const want = Array.isArray(input.include) && input.include.length ? input.include : ["teams", "fixtures"];
+  const out = { league: l.name, leagueId: l.id, status: leagueStatus(l) };
+  if (want.includes("teams")) {
+    if (perms.read.rosters) {
+      out.teams = l.teams.map((t) => ({ id: t.id, name: t.name, ...(t.logo ? { hasLogo: true } : {}), ...(t.kit && t.kit.front ? { kitFront: true } : {}), ...(t.kit && t.kit.back ? { kitBack: true } : {}), players: t.players.map((p) => ({ id: p.id, name: p.name })) }));
+      out.noTeamYet = (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name }));
+    } else out.teams = "not allowed to see teams and players";
+  }
+  if (want.includes("fixtures")) {
+    if (perms.read.fixtures) out.rounds = jamesRoundsOf(l, Math.max(1, Math.min(6, Math.floor(Number(input.rounds)) || 3)));
+    else out.rounds = "not allowed to see fixtures";
+  }
+  let text = JSON.stringify(out);
+  if (text.length > 45000) { out.teams = Array.isArray(out.teams) ? out.teams.map((t) => ({ ...t, players: t.players.slice(0, 12) })) : out.teams; text = JSON.stringify(out) + " (rosters trimmed: ask find_people for a specific player)"; }
+  return { text };
+}
+async function jamesLookTool(tu, perms) {
+  const r = perms.read.rosters ? await teamImagesFor(tu.input.leagueId, tu.input.teamId) : null;
+  if (!r) return { error: true, content: "I can't find that team, or you aren't allowed to see its pictures." };
+  const want = Array.isArray(tu.input.which) && tu.input.which.length ? tu.input.which : ["logo", "kit_front", "kit_back"];
+  const parts = [], notes = [];
+  [["logo", r.logo, "logo"], ["kit_front", r.kitFront, "kit front"], ["kit_back", r.kitBack, "kit back"]].forEach(([k, u, label]) => {
+    if (!want.includes(k)) return;
+    const m = u && /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(u);
+    if (!m) { notes.push(`${r.team.name} has no ${label} saved (or it is too large to show).`); return; }
+    parts.push({ type: "text", text: `${r.team.name}'s ${label}:` }, { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } });
+  });
+  return { content: parts.length ? parts.concat(notes.map((n) => ({ type: "text", text: n }))) : notes.join(" ") || "Nothing saved." };
+}
 // A team's saved logo and kit photos, as pictures (for Leo to start from and for James to look at).
 const TEAM_IMG_MAX = 1500000;
 async function teamImagesFor(leagueId, teamId) {
@@ -5116,35 +5164,34 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
     james.checkLimits(store.getJamesUsage(), actor, cfg);
     const ctx = jamesContext(perms);
-    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS, perms.write.images ? [james.IMAGE_TOOL] : [], perms.read.rosters ? [james.LOOK_TOOL] : []);
+    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS, perms.write.images ? [james.IMAGE_TOOL] : [], perms.read.rosters ? [james.FIND_TOOL, james.LOOK_TOOL] : [], perms.read.rosters || perms.read.fixtures ? [james.DETAILS_TOOL] : []);
     const ct = james.changesTool(perms);
     if (ct) tools.push(ct);
     const messages = james.withImages(james.cleanHistory(req.body.history, message || "Here is a photo."), images, message);
     let result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages, tools });
     let cost = james.costUsd(result.model, result.usage);
-    // He asked to look at a team's pictures: show him, and let him carry on (one extra round at most).
-    const looks = result.toolUses.filter((t) => t.name === "look_at_team_images");
-    if (looks.length) {
-      const first = result;
+    // He may ask the server to look things up (people, a league's details, a team's pictures) before answering.
+    // Each lookup is answered and he carries on, for a few rounds at most. His proposals from every round are kept.
+    let rounds = 0, textParts = [], kept = [];
+    let convo = messages;
+    while (true) {
+      textParts.push(result.text);
+      const server = result.toolUses.filter((t) => james.SERVER_TOOLS.has(t.name));
+      kept = kept.concat(result.toolUses.filter((t) => !james.SERVER_TOOLS.has(t.name)));
+      if (!server.length || rounds >= 4) break;
+      rounds++;
       const toolResults = [];
-      for (const tu of first.toolUses) {
-        if (tu.name !== "look_at_team_images") { toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "Noted. The admin will see this and confirm it." }); continue; }
-        const r = perms.read.rosters ? await teamImagesFor(tu.input.leagueId, tu.input.teamId) : null;
-        if (!r) { toolResults.push({ type: "tool_result", tool_use_id: tu.id, is_error: true, content: "I can't find that team, or you aren't allowed to see its pictures." }); continue; }
-        const want = Array.isArray(tu.input.which) && tu.input.which.length ? tu.input.which : ["logo", "kit_front", "kit_back"];
-        const parts = [], notes = [];
-        [["logo", r.logo, "logo"], ["kit_front", r.kitFront, "kit front"], ["kit_back", r.kitBack, "kit back"]].forEach(([k, u, label]) => {
-          if (!want.includes(k)) return;
-          const m = u && /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(u);
-          if (!m) { notes.push(`${r.team.name} has no ${label} saved (or it is too large to show).`); return; }
-          parts.push({ type: "text", text: `${r.team.name}'s ${label}:` }, { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } });
-        });
-        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: parts.length ? parts.concat(notes.map((n) => ({ type: "text", text: n }))) : notes.join(" ") || "Nothing saved." });
+      for (const tu of result.toolUses) {
+        if (tu.name === "find_people") { const r = jamesFindPeople(tu.input || {}, perms); toolResults.push({ type: "tool_result", tool_use_id: tu.id, ...(r.error ? { is_error: true } : {}), content: r.text }); }
+        else if (tu.name === "league_details") { const r = jamesLeagueDetails(tu.input || {}, perms); toolResults.push({ type: "tool_result", tool_use_id: tu.id, ...(r.error ? { is_error: true } : {}), content: r.text }); }
+        else if (tu.name === "look_at_team_images") { const r = await jamesLookTool(tu, perms); toolResults.push({ type: "tool_result", tool_use_id: tu.id, ...(r.error ? { is_error: true } : {}), content: r.content }); }
+        else toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "Noted. The admin will see this and confirm it." });
       }
-      const second = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: messages.concat([{ role: "assistant", content: first.content }, { role: "user", content: toolResults }]), tools });
-      cost += james.costUsd(second.model, second.usage);
-      result = { ...second, text: [first.text, second.text].filter(Boolean).join("\n").trim(), toolUses: first.toolUses.filter((t) => t.name !== "look_at_team_images").concat(second.toolUses.filter((t) => t.name !== "look_at_team_images")) };
+      convo = convo.concat([{ role: "assistant", content: result.content }, { role: "user", content: toolResults }]);
+      result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: convo, tools });
+      cost += james.costUsd(result.model, result.usage);
     }
+    result = { ...result, text: textParts.filter(Boolean).join("\n").trim(), toolUses: kept };
     const usage = james.recordUsage(store.getJamesUsage(), actor, cost);
     store.saveJamesUsage(usage);
     const proposals = james.cleanProposals(result.toolUses, ctx.raw);
@@ -5155,7 +5202,7 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     const imagePlans = perms.write.images ? james.cleanImagePlans(result.toolUses, ctx.raw) : [];
     const posters = result.toolUses.filter((t) => t.name === "make_poster").slice(0, 3).map((t) => jamesPosterSpec(t.input || {}, perms)).filter(Boolean);
     res.json({
-      reply, logos, posters, imagePlans, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
+      reply, cost: Math.round(cost * 10000) / 10000, logos, posters, imagePlans, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
       changes: changes.map((c, i) => ({ ...c, preview: previews[i] })), usage: james.usageSummary(usage, actor, cfg),
     });
   } catch (e) {
