@@ -1827,7 +1827,7 @@ el("admin-bar-mic").onclick = () => {
 };
 el("ab-note-scope").onchange = updateQuickNoteSponsor;
 el("ab-note-league").onchange = updateQuickNoteSponsor;
-el("ab-note-open").onclick = () => { closeQuickNote(); showHub(); switchHubTab("adminhub"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+el("ab-note-open").onclick = () => { closeQuickNote(); goToHubTab("adminhub"); window.scrollTo({ top: 0, behavior: "smooth" }); };
 el("ab-note-add").onclick = async () => {
   const ta = el("ab-note-text");
   const text = ta.value.trim();
@@ -1906,6 +1906,19 @@ el("admin-bar-btn").onclick = async () => {
 // depending on who's looking: a league admin's is that league's own Admin
 // tab, the owner's is the site-wide console (Manage Leagues, Combine
 // profiles, and so on).
+// Go to a tab on the hub (from a league page or any other place) without the full showHub(). showHub() also
+// re-fires refreshAccountStatus(), which lands a signed-in player back on "My profile" once its fetch resolves,
+// overriding the tab chosen here a moment after landing on it.
+function goToHubTab(name) {
+  if (inLeagueView()) {
+    currentLeagueId = null; league = null; myRole = "guest"; myTeamId = null;
+    window.location.hash = "";
+    el("view-hub").style.display = "block";
+    el("view-league").style.display = "none";
+    document.body.className = "role-guest";
+  }
+  switchHubTab(name);
+}
 el("admin-bar-tag").onclick = () => {
   if (inLeagueView() && myRole === "admin" && league.format !== "pairs") { switchTab("admin"); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
   if (!isOwner) return;
@@ -7509,7 +7522,7 @@ function renderAssistants() {
 // Opens the Assistants page (from the top bar, or the entry card in Cerebro).
 function openAssistants(view) {
   if (view) { ahAs.view = view; ahAs.sel = null; }
-  showHub(); switchHubTab("assistants");
+  goToHubTab("assistants");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null, images: [], listening: false, voiceBase: "", speak: ahJamesSpeakPref() };
