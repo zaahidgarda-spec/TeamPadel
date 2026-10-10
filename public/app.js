@@ -6669,11 +6669,12 @@ function teamPayDetailHtml(t, isAdminView) {
     ? `<p class="note">&#10003; Team fee paid in full${t.paymentMethod === "split" ? " by the players" : " · " + paymentMethodLabel(t.paymentMethod)}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
     : `<p>Team fee <strong>${fmtRands(fee)}</strong>${discountTag(t.discountCents, t.discountNote)} · paid so far <strong>${fmtRands(paidSoFar)}</strong> · <strong>${fmtRands(balance)}</strong> still to pay</p>
        <div class="pay-summary-track" style="margin:6px 0 10px;"><div class="pay-summary-fill" style="width:${pct}%;"></div></div>`;
+  const evenBtn = isAdminView && t.players.some((p) => p.customShareCents != null) ? `<button class="link pay-team-even-btn" type="button">Back to an even split</button>` : "";
   const teamActions = teamPaid
-    ? (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark team unpaid</button><button class="link pay-team-discount-btn" type="button">Team discount</button>` : "")
+    ? (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark team unpaid</button><button class="link pay-team-discount-btn" type="button">Team discount</button>${evenBtn}` : "")
     : `<button class="primary pay-now-btn" type="button">Pay ${balance < fee ? "the remaining " : ""}${fmtRands(balance)} for the team</button>
        <button class="link pay-team-link-copy-btn" type="button">Copy team pay link</button>
-       ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark team paid manually</button><button class="link pay-team-discount-btn" type="button">Team discount</button>` : ""}
+       ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark team paid manually</button><button class="link pay-team-discount-btn" type="button">Team discount</button>${evenBtn}` : ""}
        <div class="error pay-now-error"></div>`;
   // Each player's own share, paid through a link an admin or captain sends them
   // (never self-served from their own My Profile).
@@ -6685,12 +6686,13 @@ function teamPayDetailHtml(t, isAdminView) {
     const note = isPaid ? `${fmtRands(pShare)} · Paid · ${p.coveredByTeam ? "covered by the team" : paymentMethodLabel(p.paymentMethod)}`
       : part ? `${fmtRands(own)} of ${fmtRands(pShare)} paid · ${fmtRands(Math.max(0, pShare - own))} left`
       : fmtRands(pShare);
+    const shareBtn = isAdminView ? `<button class="link pay-player-share-btn" type="button" data-cur="${p.customShareCents != null ? p.customShareCents : ""}" data-even="${pShare}">Set amount</button>` : "";
     const actions = isPaid
-      ? (isAdminView && !p.coveredByTeam ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : "")
-      : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-disc-btn" type="button" data-cur="${p.discountCents || 0}">Discount</button><button class="link pay-player-part-btn" type="button" data-left="${Math.max(0, pShare - own)}">Record payment</button><button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>${part ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Reset</button>` : ""}` : ""}`;
+      ? (isAdminView ? `${shareBtn}${!p.coveredByTeam ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Mark unpaid</button>` : ""}` : "")
+      : `<button class="link pay-link-copy-btn" type="button">Copy pay link</button>${isAdminView ? `<button class="link pay-player-disc-btn" type="button" data-cur="${p.discountCents || 0}">Discount</button>${shareBtn}<button class="link pay-player-part-btn" type="button" data-left="${Math.max(0, pShare - own)}">Record payment</button><button class="link pay-player-toggle-btn" type="button" data-paid="true">Mark paid</button>${part ? `<button class="link pay-player-toggle-btn" type="button" data-paid="false">Reset</button>` : ""}` : ""}`;
     return `
     <div class="notif-row" data-player="${p.id}">
-      <div><strong>${escapeHtml(p.name)}</strong>${discountTag(p.discountCents, p.discountNote)}<div class="note">${note}</div></div>
+      <div><strong>${escapeHtml(p.name)}</strong>${discountTag(p.discountCents, p.discountNote)}${customTag(p)}<div class="note">${note}</div></div>
       <span class="badge ${isPaid ? "done" : part ? "part" : "outstanding"}">${isPaid ? "Paid" : part ? "Part paid" : "Unpaid"}</span>
       ${actions ? `<div class="pay-row-actions">${actions}</div>` : ""}
     </div>`;
@@ -6733,6 +6735,11 @@ function bindPayDetailHandlers(container, t) {
   if (teamDisc) teamDisc.onclick = async () => {
     if (await askDiscount({ label: t.name, path: `/leagues/${currentLeagueId}/teams/${t.id}/discount`, currentCents: t.discountCents })) { await refreshLeague(); renderPay(); }
   };
+  const evenTeam = container.querySelector(".pay-team-even-btn");
+  if (evenTeam) evenTeam.onclick = async () => {
+    if (!confirm(`Put everyone on ${t.name} back on an even split?`)) return;
+    try { await api(`/leagues/${currentLeagueId}/teams/${t.id}/shares`, { method: "DELETE" }); await refreshLeague(); renderPay(); } catch (e) { alert(e.message); }
+  };
   const teamLinkBtn = container.querySelector(".pay-team-link-copy-btn");
   if (teamLinkBtn) {
     teamLinkBtn.onclick = () => {
@@ -6753,6 +6760,12 @@ function bindPayDetailHandlers(container, t) {
     if (discBtn) discBtn.onclick = async () => {
       const pl = t.players.find((x) => x.id === playerId);
       if (await askDiscount({ label: pl ? pl.name : "this player", path: `/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/discount`, currentCents: Number(discBtn.dataset.cur) })) { await refreshLeague(); renderPay(); }
+    };
+    const shareBtn = row.querySelector(".pay-player-share-btn");
+    if (shareBtn) shareBtn.onclick = async () => {
+      const pl = t.players.find((x) => x.id === playerId);
+      const cur = shareBtn.dataset.cur === "" ? null : Number(shareBtn.dataset.cur);
+      if (await askShare({ label: pl ? pl.name : "this player", path: `/leagues/${currentLeagueId}/teams/${t.id}/players/${playerId}/share`, currentCents: cur, evenCents: Number(shareBtn.dataset.even), limitCents: Math.max(0, (league.registrationFeeCents || 0) - (t.discountCents || 0)) })) { await refreshLeague(); renderPay(); }
     };
     const partBtn = row.querySelector(".pay-player-part-btn");
     if (partBtn) {
@@ -6869,6 +6882,26 @@ async function askDiscount({ label, path, currentCents }) {
   if (num > 0) { const note = prompt("Reason (optional), for example: committee member", ""); if (note && note.trim()) body.note = note.trim(); }
   try { await api(path, { method: "PUT", body }); return true; } catch (e) { alert(e.message); return false; }
 }
+// Asks what one player pays, as an amount in rands. The rest of the team split what's left.
+// "even" puts them back on the equal split. Returns true when something was saved.
+async function askShare({ label, path, currentCents, evenCents, limitCents }) {
+  const cur = currentCents != null ? ` It's set to ${fmtRands(currentCents)} now.` : ` It's an even split (${fmtRands(evenCents)}) now.`;
+  const v = prompt(`What does ${label} pay?${cur}\nType the amount in rands (like 400). The rest of the team split what's left, so the team still owes the same.\nType "even" to go back to an even split.`, "");
+  if (v === null || !String(v).trim()) return false;
+  const txt = String(v).trim();
+  let body;
+  if (/^even$/i.test(txt)) body = { amountRands: null };
+  else {
+    if (/%/.test(txt) || !/^[Rr]?\s?\d[\d\s,]*(\.\d{1,2})?$/.test(txt)) { alert("Type the amount in rands, like 400."); return false; }
+    body = { amountRands: Number(txt.replace(/[^0-9.]/g, "")) };
+  }
+  try {
+    const r = await api(path, { method: "PUT", body });
+    if (limitCents && r.feeCents > limitCents + 1) alert(`Heads up: with that amount the team now owes ${fmtRands(r.feeCents)}, which is more than the usual ${fmtRands(limitCents)}.`);
+    return true;
+  } catch (e) { alert(e.message); return false; }
+}
+function customTag(p) { return p && p.customShareCents != null ? '<span class="disc-tag custom-tag">custom amount</span>' : ""; }
 function discountTag(cents, note) { return cents ? `<span class="disc-tag">−${fmtRands(cents)}${note ? " · " + escapeHtml(note) : ""}</span>` : ""; }
 
 /* ---------- Admin hub: one page for every league ---------- */
@@ -7510,9 +7543,9 @@ function ahPaymentsDashboardHtml() {
             <span class="ah-team-name">${escapeHtml(t.teamName)}</span>
             ${ahBarHtml(t.complete ? t.feeCents : 0, t.complete ? 0 : t.paidCents, t.feeCents)}
             <span class="ah-team-pct">${t.complete ? "Paid" : tp + "%"}</span></button>
-          ${tOpen ? `<div class="ah-expand"><div class="ah-team-actions">${t.discountCents ? `<span class="note">Team discount ${fmtRands(t.discountCents)}${t.discountNote ? " · " + escapeHtml(t.discountNote) : ""}</span>` : `<span class="note">Fee ${fmtRands(t.feeCents)}</span>`}<button class="link ah-disc-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}" data-cur="${t.discountCents || 0}">${t.discountCents ? "Change team discount" : "Discount team"}</button></div>${owing && owing.players.length ? owing.players.map((p) => `<div class="ah-prow" data-league="${l.leagueId}" data-team="${t.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}">
-              <span><b>${escapeHtml(p.name)}</b>${discountTag(p.discountCents)}<br><span class="note">${p.paidCents ? `paid ${fmtRands(p.paidCents)} of ${fmtRands(p.shareCents)} · ` : ""}owes ${fmtRands(p.owedCents)}</span></span>
-              <span class="ah-prow-btns"><button class="secondary ah-p-part" type="button">Record payment</button><button class="link ah-p-disc" type="button" data-name="${escapeHtml(p.name)}" data-cur="${p.discountCents || 0}">Discount</button><button class="link ah-p-paid" type="button">Mark paid</button></span></div>`).join("") : '<p class="note" style="margin:0;">Everyone on this team has paid.</p>'}</div>` : ""}`;
+          ${tOpen ? `<div class="ah-expand"><div class="ah-team-actions">${t.discountCents ? `<span class="note">Team discount ${fmtRands(t.discountCents)}${t.discountNote ? " · " + escapeHtml(t.discountNote) : ""}</span>` : `<span class="note">Fee ${fmtRands(t.feeCents)}</span>`}<button class="link ah-disc-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}" data-cur="${t.discountCents || 0}">${t.discountCents ? "Change team discount" : "Discount team"}</button>${owing && owing.anyCustom ? `<button class="link ah-even-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}">Back to an even split</button>` : ""}</div>${owing && owing.players.length ? owing.players.map((p) => `<div class="ah-prow" data-league="${l.leagueId}" data-team="${t.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}">
+              <span><b>${escapeHtml(p.name)}</b>${discountTag(p.discountCents)}${p.customShare ? '<span class="disc-tag custom-tag">custom amount</span>' : ""}<br><span class="note">${p.paidCents ? `paid ${fmtRands(p.paidCents)} of ${fmtRands(p.shareCents)} · ` : ""}owes ${fmtRands(p.owedCents)}</span></span>
+              <span class="ah-prow-btns"><button class="secondary ah-p-part" type="button">Record payment</button><button class="link ah-p-disc" type="button" data-name="${escapeHtml(p.name)}" data-cur="${p.discountCents || 0}">Discount</button><button class="link ah-p-share" type="button" data-name="${escapeHtml(p.name)}" data-custom="${p.customShare ? 1 : 0}" data-share="${p.shareCents}" data-limit="${t.baseFeeCents - (t.discountCents || 0)}">Set amount</button><button class="link ah-p-paid" type="button">Mark paid</button></span></div>`).join("") : '<p class="note" style="margin:0;">Everyone on this team has paid.</p>'}</div>` : ""}`;
       }).join("")}</div>`;
     }
     return `<div class="ah-lrow2"><button type="button" class="ah-league-row${open ? " open" : ""}" data-league-open="${l.leagueId}">
@@ -7564,6 +7597,12 @@ function bindAhPayments(root) {
       saveFee(b.dataset.league, Number(String(v).replace(/[^0-9.]/g, "")));
     };
   });
+  root.querySelectorAll(".ah-even-team").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm(`Put everyone on ${b.dataset.name} back on an even split?`)) return;
+      try { await api(`/leagues/${b.dataset.league}/teams/${b.dataset.team}/shares`, { method: "DELETE" }); await ahRefreshAndRender(); } catch (e) { alert(e.message); }
+    };
+  });
   root.querySelectorAll(".ah-disc-team").forEach((b) => {
     b.onclick = async () => { if (await askDiscount({ label: b.dataset.name, path: `/leagues/${b.dataset.league}/teams/${b.dataset.team}/discount`, currentCents: Number(b.dataset.cur) })) await ahRefreshAndRender(); };
   });
@@ -7592,6 +7631,10 @@ function bindAhPayments(root) {
       done(() => api(base + "/payments", { method: "POST", body: { amountRands: Number(String(v).replace(/[^0-9.]/g, "")) } }));
     };
     row.querySelector(".ah-p-paid").onclick = () => done(() => api(base + "/payment-status", { method: "PUT", body: { paid: true } }));
+    row.querySelector(".ah-p-share").onclick = async () => {
+      const b = row.querySelector(".ah-p-share");
+      if (await askShare({ label: b.dataset.name, path: base + "/share", currentCents: b.dataset.custom === "1" ? Number(b.dataset.share) : null, evenCents: Number(b.dataset.share), limitCents: Number(b.dataset.limit) })) await ahRefreshAndRender();
+    };
     row.querySelector(".ah-p-disc").onclick = async () => { if (await askDiscount({ label: row.querySelector(".ah-p-disc").dataset.name, path: base + "/discount", currentCents: Number(row.querySelector(".ah-p-disc").dataset.cur) })) await ahRefreshAndRender(); };
   });
 }
