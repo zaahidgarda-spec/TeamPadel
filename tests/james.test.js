@@ -98,7 +98,7 @@ test("the changes tool only offers kinds that are switched on", () => {
   const kinds = J.changesTool(perms).input_schema.properties.changes.items.properties.kind.enum;
   assert.ok(!kinds.some((k) => k.startsWith("pay_")));
   assert.ok(kinds.includes("fix_round_schedule") && kinds.includes("player_move"));
-  const none = J.permissions({ permissions: { write: { notes: false, payments: false, fixtures: false, leagues: false, players: false } } });
+  const none = J.permissions({ permissions: { write: { notes: false, payments: false, fixtures: false, leagues: false, players: false, scores: false, court: false, images: false } } });
   assert.strictEqual(J.changesTool(none), null);
 });
 
