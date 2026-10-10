@@ -147,7 +147,7 @@ function systemPrompt(context) {
 
 How you work:
 - You can answer questions, propose notes (propose_notes), draft messages (draft_messages) and, where that tool is available, propose changes (propose_changes). You cannot save, send, change or delete anything yourself. The admin sees each proposal spelled out and confirms it, and every confirmed change can be undone. Never say you have changed or sent something; say what you have proposed.
-- Pictures: plan_image writes a brief for a separate image-making AI (OpenAI) for a logo or a kit design; the admin edits your brief and presses Generate, and you never see the result. Use design_logos instead when simple lettering/shape logos are enough and free; use plan_image when they want something richer, or a kit design. Say plainly that drawn text can be misspelt.
+- Pictures: plan_image writes a brief for Leo, the separate AI (made by OpenAI) that draws pictures, for a logo or a kit design. Leo is a colleague with his own name: say "Leo" to the admin. The admin edits your brief and asks Leo to draw it, and you never see the result. Use design_logos instead when simple lettering/shape logos are enough and free; use plan_image when they want something richer, or a kit design. Say plainly that drawn text can be misspelt.
 - Logos and posters: design_logos makes up to 3 simple vector logo options (shapes and lettering only; you cannot draw realistic pictures, people or animals, so say so if asked). make_poster makes a poster the admin can preview and download; the app draws it from the real teams, logos, sponsors and kit photos. Neither saves or posts anything.
 - When the admin attaches a logo and/or a list of players and asks you to add a team: propose team_add (with logoImage = the photo number of the logo, starting at 0) and one player_add using names, with teamName set to the new team. Read names carefully from text or a photo and put anything uncertain in your reply.
 - Changes: use only ids from the data. One entry per player, team or round. For money use the exact figures in the data. If the request is unclear, a name matches more than one person, or you can't find the id, ask a short question instead of guessing. If the data section for it is missing, say you can't see that information. For something you can't do (deleting, resetting payments, publishing, refunds, moving a single match, sending messages), say so and say what the admin can do instead. At most 25 changes at once; for more, do the first 25 and say so.
@@ -379,17 +379,17 @@ function cleanLogoSets(toolUses, ctx) {
   return sets;
 }
 
-// ---- Image briefs (the picture itself is made by OpenAI, see src/images.js) ----
+// ---- Image briefs (Leo, the picture maker, draws them: see src/images.js) ----
 const IMAGE_KINDS = ["logo", "kit_front", "kit_back", "artwork"];
 const IMAGE_TOOL = {
   name: "plan_image",
-  description: "Write a brief for the image maker (a separate AI that draws pictures) for a team logo, a kit design (front or back) or other artwork. The admin sees your brief, can edit it, and presses Generate; you do not see the pictures. Be concrete: colours, style, what is on it, what it must not include. Logo: a clean flat emblem or badge on a transparent background that still reads small; avoid long text (a short name or initials is fine, but drawn lettering is often misspelt, so keep it to a few letters). Kit front or back: a flat-lay product picture of one padel shirt, plain light background, the team's colours, a simple design. Never put real people's names, faces or personal details in a brief. If the admin attached photos, say which one to start from with refPhotos (0 is the first), for example to put their logo on a kit.",
+  description: "Write a brief for Leo (a separate AI that draws pictures) for a team logo, a kit design (front or back) or other artwork. The admin sees your brief, can edit it, and asks Leo to draw it; you do not see the pictures. Be concrete: colours, style, what is on it, what it must not include. Logo: a clean flat emblem or badge on a transparent background that still reads small; avoid long text (a short name or initials is fine, but drawn lettering is often misspelt, so keep it to a few letters). Kit front or back: a flat-lay product picture of one padel shirt, plain light background, the team's colours, a simple design. Never put real people's names, faces or personal details in a brief. If the admin attached photos, say which one to start from with refPhotos (0 is the first), for example to put their logo on a kit.",
   input_schema: {
     type: "object",
     properties: {
       kind: { type: "string", enum: IMAGE_KINDS },
       forWhat: { type: "string", description: "Short label, e.g. 'Cyclones kit front'" },
-      prompt: { type: "string", description: "The full brief for the image maker" },
+      prompt: { type: "string", description: "The full brief for Leo" },
       leagueId: { type: "string" }, teamId: { type: "string" },
       variants: { type: "integer", description: "How many options to draw, 1 to 3 (default 2)" },
       refPhotos: { type: "array", items: { type: "integer" }, description: "Attached photo numbers to start from" },
@@ -423,7 +423,7 @@ function imageSummary(usage, actor, cfg, now) {
 }
 function checkImageLimits(usage, actor, cfg, n, now) {
   const s = imageSummary(usage, actor, cfg, now);
-  if (s.monthCostUsd >= cfg.capUsd) { const e = new Error(`The image maker has reached this month's spending cap ($${cfg.capUsd}). It's back on the 1st, or raise JAMES_IMAGE_CAP_USD.`); e.status = 429; throw e; }
+  if (s.monthCostUsd >= cfg.capUsd) { const e = new Error(`Leo has reached this month's spending cap ($${cfg.capUsd}). It's back on the 1st, or raise JAMES_IMAGE_CAP_USD.`); e.status = 429; throw e; }
   if (s.todayCount + n > cfg.dailyLimit) { const e = new Error(`That would go over today's limit of ${cfg.dailyLimit} pictures for you. It resets at midnight.`); e.status = 429; throw e; }
 }
 function recordImageUsage(usage, actor, cost, n, now) {

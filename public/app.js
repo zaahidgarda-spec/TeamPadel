@@ -7294,7 +7294,7 @@ function ahJamesTurnHtml(t, ti) {
 }
 const AH_JAMES_PERMS = {
   read: [["payments", "Payments", "who owes what"], ["fixtures", "Fixtures", "rounds, dates and results"], ["rosters", "Teams and players", "who is on which team"]],
-  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"], ["images", "Pictures (OpenAI)", "make logo and kit pictures; you check and edit each brief first"]],
+  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"], ["images", "Leo (pictures)", "Leo draws logos and kit designs from a brief James writes; you check it first"]],
 };
 function ahJamesPermsHtml() {
   const perms = (ahJ.status && ahJ.status.permissions) || { read: {}, write: {} };
@@ -7316,7 +7316,7 @@ function ahJamesHtml() {
   const thread = ahJ.thread.map(ahJamesTurnHtml).join("");
   return `<section class="ahj" aria-label="James, your assistant">
     <div class="ahj-head"><div class="ahj-title"><span class="ahj-av" aria-hidden="true">J</span><b>James</b><span class="ahj-tag">Assistant</span></div>
-      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${st && st.images && st.images.enabled ? `<span class="ahj-meter" title="${st.images.todayCount} of ${st.images.dailyLimit} pictures made today">Pictures ${ahDollars(st.images.monthCostUsd)} of $${st.images.capUsd}</span>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
+      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${st && st.images && st.images.enabled ? `<span class="ahj-meter" title="${st.images.todayCount} of ${st.images.dailyLimit} pictures drawn by Leo today">Leo ${ahDollars(st.images.monthCostUsd)} of $${st.images.capUsd}</span>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
     ${ahJ.panel === "perms" ? ahJamesPermsHtml() : ahJ.panel === "log" ? ahJamesLogHtml() : ""}
     ${off ? `<p class="ahj-off">James isn't connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host's Secrets, then publish.</p>` : ""}
     ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
@@ -7572,7 +7572,7 @@ async function ahPosterDraw(spec, sizeKey) {
   return canvas.toDataURL("image/png");
 }
 function ahPosterFileName(p, size) { return (p.leagueName + "-" + (p.kind === "kit_reveal" ? p.teamName + "-kit" : p.kind) + (p.round ? "-round-" + p.round : "") + "-" + size).toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".png"; }
-// ---- James: pictures made by the image maker (OpenAI), from a brief the admin has checked ----
+// ---- Leo: pictures drawn (by OpenAI) from a brief James wrote and the admin has checked ----
 // Shrinks a picture to fit a size limit, redrawing smaller until it does. keepAlpha keeps a see-through background (PNG).
 function ahShrinkPicture(url, { maxSide, keepAlpha, limit }) {
   return new Promise((resolve, reject) => {
@@ -7605,12 +7605,12 @@ function ahJamesImagePlansHtml(t, ti) {
         <div class="ahj-logo-btns">${r.state === "used" ? `<span class="ahj-logo-done">In use for ${escapeHtml(p.teamName)}</span><button type="button" class="ah-complete undo ahj-gen-undo" data-t="${ti}" data-p="${pi}" data-r="${ri}">Undo</button>`
           : `${usable ? `<button type="button" class="ah-complete ahj-gen-use" data-t="${ti}" data-p="${pi}" data-r="${ri}">${escapeHtml(useLabel)}</button>` : ""}<button type="button" class="ah-complete undo ahj-gen-dl" data-t="${ti}" data-p="${pi}" data-r="${ri}">Download</button>${r.state === "undone" ? '<span class="ahj-sub">Undone</span>' : ""}`}</div></div>`;
     }).join("");
-    return `<div class="ahj-block ahj-imageplan"><div class="ahj-block-head">Picture idea: ${escapeHtml(p.forWhat)}. Check the brief, change it if you like, then press Generate.</div>
-      ${img.enabled === false ? `<p class="ahj-off">The image maker isn't connected yet. Add <code>OPENAI_API_KEY</code> in your host's Secrets and publish. You can still copy this brief.</p>` : ""}
-      <textarea class="ahj-brief" rows="5" maxlength="3000" data-t="${ti}" data-p="${pi}" aria-label="Brief for the image maker">${escapeHtml(p.prompt)}</textarea>
+    return `<div class="ahj-block ahj-imageplan"><div class="ahj-block-head">Brief for Leo: ${escapeHtml(p.forWhat)}. Check it, change it if you like, then ask Leo to draw it.</div>
+      ${img.enabled === false ? `<p class="ahj-off">Leo isn't connected yet. Add <code>OPENAI_API_KEY</code> in your host's Secrets and publish. You can still copy this brief.</p>` : ""}
+      <textarea class="ahj-brief" rows="5" maxlength="3000" data-t="${ti}" data-p="${pi}" aria-label="Brief for Leo">${escapeHtml(p.prompt)}</textarea>
       <div class="ahj-gen-row"><label>Options <select class="ahj-variants" data-t="${ti}" data-p="${pi}">${[1, 2, 3].map((n) => `<option${n === p.variants ? " selected" : ""}>${n}</option>`).join("")}</select></label>
-        <button type="button" class="ah-complete ahj-generate" data-t="${ti}" data-p="${pi}"${p.busy || img.enabled === false ? " disabled" : ""}>${p.busy ? "Drawing…" : p.results.length ? "Generate again" : "Generate"}</button>
-        <span class="ahj-sub">${p.cost ? `That cost about ${ahDollars(p.cost)}. ` : ""}Each picture costs a few cents. Drawn lettering is often misspelt, so check it.</span></div>
+        <button type="button" class="ah-complete ahj-generate" data-t="${ti}" data-p="${pi}"${p.busy || img.enabled === false ? " disabled" : ""}>${p.busy ? "Leo is drawing…" : p.results.length ? "Ask Leo to draw again" : "Ask Leo to draw"}</button>
+        <span class="ahj-sub">${p.cost ? `That cost about ${ahDollars(p.cost)}. ` : ""}Leo's pictures cost a few cents each. Drawn lettering is often misspelt, so check it.</span></div>
       ${p.error ? `<div class="ahj-error" role="alert">${escapeHtml(p.error)}</div>` : ""}
       ${results ? `<div class="ahj-logos">${results}</div>` : ""}</div>`;
   }).join("");

@@ -1,5 +1,5 @@
 /* global FormData, Blob */
-// The image maker behind James: OpenAI's image models draw logos and kit designs.
+// Leo: the picture maker behind James. OpenAI's image models draw logos and kit designs.
 //
 // Claude stays in charge. He understands the request, looks at the league data and
 // writes the brief; this file only turns a brief the admin has seen (and may have
@@ -48,7 +48,7 @@ const KINDS = {
 // One request to OpenAI. `refs` are the admin's own photos (data URLs) used as a
 // starting point, which switches to the editing endpoint. `fetchImpl` is injectable for tests.
 async function generate({ cfg, kind, prompt, n, refs, fetchImpl = fetch, timeoutMs = 120000 }) {
-  if (!cfg.apiKey) throw new ImageError("The image maker isn't connected yet. Add OPENAI_API_KEY to your host's Secrets, then publish.", 503);
+  if (!cfg.apiKey) throw new ImageError("Leo isn't connected yet. Add OPENAI_API_KEY to your host's Secrets, then publish.", 503);
   const k = KINDS[kind] || KINDS.artwork;
   const count = Math.max(1, Math.min(3, Math.floor(n) || 1));
   const ctl = new AbortController();
@@ -75,22 +75,22 @@ async function generate({ cfg, kind, prompt, n, refs, fetchImpl = fetch, timeout
       res = await fetchImpl(GENERATE_URL, { method: "POST", headers: { "content-type": "application/json", Authorization: "Bearer " + cfg.apiKey }, body: JSON.stringify(body), signal: ctl.signal });
     }
   } catch (e) {
-    throw new ImageError(e && e.name === "AbortError" ? "The image maker took too long. Try again." : "Couldn't reach the image maker. Check the connection and try again.", 504);
+    throw new ImageError(e && e.name === "AbortError" ? "Leo took too long. Try again." : "Couldn't reach Leo. Check the connection and try again.", 504);
   } finally { clearTimeout(timer); }
   let data = null;
   try { data = await res.json(); } catch { data = null; }
   if (!res.ok) {
     const msg = data && data.error && data.error.message ? String(data.error.message) : "";
     const code = data && data.error && (data.error.code || data.error.type) ? String(data.error.code || data.error.type) : "";
-    if (res.status === 401) throw new ImageError("The image maker's API key was rejected. Check OPENAI_API_KEY.", 502);
+    if (res.status === 401) throw new ImageError("Leo's API key was rejected. Check OPENAI_API_KEY.", 502);
     if (res.status === 403 || /verif/i.test(msg)) throw new ImageError("OpenAI needs your organisation verified before it will make images. Do that in the OpenAI developer console, then try again.", 502);
-    if (/moderation|safety|content_policy/i.test(code + " " + msg)) throw new ImageError("The image maker wouldn't draw that. Change the wording and try again.", 400);
-    if (res.status === 429) throw new ImageError("The image maker is busy or out of credit. Try again in a minute, or top up the OpenAI account.", 503);
-    throw new ImageError(`The image maker returned an error (${res.status}). ${msg.slice(0, 160)}`.trim(), 502);
+    if (/moderation|safety|content_policy/i.test(code + " " + msg)) throw new ImageError("Leo wouldn't draw that. Change the wording and try again.", 400);
+    if (res.status === 429) throw new ImageError("Leo is busy or out of credit. Try again in a minute, or top up the OpenAI account.", 503);
+    throw new ImageError(`Leo returned an error (${res.status}). ${msg.slice(0, 160)}`.trim(), 502);
   }
   const mime = k.format === "png" ? "image/png" : "image/jpeg";
   const images = ((data && data.data) || []).filter((d) => d && typeof d.b64_json === "string").map((d) => `data:${mime};base64,${d.b64_json}`);
-  if (!images.length) throw new ImageError("The image maker didn't return a picture. Try again.", 502);
+  if (!images.length) throw new ImageError("Leo didn't send a picture back. Try again.", 502);
   return { images, usage: (data && data.usage) || null, cost: costUsd(data && data.usage, images.length), model: refs && refs.length ? cfg.editModel : cfg.model };
 }
 

@@ -5161,15 +5161,15 @@ router.post("/admin/james/image", requireOwnerSession, async (req, res) => {
   const n = Math.max(1, Math.min(3, Math.floor(Number(b.variants)) || 1));
   const refs = (Array.isArray(b.refs) ? b.refs : []).slice(0, 2).filter((u) => typeof u === "string" && u.length <= 600000 && /^data:image\/(png|jpeg|webp);base64,/.test(u));
   try {
-    if (!perms.write.images) throw Object.assign(new Error("Picture making is switched off in James's permissions."), { status: 403 });
+    if (!perms.write.images) throw Object.assign(new Error("Leo is switched off in James's permissions."), { status: 403 });
     if (!kind || prompt.length < 10) throw Object.assign(new Error("Describe the picture first."), { status: 400 });
-    if (!cfg.apiKey) throw new images.ImageError("The image maker isn't connected yet. Add OPENAI_API_KEY to your host's Secrets, then publish.", 503);
+    if (!cfg.apiKey) throw new images.ImageError("Leo isn't connected yet. Add OPENAI_API_KEY to your host's Secrets, then publish.", 503);
     james.checkImageLimits(store.getJamesUsage(), actor, cfg, n);
     const r = await images.generate({ cfg, kind, prompt, n, refs });
     const usage = james.recordImageUsage(store.getJamesUsage(), actor, r.cost, r.images.length);
     store.saveJamesUsage(usage);
     res.json({ images: r.images, cost: Math.round(r.cost * 10000) / 10000, images_usage: { ...james.imageSummary(usage, actor, cfg), enabled: true } });
-  } catch (e) { res.status(e.status || 500).json({ error: e.message || "The image maker hit a problem." }); }
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || "Leo hit a problem." }); }
 });
 // The admin chose a generated picture as a team's kit front or back. Kit photos live in their
 // own store, so this is its own step: the old photo is kept for undo (when it is small enough).
