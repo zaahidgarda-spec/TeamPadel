@@ -1758,8 +1758,9 @@ function updateAdminBar() {
   el("admin-bar-note").style.display = isOwner ? "" : "none";
   el("admin-bar-james").style.display = isOwner ? "" : "none";
   el("admin-bar-mic").style.display = isOwner && ahVoiceSupported() ? "" : "none";
+  el("admin-bar-leo").style.display = isOwner ? "" : "none";
   el("admin-bar-mic").classList.toggle("on", !!ahJ.listening);
-  if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); }
+  if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); if (ahLeo.open) closeLeoPopup(); }
   document.documentElement.classList.toggle("has-admin-bar", show);
   if (!show) return;
   const n = inLeague && !isOwner ? currentLeagueLiveCount() : Math.max(adminBarLive, inLeague ? currentLeagueLiveCount() : 0);
@@ -1816,8 +1817,9 @@ async function openQuickNote() {
   el("admin-bar-note").setAttribute("aria-expanded", "true");
   el("ab-note-text").focus();
 }
-el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); openQuickNote(); };
-el("admin-bar-james").onclick = openJamesPopup;
+el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); if (ahLeo.open) closeLeoPopup(); openQuickNote(); };
+el("admin-bar-james").onclick = () => { if (ahLeo.open) closeLeoPopup(); openJamesPopup(); };
+el("admin-bar-leo").onclick = openLeoPopup;
 // The mic beside James: one tap opens him and starts listening (the tap itself must start the
 // microphone, so listening begins first and the panel opens alongside).
 el("admin-bar-mic").onclick = () => {
@@ -1864,7 +1866,7 @@ el("ab-note-add").onclick = async () => {
   el("ab-note-add").disabled = false;
 };
 el("ab-note-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") el("ab-note-add").click(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); if (ahLeo.open) closeLeoPopup(); } });
 // Picking a category redraws the chips, so the clicked button may already be
 // gone from the page by now: judge by the path the click took, not the element.
 document.addEventListener("click", (e) => {
@@ -6988,6 +6990,7 @@ async function loadAdminHub() {
   } catch (e) { el("ah-root").innerHTML = `<p class="empty">${escapeHtml(e.message || "Couldn't load the admin hub.")}</p>`; return; }
   renderAdminHub();
   if (ahJ.popup) renderJamesPopup();
+  if (ahLeo.open) renderLeoPopup();
 }
 function ahToday() { return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }); }
 function ahLeagueName(id) { const l = ahLeagues.find((x) => x.id === id); return l ? l.name : ""; }
@@ -7292,6 +7295,81 @@ function ahVoiceStart(lang) {
   ahJRender();
 }
 
+// ---- Leo's own panel in the top bar: draw a logo or kit design yourself, without going through James ----
+let ahLeo = { open: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", text: "", photos: [], error: "" };
+function ahTurn(ti) { return ti === -1 ? ahLeo.turn : ahJ.thread[ti]; }
+function ahPicRender() { ahJRender(); if (ahLeo.open) renderLeoPopup(); }
+const AH_LEO_KINDS = [["logo", "A team logo"], ["kit_front", "Kit front"], ["kit_back", "Kit back"], ["artwork", "Other artwork"]];
+const AH_LEO_HINT = { logo: "e.g. A bold red storm swirl inside a circle, flat and simple, the letters CY in white.", kit_front: "e.g. A dark red padel shirt, a thin white stripe across the chest, room for the logo on the left.", kit_back: "e.g. The back of the same dark red shirt, plain, with space for a name and number.", artwork: "e.g. A banner of a padel court at sunset in warm colours." };
+function renderLeoPopup() {
+  const panel = el("ab-leo-panel");
+  if (!panel || !isOwner) return;
+  const keep = panel.scrollTop, st = ahJ.status || {}, img = st.images || {};
+  const off = st.permissions && st.permissions.write && st.permissions.write.images === false;
+  const leagues = ahLeagues || [], lg = leagues.find((l) => l.id === ahLeo.leagueId), teams = lg ? lg.teams : [];
+  const plans = ahLeo.turn.imagePlans.length ? ahJamesImagePlansHtml(ahLeo.turn, -1) : "";
+  panel.innerHTML = `<button type="button" class="ab-james-x" id="ab-leo-x" aria-label="Close Leo">&times;</button>
+    <section class="ahj ahj-leo" aria-label="Leo, the picture maker">
+      <div class="ahj-head"><div class="ahj-title"><span class="ahj-av leo" aria-hidden="true">L</span><b>Leo</b><span class="ahj-tag">Draws pictures</span></div>
+        <div class="ahj-head-r">${img.enabled ? `<span class="ahj-meter" title="${img.todayCount} of ${img.dailyLimit} pictures made today">Leo ${ahDollars(img.monthCostUsd)} of $${img.capUsd}</span>` : ""}</div></div>
+      <p class="ahj-sub" style="margin:0;">Leo draws logos and kit designs. Describe what you want, or ask James and he'll write the brief for you. Each picture costs a few cents.</p>
+      ${img.enabled === false ? `<p class="ahj-off">Leo isn't connected yet. Add <code>OPENAI_API_KEY</code> in your host's Secrets and publish.</p>` : ""}
+      ${off ? '<p class="ahj-off">Leo is switched off in James\'s permissions.</p>' : ""}
+      <div class="leo-form">
+        <label>What do you want?<select id="leo-kind">${AH_LEO_KINDS.map(([k, l]) => `<option value="${k}"${ahLeo.kind === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label>League<select id="leo-league"><option value="">Not for a team</option>${leagues.map((l) => `<option value="${l.id}"${l.id === ahLeo.leagueId ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}</select></label>
+        <label>Team<select id="leo-team"${lg ? "" : " disabled"}><option value="">${lg ? "Pick a team" : "Pick a league first"}</option>${teams.map((t) => `<option value="${t.id}"${t.id === ahLeo.teamId ? " selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}</select></label>
+      </div>
+      <textarea id="leo-text" rows="3" maxlength="3000" placeholder="${escapeHtml(AH_LEO_HINT[ahLeo.kind])}" aria-label="Describe the picture">${escapeHtml(ahLeo.text)}</textarea>
+      ${ahLeo.photos.length ? `<div class="ahj-thumbs">${ahLeo.photos.map((im, i) => `<span class="ahj-thumb"><img src="${im.url}" alt="Photo to start from ${i + 1}"><button type="button" class="ahj-thumb-x leo-photo-x" data-i="${i}" aria-label="Remove photo ${i + 1}">&times;</button></span>`).join("")}</div>` : ""}
+      <div class="ahj-gen-row"><input type="file" id="leo-file" accept="image/*" multiple hidden>
+        <button type="button" class="ah-complete undo" id="leo-photo"${ahLeo.photos.length >= 2 ? " disabled" : ""}>Start from a photo</button>
+        <button type="button" class="ah-complete" id="leo-go"${img.enabled === false || off ? " disabled" : ""}>Ask Leo to draw</button>
+        <span class="ahj-sub">A photo (like your logo) lets Leo build on it, for example putting a logo on a kit.</span></div>
+      ${ahLeo.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahLeo.error)}</div>` : ""}
+      ${plans}
+    </section>`;
+  const q = (id) => panel.querySelector("#" + id);
+  q("ab-leo-x").onclick = closeLeoPopup;
+  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.text = q("leo-text").value; renderLeoPopup(); };
+  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.text = q("leo-text").value; renderLeoPopup(); };
+  q("leo-team").onchange = (e) => { ahLeo.teamId = e.target.value; };
+  q("leo-text").oninput = (e) => { ahLeo.text = e.target.value; };
+  q("leo-photo").onclick = () => q("leo-file").click();
+  q("leo-file").onchange = async (e) => {
+    const picked = Array.from(e.target.files || []).filter((f) => /^image\//.test(f.type)).slice(0, 2 - ahLeo.photos.length);
+    e.target.value = ""; ahLeo.text = q("leo-text").value;
+    for (const f of picked) { try { ahLeo.photos.push(await ahResizePhoto(f)); } catch (err) { ahLeo.error = err.message; } }
+    renderLeoPopup();
+  };
+  panel.querySelectorAll(".leo-photo-x").forEach((b) => { b.onclick = () => { ahLeo.text = q("leo-text").value; ahLeo.photos.splice(+b.dataset.i, 1); renderLeoPopup(); }; });
+  q("leo-go").onclick = () => {
+    const text = q("leo-text").value.trim(); ahLeo.text = text;
+    if (text.length < 10) { ahLeo.error = "Describe the picture in a sentence or two first."; renderLeoPopup(); return; }
+    const team = teams.find((t) => t.id === ahLeo.teamId);
+    const kindLabel = (AH_LEO_KINDS.find((k) => k[0] === ahLeo.kind) || [0, "picture"])[1].toLowerCase();
+    const plan = { kind: ahLeo.kind, prompt: text, leagueId: team ? ahLeo.leagueId : null, teamId: team ? team.id : null, teamName: team ? team.name : "", forWhat: (team ? team.name + " " : "") + kindLabel, variants: 2, refPhotos: [], refUrls: ahLeo.photos.map((p) => p.logoUrl), results: [], busy: false, error: "" };
+    ahLeo.turn.imagePlans.unshift(plan); ahLeo.error = ""; ahLeo.text = "";
+    ahRunPlan(plan, ahLeo.turn);
+  };
+  bindAhJamesPictures(panel);
+  panel.scrollTop = keep;
+}
+function closeLeoPopup() {
+  const panel = el("ab-leo-panel");
+  ahLeo.open = false;
+  if (panel) { panel.hidden = true; panel.innerHTML = ""; }
+  el("admin-bar-leo").setAttribute("aria-expanded", "false");
+}
+async function openLeoPopup() {
+  const panel = el("ab-leo-panel");
+  if (!panel.hidden) return closeLeoPopup();
+  closeQuickNote(); if (ahJ.popup) closeJamesPopup();
+  if (!ahLeagues.length && !ahCategories.length) await loadAdminHub();
+  ahLeo.open = true; panel.hidden = false;
+  el("admin-bar-leo").setAttribute("aria-expanded", "true");
+  renderLeoPopup();
+}
 // James can live in the Note Machine or in a panel at the top of every page (next to + Note).
 // Only one place shows him at a time, so the chat is never on screen twice.
 function ahJRender() { const m = el("admin-bar-mic"); if (m) { m.classList.toggle("on", !!ahJ.listening); m.setAttribute("aria-pressed", String(!!ahJ.listening)); } if (ahJ.popup) renderJamesPopup(); else renderAdminHub(); }
@@ -7472,7 +7550,8 @@ async function ahJamesApply(t, btn) {
 async function ahJamesUndoSet(setId, t) {
   try {
     await api(`/admin/james/log/${setId}/undo`, { method: "POST" });
-    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.imagePlans || []).forEach((pl) => pl.results.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.finalizeAsk || []).forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } }); });
+    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.imagePlans || []).forEach((pl) => pl.results.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.finalizeAsk || []).forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } });
+    if (ahLeo.turn) ahLeo.turn.imagePlans.forEach((pl) => pl.results.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); });
     ahJ.error = ""; ahJ.log = null;
     if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
     await ahRefreshAndRender();
@@ -7697,12 +7776,14 @@ function ahShrinkPicture(url, { maxSide, keepAlpha, limit }) {
     img.src = url;
   });
 }
+// "Cyclones'" not "Cyclones's".
+function ahPoss(n) { n = String(n || ""); return /s$/i.test(n) ? n + "'" : n + "'s"; }
 function ahJamesImagePlansHtml(t, ti) {
   const img = (ahJ.status && ahJ.status.images) || {};
   return t.imagePlans.map((p, pi) => {
     const results = p.results.map((r, ri) => {
       const usable = p.teamId && (p.kind === "logo" || p.kind === "kit_front" || p.kind === "kit_back");
-      const useLabel = p.kind === "logo" ? `Use as ${p.teamName}'s logo` : p.kind === "kit_front" ? `Use as ${p.teamName}'s kit front` : `Use as ${p.teamName}'s kit back`;
+      const useLabel = p.kind === "logo" ? `Use as ${ahPoss(p.teamName)} logo` : p.kind === "kit_front" ? `Use as ${ahPoss(p.teamName)} kit front` : `Use as ${ahPoss(p.teamName)} kit back`;
       return `<div class="ahj-logo"><img src="${r.url}" alt="Picture option ${ri + 1}" class="ahj-gen-img${p.kind === "logo" ? " logo" : ""}">
         <div class="ahj-logo-btns">${r.state === "used" ? `<span class="ahj-logo-done">In use for ${escapeHtml(p.teamName)}</span><button type="button" class="ah-complete undo ahj-gen-undo" data-t="${ti}" data-p="${pi}" data-r="${ri}">Undo</button>`
           : `${usable ? `<button type="button" class="ah-complete ahj-gen-use" data-t="${ti}" data-p="${pi}" data-r="${ri}">${escapeHtml(useLabel)}</button>` : ""}<button type="button" class="ah-complete undo ahj-gen-dl" data-t="${ti}" data-p="${pi}" data-r="${ri}">Download</button>${r.state === "undone" ? '<span class="ahj-sub">Undone</span>' : ""}`}</div></div>`;
@@ -7717,22 +7798,23 @@ function ahJamesImagePlansHtml(t, ti) {
       ${results ? `<div class="ahj-logos">${results}</div>` : ""}</div>`;
   }).join("");
 }
+// Asks Leo to draw a brief (from James, or typed straight into Leo's own panel).
+async function ahRunPlan(p, t) {
+  if (p.busy) return;
+  p.busy = true; p.error = ""; ahPicRender();
+  try {
+    const refs = p.refUrls || (p.refPhotos || []).map((i) => (t.logoImages || [])[i]).filter(Boolean);
+    const r = await api("/admin/james/image", { method: "POST", body: { kind: p.kind, prompt: p.prompt, variants: p.variants, refs } });
+    p.results = r.images.map((url) => ({ url, state: "" })); p.cost = r.cost;
+    if (ahJ.status) ahJ.status.images = r.images_usage;
+  } catch (e) { p.error = e.message; }
+  p.busy = false; ahPicRender();
+}
 function bindAhJamesPictures(root) {
-  const plan = (b) => ahJ.thread[+b.dataset.t].imagePlans[+b.dataset.p];
+  const plan = (b) => ahTurn(+b.dataset.t).imagePlans[+b.dataset.p];
   root.querySelectorAll(".ahj-brief").forEach((a) => { a.oninput = () => { plan(a).prompt = a.value; }; });
   root.querySelectorAll(".ahj-variants").forEach((sel) => { sel.onchange = () => { plan(sel).variants = +sel.value; }; });
-  root.querySelectorAll(".ahj-generate").forEach((b) => { b.onclick = async () => {
-    const p = plan(b), t = ahJ.thread[+b.dataset.t];
-    if (p.busy) return;
-    p.busy = true; p.error = ""; ahJRender();
-    try {
-      const refs = (p.refPhotos || []).map((i) => (t.logoImages || [])[i]).filter(Boolean);
-      const r = await api("/admin/james/image", { method: "POST", body: { kind: p.kind, prompt: p.prompt, variants: p.variants, refs } });
-      p.results = r.images.map((url) => ({ url, state: "" })); p.cost = r.cost;
-      if (ahJ.status) ahJ.status.images = r.images_usage;
-    } catch (e) { p.error = e.message; }
-    p.busy = false; ahJRender();
-  }; });
+  root.querySelectorAll(".ahj-generate").forEach((b) => { b.onclick = () => ahRunPlan(plan(b), ahTurn(+b.dataset.t)); });
   const res = (b) => plan(b).results[+b.dataset.r];
   root.querySelectorAll(".ahj-gen-dl").forEach((b) => { b.onclick = () => { const p = plan(b); kitDownloadDataUrl(res(b).url, (p.forWhat || "picture").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + (+b.dataset.r + 1) + (p.kind === "logo" ? ".png" : ".jpg")); }; });
   root.querySelectorAll(".ahj-gen-use").forEach((b) => { b.onclick = async () => {
@@ -7748,9 +7830,9 @@ function bindAhJamesPictures(root) {
         out = await api("/admin/james/kit", { method: "POST", body: { leagueId: p.leagueId, teamId: p.teamId, side: p.kind === "kit_front" ? "front" : "back", image: jpg } });
       }
       r.state = "used"; r.setId = out.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = out.changes; ahJ.error = ""; ahJ.log = null;
-      ahJRender();
-      showToast(p.kind === "logo" ? `${p.teamName}'s logo changed.` : `${p.teamName}'s kit ${p.kind === "kit_front" ? "front" : "back"} changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(out.setId, null) });
-    } catch (e) { b.disabled = false; ahJ.error = e.message; ahJRender(); }
+      ahPicRender();
+      showToast(p.kind === "logo" ? `${ahPoss(p.teamName)} logo changed.` : `${ahPoss(p.teamName)} kit ${p.kind === "kit_front" ? "front" : "back"} changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(out.setId, null) });
+    } catch (e) { b.disabled = false; ahJ.error = e.message; ahPicRender(); }
   }; });
   root.querySelectorAll(".ahj-gen-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(res(b).setId, null); });
 }
@@ -7779,7 +7861,7 @@ function bindAhJamesDesign(root) {
       const r = await api("/admin/james/logo", { method: "POST", body: { leagueId: set.leagueId, teamId: set.teamId, image: png } });
       o.state = "used"; o.setId = r.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes; ahJ.error = ""; ahJ.log = null;
       ahJRender();
-      showToast(`${set.teamName}'s logo changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(r.setId, null) });
+      showToast(`${ahPoss(set.teamName)} logo changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(r.setId, null) });
     } catch (e) { b.disabled = false; ahJ.error = e.message; ahJRender(); }
   }; });
   root.querySelectorAll(".ahj-logo-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(opt(b).setId, null); });

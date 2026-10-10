@@ -3440,3 +3440,16 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-fin-ok{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1.5px solid #E0961A;border-radius:10px;background:#FDF1DA;font-size:14px;cursor:pointer;}
 .ahj-fin-ok input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:#B45309;}
 .ahj-apply:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Leo, the picture maker, in the top bar */
+.admin-bar .ab-leo-btn{background:#8A4FD0;border-color:#A678E0;}
+.admin-bar .ab-leo-btn:hover{background:#9C63E0;}
+.ab-leo-av{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#fff;color:#8A4FD0;font-size:11px;font-weight:800;}
+.ahj-av.leo{background:#8A4FD0;}
+.ahj-leo{border:0 !important;padding:0 !important;margin:0 !important;}
+.leo-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;}
+.leo-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.04em;}
+.leo-form select{font-size:14px;font-weight:500;text-transform:none;letter-spacing:0;color:#0F172A;}
+#leo-text{width:100%;resize:vertical;border:1.5px solid #CBD5E1;border-radius:10px;padding:9px 12px;font:inherit;font-size:14px;background:#fff;color:#0F172A;}
+.ab-leo-panel .ahj-block{margin-top:6px;}
+@media (max-width:560px){.admin-bar .ab-leo-btn{padding:8px 10px;}}
