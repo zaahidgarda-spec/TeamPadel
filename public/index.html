@@ -62,11 +62,10 @@
   <div class="admin-bar" id="admin-bar" style="display:none;">
     <button type="button" class="ab-tag" id="admin-bar-tag">Admin</button><span class="ab-sp"></span>
     <button type="button" class="ab-btn ab-note-btn" id="admin-bar-note" style="display:none;" aria-haspopup="dialog" aria-expanded="false">+ Note</button>
-    <button type="button" class="ab-btn ab-james-btn" id="admin-bar-james" style="display:none;" aria-haspopup="dialog" aria-expanded="false"><span class="ab-james-av" aria-hidden="true">J</span>James</button>
+    <button type="button" class="ab-btn ab-james-btn" id="admin-bar-james" style="display:none;" aria-haspopup="dialog" aria-expanded="false"><span class="ab-james-av" aria-hidden="true">J</span>James<span class="ab-cnt" id="admin-bar-james-n" hidden></span></button>
     <button type="button" class="ab-btn ab-mic-btn" id="admin-bar-mic" style="display:none;" aria-pressed="false" title="Talk to James" aria-label="Talk to James"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v4"/></svg></button>
     <button type="button" class="ab-btn" id="admin-bar-btn"><span class="ab-dot"></span>Control room<span class="ab-n" id="admin-bar-n" style="display:none;"></span></button>
   </div>
-  <div class="ab-james-panel" id="ab-james-panel" role="dialog" aria-label="James, your assistant" hidden></div>
   <div class="ab-note-panel" id="ab-note-panel" role="dialog" aria-label="Quick note" hidden>
     <textarea id="ab-note-text" rows="3" maxlength="2000" placeholder="Quick note. It files itself in Cerebro: 'Kit box 4 arrived', 'Chase Acme', 'Pay Sandton R3200 by friday'…"></textarea>
     <div class="ab-note-cats" id="ab-note-cats" role="group" aria-label="Category"></div>
@@ -212,6 +211,7 @@
           <button class="hub-tab-btn" data-hubview="news">News room</button>
           <button class="hub-tab-btn" data-hubview="admin">Admin</button>
           <button class="hub-tab-btn" data-hubview="adminhub" id="hub-adminhub-tab-btn" style="display:none;">Cerebro</button>
+          <button class="hub-tab-btn" data-hubview="assistants" id="hub-assistants-tab-btn" style="display:none;">Assistants</button>
         </div>
         <button class="hub-tab-btn" data-hubview="join">Join a league</button>
       </nav>
@@ -583,6 +583,10 @@
           <p class="note" style="margin-bottom:10px;">Every update from every league you play in, most recent first.</p>
           <div id="account-news-list"></div>
         </div>
+      </section>
+
+      <section class="hub-view" id="hub-view-assistants">
+        <div id="as-root"><p class="empty">Loading…</p></div>
       </section>
 
       <section class="hub-view" id="hub-view-adminhub">

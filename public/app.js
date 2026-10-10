@@ -1759,7 +1759,7 @@ function updateAdminBar() {
   el("admin-bar-james").style.display = isOwner ? "" : "none";
   el("admin-bar-mic").style.display = isOwner && ahVoiceSupported() ? "" : "none";
   el("admin-bar-mic").classList.toggle("on", !!ahJ.listening);
-  if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup();}
+  if (!isOwner) closeQuickNote();
   document.documentElement.classList.toggle("has-admin-bar", show);
   if (!show) return;
   const n = inLeague && !isOwner ? currentLeagueLiveCount() : Math.max(adminBarLive, inLeague ? currentLeagueLiveCount() : 0);
@@ -1816,15 +1816,14 @@ async function openQuickNote() {
   el("admin-bar-note").setAttribute("aria-expanded", "true");
   el("ab-note-text").focus();
 }
-el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); openQuickNote(); };
-el("admin-bar-james").onclick = openJamesPopup;
+el("admin-bar-note").onclick = openQuickNote;
+el("admin-bar-james").onclick = () => openAssistants();
 // The mic beside James: one tap opens him and starts listening (the tap itself must start the
 // microphone, so listening begins first and the panel opens alongside).
 el("admin-bar-mic").onclick = () => {
   if (ahJ.listening) { ahVoiceStop(); return; }
-  const wasOpen = !!ahJ.popup;
   ahVoiceStart();
-  if (!wasOpen) openJamesPopup();
+  openAssistants("chat");
 };
 el("ab-note-scope").onchange = updateQuickNoteSponsor;
 el("ab-note-league").onchange = updateQuickNoteSponsor;
@@ -1864,7 +1863,7 @@ el("ab-note-add").onclick = async () => {
   el("ab-note-add").disabled = false;
 };
 el("ab-note-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") el("ab-note-add").click(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeQuickNote(); });
 // Picking a category redraws the chips, so the clicked button may already be
 // gone from the page by now: judge by the path the click took, not the element.
 document.addEventListener("click", (e) => {
@@ -2073,6 +2072,7 @@ function switchHubTab(name) {
   // rather than polled continuously in the background.
   if (name === "admin" && isOwner) { renderLiveCount(); renderLoginsToday(); }
   if (name === "adminhub" && isOwner) loadAdminHub();
+  if (name === "assistants" && isOwner) loadAdminHub();
   // Warm the player index the moment this tab opens, not the moment
   // someone starts typing — by the time they've typed anything it's
   // often already in hand. loadPlayerIndex is a no-op if already loading.
@@ -2666,7 +2666,9 @@ async function refreshOwnerStatus() {
   adminTabBtn.style.display = isOwner ? "" : "none";
   const hubTabBtn = el("hub-adminhub-tab-btn");
   hubTabBtn.style.display = isOwner ? "" : "none";
-  if (!isOwner && (adminTabBtn.classList.contains("active") || hubTabBtn.classList.contains("active"))) switchHubTab("leagues");
+  const asTabBtn = el("hub-assistants-tab-btn");
+  asTabBtn.style.display = isOwner ? "" : "none";
+  if (!isOwner && (adminTabBtn.classList.contains("active") || hubTabBtn.classList.contains("active") || asTabBtn.classList.contains("active"))) switchHubTab("leagues");
   el("pay-link-finder-card").style.display = isOwner ? "block" : "none";
   el("email-test-card").style.display = isOwner ? "block" : "none";
   if (isOwner) { renderGuestWallCard(); renderManageLeagues(); renderInterestSignups(); renderCombineAccounts(); renderCombineSuggestions(); renderLiveCount(); renderLoginsToday(); renderPayLinkFinder(); renderHubClaimRequests(); renderPushStatsCard(); renderRatingsMonitorCard(); renderAdminToday(); renderPredictionAccuracyCard(); renderPushBroadcastCard(); }
@@ -7000,7 +7002,7 @@ async function loadAdminHub() {
     if (ahCat !== "all" && ahCat !== "none" && !ahCategories.some((c) => c.id === ahCat)) ahCat = "all";
   } catch (e) { el("ah-root").innerHTML = `<p class="empty">${escapeHtml(e.message || "Couldn't load the admin hub.")}</p>`; return; }
   renderAdminHub();
-  if (ahJ.popup) renderJamesPopup();
+  ahJRender();
 }
 function ahToday() { return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }); }
 function ahLeagueName(id) { const l = ahLeagues.find((x) => x.id === id); return l ? l.name : ""; }
@@ -7308,8 +7310,8 @@ function ahVoiceStart(lang) {
 // ---- Leo's own card in Cerebro: draw a logo or kit design yourself, without going through James ----
 let ahLeo = { shut: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", text: "", photos: [], error: "" };
 function ahTurn(ti) { return ti === -1 ? ahLeo.turn : ahJ.thread[ti]; }
-// Leo sits in Cerebro, so anything that changes one of his pictures redraws that page (and James's panel if it's open).
-function ahPicRender() { renderAdminHub(); if (ahJ.popup) renderJamesPopup(); }
+// Leo lives on the Assistants page, so anything that changes one of his pictures redraws it.
+function ahPicRender() { ahJRender(); }
 const AH_LEO_KINDS = [["logo", "A team logo"], ["kit_front", "Kit front"], ["kit_back", "Kit back"], ["artwork", "Other artwork"]];
 const AH_LEO_HINT = { logo: "e.g. A bold red storm swirl inside a circle, flat and simple, the letters CY in white.", kit_front: "e.g. A dark red padel shirt, a thin white stripe across the chest, room for the logo on the left.", kit_back: "e.g. The back of the same dark red shirt, plain, with space for a name and number.", artwork: "e.g. A banner of a padel court at sunset in warm colours." };
 function ahLeoHtml() {
@@ -7341,11 +7343,11 @@ function ahLeoHtml() {
 }
 function bindAhLeo(root) {
   const q = (id) => root.querySelector("#" + id);
-  const toggle = q("leo-toggle"); if (toggle) toggle.onclick = () => { ahLeo.shut = !ahLeo.shut; renderAdminHub(); };
+  const toggle = q("leo-toggle"); if (toggle) toggle.onclick = () => { ahLeo.shut = !ahLeo.shut; ahJRender(); };
   if (!q("leo-go")) return;
   const leagues = ahLeagues || [], lg = leagues.find((l) => l.id === ahLeo.leagueId), teams = lg ? lg.teams : [];
-  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.text = q("leo-text").value; renderAdminHub(); };
-  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.text = q("leo-text").value; renderAdminHub(); };
+  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.text = q("leo-text").value; ahJRender(); };
+  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.text = q("leo-text").value; ahJRender(); };
   q("leo-team").onchange = (e) => { ahLeo.teamId = e.target.value; };
   q("leo-text").oninput = (e) => { ahLeo.text = e.target.value; };
   q("leo-photo").onclick = () => q("leo-file").click();
@@ -7353,12 +7355,12 @@ function bindAhLeo(root) {
     const picked = Array.from(e.target.files || []).filter((f) => /^image\//.test(f.type)).slice(0, 2 - ahLeo.photos.length);
     e.target.value = ""; ahLeo.text = q("leo-text").value;
     for (const f of picked) { try { ahLeo.photos.push(await ahResizePhoto(f)); } catch (err) { ahLeo.error = err.message; } }
-    renderAdminHub();
+    ahJRender();
   };
-  root.querySelectorAll(".leo-photo-x").forEach((b) => { b.onclick = () => { ahLeo.text = q("leo-text").value; ahLeo.photos.splice(+b.dataset.i, 1); renderAdminHub(); }; });
+  root.querySelectorAll(".leo-photo-x").forEach((b) => { b.onclick = () => { ahLeo.text = q("leo-text").value; ahLeo.photos.splice(+b.dataset.i, 1); ahJRender(); }; });
   q("leo-go").onclick = () => {
     const text = q("leo-text").value.trim(); ahLeo.text = text;
-    if (text.length < 10) { ahLeo.error = "Describe the picture in a sentence or two first."; renderAdminHub(); return; }
+    if (text.length < 10) { ahLeo.error = "Describe the picture in a sentence or two first."; ahJRender(); return; }
     const team = teams.find((t) => t.id === ahLeo.teamId);
     const kindLabel = (AH_LEO_KINDS.find((k) => k[0] === ahLeo.kind) || [0, "picture"])[1].toLowerCase();
     const plan = { kind: ahLeo.kind, prompt: text, leagueId: team ? ahLeo.leagueId : null, teamId: team ? team.id : null, teamName: team ? team.name : "", forWhat: (team ? team.name + " " : "") + kindLabel, variants: 2, refPhotos: [], refUrls: ahLeo.photos.map((p) => p.logoUrl), results: [], busy: false, error: "" };
@@ -7366,39 +7368,138 @@ function bindAhLeo(root) {
     ahRunPlan(plan, ahLeo.turn);
   };
 }
-// James can live in Cerebro or in a panel at the top of every page (next to + Note).
-// Only one place shows him at a time, so the chat is never on screen twice.
-function ahJRender() { const m = el("admin-bar-mic"); if (m) { m.classList.toggle("on", !!ahJ.listening); m.setAttribute("aria-pressed", String(!!ahJ.listening)); } if (ahJ.popup) renderJamesPopup(); else renderAdminHub(); }
-function renderJamesPopup() {
-  const panel = el("ab-james-panel");
-  if (!panel || !isOwner) return;
-  const keep = panel.scrollTop;
-  panel.innerHTML = `<button type="button" class="ab-james-x" id="ab-james-x" aria-label="Close James">&times;</button>${ahJamesHtml()}`;
-  bindAhJames(panel); bindAhJamesDesign(panel); bindAhJamesPictures(panel);
-  const x = panel.querySelector("#ab-james-x"); if (x) x.onclick = closeJamesPopup;
-  panel.scrollTop = keep;
+// ---- The Assistants page: one home for James and Leo. Everything waiting for your OK is one list (like an inbox),
+// each item shows its story and undo beside it, and the conversation and Leo's pictures sit one click away. ----
+let ahAs = { view: null, sel: null };
+function ahAsWaiting() {
+  const out = [];
+  ahJ.thread.forEach((t, ti) => {
+    if (t.role !== "james") return;
+    const base = { ti, at: t.at, request: t.request };
+    if (t.changes && t.changes.length && (t.cstate || "pending") === "pending") {
+      const first = t.changes.find((c) => c.preview && c.preview.ok) || t.changes[0], pv = first.preview || {};
+      out.push({ ...base, id: "c" + ti, kind: "changes", pill: pv.label || "Change", title: t.changes.length === 1 ? (pv.ok ? pv.text : pv.error || "A change") : `${t.changes.length} changes, starting with: ${pv.ok ? pv.text : pv.label}`, by: "James" });
+    }
+    if (t.notes && t.notes.length && (t.state || "pending") === "pending") out.push({ ...base, id: "n" + ti, kind: "notes", pill: "Notes", title: t.notes.length === 1 ? t.notes[0].title : `${t.notes.length} notes: ${t.notes[0].title} and more`, by: "James" });
+    if (t.finalizeAsk && t.finalizeAsk.some((o) => o.state === "ask" || o.state === "confirm")) {
+      const o = t.finalizeAsk.find((x) => x.state === "ask" || x.state === "confirm");
+      out.push({ ...base, id: "f" + ti, kind: "finalize", pill: "Scores", title: "Ready to finalize: " + o.label, by: "James" });
+    }
+    // A brief stays here until one of Leo's pictures is used or you say it isn't needed.
+    const openBrief = (p) => !p.dismissed && (!p.results.length || p.results.every((r) => !r.state));
+    if (t.imagePlans && t.imagePlans.some(openBrief)) {
+      const p = t.imagePlans.find(openBrief);
+      out.push({ ...base, id: "b" + ti, kind: "brief", pill: "Picture", title: "Brief for Leo: " + p.forWhat, by: "James" });
+    }
+  });
+  return out.reverse();
 }
-function ahJamesDockedHtml() {
-  return `<section class="ahj ahj-docked" aria-label="James"><span><span class="ahj-av" aria-hidden="true">J</span> <b>James</b> is open at the top of the page.</span><button type="button" class="link" id="ahj-bring">Bring him back here</button></section>`;
+function ahAsDrafts() {
+  const out = [];
+  ahJ.thread.forEach((t, ti) => { if (t.role === "james" && t.messages && t.messages.length) out.push({ t, ti }); });
+  return out.reverse();
 }
-function closeJamesPopup() {
-  const panel = el("ab-james-panel");
-  ahJ.popup = false;
-  if (panel) { panel.hidden = true; panel.innerHTML = ""; }
-  el("admin-bar-james").setAttribute("aria-expanded", "false");
-  renderAdminHub();
+function ahAsWhen(ms) { return ms ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""; }
+function ahAsDetailHtml(it) {
+  const t = ahJ.thread[it.ti];
+  const body = it.kind === "changes" ? ahJamesChangesHtml(t, it.ti) : it.kind === "notes" ? ahJamesNotesBlockHtml(t, it.ti) : it.kind === "finalize" ? ahJamesFinalizeAskHtml(t, it.ti) : ahJamesImagePlansHtml(t, it.ti);
+  const story = [`<div class="j"><b>${escapeHtml(it.by)}</b> proposed this${it.request ? ` after you said "${escapeHtml(String(it.request).slice(0, 140))}"` : ""} <span class="muted">${ahAsWhen(it.at)}</span></div>`,
+    it.kind === "changes" ? "<div><b>Checked</b> on a copy first. Nothing has changed yet.</div>" : "<div><b>Not saved</b> until you press the button.</div>",
+    "<div><b>Waiting</b> for ZG, ID or JN <span class=\"muted\">now</span></div>"].join("");
+  const skip = it.kind === "brief" ? `<div class="ahj-actions"><button type="button" class="ah-complete undo as-skip" data-t="${it.ti}">I don't need this picture</button></div>` : "";
+  return `<div class="as-dh"><h3>${escapeHtml(it.title)}</h3><span class="ahj-kind">${escapeHtml(it.pill)}</span></div>${body}${skip}<div class="sec" style="margin-top:6px">Story</div><div class="as-tl">${story}</div>`;
 }
-async function openJamesPopup() {
-  const panel = el("ab-james-panel");
-  if (!panel.hidden) return closeJamesPopup();
-  closeQuickNote();
-  // The hub's lists (leagues, categories) are what James's notes and changes are shown against.
-  if (!ahLeagues.length && !ahCategories.length) await loadAdminHub();
-  ahJ.popup = true; panel.hidden = false;
-  el("admin-bar-james").setAttribute("aria-expanded", "true");
-  renderAdminHub();
-  renderJamesPopup(); ahJamesScroll();
-  const inp = el("ahj-in"); if (inp) inp.focus();
+function ahAsPicturesHtml() {
+  let h = ahLeoHtml();
+  const turns = [];
+  ahJ.thread.forEach((t, ti) => { if (t.role === "james" && ((t.imagePlans && t.imagePlans.length) || (t.logos && t.logos.length) || (t.posters && t.posters.length))) turns.push({ t, ti }); });
+  turns.reverse().forEach(({ t, ti }) => {
+    if (t.imagePlans && t.imagePlans.length) h += ahJamesImagePlansHtml(t, ti);
+    if (t.logos && t.logos.length) h += ahJamesLogosHtml(t, ti);
+    if (t.posters && t.posters.length) h += ahJamesPostersHtml(t, ti);
+  });
+  return h;
+}
+function ahAsSpendHtml() {
+  const st = ahJ.status || {}, u = st.usage, img = st.images, ch = st.changes;
+  const row = (name, cls, a, b, c) => `<div class="as-sp"><span class="ahj-av ${cls}" aria-hidden="true">${name[0]}</span><div><b>${name}</b><div class="muted">${a}</div><div class="muted">${b}</div></div><b>${c}</b></div>`;
+  return `<div class="ahj-panel"><div class="as-dh"><h3>Spending</h3></div>
+    ${u ? row("James", "", `${u.todayCount} of ${u.dailyLimit} requests used today`, ch ? `${ch.today} of ${ch.limit} changes made today` : "", `${ahDollars(u.monthCostUsd)} of $${u.capUsd} this month`) : '<p class="ahj-sub">Not connected yet.</p>'}
+    ${img && img.enabled ? row("Leo", "leo", `${img.todayCount} of ${img.dailyLimit} pictures drawn today`, "", `${ahDollars(img.monthCostUsd)} of $${img.capUsd} this month`) : '<p class="ahj-sub">Leo isn\'t connected yet.</p>'}
+    <p class="ahj-sub">The caps are set in your host's Secrets (JAMES_MONTHLY_CAP_USD, JAMES_DAILY_LIMIT, JAMES_DAILY_CHANGES, JAMES_IMAGE_CAP_USD, JAMES_DAILY_IMAGES). When a cap is reached the assistant stops until it resets.</p></div>`;
+}
+function ahAsVoiceHtml() {
+  return `<div class="ahj-panel"><div class="as-dh"><h3>Voice</h3></div>
+    ${ahVoiceSupported() ? `<p class="ahj-sub">Tap the mic in the message box (or the mic in the top bar) and speak. What you say is sent when you stop talking, and James reads a short version of his answer back.</p>
+      <div class="ahj-actions"><button type="button" class="ah-complete${ahJ.speak ? "" : " undo"} ahj-speak-btn" id="ahj-speak" aria-pressed="${ahJ.speak}">${ahJ.speak ? "Voice replies on" : "Voice replies off"}</button></div>
+      <p class="ahj-sub">Speech is turned into text by your browser's own service (Google for Chrome, Apple for Safari). Only the text comes to James.</p>` : '<p class="ahj-sub">This browser can\'t do voice. Chrome, Edge and Safari can.</p>'}</div>`;
+}
+function ahAsUpdateBadges() {
+  const n = ahAsWaiting().length;
+  const b = el("admin-bar-james-n"); if (b) { b.textContent = n; b.hidden = !n; }
+  const e = el("ah-as-entry"); if (e) e.innerHTML = ahAsEntryInner(n);
+  const t = el("hub-assistants-tab-btn"); if (t) t.dataset.n = n ? String(n) : "";
+}
+function ahAsEntryInner(n) {
+  return `<span><span class="ahj-av" aria-hidden="true">J</span><span class="ahj-av leo" aria-hidden="true" style="margin-left:-6px">L</span> <b>James and Leo</b> ${n ? `<span class="cnt red">${n}</span> waiting for your OK` : "have nothing waiting for you"}.</span><button type="button" class="ah-complete j" id="ah-open-as">Open Assistants</button>`;
+}
+function ahJRender() {
+  const m = el("admin-bar-mic"); if (m) { m.classList.toggle("on", !!ahJ.listening); m.setAttribute("aria-pressed", String(!!ahJ.listening)); }
+  renderAssistants(); ahAsUpdateBadges();
+  const open = el("ah-open-as"); if (open) open.onclick = () => openAssistants();
+}
+async function ahAsGo(view) {
+  ahAs.view = view; ahAs.sel = null;
+  if (view === "done" && ahJ.log === null) { renderAssistants(); try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
+  renderAssistants();
+}
+function renderAssistants() {
+  const root = el("as-root");
+  if (!root || !isOwner) return;
+  const waiting = ahAsWaiting(), drafts = ahAsDrafts();
+  if (!ahAs.view) ahAs.view = waiting.length ? "waiting" : "chat";
+  const view = ahAs.view, st = ahJ.status || {}, u = st.usage, img = st.images || {};
+  const off = st.enabled === false;
+  const navItem = (k, label, n, cls) => `<button type="button" class="as-it${view === k ? " on" : ""}" data-asview="${k}"><span>${label}</span>${n ? `<span class="cnt ${cls || ""}">${n}</span>` : ""}</button>`;
+  const nav = `<nav class="as-nav" aria-label="Assistants views">
+    ${navItem("waiting", "Waiting on you", waiting.length, "red")}${navItem("chat", "Conversation")}${navItem("drafts", "Drafts to send", drafts.length)}${navItem("pictures", "Pictures from Leo")}${navItem("done", "Done today")}
+    <div class="as-h">Controls</div>${navItem("perms", "What they may do")}${navItem("spend", "Spending")}${navItem("voice", "Voice")}
+    <div class="as-meter">${u ? `James ${ahDollars(u.monthCostUsd)} of $${u.capUsd}` : "James not connected"}<br>${img.enabled ? `Leo ${ahDollars(img.monthCostUsd)} of $${img.capUsd}` : "Leo not connected"}</div>
+    ${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new" style="margin:6px 10px;color:#9FB6C1;">New chat</button>' : ""}</nav>`;
+  let main = "";
+  if (view === "waiting") {
+    if (!waiting.some((w) => w.id === ahAs.sel)) ahAs.sel = waiting.length ? waiting[0].id : null;
+    const sel = waiting.find((w) => w.id === ahAs.sel);
+    main = `<div class="as-split"><div class="as-list">${waiting.length ? waiting.map((w) => `<button type="button" class="as-li${w.id === ahAs.sel ? " on" : ""}" data-asitem="${w.id}"><div class="as-row"><b>${escapeHtml(w.title.slice(0, 90))}</b><span class="muted">${ahAsWhen(w.at)}</span></div><div class="as-row"><span class="ahj-kind">${escapeHtml(w.pill)}</span><span class="muted">${escapeHtml(w.by)}</span></div></button>`).join("") : '<p class="as-empty">Nothing is waiting for you. When James or Leo suggest something, it lands here first, and nothing is saved until you press the button.</p>'}</div>
+      <div class="as-detail">${sel ? ahAsDetailHtml(sel) : '<p class="as-empty">Pick an item on the left to see what it will do.</p>'}</div></div>`;
+  } else if (view === "chat") {
+    const rail = waiting.length ? waiting.slice(0, 6).map((w) => `<div class="as-ri"><b>${escapeHtml(w.title.slice(0, 70))}</b><span class="muted">${escapeHtml(w.by)} &middot; ${ahAsWhen(w.at)}</span><button type="button" class="ah-complete j" data-asreview="${w.id}">Review</button></div>`).join("") : '<p class="ahj-sub">Nothing waiting.</p>';
+    main = `<div class="as-split chat"><div class="as-conv"><div class="ahj-thread" id="ahj-thread">${ahJ.thread.length ? ahJ.thread.map(ahJamesTurnHtml).join("") : '<p class="as-empty">Say what you want in the box below. You can name who you want: <b>@James</b> for notes, payments, scores and set-up, <b>@Leo</b> for logos and kit designs.</p>'}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div></div>
+      <aside class="as-rail"><div class="as-row"><b>Waiting for you</b><span class="cnt ${waiting.length ? "red" : ""}">${waiting.length}</span></div>${rail}</aside></div>`;
+  } else if (view === "drafts") {
+    main = `<div class="as-page"><div class="as-dh"><h3>Drafts to send</h3></div>${drafts.length ? drafts.map(({ t, ti }) => ahJamesMessagesBlockHtml(t, ti)).join("") : '<p class="as-empty">No drafts yet. Ask James to "draft a friendly reminder for each team that owes".</p>'}</div>`;
+  } else if (view === "pictures") {
+    main = `<div class="as-page">${ahAsPicturesHtml()}</div>`;
+  } else if (view === "done") {
+    main = `<div class="as-page"><div class="as-dh"><h3>Done today</h3><span class="muted">Every change James and Leo made, with undo</span></div>${ahJamesLogHtml()}</div>`;
+  } else if (view === "perms") main = `<div class="as-page">${ahJamesPermsHtml()}</div>`;
+  else if (view === "spend") main = `<div class="as-page">${ahAsSpendHtml()}</div>`;
+  else main = `<div class="as-page">${ahAsVoiceHtml()}</div>`;
+  const keep = (root.querySelector(".as-list") || {}).scrollTop || 0;
+  root.innerHTML = `<div class="as-wrap">${nav}<div class="as-main"><div class="as-content">${off ? '<p class="ahj-off">James isn\'t connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host\'s Secrets, then publish.</p>' : ""}${main}</div><div class="as-composer">${ahJamesComposerHtml()}</div></div></div>`;
+  const list = root.querySelector(".as-list"); if (list) list.scrollTop = keep;
+  root.querySelectorAll("[data-asview]").forEach((b) => { b.onclick = () => ahAsGo(b.dataset.asview); });
+  root.querySelectorAll("[data-asitem]").forEach((b) => { b.onclick = () => { ahAs.sel = b.dataset.asitem; renderAssistants(); }; });
+  root.querySelectorAll(".as-skip").forEach((b) => { b.onclick = () => { (ahJ.thread[+b.dataset.t].imagePlans || []).forEach((p) => { p.dismissed = true; }); renderAssistants(); ahAsUpdateBadges(); }; });
+  root.querySelectorAll("[data-asreview]").forEach((b) => { b.onclick = () => { ahAs.view = "waiting"; ahAs.sel = b.dataset.asreview; renderAssistants(); }; });
+  bindAhJames(root); bindAhLeo(root); bindAhJamesDesign(root); bindAhJamesPictures(root);
+  const sc = el("ahj-thread"); if (sc && view === "chat") sc.scrollTop = sc.scrollHeight;
+}
+// Opens the Assistants page (from the top bar, or the entry card in Cerebro).
+function openAssistants(view) {
+  if (view) { ahAs.view = view; ahAs.sel = null; }
+  showHub(); switchHubTab("assistants");
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null, images: [], listening: false, voiceBase: "", speak: ahJamesSpeakPref() };
 const AH_JAMES_IDEAS = [["Who still owes?", "Who still owes money, by league?"], ["What's overdue?", "What notes are overdue or urgent?"], ["Draft a reminder", "Draft a friendly reminder for each team that still owes"], ["Add a note", "Add a note: "]];
@@ -7444,24 +7545,28 @@ function ahJamesFinalizeAskHtml(t, ti) {
       : o.state === "done" ? `<div class="ahj-actions"><span class="ahj-logo-done">Finalized</span><button type="button" class="ah-complete undo ahj-fin-undo" data-t="${ti}" data-o="${oi}">Reopen (undo)</button></div>`
       : o.state === "undone" ? '<div class="ahj-sub">Reopened. The emails already sent can\'t be taken back.</div>' : '<div class="ahj-sub">Left for now. Finalize it from Results whenever you like, or ask James.</div>'}</div>`).join("")}</div>`;
 }
+function ahJamesNotesBlockHtml(t, ti) {
+  if (!(t.notes && t.notes.length)) return "";
+  const st = t.state || "pending";
+  return `<div class="ahj-block"><div class="ahj-block-head">${st === "pending" ? `Proposed ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}. Nothing is saved yet.` : st === "saved" ? `Saved ${t.savedIds.length} note${t.savedIds.length === 1 ? "" : "s"}.` : st === "undone" ? "Saved, then undone." : "Dismissed. Nothing was saved."}</div>
+      ${t.notes.map((n, i) => ahJamesNoteHtml(n, i, st === "pending")).join("")}
+      <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
+}
+function ahJamesMessagesBlockHtml(t, ti) {
+  if (!(t.messages && t.messages.length)) return "";
+  return `<div class="ahj-block"><div class="ahj-block-head">Drafts for you to send. James can't send them.</div><div class="ahj-msgs">${t.messages.map((m, i) => `<div class="ahj-draft"><span class="ahj-to">${escapeHtml(m.to)}</span><p>${escapeHtml(m.text)}</p><button type="button" class="link ahj-copy" data-t="${ti}" data-i="${i}">Copy message</button></div>`).join("")}</div></div>`;
+}
 function ahJamesTurnHtml(t, ti) {
   if (t.role === "user") return `<div class="ahj-msg you">${(t.images || []).map((u) => `<img class="ahj-sent-img" src="${u}" alt="Photo you attached">`).join("")}${escapeHtml(t.text).replace(/\n/g, "<br>")}</div>`;
   let h = "";
   if (t.reply) h += `<div class="ahj-msg james">${escapeHtml(t.reply).replace(/\n/g, "<br>")}</div>`;
-  if (t.notes && t.notes.length) {
-    const st = t.state || "pending";
-    h += `<div class="ahj-block"><div class="ahj-block-head">${st === "pending" ? `Proposed ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}. Nothing is saved yet.` : st === "saved" ? `Saved ${t.savedIds.length} note${t.savedIds.length === 1 ? "" : "s"}.` : st === "undone" ? "Saved, then undone." : "Dismissed. Nothing was saved."}</div>
-      ${t.notes.map((n, i) => ahJamesNoteHtml(n, i, st === "pending")).join("")}
-      <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
-  }
+  h += ahJamesNotesBlockHtml(t, ti);
   if (t.changes && t.changes.length) h += ahJamesChangesHtml(t, ti);
   if (t.finalizeAsk && t.finalizeAsk.length) h += ahJamesFinalizeAskHtml(t, ti);
   if (t.imagePlans && t.imagePlans.length) h += ahJamesImagePlansHtml(t, ti);
   if (t.logos && t.logos.length) h += ahJamesLogosHtml(t, ti);
   if (t.posters && t.posters.length) h += ahJamesPostersHtml(t, ti);
-  if (t.messages && t.messages.length) {
-    h += `<div class="ahj-block"><div class="ahj-block-head">Drafts for you to send. James can't send them.</div><div class="ahj-msgs">${t.messages.map((m, i) => `<div class="ahj-draft"><span class="ahj-to">${escapeHtml(m.to)}</span><p>${escapeHtml(m.text)}</p><button type="button" class="link ahj-copy" data-t="${ti}" data-i="${i}">Copy message</button></div>`).join("")}</div></div>`;
-  }
+  h += ahJamesMessagesBlockHtml(t, ti);
   return h;
 }
 const AH_JAMES_PERMS = {
@@ -7482,36 +7587,29 @@ function ahJamesLogHtml() {
     ${s.request ? `<div class="ahj-sub">You asked: ${escapeHtml(s.request)}</div>` : ""}<ul>${s.changes.map((c) => `<li>${escapeHtml(c.text)}</li>`).join("")}</ul>
     ${s.status === "applied" ? `<button type="button" class="ah-complete undo ahj-logundo" data-id="${s.id}">Undo</button>` : ""}</div>`).join("")}</div>`;
 }
-function ahJamesHtml() {
-  const st = ahJ.status, u = st && st.usage;
-  const off = st && !st.enabled;
-  const thread = ahJ.thread.map(ahJamesTurnHtml).join("");
-  return `<section class="ahj" aria-label="James, your assistant">
-    <div class="ahj-head"><div class="ahj-title"><span class="ahj-av" aria-hidden="true">J</span><b>James</b><span class="ahj-tag">Assistant</span></div>
-      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${st && st.images && st.images.enabled ? `<span class="ahj-meter" title="${st.images.todayCount} of ${st.images.dailyLimit} pictures drawn by Leo today">Leo ${ahDollars(st.images.monthCostUsd)} of $${st.images.capUsd}</span>` : ""}${ahVoiceSupported() ? `<button type="button" class="link ahj-speak-btn" id="ahj-speak" aria-pressed="${ahJ.speak}" title="James reads his answers aloud when you talk to him">${ahJ.speak ? "Voice replies on" : "Voice replies off"}</button>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
-    ${ahJ.panel === "perms" ? ahJamesPermsHtml() : ahJ.panel === "log" ? ahJamesLogHtml() : ""}
-    ${off ? `<p class="ahj-off">James isn't connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host's Secrets, then publish.</p>` : ""}
-    ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
-    ${ahJ.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahJ.error)}</div>` : ""}
+// The box at the bottom of the Assistants page: ideas, attached photos, the message, photo, mic and Send.
+function ahJamesComposerHtml() {
+  const st = ahJ.status, off = st && !st.enabled;
+  return `${ahJ.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahJ.error)}</div>` : ""}
     ${!ahJ.thread.length ? `<div class="ahj-ideas">${AH_JAMES_IDEAS.map(([l, t], i) => `<button type="button" class="ah-chip ahj-idea" data-i="${i}"${off ? " disabled" : ""}>${l}</button>`).join("")}</div>` : ""}
     ${ahJ.images.length ? `<div class="ahj-thumbs">${ahJ.images.map((im, i) => `<span class="ahj-thumb"><img src="${im.url}" alt="Attached photo ${i + 1}"><button type="button" class="ahj-thumb-x" data-i="${i}" aria-label="Remove photo ${i + 1}">&times;</button></span>`).join("")}</div>` : ""}
     <div class="ahj-form"><textarea id="ahj-in" rows="2" maxlength="2000" placeholder="Ask James, or tell him what to add. For example: remind me Friday to chase the Cyclones sponsor logo. You can attach a photo too."${off || ahJ.busy ? " disabled" : ""} aria-label="Message to James">${escapeHtml(ahJ.draft)}</textarea>
       <input type="file" id="ahj-file" accept="image/*" multiple hidden>
       <button type="button" class="ah-complete undo ahj-photo" id="ahj-photo" title="Attach a photo (a score sheet, proof of payment, a roster)" aria-label="Attach a photo"${off || ahJ.busy || ahJ.images.length >= 3 ? " disabled" : ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.6l-8.9 8.9a5.5 5.5 0 01-7.8-7.8l9.2-9.2a3.7 3.7 0 015.2 5.2l-9.2 9.2a1.8 1.8 0 01-2.6-2.6l8.5-8.5"/></svg></button>
       <button type="button" class="ah-complete undo ahj-mic${ahJ.listening ? " on" : ""}" id="ahj-mic" aria-pressed="${ahJ.listening}" title="${ahVoiceSupported() ? (ahJ.listening ? "Stop listening" : "Talk to James") : "Voice needs Chrome, Edge or Safari"}" aria-label="${ahJ.listening ? "Stop listening" : "Talk to James"}"${off || ahJ.busy || !ahVoiceSupported() ? " disabled" : ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v4"/></svg>${ahJ.listening ? '<span class="ahj-mic-t">Listening…</span>' : ""}</button>
-      <button type="button" class="ah-complete" id="ahj-send"${off || ahJ.busy ? " disabled" : ""}>Send</button></div>
-  </section>`;
+      <button type="button" class="ah-complete" id="ahj-send"${off || ahJ.busy ? " disabled" : ""}>Send</button></div>`;
 }
 async function ahJamesSend(text, opts) {
   text = String(text || "").trim();
   const photos = ahJ.images.slice();
   if ((!text && !photos.length) || ahJ.busy) return;
   const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.imagePlans && t.imagePlans.length ? ` [Wrote picture brief: ${t.imagePlans.map((p) => p.forWhat).join(", ")}]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.finalizeAsk && t.finalizeAsk.length ? ` [Asked the admin whether to finalize: ${t.finalizeAsk.map((o) => o.label + " (" + o.state + ")").join("; ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
-  ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url), logoImages: photos.map((p) => p.logoUrl) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
+  ahAs.view = "chat";
+  ahJ.thread.push({ role: "user", at: Date.now(), text: text || "(photo)", images: photos.map((p) => p.url), logoImages: photos.map((p) => p.logoUrl) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
   ahJRender(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
-    ahJ.thread.push({ role: "james", request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
+    ahJ.thread.push({ role: "james", at: Date.now(), request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
     if (opts && opts.voice) ahSpeak(ahSpeakText(r));
   } catch (e) { ahJ.error = e.message || "James hit a problem."; if (opts && opts.voice) ahSpeak("Sorry, I hit a problem. " + (ahJ.error || "").slice(0, 120)); }
@@ -7538,7 +7636,7 @@ async function ahJamesApply(t, btn) {
     t.changes = t.changes.filter((c) => c.preview && c.preview.ok);
     if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes;
     ahJ.error = ""; ahJ.log = null;
-    if (r.finalizeOffers && r.finalizeOffers.length) ahJ.thread.push({ role: "james", reply: "", finalizeAsk: r.finalizeOffers.map((o) => ({ ...o, state: "ask" })) });
+    if (r.finalizeOffers && r.finalizeOffers.length) ahJ.thread.push({ role: "james", at: Date.now(), reply: "", finalizeAsk: r.finalizeOffers.map((o) => ({ ...o, state: "ask" })) });
     await ahRefreshAndRender();
     showToast(`${t.appliedN} change${t.appliedN === 1 ? "" : "s"} applied.`, { label: "Undo", onClick: () => ahJamesUndoSet(t.setId, t) });
   } catch (e) { btn.disabled = false; ahJ.error = e.message; ahJRender(); }
@@ -7863,7 +7961,6 @@ function bindAhJamesDesign(root) {
   root.querySelectorAll(".ahj-logo-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(opt(b).setId, null); });
 }
 function bindAhJames(root) {
-  const bring = root.querySelector("#ahj-bring"); if (bring) bring.onclick = closeJamesPopup;
   const inp = root.querySelector("#ahj-in");
   if (inp) {
     inp.oninput = () => { ahJ.draft = inp.value; };
@@ -8064,8 +8161,7 @@ function renderAdminHub() {
   if (ahArea === "home") {
     // Notes first: add one, then what's open. The areas come next and the
     // payments by league sit at the bottom of the page.
-    html += ahJ.popup ? ahJamesDockedHtml() : ahJamesHtml();
-    html += ahLeoHtml();
+    html += `<section class="ahj ahj-docked" id="ah-as-entry" aria-label="Assistants">${ahAsEntryInner(ahAsWaiting().length)}</section>`;
     html += ahComposerHtml();
     let list = visible.filter(ahIsOpen);
     list.sort(ahListSort);
@@ -8156,10 +8252,7 @@ function renderAdminHub() {
   bindAhItems(root);
   bindAhBoard(root);
   bindAhComposer(root);
-  bindAhJames(root);
-  bindAhLeo(root);
-  bindAhJamesDesign(root);
-  bindAhJamesPictures(root);
+  const openAs = root.querySelector("#ah-open-as"); if (openAs) openAs.onclick = () => openAssistants();
   bindAhPayments(root);
 }
 // The payments dashboard: one bar per league, split into paid in full (green),
