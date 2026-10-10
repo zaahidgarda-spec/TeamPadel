@@ -119,3 +119,16 @@ test("proposed changes are trimmed to known fields and allowed kinds", () => {
   assert.strictEqual(out[2].amountRands, null);
   assert.strictEqual(J.cleanChanges(new Array(40).fill({ kind: "pay_record" }), perms).length, J.MAX_CHANGES);
 });
+
+test("attached photos are checked and put ahead of the words in the newest message", () => {
+  const ok = { mediaType: "image/jpeg", data: "QUJD" };
+  const imgs = J.cleanImages([ok, { mediaType: "image/svg+xml", data: "QUJD" }, { mediaType: "image/png", data: "not base64!" }, { mediaType: "image/png", data: "A".repeat(2900000) }, ok, ok, ok]);
+  assert.strictEqual(imgs.length, 3);
+  assert.deepStrictEqual(imgs[0], { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "QUJD" } });
+  const turns = J.withImages([{ role: "user", content: "earlier" }, { role: "assistant", content: "ok" }, { role: "user", content: "read this" }], imgs, "read this");
+  assert.strictEqual(turns.length, 3);
+  assert.strictEqual(turns[2].content[0].type, "image");
+  assert.deepStrictEqual(turns[2].content[turns[2].content.length - 1], { type: "text", text: "read this" });
+  assert.strictEqual(turns[0].content, "earlier");
+  assert.deepStrictEqual(J.withImages([{ role: "user", content: "hi" }], [], "hi"), [{ role: "user", content: "hi" }]);
+});

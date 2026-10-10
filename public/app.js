@@ -7202,7 +7202,7 @@ function bindAhComposer(root) {
 }
 // ---- James, the admin assistant. He answers, proposes notes and drafts messages;
 // nothing is saved until the admin presses Save on a proposal.
-let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null };
+let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null, images: [] };
 const AH_JAMES_IDEAS = [["Who still owes?", "Who still owes money, by league?"], ["What's overdue?", "What notes are overdue or urgent?"], ["Draft a reminder", "Draft a friendly reminder for each team that still owes"], ["Add a note", "Add a note: "]];
 function ahDollars(n) { return "$" + (Math.round((n || 0) * 100) / 100).toFixed(2); }
 function ahJamesNoteHtml(n, i, editable) {
@@ -7237,7 +7237,7 @@ function ahJamesChangesHtml(t, ti) {
   return `<div class="ahj-block"><div class="ahj-block-head">${head}</div>${rows}<div class="ahj-actions">${actions}</div></div>`;
 }
 function ahJamesTurnHtml(t, ti) {
-  if (t.role === "user") return `<div class="ahj-msg you">${escapeHtml(t.text).replace(/\n/g, "<br>")}</div>`;
+  if (t.role === "user") return `<div class="ahj-msg you">${(t.images || []).map((u) => `<img class="ahj-sent-img" src="${u}" alt="Photo you attached">`).join("")}${escapeHtml(t.text).replace(/\n/g, "<br>")}</div>`;
   let h = "";
   if (t.reply) h += `<div class="ahj-msg james">${escapeHtml(t.reply).replace(/\n/g, "<br>")}</div>`;
   if (t.notes && t.notes.length) {
@@ -7282,18 +7282,22 @@ function ahJamesHtml() {
     ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
     ${ahJ.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahJ.error)}</div>` : ""}
     ${!ahJ.thread.length ? `<div class="ahj-ideas">${AH_JAMES_IDEAS.map(([l, t], i) => `<button type="button" class="ah-chip ahj-idea" data-i="${i}"${off ? " disabled" : ""}>${l}</button>`).join("")}</div>` : ""}
-    <div class="ahj-form"><textarea id="ahj-in" rows="2" maxlength="2000" placeholder="Ask James, or tell him what to add. For example: remind me Friday to chase the Cyclones sponsor logo"${off || ahJ.busy ? " disabled" : ""} aria-label="Message to James">${escapeHtml(ahJ.draft)}</textarea>
+    ${ahJ.images.length ? `<div class="ahj-thumbs">${ahJ.images.map((im, i) => `<span class="ahj-thumb"><img src="${im.url}" alt="Attached photo ${i + 1}"><button type="button" class="ahj-thumb-x" data-i="${i}" aria-label="Remove photo ${i + 1}">&times;</button></span>`).join("")}</div>` : ""}
+    <div class="ahj-form"><textarea id="ahj-in" rows="2" maxlength="2000" placeholder="Ask James, or tell him what to add. For example: remind me Friday to chase the Cyclones sponsor logo. You can attach a photo too."${off || ahJ.busy ? " disabled" : ""} aria-label="Message to James">${escapeHtml(ahJ.draft)}</textarea>
+      <input type="file" id="ahj-file" accept="image/*" multiple hidden>
+      <button type="button" class="ah-complete undo ahj-photo" id="ahj-photo" title="Attach a photo (a score sheet, proof of payment, a roster)" aria-label="Attach a photo"${off || ahJ.busy || ahJ.images.length >= 3 ? " disabled" : ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.6l-8.9 8.9a5.5 5.5 0 01-7.8-7.8l9.2-9.2a3.7 3.7 0 015.2 5.2l-9.2 9.2a1.8 1.8 0 01-2.6-2.6l8.5-8.5"/></svg></button>
       <button type="button" class="ah-complete" id="ahj-send"${off || ahJ.busy ? " disabled" : ""}>Send</button></div>
   </section>`;
 }
 async function ahJamesSend(text) {
   text = String(text || "").trim();
-  if (!text || ahJ.busy) return;
-  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
-  ahJ.thread.push({ role: "user", text }); ahJ.draft = ""; ahJ.error = ""; ahJ.busy = true;
+  const photos = ahJ.images.slice();
+  if ((!text && !photos.length) || ahJ.busy) return;
+  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
+  ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
   renderAdminHub(); ahJamesScroll();
   try {
-    const r = await api("/admin/james", { method: "POST", body: { message: text, history } });
+    const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
     ahJ.thread.push({ role: "james", request: text, reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
   } catch (e) { ahJ.error = e.message || "James hit a problem."; }
@@ -7332,6 +7336,29 @@ async function ahJamesUndoSet(setId, t) {
     showToast("Undone. Everything is back as it was.");
   } catch (e) { ahJ.error = e.message; renderAdminHub(); }
 }
+// Shrinks a photo in the browser before it is sent: long side 1568px, JPEG, small enough to send.
+function ahResizePhoto(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let side = Math.min(1568, Math.max(img.width, img.height)), q = 0.82;
+      for (let tries = 0; tries < 5; tries++) {
+        const k = side / Math.max(img.width, img.height) > 1 ? 1 : side / Math.max(img.width, img.height);
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        const cx = c.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(img, 0, 0, c.width, c.height);
+        const dataUrl = c.toDataURL("image/jpeg", q);
+        const data = dataUrl.slice(dataUrl.indexOf(",") + 1);
+        if (data.length <= 2500000 || tries === 4) { resolve({ mediaType: "image/jpeg", data, url: dataUrl }); return; }
+        side = Math.round(side * 0.75); q = 0.7;
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Couldn't read that photo. Try a JPEG or a screenshot.")); };
+    img.src = url;
+  });
+}
 function bindAhJames(root) {
   const inp = root.querySelector("#ahj-in");
   if (inp) {
@@ -7339,6 +7366,20 @@ function bindAhJames(root) {
     inp.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ahJamesSend(inp.value); } };
   }
   const send = root.querySelector("#ahj-send"); if (send) send.onclick = () => ahJamesSend(inp.value);
+  const photoBtn = root.querySelector("#ahj-photo"), file = root.querySelector("#ahj-file");
+  if (photoBtn && file) {
+    photoBtn.onclick = () => file.click();
+    file.onchange = async () => {
+      const room = 3 - ahJ.images.length;
+      const picked = Array.from(file.files || []).filter((f) => /^image\//.test(f.type)).slice(0, room);
+      file.value = "";
+      for (const f of picked) {
+        try { ahJ.images.push(await ahResizePhoto(f)); } catch (e) { ahJ.error = e.message; }
+      }
+      renderAdminHub();
+    };
+  }
+  root.querySelectorAll(".ahj-thumb-x").forEach((b) => { b.onclick = () => { ahJ.images.splice(+b.dataset.i, 1); renderAdminHub(); }; });
   root.querySelectorAll(".ahj-idea").forEach((b) => { b.onclick = () => {
     const [, text] = AH_JAMES_IDEAS[+b.dataset.i];
     if (text.endsWith(": ")) { ahJ.draft = text; renderAdminHub(); const n = el("ahj-in"); if (n) { n.focus(); n.setSelectionRange(text.length, text.length); } } else ahJamesSend(text);

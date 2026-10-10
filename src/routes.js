@@ -5021,7 +5021,8 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
   const cfg = james.config();
   const perms = jamesPermissions();
   const message = String((req.body && req.body.message) || "").trim().slice(0, 2000);
-  if (!message) return res.status(400).json({ error: "Ask James something first." });
+  const images = james.cleanImages(req.body && req.body.images);
+  if (!message && !images.length) return res.status(400).json({ error: "Ask James something first." });
   try {
     if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
     james.checkLimits(store.getJamesUsage(), actor, cfg);
@@ -5029,7 +5030,7 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes);
     const ct = james.changesTool(perms);
     if (ct) tools.push(ct);
-    const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.cleanHistory(req.body.history, message), tools });
+    const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.withImages(james.cleanHistory(req.body.history, message || "Here is a photo."), images, message), tools });
     const usage = james.recordUsage(store.getJamesUsage(), actor, james.costUsd(result.model, result.usage));
     store.saveJamesUsage(usage);
     const proposals = james.cleanProposals(result.toolUses, ctx.raw);

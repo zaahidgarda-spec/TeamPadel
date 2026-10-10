@@ -3380,3 +3380,9 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .fx-move-form input{font-size:12px;padding:6px 8px;min-width:0;}
 .fx-move-form .fx-v{flex:1;min-width:120px;max-width:220px;}
 .fx-move-note{flex-basis:100%;font-size:12px;color:#64748B;}
+.ahj-thumbs{display:flex;gap:8px;flex-wrap:wrap;}
+.ahj-thumb{position:relative;display:inline-block;}
+.ahj-thumb img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #CBD5E1;display:block;}
+.ahj-thumb-x{position:absolute;top:-7px;right:-7px;width:22px;height:22px;min-height:0;padding:0;border-radius:50%;border:0;background:#0F172A;color:#fff;font-size:15px;line-height:1;cursor:pointer;}
+.ahj-sent-img{display:block;max-width:180px;max-height:140px;border-radius:8px;margin-bottom:6px;}
+.ahj-photo{padding:10px 12px !important;display:inline-flex;align-items:center;}
