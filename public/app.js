@@ -1757,6 +1757,8 @@ function updateAdminBar() {
   el("admin-bar").style.display = show ? "flex" : "none";
   el("admin-bar-note").style.display = isOwner ? "" : "none";
   el("admin-bar-james").style.display = isOwner ? "" : "none";
+  el("admin-bar-mic").style.display = isOwner && ahVoiceSupported() ? "" : "none";
+  el("admin-bar-mic").classList.toggle("on", !!ahJ.listening);
   if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); }
   document.documentElement.classList.toggle("has-admin-bar", show);
   if (!show) return;
@@ -1816,6 +1818,14 @@ async function openQuickNote() {
 }
 el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); openQuickNote(); };
 el("admin-bar-james").onclick = openJamesPopup;
+// The mic beside James: one tap opens him and starts listening (the tap itself must start the
+// microphone, so listening begins first and the panel opens alongside).
+el("admin-bar-mic").onclick = () => {
+  if (ahJ.listening) { ahVoiceStop(); return; }
+  const wasOpen = !!ahJ.popup;
+  ahVoiceStart();
+  if (!wasOpen) openJamesPopup();
+};
 el("ab-note-scope").onchange = updateQuickNoteSponsor;
 el("ab-note-league").onchange = updateQuickNoteSponsor;
 el("ab-note-open").onclick = () => { closeQuickNote(); showHub(); switchHubTab("adminhub"); window.scrollTo({ top: 0, behavior: "smooth" }); };
@@ -7205,9 +7215,86 @@ function bindAhComposer(root) {
 }
 // ---- James, the admin assistant. He answers, proposes notes and drafts messages;
 // nothing is saved until the admin presses Save on a proposal.
+// ---- Talking to James: the browser turns speech into text, and can read his answer back.
+// Speech recognition is the browser's own (Chrome, Edge and Safari have it; Firefox doesn't), so
+// no audio comes to this site. Whatever the browser's speech service does with the audio is up to it.
+function ahJamesSpeakPref() { try { return localStorage.getItem("ahj-speak") !== "off"; } catch { return true; } }
+let ahRec = null, ahSpeechOk = false;
+function ahVoiceSupported() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
+// Some phones only allow speaking after a tap, so the tap that starts listening also "unlocks" speech.
+function ahUnlockSpeech() {
+  if (ahSpeechOk || !window.speechSynthesis) return;
+  try { const u = new SpeechSynthesisUtterance(""); u.volume = 0; window.speechSynthesis.speak(u); ahSpeechOk = true; } catch { /* speech is optional */ }
+}
+function ahPickVoice() {
+  if (!window.speechSynthesis) return null;
+  const vs = window.speechSynthesis.getVoices() || [];
+  const english = vs.filter((v) => /^en[-_](ZA|GB|AU|US)/i.test(v.lang));
+  return english.find((v) => /daniel|arthur|oliver|male|james|google uk english male/i.test(v.name)) || english.find((v) => /^en[-_](ZA|GB)/i.test(v.lang)) || english[0] || null;
+}
+function ahSpeakText(r) {
+  const bits = [];
+  let clean = String(r.reply || "").replace(/[*_`#>]/g, "").replace(/:\s*\n\s*[-•]\s*/g, ": ").replace(/\s*\n\s*[-•]\s*/g, ". ").replace(/\s+/g, " ").trim();
+  if (clean.length > 360) clean = clean.slice(0, 360).replace(/[^.!?]*$/, "").trim() || clean.slice(0, 360);
+  if (clean) bits.push(/[.!?]$/.test(clean) ? clean : clean + ".");
+  const n = (a) => (a || []).length;
+  if (n(r.changes)) bits.push(`I've proposed ${n(r.changes)} change${n(r.changes) === 1 ? "" : "s"}. Please check ${n(r.changes) === 1 ? "it" : "them"} on screen before you apply.`);
+  if (n(r.notes)) bits.push(`I've proposed ${n(r.notes)} note${n(r.notes) === 1 ? "" : "s"} for you to check.`);
+  if (n(r.messages)) bits.push(`I've drafted ${n(r.messages)} message${n(r.messages) === 1 ? "" : "s"}.`);
+  if (n(r.imagePlans)) bits.push("I've written a brief for Leo. Check it, then ask him to draw.");
+  if (n(r.logos) || n(r.posters)) bits.push("Have a look at what I made.");
+  return bits.join(" ");
+}
+function ahSpeak(text) {
+  if (!text || !window.speechSynthesis || !ahJ.speak) return;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = ahPickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "en-ZA";
+    u.rate = 1.02;
+    window.speechSynthesis.speak(u);
+  } catch { /* speech is optional */ }
+}
+function ahVoiceStop() { try { if (ahRec) ahRec.stop(); } catch { /* already stopped */ } try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch { /* nothing to stop */ } }
+function ahVoiceStart(lang) {
+  if (!ahVoiceSupported()) { ahJ.error = "Voice isn't supported in this browser. Use Chrome, Edge or Safari."; ahJRender(); return; }
+  if (ahJ.listening) { ahVoiceStop(); return; }
+  ahUnlockSpeech();
+  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch { /* nothing to stop */ }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR();
+  rec.lang = lang || "en-ZA"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  let finalText = "", failed = false, retry = false;
+  ahJ.voiceBase = String(ahJ.draft || "").trim();
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t; else interim += t; }
+    const text = [ahJ.voiceBase, (finalText + interim).trim()].filter(Boolean).join(" ");
+    ahJ.draft = text;
+    const box = el("ahj-in"); if (box) box.value = text;
+  };
+  rec.onerror = (e) => {
+    failed = true;
+    if (e.error === "language-not-supported" && !lang) { retry = true; return; }
+    if (e.error === "aborted") return;
+    ahJ.error = e.error === "not-allowed" || e.error === "service-not-allowed" ? "James can't hear you. Allow the microphone for this site in your browser, then tap the mic again."
+      : e.error === "no-speech" ? "I didn't hear anything. Tap the mic and try again."
+      : e.error === "audio-capture" ? "I can't find a microphone." : "Voice stopped working (" + e.error + "). You can still type.";
+  };
+  rec.onend = () => {
+    ahJ.listening = false; ahRec = null;
+    if (retry) { ahVoiceStart("en-GB"); return; }
+    const text = [ahJ.voiceBase, finalText.trim()].filter(Boolean).join(" ");
+    if (text && !failed) { ahJ.draft = ""; ahJamesSend(text, { voice: true }); } else { ahJ.draft = ahJ.voiceBase; ahJRender(); }
+  };
+  ahRec = rec; ahJ.listening = true; ahJ.error = "";
+  try { rec.start(); } catch { ahJ.listening = false; ahRec = null; }
+  ahJRender();
+}
+
 // James can live in the Note Machine or in a panel at the top of every page (next to + Note).
 // Only one place shows him at a time, so the chat is never on screen twice.
-function ahJRender() { if (ahJ.popup) renderJamesPopup(); else renderAdminHub(); }
+function ahJRender() { const m = el("admin-bar-mic"); if (m) { m.classList.toggle("on", !!ahJ.listening); m.setAttribute("aria-pressed", String(!!ahJ.listening)); } if (ahJ.popup) renderJamesPopup(); else renderAdminHub(); }
 function renderJamesPopup() {
   const panel = el("ab-james-panel");
   if (!panel || !isOwner) return;
@@ -7239,7 +7326,7 @@ async function openJamesPopup() {
   renderJamesPopup(); ahJamesScroll();
   const inp = el("ahj-in"); if (inp) inp.focus();
 }
-let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null, images: [] };
+let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null, images: [], listening: false, voiceBase: "", speak: ahJamesSpeakPref() };
 const AH_JAMES_IDEAS = [["Who still owes?", "Who still owes money, by league?"], ["What's overdue?", "What notes are overdue or urgent?"], ["Draft a reminder", "Draft a friendly reminder for each team that still owes"], ["Add a note", "Add a note: "]];
 function ahDollars(n) { return "$" + (Math.round((n || 0) * 100) / 100).toFixed(2); }
 function ahJamesNoteHtml(n, i, editable) {
@@ -7316,7 +7403,7 @@ function ahJamesHtml() {
   const thread = ahJ.thread.map(ahJamesTurnHtml).join("");
   return `<section class="ahj" aria-label="James, your assistant">
     <div class="ahj-head"><div class="ahj-title"><span class="ahj-av" aria-hidden="true">J</span><b>James</b><span class="ahj-tag">Assistant</span></div>
-      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${st && st.images && st.images.enabled ? `<span class="ahj-meter" title="${st.images.todayCount} of ${st.images.dailyLimit} pictures drawn by Leo today">Leo ${ahDollars(st.images.monthCostUsd)} of $${st.images.capUsd}</span>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
+      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${st && st.images && st.images.enabled ? `<span class="ahj-meter" title="${st.images.todayCount} of ${st.images.dailyLimit} pictures drawn by Leo today">Leo ${ahDollars(st.images.monthCostUsd)} of $${st.images.capUsd}</span>` : ""}${ahVoiceSupported() ? `<button type="button" class="link ahj-speak-btn" id="ahj-speak" aria-pressed="${ahJ.speak}" title="James reads his answers aloud when you talk to him">${ahJ.speak ? "Voice replies on" : "Voice replies off"}</button>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
     ${ahJ.panel === "perms" ? ahJamesPermsHtml() : ahJ.panel === "log" ? ahJamesLogHtml() : ""}
     ${off ? `<p class="ahj-off">James isn't connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host's Secrets, then publish.</p>` : ""}
     ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
@@ -7326,10 +7413,11 @@ function ahJamesHtml() {
     <div class="ahj-form"><textarea id="ahj-in" rows="2" maxlength="2000" placeholder="Ask James, or tell him what to add. For example: remind me Friday to chase the Cyclones sponsor logo. You can attach a photo too."${off || ahJ.busy ? " disabled" : ""} aria-label="Message to James">${escapeHtml(ahJ.draft)}</textarea>
       <input type="file" id="ahj-file" accept="image/*" multiple hidden>
       <button type="button" class="ah-complete undo ahj-photo" id="ahj-photo" title="Attach a photo (a score sheet, proof of payment, a roster)" aria-label="Attach a photo"${off || ahJ.busy || ahJ.images.length >= 3 ? " disabled" : ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.6l-8.9 8.9a5.5 5.5 0 01-7.8-7.8l9.2-9.2a3.7 3.7 0 015.2 5.2l-9.2 9.2a1.8 1.8 0 01-2.6-2.6l8.5-8.5"/></svg></button>
+      <button type="button" class="ah-complete undo ahj-mic${ahJ.listening ? " on" : ""}" id="ahj-mic" aria-pressed="${ahJ.listening}" title="${ahVoiceSupported() ? (ahJ.listening ? "Stop listening" : "Talk to James") : "Voice needs Chrome, Edge or Safari"}" aria-label="${ahJ.listening ? "Stop listening" : "Talk to James"}"${off || ahJ.busy || !ahVoiceSupported() ? " disabled" : ""}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v4"/></svg>${ahJ.listening ? '<span class="ahj-mic-t">Listening…</span>' : ""}</button>
       <button type="button" class="ah-complete" id="ahj-send"${off || ahJ.busy ? " disabled" : ""}>Send</button></div>
   </section>`;
 }
-async function ahJamesSend(text) {
+async function ahJamesSend(text, opts) {
   text = String(text || "").trim();
   const photos = ahJ.images.slice();
   if ((!text && !photos.length) || ahJ.busy) return;
@@ -7340,7 +7428,8 @@ async function ahJamesSend(text) {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
     ahJ.thread.push({ role: "james", request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
-  } catch (e) { ahJ.error = e.message || "James hit a problem."; }
+    if (opts && opts.voice) ahSpeak(ahSpeakText(r));
+  } catch (e) { ahJ.error = e.message || "James hit a problem."; if (opts && opts.voice) ahSpeak("Sorry, I hit a problem. " + (ahJ.error || "").slice(0, 120)); }
   ahJ.busy = false;
   ahJRender(); ahJamesScroll();
   const again = el("ahj-in"); if (again) again.focus();
@@ -7690,6 +7779,9 @@ function bindAhJames(root) {
     inp.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ahJamesSend(inp.value); } };
   }
   const send = root.querySelector("#ahj-send"); if (send) send.onclick = () => ahJamesSend(inp.value);
+  const mic = root.querySelector("#ahj-mic"); if (mic) mic.onclick = () => ahVoiceStart();
+  const spk = root.querySelector("#ahj-speak");
+  if (spk) spk.onclick = () => { ahJ.speak = !ahJ.speak; try { localStorage.setItem("ahj-speak", ahJ.speak ? "on" : "off"); } catch { /* the choice just isn't remembered */ } if (!ahJ.speak) { try { window.speechSynthesis.cancel(); } catch { /* nothing to stop */ } } ahJRender(); };
   const photoBtn = root.querySelector("#ahj-photo"), file = root.querySelector("#ahj-file");
   if (photoBtn && file) {
     photoBtn.onclick = () => file.click();

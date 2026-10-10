@@ -3424,3 +3424,12 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-docked{flex-direction:row !important;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
 .ahj-docked .ahj-av{display:inline-grid;vertical-align:middle;}
 @media (max-width:560px){.ab-james-panel{top:46px;width:calc(100vw - 16px);max-height:calc(100vh - 56px);padding:10px;}.admin-bar .ab-james-btn{padding:8px 10px;}}
+
+/* Talking to James */
+.admin-bar .ab-mic-btn{padding:8px 11px;background:#0B6E8A;border-color:#2A93B3;}
+.admin-bar .ab-mic-btn.on,.ahj-mic.on{background:#D14343 !important;border-color:#D14343 !important;color:#fff !important;animation:ahj-mic-pulse 1.2s ease-in-out infinite;}
+@keyframes ahj-mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(209,67,67,.5)}50%{box-shadow:0 0 0 8px rgba(209,67,67,0)}}
+@media (prefers-reduced-motion:reduce){.admin-bar .ab-mic-btn.on,.ahj-mic.on{animation:none}}
+.ahj-mic{padding:10px 12px !important;display:inline-flex;align-items:center;gap:6px;}
+.ahj-mic-t{font-size:12px;font-weight:700;}
+.ahj-speak-btn[aria-pressed="false"]{color:#94A3B8;}
