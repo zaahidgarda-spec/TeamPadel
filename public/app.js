@@ -7247,6 +7247,8 @@ function ahJamesTurnHtml(t, ti) {
       <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
   }
   if (t.changes && t.changes.length) h += ahJamesChangesHtml(t, ti);
+  if (t.logos && t.logos.length) h += ahJamesLogosHtml(t, ti);
+  if (t.posters && t.posters.length) h += ahJamesPostersHtml(t, ti);
   if (t.messages && t.messages.length) {
     h += `<div class="ahj-block"><div class="ahj-block-head">Drafts for you to send. James can't send them.</div><div class="ahj-msgs">${t.messages.map((m, i) => `<div class="ahj-draft"><span class="ahj-to">${escapeHtml(m.to)}</span><p>${escapeHtml(m.text)}</p><button type="button" class="link ahj-copy" data-t="${ti}" data-i="${i}">Copy message</button></div>`).join("")}</div></div>`;
   }
@@ -7293,12 +7295,12 @@ async function ahJamesSend(text) {
   text = String(text || "").trim();
   const photos = ahJ.images.slice();
   if ((!text && !photos.length) || ahJ.busy) return;
-  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
+  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
   ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
   renderAdminHub(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
-    ahJ.thread.push({ role: "james", request: text, reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], cstate: "pending", state: "pending", savedIds: [] });
+    ahJ.thread.push({ role: "james", request: text, reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
   } catch (e) { ahJ.error = e.message || "James hit a problem."; }
   ahJ.busy = false;
@@ -7329,7 +7331,7 @@ async function ahJamesApply(t, btn) {
 async function ahJamesUndoSet(setId, t) {
   try {
     await api(`/admin/james/log/${setId}/undo`, { method: "POST" });
-    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; });
+    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); });
     ahJ.error = ""; ahJ.log = null;
     if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
     await ahRefreshAndRender();
@@ -7358,6 +7360,198 @@ function ahResizePhoto(file) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Couldn't read that photo. Try a JPEG or a screenshot.")); };
     img.src = url;
   });
+}
+// ---- James: logo options and posters --------------------------------------
+const AH_POSTER_SIZES = { story: [1080, 1920, "Story 9:16"], square: [1080, 1080, "Square"], a4: [1240, 1754, "A4 print"] };
+function ahSvgUrl(svg) { return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); }
+function ahSvgToPng(svg, size) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = size; c.height = size;
+      c.getContext("2d").drawImage(img, 0, 0, size, size);
+      resolve(c.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Couldn't draw that logo."));
+    img.src = ahSvgUrl(svg);
+  });
+}
+function ahJamesLogosHtml(t, ti) {
+  return t.logos.map((set, si) => `<div class="ahj-block"><div class="ahj-block-head">${set.options.length ? `Logo ideas: ${escapeHtml(set.forWhat)}. Nothing is saved until you choose one.` : `No usable logo came back for ${escapeHtml(set.forWhat)}. Ask again.`}</div>
+    <div class="ahj-logos">${set.options.map((o, oi) => `<div class="ahj-logo"><img src="${ahSvgUrl(o.svg)}" alt="${escapeHtml(o.name)}" width="132" height="132"><b>${escapeHtml(o.name)}</b>${o.idea ? `<small>${escapeHtml(o.idea)}</small>` : ""}
+      <div class="ahj-logo-btns">${o.state === "used" ? `<span class="ahj-logo-done">In use for ${escapeHtml(set.teamName)}</span><button type="button" class="ah-complete undo ahj-logo-undo" data-t="${ti}" data-s="${si}" data-o="${oi}">Undo</button>`
+        : `${set.teamId ? `<button type="button" class="ah-complete ahj-logo-use" data-t="${ti}" data-s="${si}" data-o="${oi}">Use for ${escapeHtml(set.teamName)}</button>` : ""}<button type="button" class="ah-complete undo ahj-logo-dl" data-t="${ti}" data-s="${si}" data-o="${oi}">Download PNG</button>${o.state === "undone" ? '<span class="ahj-sub">Undone</span>' : ""}`}</div></div>`).join("")}</div>
+    ${set.dropped ? `<div class="ahj-sub">${set.dropped} idea${set.dropped === 1 ? " was" : "s were"} left out because the drawing wasn't safe to show.</div>` : ""}</div>`).join("");
+}
+function ahJamesPostersHtml(t, ti) {
+  return t.posters.map((p, pi) => {
+    const size = p.size || "square", cached = p.cache && p.cache[size];
+    return `<div class="ahj-block ahj-poster" data-t="${ti}" data-p="${pi}"><div class="ahj-block-head">Poster: ${escapeHtml(p.headline)}. Download it to post yourself. Nothing is posted for you.</div>
+      <div class="ahj-sizes" role="group" aria-label="Poster size">${Object.entries(AH_POSTER_SIZES).map(([k, v]) => `<button type="button" class="ah-chip ahj-psize${size === k ? " on" : ""}" data-t="${ti}" data-p="${pi}" data-size="${k}">${v[2]}</button>`).join("")}</div>
+      <div class="ahj-poster-frame">${cached ? `<img class="ahj-poster-img" src="${cached}" alt="Poster preview">` : '<p class="ahj-sub">Drawing the poster…</p>'}</div>
+      <div class="ahj-actions"><button type="button" class="ah-complete ahj-pdl" data-t="${ti}" data-p="${pi}"${cached ? "" : " disabled"}>Download PNG</button></div></div>`;
+  }).join("");
+}
+function ahWrapLines(ctx, text, maxW) {
+  const out = []; let line = "";
+  String(text).split(/\s+/).forEach((w) => {
+    const test = line ? line + " " + w : w;
+    if (ctx.measureText(test).width > maxW && line) { out.push(line); line = w; } else line = test;
+  });
+  if (line) out.push(line);
+  return out;
+}
+function ahDrawContain(ctx, img, x, y, w, h) {
+  const k = Math.min(w / img.width, h / img.height);
+  ctx.drawImage(img, x + (w - img.width * k) / 2, y + (h - img.height * k) / 2, img.width * k, img.height * k);
+}
+async function ahPosterDraw(spec, sizeKey) {
+  const [W, H] = AH_POSTER_SIZES[sizeKey] || AH_POSTER_SIZES.square;
+  const u = W / 1080;
+  const lg = await api(`/leagues/${spec.leagueId}`).catch(() => null);
+  const theme = POSTER_THEMES.find((x) => x.name === spec.theme) || POSTER_THEMES[0];
+  const teams = {}; ((lg && lg.teams) || []).forEach((t) => { teams[t.id] = t; });
+  const sponsors = ((lg && lg.sponsors) || []).filter((x) => x.image).slice(0, 5);
+  try { await Promise.all([document.fonts.load("700 60px Oswald"), document.fonts.load("500 30px Oswald")]); } catch { /* the page's own fonts are the fallback */ }
+  const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, theme.bgTop); bg.addColorStop(1, theme.bgBottom);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // Two soft diagonal bands, the same look as the loading screen.
+  ctx.save(); ctx.globalAlpha = 0.09; ctx.fillStyle = theme.accent;
+  [[0.62, 0.3], [0.9, 0.18]].forEach(([x0, wd]) => { ctx.beginPath(); ctx.moveTo(W * x0, 0); ctx.lineTo(W * (x0 + wd), 0); ctx.lineTo(W * (x0 + wd - 0.55), H); ctx.lineTo(W * (x0 - 0.55), H); ctx.closePath(); ctx.fill(); });
+  ctx.restore();
+  const F = "Oswald, Impact, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = theme.accent; ctx.font = `700 ${34 * u}px ${F}`;
+  ctx.fillText(fitText(ctx, (spec.leagueName || "").toUpperCase(), W - 140 * u, 34 * u, "700", F, 18 * u), W / 2, 100 * u);
+  ctx.fillStyle = "#FFFFFF"; ctx.font = `700 ${(sizeKey === "story" ? 112 : 100) * u}px ${F}`;
+  const hl = ahWrapLines(ctx, (spec.headline || "").toUpperCase(), W - 140 * u).slice(0, 3);
+  const hSize = (sizeKey === "story" ? 112 : 100) * u;
+  let y = 100 * u + hSize + 14 * u;
+  hl.forEach((ln) => { ctx.fillText(ln, W / 2, y); y += hSize * 1.02; });
+  y -= hSize * 1.02 - 12 * u;
+  if (spec.subhead) { ctx.fillStyle = "#9FB6C1"; ctx.font = `500 ${40 * u}px ${F}`; ctx.fillText(fitText(ctx, spec.subhead.toUpperCase(), W - 140 * u, 40 * u, "500", F, 22 * u), W / 2, y + 40 * u); y += 56 * u; }
+  const sponsorH = spec.kind === "sponsor_thanks" || !sponsors.length ? 0 : 110 * u;
+  const bodyTop = y + 36 * u, bodyBottom = H - 96 * u - sponsorH;
+  const bodyH = Math.max(100, bodyBottom - bodyTop), padX = 70 * u;
+  const drawCircleLogo = async (team, cx, cy, r) => {
+    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.closePath(); ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fill(); ctx.clip();
+    const img = team && team.logo ? await loadImageAsync(team.logo) : null;
+    if (img) { ctx.fillStyle = "#fff"; ctx.fillRect(cx - r, cy - r, r * 2, r * 2); ahDrawContain(ctx, img, cx - r, cy - r, r * 2, r * 2); }
+    else { ctx.fillStyle = theme.accent; ctx.fillRect(cx - r, cy - r, r * 2, r * 2); ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.font = `700 ${r * 1.1}px ${F}`; ctx.fillText(((team && team.name) || "?").slice(0, 2).toUpperCase(), cx, cy + r * 0.38); }
+    ctx.restore();
+    ctx.lineWidth = 3 * u; ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  };
+  if ((spec.kind === "fixtures" || spec.kind === "results") && spec.matches.length) {
+    const n = spec.matches.length, gap = 18 * u;
+    const rowH = Math.min((sizeKey === "story" ? 250 : 200) * u, (bodyH - gap * (n - 1)) / n), rowW = W - padX * 2, mid = 330 * u, side = (rowW - mid) / 2, d = rowH * 0.62, r = d / 2;
+    let ry = bodyTop + Math.max(0, (bodyH - (rowH * n + gap * (n - 1))) * (sizeKey === "story" ? 0.4 : 0.25));
+    for (const m of spec.matches) {
+      ctx.fillStyle = "rgba(255,255,255,0.08)"; roundRectPath(ctx, padX, ry, rowW, rowH, 22 * u); ctx.fill();
+      const cy = ry + rowH / 2, nameW = side - d - 40 * u, nameSize = Math.min(44 * u, rowH * 0.3);
+      await drawCircleLogo(teams[m.aId] || { name: m.a }, padX + 24 * u + r, cy, r);
+      await drawCircleLogo(teams[m.bId] || { name: m.b }, padX + rowW - 24 * u - r, cy, r);
+      ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.fillText(fitText(ctx, m.a, nameW, nameSize, "700", F, 18 * u), padX + 24 * u + d + 16 * u, cy + nameSize * 0.34);
+      ctx.textAlign = "right"; ctx.fillText(fitText(ctx, m.b, nameW, nameSize, "700", F, 18 * u), padX + rowW - 24 * u - d - 16 * u, cy + nameSize * 0.34);
+      ctx.textAlign = "center";
+      if (m.score) { ctx.fillStyle = theme.win; ctx.font = `700 ${Math.min(84 * u, rowH * 0.5)}px ${F}`; ctx.fillText(m.score, padX + rowW / 2, cy + rowH * 0.17); }
+      else {
+        const parts = m.when ? m.when.split(" · ") : ["VS"];
+        ctx.fillStyle = theme.win; ctx.font = `700 ${Math.min(40 * u, rowH * 0.24)}px ${F}`; ctx.fillText(fitText(ctx, parts[0], mid - 30 * u, Math.min(40 * u, rowH * 0.24), "700", F, 16 * u), padX + rowW / 2, cy - (parts.length > 1 ? rowH * 0.02 : -rowH * 0.08));
+        if (parts.length > 1) { ctx.fillStyle = "#C7D6DD"; ctx.fillText(fitText(ctx, parts.slice(1).join(" · "), mid - 30 * u, Math.min(30 * u, rowH * 0.19), "500", F, 14 * u), padX + rowW / 2, cy + rowH * 0.2); }
+      }
+      ry += rowH + gap;
+    }
+  } else if (spec.kind === "sponsor_thanks") {
+    const list = sponsors.length ? sponsors : [];
+    const cols = list.length > 2 ? 2 : 1, rows = Math.max(1, Math.ceil(list.length / cols)), gapS = 28 * u;
+    const lineSpace = spec.lines.length ? 150 * u : 0;
+    const tileW = Math.min(420 * u, (W - padX * 2 - gapS * (cols - 1)) / cols), tileH = Math.min(260 * u, (bodyH - lineSpace - gapS * (rows - 1)) / rows);
+    const gridW = tileW * cols + gapS * (cols - 1);
+    let ty = bodyTop;
+    for (let i = 0; i < list.length; i++) {
+      const cx0 = (W - gridW) / 2 + (i % cols) * (tileW + gapS), cy0 = ty + Math.floor(i / cols) * (tileH + gapS);
+      ctx.fillStyle = "#FFFFFF"; roundRectPath(ctx, cx0, cy0, tileW, tileH, 24 * u); ctx.fill();
+      const img = await loadImageAsync(list[i].image);
+      if (img) ahDrawContain(ctx, img, cx0 + 24 * u, cy0 + 24 * u, tileW - 48 * u, tileH - 48 * u);
+    }
+    y = ty + rows * (tileH + gapS);
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.font = `500 ${44 * u}px ${F}`;
+    spec.lines.slice(0, 3).forEach((ln, i) => ctx.fillText(fitText(ctx, ln, W - padX * 2, 44 * u, "500", F, 22 * u), W / 2, y + 40 * u + i * 58 * u));
+  } else if (spec.kind === "kit_reveal") {
+    const data = await api(`/leagues/${spec.leagueId}/teams/${spec.teamId}/kit/full`).catch(() => null);
+    const kit = (data && data.kit) || {};
+    const imgs = [kit.front ? await loadImageAsync(kit.front) : null, kit.back ? await loadImageAsync(kit.back) : null].filter(Boolean);
+    const lineSpace = spec.lines.length ? 40 * u + spec.lines.length * 58 * u : 0;
+    const panelH = Math.max(120, bodyH - lineSpace), cols = Math.max(1, imgs.length), gapK = 30 * u;
+    const panelW = Math.min((W - padX * 2 - gapK * (cols - 1)) / cols, panelH * 0.9);
+    const totalW = panelW * cols + gapK * (cols - 1);
+    imgs.forEach((im, i) => {
+      const px = (W - totalW) / 2 + i * (panelW + gapK);
+      ctx.fillStyle = "#FFFFFF"; roundRectPath(ctx, px, bodyTop, panelW, panelH, 24 * u); ctx.fill();
+      ahDrawContain(ctx, im, px + 18 * u, bodyTop + 18 * u, panelW - 36 * u, panelH - 36 * u);
+    });
+    if (!imgs.length) { await drawCircleLogo(teams[spec.teamId] || { name: spec.teamName }, W / 2, bodyTop + panelH / 2, Math.min(panelH / 2.4, 220 * u)); }
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.font = `500 ${44 * u}px ${F}`;
+    spec.lines.slice(0, 4).forEach((ln, i) => ctx.fillText(fitText(ctx, ln, W - padX * 2, 44 * u, "500", F, 22 * u), W / 2, bodyTop + panelH + 70 * u + i * 58 * u));
+  } else {
+    // An announcement: the supporting lines, big and centred.
+    const lines = spec.lines.length ? spec.lines : [];
+    const size = Math.min(64 * u, bodyH / Math.max(1, lines.length * 2.1));
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.font = `500 ${size}px ${F}`;
+    const wrapped = lines.map((ln) => ahWrapLines(ctx, ln, W - padX * 2));
+    const total = wrapped.reduce((a, w) => a + w.length, 0) * size * 1.25 + (lines.length - 1) * size * 0.5;
+    let ly = bodyTop + Math.max(0, (bodyH - total) / 2) + size;
+    wrapped.forEach((ws, i) => {
+      ws.forEach((ln) => { ctx.fillText(ln, W / 2, ly); ly += size * 1.25; });
+      if (i < wrapped.length - 1) { ctx.fillStyle = theme.accent; ctx.fillRect(W / 2 - 40 * u, ly - size * 0.55, 80 * u, 5 * u); ctx.fillStyle = "#fff"; ly += size * 0.5; }
+    });
+  }
+  if (sponsorH) {
+    const tile = 92 * u, gapT = 18 * u, totalT = sponsors.length * tile * 1.6 + (sponsors.length - 1) * gapT;
+    let sx = (W - totalT) / 2; const sy = H - 96 * u - sponsorH + 6 * u;
+    for (const sp of sponsors) {
+      ctx.fillStyle = "#FFFFFF"; roundRectPath(ctx, sx, sy, tile * 1.6, tile, 14 * u); ctx.fill();
+      const img = await loadImageAsync(sp.image);
+      if (img) ahDrawContain(ctx, img, sx + 10 * u, sy + 8 * u, tile * 1.6 - 20 * u, tile - 16 * u);
+      sx += tile * 1.6 + gapT;
+    }
+  }
+  await drawPosterLogoFooter(ctx, W, H);
+  return canvas.toDataURL("image/png");
+}
+function ahPosterFileName(p, size) { return (p.leagueName + "-" + (p.kind === "kit_reveal" ? p.teamName + "-kit" : p.kind) + (p.round ? "-round-" + p.round : "") + "-" + size).toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".png"; }
+function bindAhJamesDesign(root) {
+  root.querySelectorAll(".ahj-poster").forEach((box) => {
+    const t = ahJ.thread[+box.dataset.t], p = t && t.posters[+box.dataset.p];
+    if (!p) return;
+    const size = p.size || "square";
+    if (!(p.cache && p.cache[size]) && !(p.drawing && p.drawing[size]) && !(p.failed && p.failed[size])) {
+      p.drawing = { ...(p.drawing || {}), [size]: true };
+      ahPosterDraw(p, size).then((url) => { p.cache = { ...(p.cache || {}), [size]: url }; }).catch((e) => { p.failed = { ...(p.failed || {}), [size]: true }; ahJ.error = "Couldn't draw the poster: " + (e.message || "unknown problem"); }).finally(() => { p.drawing[size] = false; renderAdminHub(); });
+    }
+  });
+  root.querySelectorAll(".ahj-psize").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].posters[+b.dataset.p].size = b.dataset.size; renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-pdl").forEach((b) => { b.onclick = () => {
+    const p = ahJ.thread[+b.dataset.t].posters[+b.dataset.p], size = p.size || "square";
+    if (p.cache && p.cache[size]) kitDownloadDataUrl(p.cache[size], ahPosterFileName(p, size));
+  }; });
+  const opt = (b) => ahJ.thread[+b.dataset.t].logos[+b.dataset.s].options[+b.dataset.o];
+  root.querySelectorAll(".ahj-logo-dl").forEach((b) => { b.onclick = async () => { try { kitDownloadDataUrl(await ahSvgToPng(opt(b).svg, 1024), "logo-" + opt(b).name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".png"); } catch (e) { alert(e.message); } }; });
+  root.querySelectorAll(".ahj-logo-use").forEach((b) => { b.onclick = async () => {
+    const set = ahJ.thread[+b.dataset.t].logos[+b.dataset.s], o = opt(b);
+    b.disabled = true;
+    try {
+      const png = await ahSvgToPng(o.svg, 512);
+      const r = await api("/admin/james/logo", { method: "POST", body: { leagueId: set.leagueId, teamId: set.teamId, image: png } });
+      o.state = "used"; o.setId = r.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes; ahJ.error = ""; ahJ.log = null;
+      renderAdminHub();
+      showToast(`${set.teamName}'s logo changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(r.setId, null) });
+    } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+  }; });
+  root.querySelectorAll(".ahj-logo-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(opt(b).setId, null); });
 }
 function bindAhJames(root) {
   const inp = root.querySelector("#ahj-in");
@@ -7635,6 +7829,7 @@ function renderAdminHub() {
   bindAhBoard(root);
   bindAhComposer(root);
   bindAhJames(root);
+  bindAhJamesDesign(root);
   bindAhPayments(root);
 }
 // The payments dashboard: one bar per league, split into paid in full (green),

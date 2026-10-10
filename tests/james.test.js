@@ -132,3 +132,32 @@ test("attached photos are checked and put ahead of the words in the newest messa
   assert.strictEqual(turns[0].content, "earlier");
   assert.deepStrictEqual(J.withImages([{ role: "user", content: "hi" }], [], "hi"), [{ role: "user", content: "hi" }]);
 });
+
+test("a logo drawing is rebuilt from a short allow-list and anything risky is refused", () => {
+  const ok = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e2432f"/><stop offset="1" stop-color="#2b0714"/></linearGradient></defs><circle cx="256" cy="256" r="240" fill="url(#g)"/><text x="256" y="310" font-size="170" font-family="Arial, Helvetica, sans-serif" font-weight="700" text-anchor="middle" fill="#fff">CY</text></svg>';
+  const clean = J.cleanSvg(ok);
+  assert.ok(clean && clean.startsWith("<svg xmlns=") && clean.includes("<linearGradient") && clean.includes(">CY</text>"));
+  const bad = {
+    script: ok.replace("<defs>", "<script>alert(1)</script><defs>"),
+    handler: ok.replace("<circle", '<circle onload="x()"'),
+    image: ok.replace("<defs>", '<image href="http://x/y.png"/><defs>'),
+    foreign: ok.replace("<defs>", "<foreignObject><div/></foreignObject><defs>"),
+    externalUrl: ok.replace("url(#g)", "url(http://evil/x)"),
+    style: ok.replace("<defs>", "<style>*{}</style><defs>"),
+    stray: ok.replace("<defs>", "hello<defs>"),
+    doctype: "<!DOCTYPE svg>" + ok,
+    js: ok.replace("#fff", "javascript:1"),
+    unclosed: ok.replace("</text>", ""),
+    noViewBox: ok.replace(' viewBox="0 0 512 512"', ""),
+    link: ok.replace("<circle", '<circle xlink:href="#g"'),
+    styleAttr: ok.replace("<circle", '<circle style="fill:url(http://x)"'),
+    use: ok.replace("<defs>", '<use href="#g"/><defs>'),
+    entity: ok.replace("CY", "&xxe;"),
+    nested: ok.replace("<defs>", '<svg viewBox="0 0 1 1"></svg><defs>'),
+  };
+  Object.entries(bad).forEach(([k, v]) => assert.strictEqual(J.cleanSvg(v), null, k));
+  const sets = J.cleanLogoSets([{ name: "design_logos", input: { leagueId: "L1", teamId: "T1", options: [{ name: "A", svg: ok }, { name: "B", svg: bad.script }] } }], { leagues: [{ id: "L1", teams: [{ id: "T1", name: "Cyclones" }] }] });
+  assert.strictEqual(sets[0].options.length, 1);
+  assert.strictEqual(sets[0].dropped, 1);
+  assert.strictEqual(sets[0].teamName, "Cyclones");
+});

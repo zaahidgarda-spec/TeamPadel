@@ -5002,6 +5002,51 @@ function jamesContext(perms) {
   if (text.length > 60000) text = build(1);
   return { text, raw: { categories, leagues } };
 }
+// Turns James's poster request into what the app needs to draw it: real team and
+// match details from the data (so a moved match shows its own time), plus his words.
+function jamesPosterSpec(p, perms) {
+  const league = store.getLeague(String(p.leagueId || ""));
+  if (!league || hubExcludedLeague(league.name)) return null;
+  const kind = james.POSTER_KINDS.includes(p.kind) ? p.kind : null;
+  if (!kind) return null;
+  const clipT = (v, n) => String(v == null ? "" : v).trim().slice(0, n);
+  const spec = {
+    kind, leagueId: league.id, leagueName: league.name, theme: james.POSTER_THEMES.includes(p.theme) ? p.theme : "blue",
+    headline: clipT(p.headline, 60), subhead: clipT(p.subhead, 100),
+    lines: (Array.isArray(p.lines) ? p.lines : []).slice(0, 6).map((x) => clipT(x, 100)).filter(Boolean), matches: [], teamId: null, teamName: "",
+  };
+  const ja = jamesActions();
+  const teamName = (id) => (league.teams.find((t) => t.id === id) || {}).name || "TBD";
+  if (kind === "fixtures" || kind === "results") {
+    if (!perms.read.fixtures) return null;
+    const round = ["semis", "final", "positions"].includes(String(p.round)) ? null : Number(p.round);
+    if (!Number.isInteger(round) || round < 1) return null;
+    const fs = league.fixtures.filter((f) => f.round === round && (kind === "fixtures" || f.finalized)).slice(0, 12);
+    if (!fs.length) return null;
+    spec.matches = fs.map((f) => {
+      const sc = logic.scheduleOf(league, f);
+      const w = (f.rubbers || []).map((r) => logic.rubberWinner(r));
+      return {
+        a: teamName(f.teamA), b: teamName(f.teamB), aId: f.teamA, bId: f.teamB,
+        when: [sc.date ? ja.dayText(sc.date) : "", sc.time || "", sc.venue || ""].filter(Boolean).join(" · "),
+        score: f.finalized ? `${w.filter((x) => x === "A").length}–${w.filter((x) => x === "B").length}` : "",
+      };
+    });
+    spec.round = round;
+    if (!spec.headline) spec.headline = kind === "fixtures" ? "Fixtures" : "Results";
+    if (!spec.subhead) spec.subhead = "Round " + round;
+  } else if (kind === "kit_reveal") {
+    const t = league.teams.find((x) => x.id === p.teamId);
+    if (!t) return null;
+    spec.teamId = t.id; spec.teamName = t.name;
+    if (!spec.headline) spec.headline = "Kit reveal";
+    if (!spec.subhead) spec.subhead = t.name;
+  } else if (kind === "sponsor_thanks") {
+    if (!(league.sponsors || []).length) return null;
+    if (!spec.headline) spec.headline = "Thank you";
+  } else if (!spec.headline) return null;
+  return spec;
+}
 function jamesStatusPayload(actor) {
   const cfg = james.config();
   return {
@@ -5027,7 +5072,7 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
     james.checkLimits(store.getJamesUsage(), actor, cfg);
     const ctx = jamesContext(perms);
-    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes);
+    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS);
     const ct = james.changesTool(perms);
     if (ct) tools.push(ct);
     const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.withImages(james.cleanHistory(req.body.history, message || "Here is a photo."), images, message), tools });
@@ -5036,9 +5081,11 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     const proposals = james.cleanProposals(result.toolUses, ctx.raw);
     const changes = james.cleanChanges(proposals.changes, perms);
     const previews = changes.length ? jamesActions().preview(changes, { actor, perms }) : [];
-    const reply = result.text || (proposals.notes.length || proposals.messages.length || changes.length ? "" : "I didn't catch that. Could you say it another way?");
+    const reply = result.text || (proposals.notes.length || proposals.messages.length || changes.length || result.toolUses.length ? "" : "I didn't catch that. Could you say it another way?");
+    const logos = james.cleanLogoSets(result.toolUses, ctx.raw);
+    const posters = result.toolUses.filter((t) => t.name === "make_poster").slice(0, 3).map((t) => jamesPosterSpec(t.input || {}, perms)).filter(Boolean);
     res.json({
-      reply, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
+      reply, logos, posters, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
       changes: changes.map((c, i) => ({ ...c, preview: previews[i] })), usage: james.usageSummary(usage, actor, cfg),
     });
   } catch (e) {
@@ -5084,6 +5131,19 @@ router.post("/admin/james/apply", requireOwnerSession, (req, res) => {
     if (!r.ok) return res.status(400).json({ error: "Nothing was changed. One or more of these can't be done.", results: r.results });
     res.json({ ok: true, setId: r.setId, results: r.results, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
   } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't apply that." }); }
+});
+// The admin pressed "Use this logo" on one of James's designs (already drawn to a PNG in the browser).
+router.post("/admin/james/logo", requireOwnerSession, (req, res) => {
+  const actor = adminActorName(req);
+  const cfg = james.config();
+  const perms = jamesPermissions();
+  const b = req.body || {};
+  if (jamesChangesToday(actor) + 1 > cfg.dailyChanges) return res.status(429).json({ error: `That would go over today's limit of ${cfg.dailyChanges} changes by James for you.` });
+  try {
+    const r = jamesActions().apply([{ kind: "team_logo_set", leagueId: String(b.leagueId || ""), teamId: String(b.teamId || ""), image: String(b.image || "") }], { actor, request: "Use a logo James designed", perms });
+    if (!r.ok) return res.status(400).json({ error: r.results[0].error || "Couldn't set that logo.", results: r.results });
+    res.json({ ok: true, setId: r.setId, results: r.results, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
+  } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't set that logo." }); }
 });
 router.get("/admin/james/log", requireOwnerSession, (req, res) => { res.json({ sets: jamesActions().recentLog(30) }); });
 router.post("/admin/james/log/:id/undo", requireOwnerSession, (req, res) => {

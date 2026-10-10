@@ -3386,3 +3386,16 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-thumb-x{position:absolute;top:-7px;right:-7px;width:22px;height:22px;min-height:0;padding:0;border-radius:50%;border:0;background:#0F172A;color:#fff;font-size:15px;line-height:1;cursor:pointer;}
 .ahj-sent-img{display:block;max-width:180px;max-height:140px;border-radius:8px;margin-bottom:6px;}
 .ahj-photo{padding:10px 12px !important;display:inline-flex;align-items:center;}
+
+/* James: logo options and posters */
+.ahj-logos{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;}
+.ahj-logo{border:1px solid #E2E8F0;border-radius:12px;padding:10px;background:#fff;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;min-width:0;}
+.ahj-logo img{border-radius:10px;background:#F1F5F9;max-width:100%;height:auto;}
+.ahj-logo small{color:#64748B;font-size:12px;}
+.ahj-logo-btns{display:flex;flex-direction:column;gap:6px;width:100%;align-items:stretch;}
+.ahj-logo-btns .ah-complete{justify-content:center;}
+.ahj-logo-done{font-size:12px;font-weight:700;color:#17803D;}
+.ahj-sizes{display:flex;gap:8px;flex-wrap:wrap;}
+.ahj-poster-frame{display:flex;justify-content:center;background:#0F172A;border-radius:12px;padding:12px;min-height:120px;align-items:center;}
+.ahj-poster-frame .ahj-sub{color:#CBD5E1;}
+.ahj-poster-img{max-width:100%;max-height:560px;height:auto;border-radius:8px;display:block;}

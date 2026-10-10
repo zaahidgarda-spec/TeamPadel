@@ -354,6 +354,32 @@ module.exports = function createJamesActions(d) {
     },
   };
 
+  // A team's logo, set from a design the admin chose. The old logo is kept in the
+  // undo record (only for the last few, so the log stays small).
+  const logoKey = (img) => `${(img || "").length}:${(img || "").slice(-48)}`;
+  const MAX_LOGO = 400000;
+  leagueKinds.team_logo_set = {
+    label: "Logo",
+    run(ctx, ch) {
+      const l = leagueFor(ctx, ch.leagueId); const t = teamFor(l, ch.teamId);
+      const img = String(ch.image || "");
+      if (!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(img) || img.length > MAX_LOGO) throw err("That logo image isn't usable.");
+      const prev = t.logo || "";
+      if (prev.length > MAX_LOGO) throw err(`${t.name}'s current logo is too large for me to keep a backup of, so I won't replace it. Change it by hand.`);
+      t.logo = img; ctx.touch(l.id);
+      return { leagueId: l.id, leagueName: l.name, text: `Set ${t.name}'s logo (${l.name}) to the new design${prev ? ". The old logo is kept so this can be undone" : ""}.`, undo: { teamId: t.id, prev }, after: logoKey(img) };
+    },
+    check(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId);
+      if (c.undo.expired) throw err("That logo change is too old to undo. Change the logo by hand.");
+      if (t && logoKey(t.logo) !== c.after) throw err(`${t.name}'s logo has been changed since, so it can't be undone safely.`);
+    },
+    revert(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId);
+      if (t) { t.logo = c.undo.prev || ""; ctx.touch(l.id); }
+    },
+  };
+
   // ---- players ------------------------------------------------------------
   const hasPlayed = (l, pid) => logic.allFixturesOf(l).some((f) => ((f.selectionA && f.selectionA.pairs) || []).flat().includes(pid) || ((f.selectionB && f.selectionB.pairs) || []).flat().includes(pid));
   const playerKinds = {
@@ -510,6 +536,12 @@ module.exports = function createJamesActions(d) {
     };
     log.sets.unshift(set);
     log.sets = log.sets.slice(0, 100);
+    // Old logos kept for undo are the only big thing in the log: only the newest few stay.
+    let kept = 0;
+    log.sets.forEach((st) => st.changes.forEach((c) => {
+      if (c.kind !== "team_logo_set" || !c.undo) return;
+      if (++kept > 5 && c.undo.prev) { c.undo.prev = ""; c.undo.expired = true; }
+    }));
     store.saveJamesLog(log);
     return { ok: true, setId: set.id, results: results.map(publicResult) };
   }
