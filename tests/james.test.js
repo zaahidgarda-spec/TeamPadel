@@ -231,3 +231,11 @@ test("league set-up changes keep only well-formed settings", () => {
   assert.deepStrictEqual([out[4].firstDate, out[4].time, out[4].everyDays], ["2026-02-04", "18:00", 7]);
   assert.strictEqual(out[5].hidden, false);
 });
+
+test("a payment by the team as a whole is a change James can propose", () => {
+  const perms = J.permissions({});
+  const out = J.cleanChanges([{ kind: "pay_team_record", leagueId: "L1", teamName: "Wolves", amountRands: 600, note: "EFT" }], perms);
+  assert.deepStrictEqual(out, [{ kind: "pay_team_record", leagueId: "L1", teamName: "Wolves", amountRands: 600, note: "EFT" }]);
+  const off = J.permissions(J.mergePermissions({}, { write: { payments: false } }));
+  assert.deepStrictEqual(J.cleanChanges([{ kind: "pay_team_record", leagueId: "L1", teamName: "Wolves", amountRands: 600 }], off), []);
+});

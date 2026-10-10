@@ -610,7 +610,7 @@ function imageTooLarge(res, dataUrl) {
 // and any not-yet-submitted seed selection that isn't theirs (this is
 // the real, server-enforced version of "blind" selection).
 // Payment details on a team or player record (see sanitize).
-const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken", "paidCents", "payments", "discountCents", "discountNote", "customShareCents", "shareCents", "owedCents", "feeCents", "coveredByTeam", "lumpCents", "overpaidCents", "paidSoFarCents", "balanceCents"];
+const PAYMENT_FIELDS = ["paymentMode", "paymentStatus", "paymentMethod", "paymentRef", "paidAt", "payLinkToken", "paidCents", "payments", "lumpPayments", "discountCents", "discountNote", "customShareCents", "shareCents", "owedCents", "feeCents", "coveredByTeam", "lumpCents", "overpaidCents", "paidSoFarCents", "balanceCents"];
 function sanitize(league, req) {
   const user = resolveLeagueSession(req, league.id);
   const isAdmin = isAdminSession(req, league.id);
@@ -4804,7 +4804,7 @@ router.delete("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
 // Wipes every recorded payment in one league (teams and players, part payments
 // and ledgers) back to unpaid, for starting a fresh collection. What's cleared is
 // saved first so the last reset can be undone.
-const RESET_PAYMENT_FIELDS = ["paymentStatus", "paymentMethod", "paymentRef", "paidAt", "paidCents", "payments", "coveredByTeam", "lumpCents", "lumpRefs", "overpaidCents"];
+const RESET_PAYMENT_FIELDS = ["paymentStatus", "paymentMethod", "paymentRef", "paidAt", "paidCents", "payments", "coveredByTeam", "lumpCents", "lumpRefs", "lumpPayments", "overpaidCents"];
 function snapshotPayments(league) {
   const pick = (o) => Object.fromEntries(RESET_PAYMENT_FIELDS.filter((k) => o[k] !== undefined).map((k) => [k, JSON.parse(JSON.stringify(o[k]))]));
   return league.teams.map((t) => ({ teamId: t.id, team: pick(t), players: t.players.map((p) => ({ playerId: p.id, ...pick(p) })) }));
@@ -4821,7 +4821,7 @@ router.post("/leagues/:leagueId/payments/reset", requireAdmin, (req, res) => {
   league.paymentsBackup = { at: Date.now(), by: adminActorName(req), teams: snapshotPayments(league), teamsPaid, playersPaid };
   league.teams.forEach((t) => {
     t.paymentStatus = "unpaid"; t.paymentMethod = null; t.paymentRef = null; t.paidAt = null;
-    delete t.lumpCents; delete t.lumpRefs; delete t.overpaidCents;
+    delete t.lumpCents; delete t.lumpRefs; delete t.lumpPayments; delete t.overpaidCents;
     t.players.forEach((p) => {
       p.paymentStatus = "unpaid"; p.paymentMethod = null; p.paymentRef = null; p.paidAt = null;
       p.paidCents = 0; p.payments = []; p.coveredByTeam = false; delete p.overpaidCents;
@@ -4896,7 +4896,7 @@ function hubPaymentsData() {
       const paid = teamPaidCents(league, team);
       const complete = team.paymentStatus === "paid" || paid >= tFee - 1;
       if (complete) fullPaid += tFee; else partPaid += paid;
-      return { teamId: team.id, teamName: team.name, feeCents: tFee, baseFeeCents: fee, discountCents: team.discountCents || 0, discountNote: team.discountNote || "", paidCents: Math.min(paid, tFee), complete, playerCount: team.players.length };
+      return { teamId: team.id, teamName: team.name, feeCents: tFee, baseFeeCents: fee, discountCents: team.discountCents || 0, discountNote: team.discountNote || "", paidCents: Math.min(paid, tFee), lumpCents: team.lumpCents || 0, teamPayCount: (team.lumpPayments || []).length, complete, playerCount: team.players.length };
     }).sort((a, b) => ((a.feeCents ? a.paidCents / a.feeCents : 1) - (b.feeCents ? b.paidCents / b.feeCents : 1)) || a.teamName.localeCompare(b.teamName));
     const total = teamBars.reduce((t, b) => t + b.feeCents, 0);
     leagues.push({
@@ -4920,7 +4920,7 @@ function jamesActions() {
     store, logic, RESET_PAYMENT_FIELDS, HUB_PRIORITIES,
     hubExcludedLeague, hubExcludedLeagueIds, hubCategories, applyHubFields,
     playerOwedCents, playerShareCents, playerBaseShareFor, teamFeeCents, teamBalanceCents, addPlayerPayment,
-    reconcilePlayerStatus, reconcileTeamPayment, coverTeamPlayers,
+    reconcilePlayerStatus, reconcileTeamPayment, coverTeamPlayers, recordTeamPayment, teamPaidCents,
     movePlayerRecord, followPlayerToTeam, setPlayerClaimsTeam, leagueStatus, genTeamCode, newLeagueObj,
     completeRubberNow, reopenRubberNow, fixtureLabel,
     finalizeLater: (leagueId, fixtureId, who) => {
@@ -6662,6 +6662,36 @@ router.get("/leagues/:leagueId/teams/:teamId/pay-link/:token/checkout", (req, re
 
 // Cash/EFT collected outside PayFast still needs to be reflected here —
 // very much the norm for a local sports league treasurer, not an edge case.
+// A payment made by the team as a whole (not by a player), for any amount. It counts toward the team's fee;
+// if it settles what's left, the team is paid and its unpaid players are covered by it.
+function recordTeamPayment(league, team, cents, method, by, note) {
+  const at = Date.now();
+  team.lumpPayments = (team.lumpPayments || []).concat([{ cents, method, by: by || null, note: note || null, at }]);
+  const owed = teamBalanceCents(league, team);
+  if (cents >= owed - 1) {
+    team.paymentStatus = "paid"; team.paymentMethod = method; team.paymentRef = null; team.paidAt = at;
+    coverTeamPlayers(team, method, null, at);
+    return { settled: true };
+  }
+  team.lumpCents = (team.lumpCents || 0) + cents;
+  return { settled: false };
+}
+router.post("/leagues/:leagueId/teams/:teamId/payments", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const team = league.teams.find((t) => t.id === req.params.teamId);
+  if (!team) return res.status(404).json({ error: "Team not found." });
+  if (!league.registrationFeeCents) return res.status(400).json({ error: "Set what each team pays first." });
+  if (team.paymentStatus === "paid") return res.status(400).json({ error: `${team.name} has already paid in full.` });
+  const cents = Math.round(Number(req.body && req.body.amountRands) * 100);
+  if (!Number.isFinite(cents) || cents <= 0) return res.status(400).json({ error: "Enter an amount in rands." });
+  const owed = teamBalanceCents(league, team);
+  if (cents > owed) return res.status(400).json({ error: `That's more than ${team.name} still owes (R${(owed / 100).toFixed(2)}).` });
+  const r = recordTeamPayment(league, team, cents, "manual", adminActorName(req), cleanHubText(req.body && req.body.note, 120) || null);
+  logAudit(league, req, null, "team_payment", { teamName: team.name, cents, settled: r.settled });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, settled: r.settled, balanceCents: teamBalanceCents(league, team), paidCents: teamPaidCents(league, team) });
+});
 router.put("/leagues/:leagueId/teams/:teamId/payment-status", requireAdmin, (req, res) => {
   const league = store.getLeague(req.params.leagueId);
   if (!league) return res.status(404).json({ error: "League not found." });

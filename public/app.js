@@ -1758,9 +1758,8 @@ function updateAdminBar() {
   el("admin-bar-note").style.display = isOwner ? "" : "none";
   el("admin-bar-james").style.display = isOwner ? "" : "none";
   el("admin-bar-mic").style.display = isOwner && ahVoiceSupported() ? "" : "none";
-  el("admin-bar-leo").style.display = isOwner ? "" : "none";
   el("admin-bar-mic").classList.toggle("on", !!ahJ.listening);
-  if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); if (ahLeo.open) closeLeoPopup(); }
+  if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup();}
   document.documentElement.classList.toggle("has-admin-bar", show);
   if (!show) return;
   const n = inLeague && !isOwner ? currentLeagueLiveCount() : Math.max(adminBarLive, inLeague ? currentLeagueLiveCount() : 0);
@@ -1817,9 +1816,8 @@ async function openQuickNote() {
   el("admin-bar-note").setAttribute("aria-expanded", "true");
   el("ab-note-text").focus();
 }
-el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); if (ahLeo.open) closeLeoPopup(); openQuickNote(); };
-el("admin-bar-james").onclick = () => { if (ahLeo.open) closeLeoPopup(); openJamesPopup(); };
-el("admin-bar-leo").onclick = openLeoPopup;
+el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); openQuickNote(); };
+el("admin-bar-james").onclick = openJamesPopup;
 // The mic beside James: one tap opens him and starts listening (the tap itself must start the
 // microphone, so listening begins first and the panel opens alongside).
 el("admin-bar-mic").onclick = () => {
@@ -1866,7 +1864,7 @@ el("ab-note-add").onclick = async () => {
   el("ab-note-add").disabled = false;
 };
 el("ab-note-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") el("ab-note-add").click(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); if (ahLeo.open) closeLeoPopup(); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); } });
 // Picking a category redraws the chips, so the clicked button may already be
 // gone from the page by now: judge by the path the click took, not the element.
 document.addEventListener("click", (e) => {
@@ -6990,7 +6988,6 @@ async function loadAdminHub() {
   } catch (e) { el("ah-root").innerHTML = `<p class="empty">${escapeHtml(e.message || "Couldn't load the admin hub.")}</p>`; return; }
   renderAdminHub();
   if (ahJ.popup) renderJamesPopup();
-  if (ahLeo.open) renderLeoPopup();
 }
 function ahToday() { return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }); }
 function ahLeagueName(id) { const l = ahLeagues.find((x) => x.id === id); return l ? l.name : ""; }
@@ -7295,24 +7292,23 @@ function ahVoiceStart(lang) {
   ahJRender();
 }
 
-// ---- Leo's own panel in the top bar: draw a logo or kit design yourself, without going through James ----
-let ahLeo = { open: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", text: "", photos: [], error: "" };
+// ---- Leo's own card in the Note Machine: draw a logo or kit design yourself, without going through James ----
+let ahLeo = { shut: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", text: "", photos: [], error: "" };
 function ahTurn(ti) { return ti === -1 ? ahLeo.turn : ahJ.thread[ti]; }
-function ahPicRender() { ahJRender(); if (ahLeo.open) renderLeoPopup(); }
+// Leo sits in the Note Machine, so anything that changes one of his pictures redraws that page (and James's panel if it's open).
+function ahPicRender() { renderAdminHub(); if (ahJ.popup) renderJamesPopup(); }
 const AH_LEO_KINDS = [["logo", "A team logo"], ["kit_front", "Kit front"], ["kit_back", "Kit back"], ["artwork", "Other artwork"]];
 const AH_LEO_HINT = { logo: "e.g. A bold red storm swirl inside a circle, flat and simple, the letters CY in white.", kit_front: "e.g. A dark red padel shirt, a thin white stripe across the chest, room for the logo on the left.", kit_back: "e.g. The back of the same dark red shirt, plain, with space for a name and number.", artwork: "e.g. A banner of a padel court at sunset in warm colours." };
-function renderLeoPopup() {
-  const panel = el("ab-leo-panel");
-  if (!panel || !isOwner) return;
-  const keep = panel.scrollTop, st = ahJ.status || {}, img = st.images || {};
+function ahLeoHtml() {
+  const st = ahJ.status || {}, img = st.images || {};
   const off = st.permissions && st.permissions.write && st.permissions.write.images === false;
   const leagues = ahLeagues || [], lg = leagues.find((l) => l.id === ahLeo.leagueId), teams = lg ? lg.teams : [];
+  const head = `<div class="ahj-head"><button type="button" class="ahj-leo-toggle" id="leo-toggle" aria-expanded="${!ahLeo.shut}"><span class="ahj-av leo" aria-hidden="true">L</span><b>Leo</b><span class="ahj-tag">Draws pictures</span><span class="ah-chev">${ahLeo.shut ? "▸" : "▾"}</span></button>
+    <div class="ahj-head-r">${img.enabled ? `<span class="ahj-meter" title="${img.todayCount} of ${img.dailyLimit} pictures made today">Leo ${ahDollars(img.monthCostUsd)} of $${img.capUsd}</span>` : ""}</div></div>`;
+  if (ahLeo.shut) return `<section class="ahj ahj-leo" aria-label="Leo, the picture maker">${head}</section>`;
   const plans = ahLeo.turn.imagePlans.length ? ahJamesImagePlansHtml(ahLeo.turn, -1) : "";
-  panel.innerHTML = `<button type="button" class="ab-james-x" id="ab-leo-x" aria-label="Close Leo">&times;</button>
-    <section class="ahj ahj-leo" aria-label="Leo, the picture maker">
-      <div class="ahj-head"><div class="ahj-title"><span class="ahj-av leo" aria-hidden="true">L</span><b>Leo</b><span class="ahj-tag">Draws pictures</span></div>
-        <div class="ahj-head-r">${img.enabled ? `<span class="ahj-meter" title="${img.todayCount} of ${img.dailyLimit} pictures made today">Leo ${ahDollars(img.monthCostUsd)} of $${img.capUsd}</span>` : ""}</div></div>
-      <p class="ahj-sub" style="margin:0;">Leo draws logos and kit designs. Describe what you want, or ask James and he'll write the brief for you. Each picture costs a few cents.</p>
+  return `<section class="ahj ahj-leo" aria-label="Leo, the picture maker">${head}
+      <p class="ahj-sub" style="margin:0;">Leo draws logos and kit designs. Describe what you want here, or ask James and he'll write the brief for you. Each picture costs a few cents.</p>
       ${img.enabled === false ? `<p class="ahj-off">Leo isn't connected yet. Add <code>OPENAI_API_KEY</code> in your host's Secrets and publish.</p>` : ""}
       ${off ? '<p class="ahj-off">Leo is switched off in James\'s permissions.</p>' : ""}
       <div class="leo-form">
@@ -7329,10 +7325,14 @@ function renderLeoPopup() {
       ${ahLeo.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahLeo.error)}</div>` : ""}
       ${plans}
     </section>`;
-  const q = (id) => panel.querySelector("#" + id);
-  q("ab-leo-x").onclick = closeLeoPopup;
-  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.text = q("leo-text").value; renderLeoPopup(); };
-  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.text = q("leo-text").value; renderLeoPopup(); };
+}
+function bindAhLeo(root) {
+  const q = (id) => root.querySelector("#" + id);
+  const toggle = q("leo-toggle"); if (toggle) toggle.onclick = () => { ahLeo.shut = !ahLeo.shut; renderAdminHub(); };
+  if (!q("leo-go")) return;
+  const leagues = ahLeagues || [], lg = leagues.find((l) => l.id === ahLeo.leagueId), teams = lg ? lg.teams : [];
+  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.text = q("leo-text").value; renderAdminHub(); };
+  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.text = q("leo-text").value; renderAdminHub(); };
   q("leo-team").onchange = (e) => { ahLeo.teamId = e.target.value; };
   q("leo-text").oninput = (e) => { ahLeo.text = e.target.value; };
   q("leo-photo").onclick = () => q("leo-file").click();
@@ -7340,35 +7340,18 @@ function renderLeoPopup() {
     const picked = Array.from(e.target.files || []).filter((f) => /^image\//.test(f.type)).slice(0, 2 - ahLeo.photos.length);
     e.target.value = ""; ahLeo.text = q("leo-text").value;
     for (const f of picked) { try { ahLeo.photos.push(await ahResizePhoto(f)); } catch (err) { ahLeo.error = err.message; } }
-    renderLeoPopup();
+    renderAdminHub();
   };
-  panel.querySelectorAll(".leo-photo-x").forEach((b) => { b.onclick = () => { ahLeo.text = q("leo-text").value; ahLeo.photos.splice(+b.dataset.i, 1); renderLeoPopup(); }; });
+  root.querySelectorAll(".leo-photo-x").forEach((b) => { b.onclick = () => { ahLeo.text = q("leo-text").value; ahLeo.photos.splice(+b.dataset.i, 1); renderAdminHub(); }; });
   q("leo-go").onclick = () => {
     const text = q("leo-text").value.trim(); ahLeo.text = text;
-    if (text.length < 10) { ahLeo.error = "Describe the picture in a sentence or two first."; renderLeoPopup(); return; }
+    if (text.length < 10) { ahLeo.error = "Describe the picture in a sentence or two first."; renderAdminHub(); return; }
     const team = teams.find((t) => t.id === ahLeo.teamId);
     const kindLabel = (AH_LEO_KINDS.find((k) => k[0] === ahLeo.kind) || [0, "picture"])[1].toLowerCase();
     const plan = { kind: ahLeo.kind, prompt: text, leagueId: team ? ahLeo.leagueId : null, teamId: team ? team.id : null, teamName: team ? team.name : "", forWhat: (team ? team.name + " " : "") + kindLabel, variants: 2, refPhotos: [], refUrls: ahLeo.photos.map((p) => p.logoUrl), results: [], busy: false, error: "" };
     ahLeo.turn.imagePlans.unshift(plan); ahLeo.error = ""; ahLeo.text = "";
     ahRunPlan(plan, ahLeo.turn);
   };
-  bindAhJamesPictures(panel);
-  panel.scrollTop = keep;
-}
-function closeLeoPopup() {
-  const panel = el("ab-leo-panel");
-  ahLeo.open = false;
-  if (panel) { panel.hidden = true; panel.innerHTML = ""; }
-  el("admin-bar-leo").setAttribute("aria-expanded", "false");
-}
-async function openLeoPopup() {
-  const panel = el("ab-leo-panel");
-  if (!panel.hidden) return closeLeoPopup();
-  closeQuickNote(); if (ahJ.popup) closeJamesPopup();
-  if (!ahLeagues.length && !ahCategories.length) await loadAdminHub();
-  ahLeo.open = true; panel.hidden = false;
-  el("admin-bar-leo").setAttribute("aria-expanded", "true");
-  renderLeoPopup();
 }
 // James can live in the Note Machine or in a panel at the top of every page (next to + Note).
 // Only one place shows him at a time, so the chat is never on screen twice.
@@ -8069,6 +8052,7 @@ function renderAdminHub() {
     // Notes first: add one, then what's open. The areas come next and the
     // payments by league sit at the bottom of the page.
     html += ahJ.popup ? ahJamesDockedHtml() : ahJamesHtml();
+    html += ahLeoHtml();
     html += ahComposerHtml();
     let list = visible.filter(ahIsOpen);
     list.sort(ahListSort);
@@ -8160,6 +8144,7 @@ function renderAdminHub() {
   bindAhBoard(root);
   bindAhComposer(root);
   bindAhJames(root);
+  bindAhLeo(root);
   bindAhJamesDesign(root);
   bindAhJamesPictures(root);
   bindAhPayments(root);
@@ -8201,7 +8186,7 @@ function ahPaymentsDashboardHtml() {
             <span class="ah-team-name">${escapeHtml(t.teamName)}</span>
             ${ahBarHtml(t.complete ? t.feeCents : 0, t.complete ? 0 : t.paidCents, t.feeCents)}
             <span class="ah-team-pct">${t.complete ? "Paid" : tp + "%"}${t.complete ? "" : ahPartPill(ahPartPlayers(l.leagueId, t.teamId))}</span></button>
-          ${tOpen ? `<div class="ah-expand"><div class="ah-team-actions">${t.discountCents ? `<span class="note">Team discount ${fmtRands(t.discountCents)}${t.discountNote ? " · " + escapeHtml(t.discountNote) : ""}</span>` : `<span class="note">Fee ${fmtRands(t.feeCents)}</span>`}<button class="link ah-disc-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}" data-cur="${t.discountCents || 0}">${t.discountCents ? "Change team discount" : "Discount team"}</button>${owing && owing.anyCustom ? `<button class="link ah-even-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}">Back to an even split</button>` : ""}</div>${owing && owing.players.length ? owing.players.map((p) => `<div class="ah-prow" data-league="${l.leagueId}" data-team="${t.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}">
+          ${tOpen ? `<div class="ah-expand"><div class="ah-team-actions">${t.discountCents ? `<span class="note">Team discount ${fmtRands(t.discountCents)}${t.discountNote ? " · " + escapeHtml(t.discountNote) : ""}</span>` : `<span class="note">Fee ${fmtRands(t.feeCents)}</span>`}${t.lumpCents ? `<span class="ah-partpill">Team paid ${fmtRands(t.lumpCents)}${t.teamPayCount > 1 ? " in " + t.teamPayCount + " payments" : ""}</span>` : ""}${t.complete ? "" : `<button class="secondary ah-team-pay" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}" data-owed="${Math.max(0, t.feeCents - t.paidCents)}">Team paid…</button>`}<button class="link ah-disc-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}" data-cur="${t.discountCents || 0}">${t.discountCents ? "Change team discount" : "Discount team"}</button>${owing && owing.anyCustom ? `<button class="link ah-even-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}">Back to an even split</button>` : ""}</div>${owing && owing.players.length ? owing.players.map((p) => `<div class="ah-prow" data-league="${l.leagueId}" data-team="${t.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}">
               <span><b>${escapeHtml(p.name)}</b>${discountTag(p.discountCents)}${p.customShare ? '<span class="disc-tag custom-tag">custom amount</span>' : ""}${ahPlayerPartHtml(p)}<br><span class="note">${p.paidCents ? `paid ${fmtRands(p.paidCents)} of ${fmtRands(p.shareCents)}${p.payCount > 1 ? ` in ${p.payCount} payments` : ""}${p.lastPaidAt ? ` (last ${ahWhen(p.lastPaidAt)})` : ""} · ` : ""}owes ${fmtRands(p.owedCents)}</span></span>
               <span class="ah-prow-btns"><button class="secondary ah-p-part" type="button">Record payment</button><button class="link ah-p-disc" type="button" data-name="${escapeHtml(p.name)}" data-cur="${p.discountCents || 0}">Discount</button><button class="link ah-p-share" type="button" data-name="${escapeHtml(p.name)}" data-custom="${p.customShare ? 1 : 0}" data-share="${p.shareCents}" data-limit="${t.baseFeeCents - (t.discountCents || 0)}">Set amount</button><button class="link ah-p-paid" type="button">Mark paid</button></span></div>`).join("") : '<p class="note" style="margin:0;">Everyone on this team has paid.</p>'}</div>` : ""}`;
       }).join("")}</div>`;
@@ -8253,6 +8238,20 @@ function bindAhPayments(root) {
       const v = prompt(`What does each team in ${b.dataset.name} pay? (rands)`, b.dataset.fee);
       if (v === null) return;
       saveFee(b.dataset.league, Number(String(v).replace(/[^0-9.]/g, "")));
+    };
+  });
+  root.querySelectorAll(".ah-team-pay").forEach((b) => {
+    b.onclick = async () => {
+      const owed = Number(b.dataset.owed) / 100;
+      const v = prompt(`How much did ${b.dataset.name} pay as a team? Any amount up to R${owed.toFixed(2)} (what's still owed).`, owed.toFixed(2));
+      if (v === null || !String(v).trim()) return;
+      const num = Number(String(v).replace(/[^0-9.]/g, ""));
+      if (!(num > 0)) { alert("Type the amount in rands, like 1800."); return; }
+      try {
+        const r = await api(`/leagues/${b.dataset.league}/teams/${b.dataset.team}/payments`, { method: "POST", body: { amountRands: num } });
+        showToast(r.settled ? `${b.dataset.name} is paid in full.` : `Team payment recorded. ${fmtRands(r.balanceCents)} still to pay.`);
+        await ahRefreshAndRender();
+      } catch (e) { alert(e.message); }
     };
   });
   root.querySelectorAll(".ah-even-team").forEach((b) => {

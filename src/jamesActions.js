@@ -156,6 +156,23 @@ module.exports = function createJamesActions(d) {
       },
       check: payCheck, revert: payRevert,
     },
+    pay_team_record: {
+      label: "Payment",
+      run(ctx, ch) {
+        const l = leagueRef(ctx, ch); needFee(l);
+        const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
+        if (t.paymentStatus === "paid") throw err(`${t.name} has already paid in full.`);
+        const cents = rands(ch.amountRands);
+        if (cents <= 0) throw err("Say how much the team paid.");
+        const owed = d.teamBalanceCents(l, t);
+        if (cents > owed) throw err(`${t.name} only owes ${fmt(owed)}, not ${fmt(cents)}.`);
+        const before = paySnap(t);
+        const r = d.recordTeamPayment(l, t, cents, "manual", ctx.actor, clip(ch.note, 120) || null);
+        ctx.touch(l.id);
+        return payResult(l, t, before, r.settled ? `Record ${fmt(cents)} paid by the team ${t.name} (${l.name}). That settles the team fee, so ${t.name} is paid in full and its players are covered.` : `Record ${fmt(cents)} paid by the team ${t.name} (${l.name}), as a team payment. Still owed ${fmt(owed)} → ${fmt(owed - cents)}.`);
+      },
+      check: payCheck, revert: payRevert,
+    },
     pay_mark_team_paid: {
       label: "Payment",
       run(ctx, ch) {
