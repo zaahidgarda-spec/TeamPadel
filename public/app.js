@@ -7202,7 +7202,7 @@ function bindAhComposer(root) {
 }
 // ---- James, the admin assistant. He answers, proposes notes and drafts messages;
 // nothing is saved until the admin presses Save on a proposal.
-let ahJ = { status: null, thread: [], busy: false, draft: "", error: "" };
+let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null };
 const AH_JAMES_IDEAS = [["Who still owes?", "Who still owes money, by league?"], ["What's overdue?", "What notes are overdue or urgent?"], ["Draft a reminder", "Draft a friendly reminder for each team that still owes"], ["Add a note", "Add a note: "]];
 function ahDollars(n) { return "$" + (Math.round((n || 0) * 100) / 100).toFixed(2); }
 function ahJamesNoteHtml(n, i, editable) {
@@ -7219,6 +7219,23 @@ function ahJamesNoteHtml(n, i, editable) {
     ${n.details ? `<div class="ahj-sub">${escapeHtml(n.details)}</div>` : ""}<div class="ahj-chips">${chips}</div>
     ${(n.concerns || []).map((c) => `<div class="ahj-concern"><b>Check:</b> ${escapeHtml(c)}</div>`).join("")}</div>`;
 }
+function ahJamesChangesHtml(t, ti) {
+  const st = t.cstate || "pending";
+  const okN = t.changes.filter((c) => c.preview && c.preview.ok).length;
+  const head = st === "pending" ? "Proposed changes. Nothing has been changed yet."
+    : st === "applied" ? `Applied ${t.appliedN} change${t.appliedN === 1 ? "" : "s"}. Recorded under your name, via James.`
+    : st === "undone" ? "Applied, then undone. Everything is back as it was." : "Dismissed. Nothing was changed.";
+  const rows = t.changes.map((c, i) => {
+    const pv = c.preview || {}, ok = !!pv.ok;
+    return `<div class="ahj-change${ok ? "" : " bad"}"><div class="ahj-change-top"><span class="ahj-kind">${escapeHtml(pv.label || "Change")}</span>${st === "pending" ? `<button type="button" class="link ahj-crm" data-t="${ti}" data-i="${i}" aria-label="Leave this one out">Remove</button>` : ""}</div>
+      <div class="ahj-ctext">${escapeHtml(ok ? pv.text : pv.error || "Can't do this one.")}</div>
+      ${ok ? (pv.warnings || []).map((w) => `<div class="ahj-concern"><b>Check:</b> ${escapeHtml(w)}</div>`).join("") : '<div class="ahj-sub">Left out. It will not be applied.</div>'}</div>`;
+  }).join("");
+  const actions = st === "pending"
+    ? (okN ? `<button type="button" class="ah-complete ahj-apply" data-t="${ti}">Apply ${okN} change${okN === 1 ? "" : "s"}</button>` : "") + `<button type="button" class="ah-complete undo ahj-cdismiss" data-t="${ti}">Dismiss</button>`
+    : st === "applied" ? `<button type="button" class="ah-complete undo ahj-cundo" data-t="${ti}">Undo these changes</button>` : "";
+  return `<div class="ahj-block"><div class="ahj-block-head">${head}</div>${rows}<div class="ahj-actions">${actions}</div></div>`;
+}
 function ahJamesTurnHtml(t, ti) {
   if (t.role === "user") return `<div class="ahj-msg you">${escapeHtml(t.text).replace(/\n/g, "<br>")}</div>`;
   let h = "";
@@ -7229,10 +7246,29 @@ function ahJamesTurnHtml(t, ti) {
       ${t.notes.map((n, i) => ahJamesNoteHtml(n, i, st === "pending")).join("")}
       <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
   }
+  if (t.changes && t.changes.length) h += ahJamesChangesHtml(t, ti);
   if (t.messages && t.messages.length) {
     h += `<div class="ahj-block"><div class="ahj-block-head">Drafts for you to send. James can't send them.</div><div class="ahj-msgs">${t.messages.map((m, i) => `<div class="ahj-draft"><span class="ahj-to">${escapeHtml(m.to)}</span><p>${escapeHtml(m.text)}</p><button type="button" class="link ahj-copy" data-t="${ti}" data-i="${i}">Copy message</button></div>`).join("")}</div></div>`;
   }
   return h;
+}
+const AH_JAMES_PERMS = {
+  read: [["payments", "Payments", "who owes what"], ["fixtures", "Fixtures", "rounds, dates and results"], ["rosters", "Teams and players", "who is on which team"]],
+  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"]],
+};
+function ahJamesPermsHtml() {
+  const perms = (ahJ.status && ahJ.status.permissions) || { read: {}, write: {} };
+  const row = (kind, [k, label, hint]) => `<label class="ahj-perm"><input type="checkbox" data-kind="${kind}" data-k="${k}"${perms[kind][k] !== false ? " checked" : ""}><span><b>${label}</b><small>${hint}</small></span></label>`;
+  return `<div class="ahj-panel"><div class="ahj-panel-cols"><div><h4>James can see</h4>${AH_JAMES_PERMS.read.map((r) => row("read", r)).join("")}</div>
+    <div><h4>James can propose changes to</h4>${AH_JAMES_PERMS.write.map((r) => row("write", r)).join("")}</div></div>
+    <p class="ahj-sub">He only ever proposes. You confirm each change, it is recorded, and you can undo it. Deleting, resetting payments, publishing, refunds and sending messages stay with you. Switching something off takes effect straight away.</p></div>`;
+}
+function ahJamesLogHtml() {
+  if (!ahJ.log) return '<div class="ahj-panel"><p class="ahj-sub">Loading…</p></div>';
+  if (!ahJ.log.length) return '<div class="ahj-panel"><p class="ahj-sub">James hasn\'t changed anything yet.</p></div>';
+  return `<div class="ahj-panel ahj-log">${ahJ.log.map((s) => `<div class="ahj-logset"><div class="ahj-logtop"><span><b>${escapeHtml(s.by)}</b> · ${ahWhen(s.at)}</span><span class="ahj-logstatus ${s.status}">${s.status === "applied" ? "Applied" : "Undone" + (s.undoneBy ? " by " + escapeHtml(s.undoneBy) : "")}</span></div>
+    ${s.request ? `<div class="ahj-sub">You asked: ${escapeHtml(s.request)}</div>` : ""}<ul>${s.changes.map((c) => `<li>${escapeHtml(c.text)}</li>`).join("")}</ul>
+    ${s.status === "applied" ? `<button type="button" class="ah-complete undo ahj-logundo" data-id="${s.id}">Undo</button>` : ""}</div>`).join("")}</div>`;
 }
 function ahJamesHtml() {
   const st = ahJ.status, u = st && st.usage;
@@ -7240,7 +7276,8 @@ function ahJamesHtml() {
   const thread = ahJ.thread.map(ahJamesTurnHtml).join("");
   return `<section class="ahj" aria-label="James, your assistant">
     <div class="ahj-head"><div class="ahj-title"><span class="ahj-av" aria-hidden="true">J</span><b>James</b><span class="ahj-tag">Assistant</span></div>
-      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
+      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
+    ${ahJ.panel === "perms" ? ahJamesPermsHtml() : ahJ.panel === "log" ? ahJamesLogHtml() : ""}
     ${off ? `<p class="ahj-off">James isn't connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host's Secrets, then publish.</p>` : ""}
     ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
     ${ahJ.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahJ.error)}</div>` : ""}
@@ -7252,12 +7289,12 @@ function ahJamesHtml() {
 async function ahJamesSend(text) {
   text = String(text || "").trim();
   if (!text || ahJ.busy) return;
-  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") || "(no reply)" });
+  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
   ahJ.thread.push({ role: "user", text }); ahJ.draft = ""; ahJ.error = ""; ahJ.busy = true;
   renderAdminHub(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history } });
-    ahJ.thread.push({ role: "james", reply: r.reply, notes: r.notes || [], messages: r.messages || [], state: "pending", savedIds: [] });
+    ahJ.thread.push({ role: "james", request: text, reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
   } catch (e) { ahJ.error = e.message || "James hit a problem."; }
   ahJ.busy = false;
@@ -7270,6 +7307,30 @@ async function ahJamesUndo(t) {
     await ahApi("/items/delete", { method: "POST", body: { ids: t.savedIds } });
     t.state = "undone"; await ahRefreshAndRender(); showToast("Undone. The notes are gone.");
   } catch (e) { alert(e.message); }
+}
+async function ahJamesApply(t, btn) {
+  const send = t.changes.filter((c) => c.preview && c.preview.ok).map(({ preview, ...c }) => c);
+  if (!send.length) return;
+  btn.disabled = true;
+  try {
+    const r = await api("/admin/james/apply", { method: "POST", body: { changes: send, request: t.request || "" } });
+    t.cstate = "applied"; t.setId = r.setId; t.appliedN = r.results.length;
+    t.changes = t.changes.filter((c) => c.preview && c.preview.ok);
+    if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes;
+    ahJ.error = ""; ahJ.log = null;
+    await ahRefreshAndRender();
+    showToast(`${t.appliedN} change${t.appliedN === 1 ? "" : "s"} applied.`, { label: "Undo", onClick: () => ahJamesUndoSet(t.setId, t) });
+  } catch (e) { btn.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+}
+async function ahJamesUndoSet(setId, t) {
+  try {
+    await api(`/admin/james/log/${setId}/undo`, { method: "POST" });
+    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; });
+    ahJ.error = ""; ahJ.log = null;
+    if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
+    await ahRefreshAndRender();
+    showToast("Undone. Everything is back as it was.");
+  } catch (e) { ahJ.error = e.message; renderAdminHub(); }
 }
 function bindAhJames(root) {
   const inp = root.querySelector("#ahj-in");
@@ -7299,6 +7360,25 @@ function bindAhJames(root) {
     } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
   }; });
   root.querySelectorAll(".ahj-undo").forEach((b) => { b.onclick = () => ahJamesUndo(ahJ.thread[+b.dataset.t]); });
+  root.querySelectorAll(".ahj-crm").forEach((b) => { b.onclick = () => {
+    const t = ahJ.thread[+b.dataset.t]; t.changes.splice(+b.dataset.i, 1);
+    if (!t.changes.length) t.cstate = "dismissed";
+    renderAdminHub();
+  }; });
+  root.querySelectorAll(".ahj-cdismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].cstate = "dismissed"; renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-apply").forEach((b) => { b.onclick = () => ahJamesApply(ahJ.thread[+b.dataset.t], b); });
+  root.querySelectorAll(".ahj-cundo").forEach((b) => { b.onclick = () => ahJamesUndoSet(ahJ.thread[+b.dataset.t].setId, ahJ.thread[+b.dataset.t]); });
+  root.querySelectorAll(".ahj-panel-btn").forEach((b) => { b.onclick = async () => {
+    ahJ.panel = ahJ.panel === b.dataset.p ? null : b.dataset.p;
+    renderAdminHub();
+    if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } renderAdminHub(); }
+  }; });
+  root.querySelectorAll(".ahj-logundo").forEach((b) => { b.onclick = () => ahJamesUndoSet(b.dataset.id, null); });
+  root.querySelectorAll(".ahj-perm input").forEach((cb) => { cb.onchange = async () => {
+    const body = { permissions: { [cb.dataset.kind]: { [cb.dataset.k]: cb.checked } } };
+    try { const r = await api("/admin/james/permissions", { method: "PUT", body }); if (ahJ.status) ahJ.status.permissions = r.permissions; showToast(cb.checked ? "Switched on." : "Switched off."); }
+    catch (e) { cb.checked = !cb.checked; alert(e.message); }
+  }; });
   root.querySelectorAll(".ahj-copy").forEach((b) => { b.onclick = () => {
     const m = ahJ.thread[+b.dataset.t].messages[+b.dataset.i];
     const done = () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy message"; }, 1400); };

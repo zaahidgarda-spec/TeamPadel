@@ -3351,3 +3351,25 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-form .ah-complete:disabled,.ahj-idea:disabled{opacity:.5;cursor:default;}
 .ahj-save{background:#1F9D55 !important;}
 .custom-tag{background:#E2F1F5;color:#0B6E8A;border-color:#0B6E8A;}
+
+/* James: proposed changes, his change log and permissions */
+.ahj-change{border:1px solid #E2E8F0;border-left:5px solid #1F9D55;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:#F8FAFC;}
+.ahj-change.bad{border-left-color:#D14343;background:#FBF1F1;}
+.ahj-change-top{display:flex;justify-content:space-between;gap:10px;align-items:center;}
+.ahj-kind{background:#0B6E8A;color:#fff;border-radius:6px;padding:1px 9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
+.ahj-change.bad .ahj-kind{background:#D14343;}
+.ahj-ctext{font-size:14px;overflow-wrap:anywhere;}
+.ahj-panel-btn.on{font-weight:800;}
+.ahj-panel{border:1px solid #DDE2E8;border-radius:12px;padding:12px 14px;background:#F8FAFC;display:flex;flex-direction:column;gap:10px;}
+.ahj-panel h4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#64748B;}
+.ahj-panel-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;}
+.ahj-perm{display:flex;gap:10px;align-items:flex-start;padding:5px 0;cursor:pointer;}
+.ahj-perm input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:#0B6E8A;}
+.ahj-perm small{display:block;color:#64748B;font-size:12px;}
+.ahj-log{max-height:380px;overflow-y:auto;}
+.ahj-logset{border:1px solid #E2E8F0;border-radius:10px;padding:9px 11px;background:#fff;display:flex;flex-direction:column;gap:6px;font-size:14px;}
+.ahj-logset ul{margin:0;padding-left:18px;}
+.ahj-logtop{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.ahj-logstatus{font-size:12px;font-weight:700;padding:1px 9px;border-radius:999px;background:#E3F4EA;color:#17803D;}
+.ahj-logstatus.undone{background:#EEF1F5;color:#64748B;}
+.ahj-logset .ah-complete{align-self:flex-start;}

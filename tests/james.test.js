@@ -81,3 +81,41 @@ test("history is trimmed to strictly alternating turns ending with the new messa
   assert.strictEqual(t[0].content, "a\nb");
   assert.strictEqual(t[2].content, "now");
 });
+
+test("permissions default to everything on and can be switched off one at a time", () => {
+  const all = J.permissions({});
+  assert.ok(Object.values(all.read).every(Boolean) && Object.values(all.write).every(Boolean));
+  const next = J.mergePermissions({}, { write: { payments: false }, read: { rosters: false }, junk: 1 });
+  const p = J.permissions(next);
+  assert.strictEqual(p.write.payments, false);
+  assert.strictEqual(p.write.notes, true);
+  assert.strictEqual(p.read.rosters, false);
+  assert.strictEqual(p.read.payments, true);
+});
+
+test("the changes tool only offers kinds that are switched on", () => {
+  const perms = J.permissions(J.mergePermissions({}, { write: { payments: false } }));
+  const kinds = J.changesTool(perms).input_schema.properties.changes.items.properties.kind.enum;
+  assert.ok(!kinds.some((k) => k.startsWith("pay_")));
+  assert.ok(kinds.includes("fix_round_schedule") && kinds.includes("player_move"));
+  const none = J.permissions({ permissions: { write: { notes: false, payments: false, fixtures: false, leagues: false, players: false } } });
+  assert.strictEqual(J.changesTool(none), null);
+});
+
+test("proposed changes are trimmed to known fields and allowed kinds", () => {
+  const perms = J.permissions(J.mergePermissions({}, { write: { leagues: false } }));
+  const out = J.cleanChanges([
+    { kind: "pay_record", leagueId: "L1", teamId: "T1", playerId: "P1", amountRands: "200", evil: "x", why: "paid cash" },
+    { kind: "league_set_fee", leagueId: "L1", amountRands: 10 },
+    { kind: "delete_everything" },
+    { kind: "fix_round_schedule", leagueId: "L1", round: "semis", date: "2026-03-26" },
+    { kind: "pay_set_share", leagueId: "L1", teamId: "T1", playerId: "P1", amountRands: null },
+    null,
+  ], perms);
+  assert.deepStrictEqual(out.map((c) => c.kind), ["pay_record", "fix_round_schedule", "pay_set_share"]);
+  assert.strictEqual(out[0].amountRands, 200);
+  assert.strictEqual(out[0].evil, undefined);
+  assert.strictEqual(out[1].round, "semis");
+  assert.strictEqual(out[2].amountRands, null);
+  assert.strictEqual(J.cleanChanges(new Array(40).fill({ kind: "pay_record" }), perms).length, J.MAX_CHANGES);
+});

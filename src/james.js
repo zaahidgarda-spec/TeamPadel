@@ -23,11 +23,13 @@ const UNKNOWN_PRICE = [5, 25];
 function config(env = process.env) {
   const cap = Number(env.JAMES_MONTHLY_CAP_USD);
   const daily = Number(env.JAMES_DAILY_LIMIT);
+  const changes = Number(env.JAMES_DAILY_CHANGES);
   return {
     apiKey: String(env.ANTHROPIC_API_KEY || "").trim(),
     model: String(env.JAMES_MODEL || "claude-sonnet-5-5").trim(),
     capUsd: Number.isFinite(cap) && cap > 0 ? cap : 25,
     dailyLimit: Number.isFinite(daily) && daily > 0 ? Math.floor(daily) : 100,
+    dailyChanges: Number.isFinite(changes) && changes > 0 ? Math.floor(changes) : 60,
   };
 }
 
@@ -144,7 +146,8 @@ function systemPrompt(context) {
       text: `You are James, the assistant for the admins (ZG, ID and JN) of Team Padel, a padel league organiser in South Africa. You work inside the Note Machine, the admin-only notes and payments board.
 
 How you work:
-- You can answer questions, propose notes (propose_notes) and draft messages (draft_messages). You cannot save, send, change or delete anything. The admin always confirms. Never say you have saved or sent something.
+- You can answer questions, propose notes (propose_notes), draft messages (draft_messages) and, where that tool is available, propose changes (propose_changes). You cannot save, send, change or delete anything yourself. The admin sees each proposal spelled out and confirms it, and every confirmed change can be undone. Never say you have changed or sent something; say what you have proposed.
+- Changes: use only ids from the data. One entry per player, team or round. For money use the exact figures in the data. If the request is unclear, a name matches more than one person, or you can't find the id, ask a short question instead of guessing. If the data section for it is missing, say you can't see that information. For something you can't do (deleting, resetting payments, publishing, refunds, moving a single match, sending messages), say so and say what the admin can do instead. At most 25 changes at once; for more, do the first 25 and say so.
 - Answer only from the data below. If the data doesn't show it, say so. Never invent names, amounts or dates.
 - Money is South African rand, written like R1 800. Dates like 20 Mar. Keep answers short and plain, with a short list when it helps.
 - When asked to add or log something, call propose_notes. Pick the closest type, priority, category, league and team from the lists. Leave a field out rather than guess it, and put anything unclear in that note's concerns. If one message holds several separate things, make several notes.
@@ -155,12 +158,88 @@ How you work:
   ];
 }
 
+
+// ---- What James may read and change (switched on and off in the Note Machine).
+const READ_GROUPS = ["payments", "fixtures", "rosters"];
+const WRITE_GROUPS = ["notes", "payments", "fixtures", "leagues", "players"];
+function permissions(settings) {
+  const s = (settings && settings.permissions) || {};
+  const out = { read: {}, write: {} };
+  READ_GROUPS.forEach((g) => { out.read[g] = !(s.read && s.read[g] === false); });
+  WRITE_GROUPS.forEach((g) => { out.write[g] = !(s.write && s.write[g] === false); });
+  return out;
+}
+function mergePermissions(settings, input) {
+  const cur = permissions(settings);
+  READ_GROUPS.forEach((g) => { if (input && input.read && typeof input.read[g] === "boolean") cur.read[g] = input.read[g]; });
+  WRITE_GROUPS.forEach((g) => { if (input && input.write && typeof input.write[g] === "boolean") cur.write[g] = input.write[g]; });
+  return { ...(settings || {}), permissions: cur };
+}
+
+const CHANGE_KINDS = {
+  payments: ["pay_record", "pay_mark_player_paid", "pay_mark_team_paid", "pay_discount_player", "pay_discount_team", "pay_set_share"],
+  fixtures: ["fix_round_schedule"],
+  leagues: ["league_set_fee", "league_create", "team_add"],
+  players: ["player_add", "player_move"],
+  notes: ["note_update"],
+};
+const MAX_CHANGES = 25;
+
+function changesTool(perms) {
+  const kinds = [];
+  WRITE_GROUPS.forEach((g) => { if (perms.write[g]) kinds.push(...CHANGE_KINDS[g]); });
+  if (!kinds.length) return null;
+  const str = (description) => ({ type: "string", description });
+  return {
+    name: "propose_changes",
+    description: "Propose changes to payments, round dates, leagues, teams, players or existing notes. The admin sees each change spelled out and presses Confirm; nothing happens before that. One entry per change. Use only ids that appear in the data.",
+    input_schema: {
+      type: "object",
+      properties: {
+        changes: {
+          type: "array", maxItems: MAX_CHANGES,
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: kinds, description: "pay_record: money received from a player (amountRands). pay_mark_player_paid: settle whatever a player still owes. pay_mark_team_paid: the team paid its whole fee. pay_discount_player / pay_discount_team: a discount in rands (0 removes it). pay_set_share: what one player pays in rands (null = even split); the rest of the team split the remainder. fix_round_schedule: set a round's date (YYYY-MM-DD), time (HH:MM) and/or venue; refused if the round has finished matches. league_set_fee: the team fee in rands. league_create: a new hidden league (needs name and adminEmail). team_add / player_add: add a team or player by name. player_move: move a player between teams (toTeamId) or take him off his team (toTeamId left out); only before a season starts. note_update: change an existing note's status, priority, categoryId, dueDate or pinned." },
+              leagueId: str("League id from the data"), teamId: str("Team id from the data"), playerId: str("Player id from the data"), noteId: str("Note id from the open notes"),
+              fromTeamId: str("For player_move: the team he is on now. Leave out if he is on the 'no team yet' list."), toTeamId: str("For player_move: the team he goes to. Leave out to take him off his team."),
+              amountRands: { type: ["number", "null"], description: "Rand amount" }, note: str("Reason for a discount"),
+              round: { type: ["integer", "string"], description: "Round number, or semis / final / positions" },
+              date: str("YYYY-MM-DD"), time: str("HH:MM, 24-hour"), venue: str("Venue name"), name: str("Name of the new league, team or player"), adminEmail: str("Admin email for a new league"),
+              status: { type: "string", enum: ["open", "done"] }, priority: { type: "string", enum: ["urgent", "high", "normal", "low"] }, categoryId: str("Category id"), dueDate: str("YYYY-MM-DD"), pinned: { type: "boolean" },
+              why: str("One short phrase: why this change"),
+            },
+            required: ["kind"],
+          },
+        },
+      },
+      required: ["changes"],
+    },
+  };
+}
+const CHANGE_FIELDS = ["leagueId", "teamId", "playerId", "noteId", "fromTeamId", "toTeamId", "note", "date", "time", "venue", "name", "adminEmail", "status", "priority", "categoryId", "dueDate", "why"];
+// Keeps only the fields a change can have, trimmed, and only kinds that are switched on.
+function cleanChanges(raw, perms) {
+  const allowed = new Set();
+  WRITE_GROUPS.forEach((g) => { if (perms.write[g]) CHANGE_KINDS[g].forEach((k) => allowed.add(k)); });
+  return (Array.isArray(raw) ? raw : []).slice(0, MAX_CHANGES).map((c) => {
+    if (!c || !allowed.has(c.kind)) return null;
+    const out = { kind: c.kind };
+    CHANGE_FIELDS.forEach((f) => { if (c[f] !== undefined && c[f] !== null) out[f] = String(c[f]).trim().slice(0, 200); });
+    if (c.amountRands !== undefined) out.amountRands = c.amountRands === null || c.amountRands === "" ? null : Number(c.amountRands);
+    if (c.round !== undefined && c.round !== null) out.round = ["semis", "final", "positions"].includes(String(c.round)) ? String(c.round) : Number(c.round);
+    if (c.pinned !== undefined) out.pinned = !!c.pinned;
+    return out;
+  }).filter(Boolean);
+}
+
 class JamesError extends Error {
   constructor(message, status) { super(message); this.status = status || 502; }
 }
 
 // One call to the Messages API. `fetchImpl` is injectable for tests.
-async function callClaude({ cfg, system, messages, maxTokens = 1500, fetchImpl = fetch, timeoutMs = 45000 }) {
+async function callClaude({ cfg, system, messages, tools = TOOLS, maxTokens = 3000, fetchImpl = fetch, timeoutMs = 60000 }) {
   if (!cfg.apiKey) throw new JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
@@ -169,7 +248,7 @@ async function callClaude({ cfg, system, messages, maxTokens = 1500, fetchImpl =
     res = await fetchImpl(API_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": cfg.apiKey, "anthropic-version": API_VERSION },
-      body: JSON.stringify({ model: cfg.model, max_tokens: maxTokens, system, messages, tools: TOOLS, tool_choice: { type: "auto" } }),
+      body: JSON.stringify({ model: cfg.model, max_tokens: maxTokens, system, messages, tools, tool_choice: { type: "auto" } }),
       signal: ctl.signal,
     });
   } catch (e) {
@@ -199,7 +278,7 @@ function cleanProposals(toolUses, ctx) {
   const str = (v, max) => String(v == null ? "" : v).trim().slice(0, max);
   const catIds = new Set((ctx.categories || []).map((c) => c.id));
   const leagues = new Map((ctx.leagues || []).map((l) => [l.id, l]));
-  const out = { notes: [], messages: [] };
+  const out = { notes: [], messages: [], changes: [] };
   toolUses.forEach((tu) => {
     if (tu.name === "propose_notes" && Array.isArray(tu.input.notes)) {
       tu.input.notes.slice(0, 10).forEach((n) => {
@@ -221,6 +300,8 @@ function cleanProposals(toolUses, ctx) {
           concerns: (Array.isArray(n.concerns) ? n.concerns : []).map((c) => str(c, 200)).filter(Boolean).slice(0, 4),
         });
       });
+    } else if (tu.name === "propose_changes" && Array.isArray(tu.input.changes)) {
+      out.changes.push(...tu.input.changes);
     } else if (tu.name === "draft_messages" && Array.isArray(tu.input.messages)) {
       tu.input.messages.slice(0, 20).forEach((m) => {
         const text = str(m && m.text, 2000);
@@ -247,4 +328,4 @@ function cleanHistory(history, message) {
   return turns;
 }
 
-module.exports = { config, costUsd, saNow, usageSummary, checkLimits, recordUsage, systemPrompt, callClaude, cleanProposals, cleanHistory, JamesError, TOOLS, PRICES };
+module.exports = { READ_GROUPS, WRITE_GROUPS, permissions, mergePermissions, changesTool, cleanChanges, MAX_CHANGES, config, costUsd, saNow, usageSummary, checkLimits, recordUsage, systemPrompt, callClaude, cleanProposals, cleanHistory, JamesError, TOOLS, PRICES };

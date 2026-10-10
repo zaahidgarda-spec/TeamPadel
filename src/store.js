@@ -185,6 +185,8 @@ async function init() {
   cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
   cache.set("admin-hub", (await redis.get("admin-hub")) || { items: [] });
   cache.set("james-usage", (await redis.get("james-usage")) || { months: {}, days: {} });
+  cache.set("james-settings", (await redis.get("james-settings")) || {});
+  cache.set("james-log", (await redis.get("james-log")) || { sets: [] });
   cache.set("player-ratings", (await redis.get("player-ratings")) || { items: {} });
   cache.set("prediction-accuracy", (await redis.get("prediction-accuracy")) || { latest: null, history: [] });
   cache.set("site-settings", (await redis.get("site-settings")) || {});
@@ -537,6 +539,25 @@ function saveJamesUsage(u) {
   writeJsonFile("james-usage", u);
 }
 
+// What James is allowed to read and change (switched on and off in the Note
+// Machine), and the record of every change he has made, with what's needed to undo it.
+function getJamesSettings() {
+  if (useRedis) return cache.get("james-settings") || {};
+  return readJsonFile("james-settings", {});
+}
+function saveJamesSettings(v) {
+  if (useRedis) { cache.set("james-settings", v); persist("james-settings", v); return; }
+  writeJsonFile("james-settings", v);
+}
+function getJamesLog() {
+  if (useRedis) return cache.get("james-log") || { sets: [] };
+  return readJsonFile("james-log", { sets: [] });
+}
+function saveJamesLog(v) {
+  if (useRedis) { cache.set("james-log", v); persist("james-log", v); return; }
+  writeJsonFile("james-log", v);
+}
+
 // Opponent attribute ratings (the FIFA-style player card) — one record per
 // rater + match + rated player, keyed so a repeat submit overwrites rather
 // than double-counts. Rater ids stay in the store but are never sent to a
@@ -623,6 +644,10 @@ module.exports = {
   saveAdminHub,
   getJamesUsage,
   saveJamesUsage,
+  getJamesSettings,
+  saveJamesSettings,
+  getJamesLog,
+  saveJamesLog,
   getKitPhoto,
   saveKitPhoto,
   deleteKitPhotosForTeam,

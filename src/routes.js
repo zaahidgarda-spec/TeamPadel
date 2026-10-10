@@ -4467,7 +4467,9 @@ router.delete(
 // goes into the league's "no team yet" list, with his history, photo and
 // account link intact) or moved straight to another team. Setup only, since
 // mid-season a roster change would rewrite who played what.
-function movePlayerBetweenTeams(league, player, fromTeam, toTeam) {
+// The league-data half of a move (no accounts touched), so it can be tried on a
+// copy first. movePlayerBetweenTeams does both halves.
+function movePlayerRecord(league, player, fromTeam, toTeam) {
   // Whatever he was on the old team doesn't carry: not an owner, not gold.
   if (fromTeam) {
     fromTeam.players = fromTeam.players.filter((p) => p.id !== player.id);
@@ -4486,18 +4488,23 @@ function movePlayerBetweenTeams(league, player, fromTeam, toTeam) {
     player.removedAt = Date.now();
     league.freeAgents.push(player);
   }
-  // Accounts linked to him follow him to the new team.
-  const oldTeamId = fromTeam ? fromTeam.id : player.removedFromTeamId;
-  if (toTeam) {
-    store.getUsersIndex().forEach(({ id }) => {
-      const user = store.getUser(id);
-      if (!user || !(user.claims || []).some((c) => c.leagueId === league.id && c.playerId === player.id)) return;
-      const seen = new Set();
-      user.claims = user.claims.map((c) => (c.leagueId === league.id && c.playerId === player.id ? { ...c, teamId: toTeam.id } : c))
-        .filter((c) => { const k = c.leagueId + ":" + c.teamId + ":" + c.playerId; if (seen.has(k)) return false; seen.add(k); return true; });
-      store.saveUser(user.id, user);
-    });
-  }
+  return fromTeam ? fromTeam.id : player.removedFromTeamId;
+}
+// Accounts linked to him follow him to the new team.
+function followPlayerToTeam(league, player, toTeam) {
+  if (!toTeam) return;
+  store.getUsersIndex().forEach(({ id }) => {
+    const user = store.getUser(id);
+    if (!user || !(user.claims || []).some((c) => c.leagueId === league.id && c.playerId === player.id)) return;
+    const seen = new Set();
+    user.claims = user.claims.map((c) => (c.leagueId === league.id && c.playerId === player.id ? { ...c, teamId: toTeam.id } : c))
+      .filter((c) => { const k = c.leagueId + ":" + c.teamId + ":" + c.playerId; if (seen.has(k)) return false; seen.add(k); return true; });
+    store.saveUser(user.id, user);
+  });
+}
+function movePlayerBetweenTeams(league, player, fromTeam, toTeam) {
+  const oldTeamId = movePlayerRecord(league, player, fromTeam, toTeam);
+  followPlayerToTeam(league, player, toTeam);
   return oldTeamId;
 }
 function requireSetupTeamLeague(league, res) {
@@ -4900,68 +4907,145 @@ function hubPaymentsData() {
   return { teams, leagues };
 }
 router.get("/admin/hub/payments", requireOwnerSession, (req, res) => { res.json(hubPaymentsData()); });
-// ---- James: the admin assistant in the Note Machine (see src/james.js).
-// He reads a summary of the notes and payments, and can answer, propose notes
-// or draft messages. He can't save or send anything: notes are only created
-// when the admin confirms, through the same builder as the quick add.
-function jamesContext() {
+// ---- James: the admin assistant in the Note Machine (see src/james.js and
+// src/jamesActions.js). He reads a summary of the data, and can answer, propose
+// notes, draft messages or propose changes. He saves nothing himself: every
+// change is shown to the admin, who confirms it, and each confirmed set is
+// logged and can be undone.
+let jamesActionsInstance = null;
+function jamesActions() {
+  if (jamesActionsInstance) return jamesActionsInstance;
+  jamesActionsInstance = require("./jamesActions")({
+    store, logic, RESET_PAYMENT_FIELDS, HUB_PRIORITIES,
+    hubExcludedLeague, hubExcludedLeagueIds, hubCategories, applyHubFields,
+    playerOwedCents, playerShareCents, playerBaseShareFor, teamFeeCents, teamBalanceCents, addPlayerPayment,
+    reconcilePlayerStatus, reconcileTeamPayment, coverTeamPlayers,
+    movePlayerRecord, followPlayerToTeam, setPlayerClaimsTeam, leagueStatus, genTeamCode, newLeagueObj,
+    audit: (league, who, text) => logAudit(league, { session: { isOwner: true } }, null, "james_change", { actor: "James, for " + who, text }),
+  });
+  return jamesActionsInstance;
+}
+function setPlayerClaimsTeam(leagueId, playerId, teamId) {
+  store.getUsersIndex().forEach(({ id }) => {
+    const user = store.getUser(id);
+    if (!user || !(user.claims || []).some((c) => c.leagueId === leagueId && c.playerId === playerId)) return;
+    user.claims = user.claims.map((c) => (c.leagueId === leagueId && c.playerId === playerId ? { ...c, teamId } : c));
+    store.saveUser(user.id, user);
+  });
+}
+function jamesPermissions() { return james.permissions(store.getJamesSettings()); }
+function jamesChangesToday(actor, now) {
+  const day = james.saNow(now).day;
+  return (store.getJamesLog().sets || []).filter((s) => s.by === actor && james.saNow(s.at).day === day).reduce((n, s) => n + s.changes.length, 0);
+}
+function jamesContext(perms) {
   const hub = store.getAdminHub();
   const excluded = hubExcludedLeagueIds();
   const categories = hubCategories(hub).map((c) => ({ id: c.id, name: c.name }));
-  const leagues = store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).map((e) => {
-    const l = store.getLeague(e.id);
-    return { id: e.id, name: e.name, teams: l ? l.teams.map((t) => ({ id: t.id, name: t.name })) : [] };
-  });
-  const pay = hubPaymentsData();
+  const entries = store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name));
+  const full = entries.map((e) => store.getLeague(e.id)).filter(Boolean);
+  const leagues = full.map((l) => ({ id: l.id, name: l.name, teams: l.teams.map((t) => ({ id: t.id, name: t.name })) }));
+  const pay = perms.read.payments ? hubPaymentsData() : null;
   const leagueName = (id) => (leagues.find((l) => l.id === id) || {}).name || null;
   const catName = (id) => (categories.find((c) => c.id === id) || {}).name || null;
-  const build = (playerCap, noteCap) => {
-    const payments = pay.leagues.map((l) => ({
-      league: l.leagueName, leagueId: l.leagueId, feePerPlayerRands: l.feeCents / 100, noFeeSetYet: !!l.noFee, paymentsTracked: !!l.tracked,
-      collectedRands: l.collectedCents / 100, owedRands: l.owedCents / 100, teams: l.teamCount, teamsPaidInFull: l.teamsPaid || 0,
-      teamsOwing: pay.teams.filter((t) => t.leagueId === l.leagueId).slice(0, 30).map((t) => ({
-        team: t.teamName, teamOwedRands: t.teamOwedCents / 100,
-        playersOwing: t.players.slice(0, playerCap).map((p) => ({ name: p.name, owedRands: p.owedCents / 100, paidRands: p.paidCents / 100 })),
-      })),
-    }));
-    const openNotes = (hub.items || []).filter((i) => i.status !== "done" && !(i.leagueId && excluded.has(i.leagueId)))
+  const R = (c) => Math.round(c) / 100;
+  const roundsOf = (l, cap) => {
+    const byRound = new Map();
+    l.fixtures.forEach((f) => { if (!byRound.has(f.round)) byRound.set(f.round, []); byRound.get(f.round).push(f); });
+    const rounds = Array.from(byRound.keys()).sort((a, b) => a - b).map((n) => {
+      const fs = byRound.get(n), sched = (l.schedule && l.schedule["r" + n]) || {};
+      const name = (id) => (l.teams.find((t) => t.id === id) || {}).name || "?";
+      return {
+        round: n, date: sched.date || null, time: sched.time || null, venue: sched.venue || null, finished: fs.filter((f) => f.finalized).length + "/" + fs.length,
+        matches: fs.map((f) => {
+          let res = "";
+          if (f.finalized) { const w = (f.rubbers || []).map((r) => logic.rubberWinner(r)); res = ` (${w.filter((x) => x === "A").length}-${w.filter((x) => x === "B").length})`; }
+          return `${name(f.teamA)} v ${name(f.teamB)}${res}`;
+        }),
+        done: fs.every((f) => f.finalized),
+      };
+    });
+    const upcoming = rounds.filter((r) => !r.done).slice(0, cap);
+    const lastDone = rounds.filter((r) => r.done).slice(-2);
+    return lastDone.concat(upcoming).map(({ done: _d, ...r }) => r);
+  };
+  const build = (level) => {
+    const playerCap = level ? 5 : 12, noteCap = level ? 30 : 60, roundCap = level ? 2 : 4;
+    const base = {
+      today: `${new Date(james.saNow().day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })} ${james.saNow().day}`,
+      categories,
+      leagues: full.map((l) => ({ id: l.id, name: l.name, status: leagueStatus(l), format: l.format, teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null })),
+    };
+    if (perms.read.rosters) {
+      base.rosters = full.map((l) => ({ leagueId: l.id, teams: l.teams.map((t) => ({ id: t.id, name: t.name, players: t.players.map((p) => ({ id: p.id, name: p.name })) })), noTeamYet: (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name })) }));
+    } else base.leagueTeams = leagues;
+    if (pay) {
+      base.payments = pay.leagues.map((l) => ({
+        league: l.leagueName, leagueId: l.leagueId, feePerTeamRands: l.feeCents / 100, noFeeSetYet: !!l.noFee, paymentsTracked: !!l.tracked,
+        collectedRands: l.collectedCents / 100, owedRands: l.owedCents / 100, teams: l.teamCount, teamsPaidInFull: l.teamsPaid || 0,
+        teamsOwing: pay.teams.filter((t) => t.leagueId === l.leagueId).slice(0, 30).map((t) => ({
+          team: t.teamName, teamId: t.teamId, teamOwedRands: t.teamOwedCents / 100,
+          playersOwing: t.players.slice(0, playerCap).map((p) => ({ playerId: p.playerId, name: p.name, owedRands: p.owedCents / 100, paidRands: p.paidCents / 100 })),
+        })),
+      }));
+    }
+    if (perms.read.fixtures) base.fixtures = full.filter((l) => l.fixtures.length).map((l) => ({ league: l.name, leagueId: l.id, rounds: roundsOf(l, roundCap) }));
+    base.openNotes = (hub.items || []).filter((i) => i.status !== "done" && !(i.leagueId && excluded.has(i.leagueId)))
       .sort((a, b) => b.createdAt - a.createdAt).slice(0, noteCap).map((i) => ({
-        title: i.title, type: i.type, priority: i.priority || "normal", due: i.dueDate || null, league: leagueName(i.leagueId), category: catName(i.categoryId),
+        id: i.id, title: i.title, type: i.type, priority: i.priority || "normal", due: i.dueDate || null, league: leagueName(i.leagueId), category: catName(i.categoryId),
         amountRands: i.amountCents ? i.amountCents / 100 : null, addedBy: i.createdBy, added: new Date(i.createdAt).toISOString().slice(0, 10),
       }));
-    const day = james.saNow().day;
-    const weekday = new Date(day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
-    return JSON.stringify({ today: `${weekday} ${day}`, categories, leagues: leagues.map((l) => ({ id: l.id, name: l.name, teams: l.teams })), payments, openNotes });
+    return JSON.stringify(base);
   };
-  let text = build(12, 60);
-  if (text.length > 60000) text = build(5, 20);
+  let text = build(0);
+  if (text.length > 60000) text = build(1);
   return { text, raw: { categories, leagues } };
 }
-router.get("/admin/james/status", requireOwnerSession, (req, res) => {
+function jamesStatusPayload(actor) {
   const cfg = james.config();
-  res.json({ enabled: !!cfg.apiKey, model: cfg.model, usage: james.usageSummary(store.getJamesUsage(), adminActorName(req), cfg) });
+  return {
+    enabled: !!cfg.apiKey, model: cfg.model, usage: james.usageSummary(store.getJamesUsage(), actor, cfg),
+    changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges }, permissions: jamesPermissions(),
+  };
+}
+router.get("/admin/james/status", requireOwnerSession, (req, res) => { res.json(jamesStatusPayload(adminActorName(req))); });
+router.get("/admin/james/permissions", requireOwnerSession, (req, res) => { res.json({ permissions: jamesPermissions() }); });
+router.put("/admin/james/permissions", requireOwnerSession, (req, res) => {
+  const next = james.mergePermissions(store.getJamesSettings(), req.body && req.body.permissions);
+  store.saveJamesSettings(next);
+  res.json({ permissions: james.permissions(next) });
 });
 router.post("/admin/james", requireOwnerSession, async (req, res) => {
   const actor = adminActorName(req);
   const cfg = james.config();
+  const perms = jamesPermissions();
   const message = String((req.body && req.body.message) || "").trim().slice(0, 2000);
   if (!message) return res.status(400).json({ error: "Ask James something first." });
   try {
     if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
     james.checkLimits(store.getJamesUsage(), actor, cfg);
-    const ctx = jamesContext();
-    const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.cleanHistory(req.body.history, message) });
+    const ctx = jamesContext(perms);
+    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes);
+    const ct = james.changesTool(perms);
+    if (ct) tools.push(ct);
+    const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.cleanHistory(req.body.history, message), tools });
     const usage = james.recordUsage(store.getJamesUsage(), actor, james.costUsd(result.model, result.usage));
     store.saveJamesUsage(usage);
     const proposals = james.cleanProposals(result.toolUses, ctx.raw);
-    const reply = result.text || (proposals.notes.length || proposals.messages.length ? "" : "I didn't catch that. Could you say it another way?");
-    res.json({ reply, notes: proposals.notes, messages: proposals.messages, usage: james.usageSummary(usage, actor, cfg) });
+    const changes = james.cleanChanges(proposals.changes, perms);
+    const previews = changes.length ? jamesActions().preview(changes, { actor, perms }) : [];
+    const reply = result.text || (proposals.notes.length || proposals.messages.length || changes.length ? "" : "I didn't catch that. Could you say it another way?");
+    res.json({
+      reply, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
+      changes: changes.map((c, i) => ({ ...c, preview: previews[i] })), usage: james.usageSummary(usage, actor, cfg),
+    });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "James hit a problem." });
   }
 });
 // The admin pressed Confirm on James's proposed notes.
 router.post("/admin/james/notes", requireOwnerSession, (req, res) => {
+  if (!jamesPermissions().write.notes) return res.status(403).json({ error: "Notes are switched off in James's permissions." });
   const list = Array.isArray(req.body && req.body.notes) ? req.body.notes.slice(0, 10) : [];
   if (!list.length) return res.status(400).json({ error: "There's nothing to save." });
   const who = adminActorName(req);
@@ -4983,6 +5067,26 @@ router.post("/admin/james/notes", requireOwnerSession, (req, res) => {
   hub.items = (hub.items || []).concat(items);
   store.saveAdminHub(hub);
   res.json({ items: items.map(hubItemView) });
+});
+// The admin pressed Confirm on proposed changes. Everything is checked again from
+// scratch, and nothing is saved unless every change in the set works.
+router.post("/admin/james/apply", requireOwnerSession, (req, res) => {
+  const actor = adminActorName(req);
+  const cfg = james.config();
+  const perms = jamesPermissions();
+  const changes = james.cleanChanges(req.body && req.body.changes, perms);
+  if (!changes.length) return res.status(400).json({ error: "There's nothing to change." });
+  if (jamesChangesToday(actor) + changes.length > cfg.dailyChanges) return res.status(429).json({ error: `That would go over today's limit of ${cfg.dailyChanges} changes by James for you. It resets at midnight.` });
+  try {
+    const r = jamesActions().apply(changes, { actor, request: req.body.request, perms });
+    if (!r.ok) return res.status(400).json({ error: "Nothing was changed. One or more of these can't be done.", results: r.results });
+    res.json({ ok: true, setId: r.setId, results: r.results, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
+  } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't apply that." }); }
+});
+router.get("/admin/james/log", requireOwnerSession, (req, res) => { res.json({ sets: jamesActions().recentLog(30) }); });
+router.post("/admin/james/log/:id/undo", requireOwnerSession, (req, res) => {
+  try { jamesActions().undo(req.params.id, { actor: adminActorName(req) }); res.json({ ok: true }); }
+  catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't undo that." }); }
 });
 router.put("/admin/hub/league-tracking", requireOwnerSession, (req, res) => {
   const league = store.getLeague(req.body && req.body.leagueId);
@@ -9393,4 +9497,5 @@ router.checkLineupReminders = checkLineupReminders;
 // redirects through — see the /pay and /pay-team routes there.
 router.findTeamAndPlayer = findTeamAndPlayer;
 router.playerShareCents = playerShareCents;
+router.playerOwedCents = playerOwedCents;
 module.exports = router;
