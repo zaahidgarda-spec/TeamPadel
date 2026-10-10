@@ -320,7 +320,7 @@ function checkLineupReminders() {
       // waiting on the previous round, or its date-based lead time) — skip
       // it here too, same reasoning as /players/lineups-due below.
       if (!isRoundOpen(league, f)) return;
-      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const sched = logic.scheduleOf(league, f);
       if (!sched.date) return; // nothing scheduled yet — no kickoff to count down to
       const kickoffMs = kickoffMsOf(sched.date, sched.time || "00:00");
       if (kickoffMs === null || kickoffMs - now > LINEUP_REMINDER_WINDOW_MS) return;
@@ -911,7 +911,7 @@ router.get("/me/pending-score", (req, res) => {
   const candidates = league.fixtures
     .filter((f) => !f.finalized && (f.teamA === u.teamId || f.teamB === u.teamId) && f.selectionA.submitted && f.selectionB.submitted)
     .filter((f) => {
-      const sched = (league.schedule && league.schedule["r" + f.round]) || {};
+      const sched = logic.scheduleOf(league, f);
       if (!sched.date) return true; // nothing scheduled to gate against — same permissive fallback the in-league banner uses
       if (sched.date < todayStr) return true; // a past matchday is well past kickoff either way
       if (sched.date > todayStr) return false;
@@ -1035,7 +1035,7 @@ function buildNextMatchesPairings(leagues, ratingsData, identityOf) {
       const teamA = league.teams.find((t) => t.id === f.teamA);
       const teamB = league.teams.find((t) => t.id === f.teamB);
       if (!teamA || !teamB) return;
-      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const sched = logic.scheduleOf(league, f);
       (recent ? recentFixtures : fixtures).push({ league, f, teamA, teamB, sched });
     });
   });
@@ -2485,7 +2485,7 @@ function teamNextFixture(league, team) {
   const upcoming = logic.allFixturesOf(league)
     .filter((f) => !f.finalized && f.teamA && f.teamB && (f.teamA === team.id || f.teamB === team.id))
     .map((f) => {
-      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const sched = logic.scheduleOf(league, f);
       const oppTeam = league.teams.find((t) => t.id === (f.teamA === team.id ? f.teamB : f.teamA));
       return {
         fixtureId: f.id, label: fixtureLabel(league, f),
@@ -2518,7 +2518,7 @@ function teamPlayoffSplash(league, team, isCaptain) {
   for (const f of logic.allFixturesOf(league)) {
     if ((f.stage !== "semi" && f.stage !== "final") || f.finalized || !f.teamA || !f.teamB) continue;
     if (f.teamA !== team.id && f.teamB !== team.id) continue;
-    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    const sched = logic.scheduleOf(league, f);
     if (!sched.date) continue;
     const matchDate = new Date(sched.date + "T00:00:00");
     if (isNaN(matchDate)) continue;
@@ -2566,7 +2566,7 @@ function leagueFinalsSpectatorSplash(league, myTeamIds) {
     // everyone else. The final is the one moment worth surfacing league-wide.
     if (f.stage !== "final" || f.finalized || !f.teamA || !f.teamB) continue;
     if (myTeamIds.has(f.teamA) || myTeamIds.has(f.teamB)) continue; // already covered as a participant
-    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    const sched = logic.scheduleOf(league, f);
     if (!sched.date) continue;
     const matchDate = new Date(sched.date + "T00:00:00");
     if (isNaN(matchDate)) continue;
@@ -3511,7 +3511,7 @@ function teamMatchesIn(league, teamId) {
       const myWins = isA ? winsA : winsB, oppWins = isA ? winsB : winsA;
       const winner = logic.matchWinner(f);
       const result = winner ? (winner === (isA ? "A" : "B") ? "W" : "L") : myWins === oppWins ? "D" : myWins > oppWins ? "W" : "L";
-      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const sched = logic.scheduleOf(league, f);
       return {
         fixtureId: f.id, opponentName: opp ? opp.name : "TBD", opponentLogo: opp ? opp.logo || "" : "",
         score: `${myWins}-${oppWins}`, result, date: sched.date || "", venue: sched.venue || "",
@@ -4960,7 +4960,8 @@ function jamesContext(perms) {
         matches: fs.map((f) => {
           let res = "";
           if (f.finalized) { const w = (f.rubbers || []).map((r) => logic.rubberWinner(r)); res = ` (${w.filter((x) => x === "A").length}-${w.filter((x) => x === "B").length})`; }
-          return `${name(f.teamA)} v ${name(f.teamB)}${res}`;
+          const own = f.scheduleOverride;
+          return { id: f.id, match: `${name(f.teamA)} v ${name(f.teamB)}${res}`, ...(own ? { movedTo: [own.date, own.time, own.venue].filter(Boolean).join(" ") } : {}) };
         }),
         done: fs.every((f) => f.finalized),
       };
@@ -5604,6 +5605,36 @@ router.put("/leagues/:leagueId/schedule/:key", requireAdmin, (req, res) => {
   league.schedule[req.params.key] = entry;
   store.saveLeague(league.id, league);
   res.json({ ok: true });
+});
+
+// One match moved on its own (another day, time or venue) without touching the
+// rest of its round. Whatever is set here wins over the round's schedule for this
+// match only; clear:true puts it back to the round's.
+router.put("/leagues/:leagueId/fixtures/:fixtureId/schedule", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = logic.allFixturesOf(league).find((x) => x && x.id === req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Match not found." });
+  if (f.finalized) return res.status(400).json({ error: "That match has already been played." });
+  const b = req.body || {};
+  if (b.clear) delete f.scheduleOverride;
+  else {
+    const o = { ...(f.scheduleOverride || {}) };
+    if (b.date !== undefined) {
+      if (b.date !== "" && (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || Number.isNaN(new Date(b.date + "T12:00:00Z").getTime()))) return res.status(400).json({ error: "That date doesn't look right." });
+      o.date = b.date;
+    }
+    if (b.time !== undefined) {
+      if (b.time !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.time)) return res.status(400).json({ error: "That time doesn't look right." });
+      o.time = b.time;
+    }
+    if (b.venue !== undefined) o.venue = cleanHubText(b.venue, 120);
+    Object.keys(o).forEach((k) => { if (!o[k]) delete o[k]; });
+    if (Object.keys(o).length) f.scheduleOverride = o; else delete f.scheduleOverride;
+  }
+  logAudit(league, req, f, "match_schedule", { override: f.scheduleOverride || null });
+  store.saveLeague(league.id, league);
+  res.json({ ok: true, scheduleOverride: f.scheduleOverride || null });
 });
 
 /* ---------- Court schedule (which match plays on which court, when) ---------- */
@@ -6739,7 +6770,7 @@ router.get("/players/lineups-due", requirePlayerUser, (req, res) => {
       const sel = side === "A" ? f.selectionA : f.selectionB;
       if (sel.submitted) return;
       const oppTeam = league.teams.find((t) => t.id === (side === "A" ? f.teamB : f.teamA));
-      const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+      const sched = logic.scheduleOf(league, f);
       // Only meaningful once there's a real kickoff time, not just a date —
       // the client uses this to count down to the *real* deadline (24h
       // before kickoff), not kickoff itself; a date-only fixture has no
@@ -6823,7 +6854,7 @@ router.get("/players/pending-results", requirePlayerUser, (req, res) => {
     if (f.teamA !== team.id && f.teamB !== team.id) return;
     const key = league.id + ":" + f.id;
     if (seen.has(key)) return;
-    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    const sched = logic.scheduleOf(league, f);
     const kickoffMs = kickoffMsOf(sched.date, sched.time);
     const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);
     if (!started) return;
@@ -7066,7 +7097,7 @@ const RATING_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 function ratingMatchTime(league, f, rubber) {
   if (f.finalizedAt) return f.finalizedAt;
   if (rubber && rubber.completedAt) return rubber.completedAt;
-  const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+  const sched = logic.scheduleOf(league, f);
   const date = sched.date || f.date;
   if (!date) return 0;
   const ms = kickoffMsOf(date, sched.time) || new Date(date + "T12:00:00+02:00").getTime();
@@ -7122,7 +7153,7 @@ function ratableMatchesFor(user) {
         // The other half of this player's own pair, if there is one (a singles
         // seed has none) — rated too, but at half weight (see attributeCardForKeys).
         const partner = pair.filter((pid) => pid && pid !== c.playerId && !mine.has(league.id + ":" + pid)).map((pid) => ref(team, pid)).filter(Boolean)[0] || null;
-        const sched = (src.schedule && src.schedule[logic.stageKeyFor(f)]) || {};
+        const sched = logic.scheduleOf(src, f);
         byKey.set(key, {
           key, leagueId: league.id, leagueName: league.name, fixtureId: f.id, idx, when, seq: seq++,
           date: sched.date || f.date || "", label: logic.stageLabel(src, f),
@@ -7437,7 +7468,7 @@ function leagueHealth(league) {
     if (!f || f.finalized || !f.teamA || !f.teamB) return;
     unfinalized++;
     if (!current) current = f;
-    const sched = (league.schedule && league.schedule[logic.stageKeyFor(f)]) || {};
+    const sched = logic.scheduleOf(league, f);
     const kickoffMs = kickoffMsOf(sched.date, sched.time);
     f.rubbers.forEach((r) => { if (r.startedAt && !r.completedAt) liveCourts++; });
     const started = f.rubbers.some((r) => r.startedAt) || logic.fixtureScore(f).decided > 0 || (kickoffMs && kickoffMs < now);

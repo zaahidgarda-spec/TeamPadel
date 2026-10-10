@@ -250,6 +250,56 @@ module.exports = function createJamesActions(d) {
     },
   };
 
+  fixKinds.fix_match_schedule = {
+    label: "Schedule",
+    run(ctx, ch) {
+      const l = leagueFor(ctx, ch.leagueId);
+      const f = logic.allFixturesOf(l).find((x) => x && x.id === ch.fixtureId);
+      if (!f) throw err("I can't find that match.");
+      if (f.finalized) throw err("That match has already been played, so I won't move it.");
+      const name = (id) => (l.teams.find((t) => t.id === id) || {}).name || "?";
+      const label = `${name(f.teamA)} v ${name(f.teamB)}`;
+      const before = f.scheduleOverride ? clone(f.scheduleOverride) : null;
+      const was = logic.scheduleOf(l, f);
+      const warnings = [];
+      if (ch.clear === true || ch.clear === "true") {
+        if (!before) throw err("That match isn't moved. It's on its round's schedule already.");
+        delete f.scheduleOverride;
+      } else {
+        if (ch.date === undefined && ch.time === undefined && ch.venue === undefined) throw err("Tell me the new date, time or venue.");
+        const o = { ...(before || {}) };
+        if (ch.date !== undefined) {
+          if (ch.date !== "" && (!/^\d{4}-\d{2}-\d{2}$/.test(ch.date) || Number.isNaN(new Date(ch.date + "T12:00:00Z").getTime()))) throw err("That date doesn't look right.");
+          o.date = ch.date;
+          if (ch.date && ch.date < new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10)) warnings.push("That date is in the past.");
+        }
+        if (ch.time !== undefined) {
+          if (ch.time !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(ch.time)) throw err("That time doesn't look right (use 24-hour, like 19:30).");
+          o.time = ch.time;
+        }
+        if (ch.venue !== undefined) o.venue = clip(ch.venue, 120);
+        Object.keys(o).forEach((k) => { if (!o[k]) delete o[k]; });
+        if (Object.keys(o).length) f.scheduleOverride = o; else delete f.scheduleOverride;
+      }
+      const now = logic.scheduleOf(l, f);
+      if (JSON.stringify(now) === JSON.stringify(was)) throw err("It's already like that.");
+      ctx.touch(l.id);
+      return { leagueId: l.id, leagueName: l.name, warnings, text: `${l.name}, ${f.round ? "Round " + f.round + ", " : ""}${label}: ${schedDesc(was)} → ${schedDesc(now)}. Only this match moves.`, undo: { fixtureId: f.id, before }, after: JSON.stringify(f.scheduleOverride || null) };
+    },
+    check(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      const f = logic.allFixturesOf(l).find((x) => x && x.id === c.undo.fixtureId);
+      if (f && JSON.stringify(f.scheduleOverride || null) !== c.after) throw err("That match has been moved again since, so it can't be undone safely.");
+    },
+    revert(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      const f = logic.allFixturesOf(l).find((x) => x && x.id === c.undo.fixtureId);
+      if (!f) return;
+      if (c.undo.before) f.scheduleOverride = clone(c.undo.before); else delete f.scheduleOverride;
+      ctx.touch(l.id);
+    },
+  };
+
   // ---- leagues ------------------------------------------------------------
   const leagueKinds = {
     league_set_fee: {

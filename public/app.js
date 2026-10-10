@@ -7942,7 +7942,7 @@ function renderPendingScoreBanner() {
   const todayStr = new Date().toISOString().slice(0, 10);
   const candidates = league.fixtures
     .filter((f) => !f.finalized && (f.teamA === myTeamId || f.teamB === myTeamId) && f.selectionA.submitted && f.selectionB.submitted)
-    .filter((f) => { const sched = scheduleFor(stageKeyFor(f)); return !sched.date || sched.date <= todayStr; })
+    .filter((f) => { const sched = fixtureSched(f); return !sched.date || sched.date <= todayStr; })
     .sort((a, b) => a.round - b.round);
   const f = candidates[0];
   if (!f) { banner.style.display = "none"; return; }
@@ -9081,6 +9081,37 @@ function stageKeyFor(f) {
 function scheduleFor(key) {
   return (league.schedule && league.schedule[key]) || { date: "", venue: "", time: "" };
 }
+// One match can be moved on its own: its own date, time or venue wins over its round's.
+function fixtureSched(f) {
+  const base = scheduleFor(stageKeyFor(f));
+  const o = f.scheduleOverride;
+  if (!o) return base;
+  const merged = { ...base };
+  ["date", "time", "venue"].forEach((k) => { if (o[k]) merged[k] = o[k]; });
+  return merged;
+}
+function fixtureVenue(f) { return (f.scheduleOverride && f.scheduleOverride.venue) || effectiveVenue(stageKeyFor(f)); }
+function fxMoveHtml(f, sched, venue, moved) {
+  return `<div class="fx-move" data-fx="${f.id}"><button type="button" class="link fx-move-btn">${moved ? "Change this match's time" : "Move this match"}</button>
+    <span class="fx-move-form" hidden><input type="date" class="fx-d" value="${sched.date || ""}" data-inh="${scheduleFor(stageKeyFor(f)).date || ""}" aria-label="Date"><input type="time" class="fx-t" value="${sched.time || ""}" data-inh="${scheduleFor(stageKeyFor(f)).time || ""}" aria-label="Time"><input type="text" class="fx-v" value="${escapeHtml(venue || "")}" data-inh="${escapeHtml(effectiveVenue(stageKeyFor(f)))}" placeholder="Venue" aria-label="Venue">
+      <button type="button" class="primary fx-move-save">Save</button>${moved ? '<button type="button" class="link fx-move-clear">Back to the round\'s time</button>' : ""}<span class="fx-move-note">Only this match moves. The rest of the round stays as it is.</span></span></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest && e.target.closest(".fx-move-btn, .fx-move-save, .fx-move-clear");
+  if (!btn) return;
+  const box = btn.closest(".fx-move"); if (!box) return;
+  const form = box.querySelector(".fx-move-form");
+  if (btn.classList.contains("fx-move-btn")) { form.hidden = !form.hidden; return; }
+  // Only what differs from the round's own date, time and venue is saved on the match.
+  const own = (sel) => { const i = box.querySelector(sel); return i.value === i.dataset.inh ? "" : i.value; };
+  const body = btn.classList.contains("fx-move-clear") ? { clear: true } : { date: own(".fx-d"), time: own(".fx-t"), venue: own(".fx-v") };
+  btn.disabled = true;
+  try {
+    await api(`/leagues/${currentLeagueId}/fixtures/${box.dataset.fx}/schedule`, { method: "PUT", body });
+    await refreshLeague();
+    showToast(body.clear ? "Match is back on the round's time." : "Match moved.");
+  } catch (err) { btn.disabled = false; alert(err.message); }
+});
 function effectiveVenue(key) {
   const s = scheduleFor(key);
   return s.venue || league.defaultVenue || "";
@@ -12521,9 +12552,11 @@ function renderFixtures() {
     const badgeCls = f.finalized ? "done" : outstanding ? "outstanding" : "pending";
     const badgeLabel = f.finalized ? "Final" : outstanding ? "Match outstanding" : "Pending";
     let html = `<div class="fixture-head"><div class="fixture-title">${teamBadgeHtml(teamA, escapeHtml(teamA ? teamA.name : "TBD"))} <span class="vs">vs</span> ${teamBadgeHtml(teamB, escapeHtml(teamB ? teamB.name : "TBD"))}</div><div><span class="night-score">${headline.a} - ${headline.b}</span> <span class="badge ${badgeCls}">${badgeLabel}</span></div></div>`;
-    const sched = scheduleFor(stageKeyFor(f));
-    const venue = effectiveVenue(stageKeyFor(f));
-    if (sched.date || sched.time || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${sched.time ? "<span>" + fmtTime(sched.time) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}</div>`;
+    const sched = fixtureSched(f);
+    const venue = fixtureVenue(f);
+    const moved = f.scheduleOverride && (f.scheduleOverride.date || f.scheduleOverride.time || f.scheduleOverride.venue);
+    if (sched.date || sched.time || venue) html += `<div class="fixture-sub">${sched.date ? "<span>" + fmtDate(sched.date) + "</span>" : ""}${sched.time ? "<span>" + fmtTime(sched.time) + "</span>" : ""}${venue ? "<span>" + escapeHtml(venue) + "</span>" : ""}${moved ? '<span class="moved-tag">Moved</span>' : ""}</div>`;
+    if (myRole === "admin" && !f.finalized) html += fxMoveHtml(f, sched, venue, !!moved);
     if (teamA && teamB) {
       if (both) {
         html += '<div class="rubbers">';

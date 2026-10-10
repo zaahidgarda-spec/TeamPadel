@@ -546,6 +546,16 @@ function stageKeyFor(f) {
   if (f.stage === "position") return "positions";
   return "r" + f.round;
 }
+// When and where one match is played: its round's schedule, with anything set on
+// the match itself (a single match moved to another day, time or venue) winning.
+function scheduleOf(league, f) {
+  const round = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
+  const o = f && f.scheduleOverride;
+  if (!o) return round;
+  const merged = { ...round };
+  ["date", "time", "venue"].forEach((k) => { if (o[k]) merged[k] = o[k]; });
+  return merged;
+}
 function stageLabel(league, f) {
   if (f.stage === "semi") return "Semi finals";
   if (f.stage === "final") return "Final";
@@ -976,7 +986,7 @@ function findPlayerUpcoming(league, playerId, ratingsData, identityOf) {
           const oppPair = oppSelection.pairs[idx] || [null, null];
           const oppRefs = oppPair.map((pid) => { const p = oppTeam.players.find((x) => x.id === pid); return p ? { id: p.id, name: p.name } : null; }).filter(Boolean);
           const oppNames = oppRefs.map((r) => r.name);
-          const sched = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
+          const sched = scheduleOf(league, f);
           let prediction = null;
           if (partnerId && oppPair[0] && oppPair[1]) {
             const pred = predictSeed(league, [playerId, partnerId], oppPair, ratingsData, identityOf, league.format === "pairs" ? null : { seed: idx + 1, teamA: team.id, teamB: oppTeam.id });
@@ -1084,7 +1094,7 @@ const ELO_STAGE_ORDER = { regular: 0, semi: 1, position: 1, final: 2 };
 // league itself was created, so its fixtures still land in roughly the
 // right era relative to every other league's.
 function fixtureSortDate(league, f) {
-  const sched = league.schedule && league.schedule[stageKeyFor(f)];
+  const sched = scheduleOf(league, f);
   const dateStr = (sched && sched.date) || f.date || "";
   const parsed = dateStr ? Date.parse(dateStr + "T00:00:00") : NaN;
   return isNaN(parsed) ? league.createdAt : parsed;
@@ -1287,7 +1297,7 @@ function playerMatchHistory(league, playerId, ratingsData) {
     // Same schedule lookup findPlayerUpcoming uses for its own date/time —
     // a finalized fixture was scheduled same as any other, so this works
     // unchanged here.
-    const sched = (league.schedule && league.schedule[stageKeyFor(f)]) || {};
+    const sched = scheduleOf(league, f);
     mySel.pairs.forEach((pair, idx) => {
       if (!pair.includes(playerId)) return;
       const partnerId = pair[0] === playerId ? pair[1] : pair[0];
@@ -1757,6 +1767,7 @@ function namesSimilar(nameA, nameB) {
 }
 
 module.exports = {
+  scheduleOf,
   uid,
   emptyRubber,
   emptySelection,

@@ -178,7 +178,7 @@ function mergePermissions(settings, input) {
 
 const CHANGE_KINDS = {
   payments: ["pay_record", "pay_mark_player_paid", "pay_mark_team_paid", "pay_discount_player", "pay_discount_team", "pay_set_share"],
-  fixtures: ["fix_round_schedule"],
+  fixtures: ["fix_round_schedule", "fix_match_schedule"],
   leagues: ["league_set_fee", "league_create", "team_add"],
   players: ["player_add", "player_move"],
   notes: ["note_update"],
@@ -201,13 +201,13 @@ function changesTool(perms) {
           items: {
             type: "object",
             properties: {
-              kind: { type: "string", enum: kinds, description: "pay_record: money received from a player (amountRands). pay_mark_player_paid: settle whatever a player still owes. pay_mark_team_paid: the team paid its whole fee. pay_discount_player / pay_discount_team: a discount in rands (0 removes it). pay_set_share: what one player pays in rands (null = even split); the rest of the team split the remainder. fix_round_schedule: set a round's date (YYYY-MM-DD), time (HH:MM) and/or venue; refused if the round has finished matches. league_set_fee: the team fee in rands. league_create: a new hidden league (needs name and adminEmail). team_add / player_add: add a team or player by name. player_move: move a player between teams (toTeamId) or take him off his team (toTeamId left out); only before a season starts. note_update: change an existing note's status, priority, categoryId, dueDate or pinned." },
-              leagueId: str("League id from the data"), teamId: str("Team id from the data"), playerId: str("Player id from the data"), noteId: str("Note id from the open notes"),
+              kind: { type: "string", enum: kinds, description: "pay_record: money received from a player (amountRands). pay_mark_player_paid: settle whatever a player still owes. pay_mark_team_paid: the team paid its whole fee. pay_discount_player / pay_discount_team: a discount in rands (0 removes it). pay_set_share: what one player pays in rands (null = even split); the rest of the team split the remainder. fix_round_schedule: set a whole round's date (YYYY-MM-DD), time (HH:MM) and/or venue; refused if the round has finished matches. fix_match_schedule: move ONE match (fixtureId) to another date, time or venue without touching the rest of its round (clear = put it back on the round's schedule); refused if already played. league_set_fee: the team fee in rands. league_create: a new hidden league (needs name and adminEmail). team_add / player_add: add a team or player by name. player_move: move a player between teams (toTeamId) or take him off his team (toTeamId left out); only before a season starts. note_update: change an existing note's status, priority, categoryId, dueDate or pinned." },
+              leagueId: str("League id from the data"), fixtureId: str("Match id from the fixtures data"), teamId: str("Team id from the data"), playerId: str("Player id from the data"), noteId: str("Note id from the open notes"),
               fromTeamId: str("For player_move: the team he is on now. Leave out if he is on the 'no team yet' list."), toTeamId: str("For player_move: the team he goes to. Leave out to take him off his team."),
               amountRands: { type: ["number", "null"], description: "Rand amount" }, note: str("Reason for a discount"),
               round: { type: ["integer", "string"], description: "Round number, or semis / final / positions" },
               date: str("YYYY-MM-DD"), time: str("HH:MM, 24-hour"), venue: str("Venue name"), name: str("Name of the new league, team or player"), adminEmail: str("Admin email for a new league"),
-              status: { type: "string", enum: ["open", "done"] }, priority: { type: "string", enum: ["urgent", "high", "normal", "low"] }, categoryId: str("Category id"), dueDate: str("YYYY-MM-DD"), pinned: { type: "boolean" },
+              clear: { type: "boolean", description: "For fix_match_schedule: put the match back on its round's schedule" }, status: { type: "string", enum: ["open", "done"] }, priority: { type: "string", enum: ["urgent", "high", "normal", "low"] }, categoryId: str("Category id"), dueDate: str("YYYY-MM-DD"), pinned: { type: "boolean" },
               why: str("One short phrase: why this change"),
             },
             required: ["kind"],
@@ -218,7 +218,7 @@ function changesTool(perms) {
     },
   };
 }
-const CHANGE_FIELDS = ["leagueId", "teamId", "playerId", "noteId", "fromTeamId", "toTeamId", "note", "date", "time", "venue", "name", "adminEmail", "status", "priority", "categoryId", "dueDate", "why"];
+const CHANGE_FIELDS = ["leagueId", "fixtureId", "teamId", "playerId", "noteId", "fromTeamId", "toTeamId", "note", "date", "time", "venue", "name", "adminEmail", "status", "priority", "categoryId", "dueDate", "why"];
 // Keeps only the fields a change can have, trimmed, and only kinds that are switched on.
 function cleanChanges(raw, perms) {
   const allowed = new Set();
@@ -230,6 +230,7 @@ function cleanChanges(raw, perms) {
     if (c.amountRands !== undefined) out.amountRands = c.amountRands === null || c.amountRands === "" ? null : Number(c.amountRands);
     if (c.round !== undefined && c.round !== null) out.round = ["semis", "final", "positions"].includes(String(c.round)) ? String(c.round) : Number(c.round);
     if (c.pinned !== undefined) out.pinned = !!c.pinned;
+    if (c.clear !== undefined) out.clear = c.clear === true || c.clear === "true";
     return out;
   }).filter(Boolean);
 }
