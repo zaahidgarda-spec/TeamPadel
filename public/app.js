@@ -7308,7 +7308,11 @@ function ahVoiceStart(lang) {
 }
 
 // ---- Leo's own card in Cerebro: draw a logo or kit design yourself, without going through James ----
-let ahLeo = { shut: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", text: "", photos: [], error: "" };
+let ahLeo = { shut: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", refs: [], text: "", photos: [], error: "" };
+const AH_REF_LABEL = { logo: "logo", kit_front: "kit front", kit_back: "kit back" };
+// What a team has saved (logo, kit front, kit back), from the team list.
+function ahTeamHas(t) { return t ? { logo: !!t.hasLogo, kit_front: !!t.kitFront, kit_back: !!t.kitBack } : {}; }
+function ahDefaultRefs(kind, t) { const h = ahTeamHas(t); const out = []; if (kind === "kit_front" || kind === "kit_back") { ["logo", "kit_front", "kit_back"].forEach((k) => { if (h[k]) out.push(k); }); } return out; }
 function ahTurn(ti) { return ti === -1 ? ahLeo.turn : ahJ.thread[ti]; }
 // Leo lives on the Assistants page, so anything that changes one of his pictures redraws it.
 function ahPicRender() { ahJRender(); }
@@ -7331,6 +7335,12 @@ function ahLeoHtml() {
         <label>League<select id="leo-league"><option value="">Not for a team</option>${leagues.map((l) => `<option value="${l.id}"${l.id === ahLeo.leagueId ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}</select></label>
         <label>Team<select id="leo-team"${lg ? "" : " disabled"}><option value="">${lg ? "Pick a team" : "Pick a league first"}</option>${teams.map((t) => `<option value="${t.id}"${t.id === ahLeo.teamId ? " selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}</select></label>
       </div>
+      ${(() => {
+        const tm = teams.find((x) => x.id === ahLeo.teamId);
+        if (!tm) return "";
+        const has = ahTeamHas(tm), keys = ["logo", "kit_front", "kit_back"].filter((k) => has[k]);
+        return `<div class="leo-refs">${keys.length ? `<span class="muted">Let Leo start from ${escapeHtml(ahPoss(tm.name))} current:</span>${keys.map((k) => `<label><input type="checkbox" class="leo-ref" data-k="${k}"${ahLeo.refs.includes(k) ? " checked" : ""}> ${AH_REF_LABEL[k]}</label>`).join("")}` : `<span class="muted">${escapeHtml(tm.name)} has no saved logo or kit yet, so Leo starts from your words (or a photo).</span>`}</div>`;
+      })()}
       <textarea id="leo-text" rows="3" maxlength="3000" placeholder="${escapeHtml(AH_LEO_HINT[ahLeo.kind])}" aria-label="Describe the picture">${escapeHtml(ahLeo.text)}</textarea>
       ${ahLeo.photos.length ? `<div class="ahj-thumbs">${ahLeo.photos.map((im, i) => `<span class="ahj-thumb"><img src="${im.url}" alt="Photo to start from ${i + 1}"><button type="button" class="ahj-thumb-x leo-photo-x" data-i="${i}" aria-label="Remove photo ${i + 1}">&times;</button></span>`).join("")}</div>` : ""}
       <div class="ahj-gen-row"><input type="file" id="leo-file" accept="image/*" multiple hidden>
@@ -7346,9 +7356,10 @@ function bindAhLeo(root) {
   const toggle = q("leo-toggle"); if (toggle) toggle.onclick = () => { ahLeo.shut = !ahLeo.shut; ahJRender(); };
   if (!q("leo-go")) return;
   const leagues = ahLeagues || [], lg = leagues.find((l) => l.id === ahLeo.leagueId), teams = lg ? lg.teams : [];
-  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.text = q("leo-text").value; ahJRender(); };
-  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.text = q("leo-text").value; ahJRender(); };
-  q("leo-team").onchange = (e) => { ahLeo.teamId = e.target.value; };
+  q("leo-kind").onchange = (e) => { ahLeo.kind = e.target.value; ahLeo.refs = ahDefaultRefs(ahLeo.kind, teams.find((t) => t.id === ahLeo.teamId)); ahLeo.text = q("leo-text").value; ahJRender(); };
+  q("leo-league").onchange = (e) => { ahLeo.leagueId = e.target.value; ahLeo.teamId = ""; ahLeo.refs = []; ahLeo.text = q("leo-text").value; ahJRender(); };
+  q("leo-team").onchange = (e) => { ahLeo.teamId = e.target.value; ahLeo.refs = ahDefaultRefs(ahLeo.kind, teams.find((t) => t.id === ahLeo.teamId)); ahLeo.text = q("leo-text").value; ahJRender(); };
+  root.querySelectorAll(".leo-ref").forEach((cb) => { cb.onchange = () => { ahLeo.text = q("leo-text").value; ahLeo.refs = Array.from(root.querySelectorAll(".leo-ref")).filter((x) => x.checked).map((x) => x.dataset.k); }; });
   q("leo-text").oninput = (e) => { ahLeo.text = e.target.value; };
   q("leo-photo").onclick = () => q("leo-file").click();
   q("leo-file").onchange = async (e) => {
@@ -7363,7 +7374,7 @@ function bindAhLeo(root) {
     if (text.length < 10) { ahLeo.error = "Describe the picture in a sentence or two first."; ahJRender(); return; }
     const team = teams.find((t) => t.id === ahLeo.teamId);
     const kindLabel = (AH_LEO_KINDS.find((k) => k[0] === ahLeo.kind) || [0, "picture"])[1].toLowerCase();
-    const plan = { kind: ahLeo.kind, prompt: text, leagueId: team ? ahLeo.leagueId : null, teamId: team ? team.id : null, teamName: team ? team.name : "", forWhat: (team ? team.name + " " : "") + kindLabel, variants: 2, refPhotos: [], refUrls: ahLeo.photos.map((p) => p.logoUrl), results: [], busy: false, error: "" };
+    const plan = { kind: ahLeo.kind, prompt: text, leagueId: team ? ahLeo.leagueId : null, teamId: team ? team.id : null, teamName: team ? team.name : "", forWhat: (team ? team.name + " " : "") + kindLabel, variants: 2, refPhotos: [], teamRefs: team ? ahLeo.refs.slice() : [], refUrls: ahLeo.photos.map((p) => p.logoUrl), results: [], busy: false, error: "" };
     ahLeo.turn.imagePlans.unshift(plan); ahLeo.error = ""; ahLeo.text = "";
     ahRunPlan(plan, ahLeo.turn);
   };
@@ -7884,6 +7895,7 @@ function ahJamesImagePlansHtml(t, ti) {
     }).join("");
     return `<div class="ahj-block ahj-imageplan"><div class="ahj-block-head">Brief for Leo: ${escapeHtml(p.forWhat)}. Check it, change it if you like, then ask Leo to draw it.</div>
       ${img.enabled === false ? `<p class="ahj-off">Leo isn't connected yet. Add <code>OPENAI_API_KEY</code> in your host's Secrets and publish. You can still copy this brief.</p>` : ""}
+      ${(p.teamRefs || []).length ? `<div class="ahj-sub">Leo will start from ${escapeHtml(ahPoss(p.teamName))} current ${p.teamRefs.map((k) => AH_REF_LABEL[k]).join(" and ")}.</div>` : ""}
       <textarea class="ahj-brief" rows="5" maxlength="3000" data-t="${ti}" data-p="${pi}" aria-label="Brief for Leo">${escapeHtml(p.prompt)}</textarea>
       <div class="ahj-gen-row"><label>Options <select class="ahj-variants" data-t="${ti}" data-p="${pi}">${[1, 2, 3].map((n) => `<option${n === p.variants ? " selected" : ""}>${n}</option>`).join("")}</select></label>
         <button type="button" class="ah-complete ahj-generate" data-t="${ti}" data-p="${pi}"${p.busy || img.enabled === false ? " disabled" : ""}>${p.busy ? "Leo is drawing…" : p.results.length ? "Ask Leo to draw again" : "Ask Leo to draw"}</button>
@@ -7897,8 +7909,22 @@ async function ahRunPlan(p, t) {
   if (p.busy) return;
   p.busy = true; p.error = ""; ahPicRender();
   try {
-    const refs = p.refUrls || (p.refPhotos || []).map((i) => (t.logoImages || [])[i]).filter(Boolean);
-    const r = await api("/admin/james/image", { method: "POST", body: { kind: p.kind, prompt: p.prompt, variants: p.variants, refs } });
+    const mine = p.refUrls || (p.refPhotos || []).map((i) => (t.logoImages || [])[i]).filter(Boolean);
+    // Leo is shown the team's real saved pictures first, then any photos you attached.
+    const refs = [], names = [];
+    if ((p.teamRefs || []).length && p.leagueId && p.teamId) {
+      let imgs;
+      try { imgs = await api(`/admin/james/team-images?leagueId=${encodeURIComponent(p.leagueId)}&teamId=${encodeURIComponent(p.teamId)}`); } catch { throw new Error("Couldn't load the team's saved pictures."); }
+      const src = { logo: imgs.logo, kit_front: imgs.kitFront, kit_back: imgs.kitBack };
+      for (const k of p.teamRefs) {
+        if (!src[k]) continue;
+        refs.push(await ahShrinkPicture(src[k], k === "logo" ? { maxSide: 700, keepAlpha: true, limit: 450000 } : { maxSide: 900, keepAlpha: false, limit: 450000 }));
+        names.push(`the team's current ${AH_REF_LABEL[k]}`);
+      }
+    }
+    mine.forEach((u) => { refs.push(u); names.push("a photo the admin attached"); });
+    const note = refs.length ? `\n\nReference pictures, in this order: ${names.map((n, i) => `${i + 1}) ${n}`).join("; ")}. Keep to their colours and style unless the brief says otherwise.` : "";
+    const r = await api("/admin/james/image", { method: "POST", body: { kind: p.kind, prompt: p.prompt + note, variants: p.variants, refs: refs.slice(0, 4) } });
     p.results = r.images.map((url) => ({ url, state: "" })); p.cost = r.cost;
     if (ahJ.status) ahJ.status.images = r.images_usage;
   } catch (e) { p.error = e.message; }

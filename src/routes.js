@@ -4667,7 +4667,7 @@ router.get("/admin/hub", requireOwnerSession, (req, res) => {
     items: (hub.items || []).filter((i) => !(i.leagueId && excluded.has(i.leagueId))).map(hubItemView).sort((a, b) => b.createdAt - a.createdAt),
     leagues: store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).map((e) => {
       const l = store.getLeague(e.id);
-      return { id: e.id, name: e.name, teams: l ? l.teams.map((t) => ({ id: t.id, name: t.name })) : [] };
+      return { id: e.id, name: e.name, teams: l ? l.teams.map((t) => ({ id: t.id, name: t.name, hasLogo: !!t.logo, kitFront: !!(t.kit && t.kit.front), kitBack: !!(t.kit && t.kit.back) })) : [] };
     }),
   });
 });
@@ -4999,7 +4999,7 @@ function jamesContext(perms) {
       leagues: full.map((l) => ({ id: l.id, name: l.name, ...(hiddenIds.has(l.id) ? { hiddenFromPublic: true } : {}), status: leagueStatus(l), format: l.format, scoring: l.format === "pairs" ? "best of 3 sets" : "each seed is 2 sets; if they split one set each, a match tie-break to 10 (win by 2) decides it, given as tb" + (l.singlesDecider ? "; seed 5 is a single tie-break to 10, no sets" : ""), teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null, courtNames: l.courtNames && l.courtNames.some(Boolean) ? l.courtNames : undefined, defaultVenue: l.defaultVenue || undefined, playoffs: l.playoffFormat || "none", singlesDecider: l.singlesDecider ? true : undefined, teamCount: l.teams.length })),
     };
     if (perms.read.rosters) {
-      base.rosters = full.map((l) => ({ leagueId: l.id, teams: l.teams.map((t) => ({ id: t.id, name: t.name, players: t.players.map((p) => ({ id: p.id, name: p.name })) })), noTeamYet: (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name })) }));
+      base.rosters = full.map((l) => ({ leagueId: l.id, teams: l.teams.map((t) => ({ id: t.id, name: t.name, ...(t.logo ? { hasLogo: true } : {}), ...(t.kit && t.kit.front ? { kitFront: true } : {}), ...(t.kit && t.kit.back ? { kitBack: true } : {}), players: t.players.map((p) => ({ id: p.id, name: p.name })) })), noTeamYet: (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name })) }));
     } else base.leagueTeams = leagues;
     if (pay) {
       base.payments = pay.leagues.map((l) => ({
@@ -5083,6 +5083,28 @@ router.put("/admin/james/permissions", requireOwnerSession, (req, res) => {
   store.saveJamesSettings(next);
   res.json({ permissions: james.permissions(next) });
 });
+// A team's saved logo and kit photos, as pictures (for Leo to start from and for James to look at).
+const TEAM_IMG_MAX = 1500000;
+async function teamImagesFor(leagueId, teamId) {
+  const league = store.getLeague(String(leagueId || ""));
+  if (!league || hubExcludedLeague(league.name)) return null;
+  const team = league.teams.find((t) => t.id === teamId);
+  if (!team) return null;
+  const ok = (u) => (typeof u === "string" && /^data:image\/(png|jpeg|webp);base64,/.test(u) && u.length <= TEAM_IMG_MAX ? u : "");
+  return {
+    league, team,
+    logo: ok(team.logo),
+    kitFront: team.kit && team.kit.front ? ok(await store.getKitPhoto(league.id, team.id, "front")) : "",
+    kitBack: team.kit && team.kit.back ? ok(await store.getKitPhoto(league.id, team.id, "back")) : "",
+  };
+}
+router.get("/admin/james/team-images", requireOwnerSession, async (req, res) => {
+  try {
+    const r = await teamImagesFor(req.query.leagueId, req.query.teamId);
+    if (!r) return res.status(404).json({ error: "I can't find that team." });
+    res.json({ teamName: r.team.name, logo: r.logo, kitFront: r.kitFront, kitBack: r.kitBack });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 router.post("/admin/james", requireOwnerSession, async (req, res) => {
   const actor = adminActorName(req);
   const cfg = james.config();
@@ -5094,11 +5116,36 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
     james.checkLimits(store.getJamesUsage(), actor, cfg);
     const ctx = jamesContext(perms);
-    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS, perms.write.images ? [james.IMAGE_TOOL] : []);
+    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS, perms.write.images ? [james.IMAGE_TOOL] : [], perms.read.rosters ? [james.LOOK_TOOL] : []);
     const ct = james.changesTool(perms);
     if (ct) tools.push(ct);
-    const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.withImages(james.cleanHistory(req.body.history, message || "Here is a photo."), images, message), tools });
-    const usage = james.recordUsage(store.getJamesUsage(), actor, james.costUsd(result.model, result.usage));
+    const messages = james.withImages(james.cleanHistory(req.body.history, message || "Here is a photo."), images, message);
+    let result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages, tools });
+    let cost = james.costUsd(result.model, result.usage);
+    // He asked to look at a team's pictures: show him, and let him carry on (one extra round at most).
+    const looks = result.toolUses.filter((t) => t.name === "look_at_team_images");
+    if (looks.length) {
+      const first = result;
+      const toolResults = [];
+      for (const tu of first.toolUses) {
+        if (tu.name !== "look_at_team_images") { toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: "Noted. The admin will see this and confirm it." }); continue; }
+        const r = perms.read.rosters ? await teamImagesFor(tu.input.leagueId, tu.input.teamId) : null;
+        if (!r) { toolResults.push({ type: "tool_result", tool_use_id: tu.id, is_error: true, content: "I can't find that team, or you aren't allowed to see its pictures." }); continue; }
+        const want = Array.isArray(tu.input.which) && tu.input.which.length ? tu.input.which : ["logo", "kit_front", "kit_back"];
+        const parts = [], notes = [];
+        [["logo", r.logo, "logo"], ["kit_front", r.kitFront, "kit front"], ["kit_back", r.kitBack, "kit back"]].forEach(([k, u, label]) => {
+          if (!want.includes(k)) return;
+          const m = u && /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(u);
+          if (!m) { notes.push(`${r.team.name} has no ${label} saved (or it is too large to show).`); return; }
+          parts.push({ type: "text", text: `${r.team.name}'s ${label}:` }, { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } });
+        });
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: parts.length ? parts.concat(notes.map((n) => ({ type: "text", text: n }))) : notes.join(" ") || "Nothing saved." });
+      }
+      const second = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: messages.concat([{ role: "assistant", content: first.content }, { role: "user", content: toolResults }]), tools });
+      cost += james.costUsd(second.model, second.usage);
+      result = { ...second, text: [first.text, second.text].filter(Boolean).join("\n").trim(), toolUses: first.toolUses.filter((t) => t.name !== "look_at_team_images").concat(second.toolUses.filter((t) => t.name !== "look_at_team_images")) };
+    }
+    const usage = james.recordUsage(store.getJamesUsage(), actor, cost);
     store.saveJamesUsage(usage);
     const proposals = james.cleanProposals(result.toolUses, ctx.raw);
     const changes = james.cleanChanges(proposals.changes, perms);
@@ -5192,7 +5239,7 @@ router.post("/admin/james/image", requireOwnerSession, async (req, res) => {
   const kind = james.IMAGE_KINDS.includes(b.kind) ? b.kind : null;
   const prompt = String(b.prompt || "").trim().slice(0, 3000);
   const n = Math.max(1, Math.min(3, Math.floor(Number(b.variants)) || 1));
-  const refs = (Array.isArray(b.refs) ? b.refs : []).slice(0, 2).filter((u) => typeof u === "string" && u.length <= 600000 && /^data:image\/(png|jpeg|webp);base64,/.test(u));
+  const refs = (Array.isArray(b.refs) ? b.refs : []).slice(0, 4).filter((u) => typeof u === "string" && u.length <= 600000 && /^data:image\/(png|jpeg|webp);base64,/.test(u));
   try {
     if (!perms.write.images) throw Object.assign(new Error("Leo is switched off in James's permissions."), { status: 403 });
     if (!kind || prompt.length < 10) throw Object.assign(new Error("Describe the picture first."), { status: 400 });

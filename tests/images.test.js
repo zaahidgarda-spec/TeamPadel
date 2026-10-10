@@ -70,3 +70,11 @@ test("picture spending has its own monthly cap and daily count", () => {
   J.recordImageUsage(u, "ID", 20, 1, now);
   assert.throws(() => J.checkImageLimits(u, "JN", { capUsd: 15, dailyLimit: 5 }, 1, now), /spending cap/);
 });
+
+test("a picture brief can ask Leo to start from the team's saved logo and kit", () => {
+  const ctx = { leagues: [{ id: "L1", teams: [{ id: "T1", name: "Cyclones" }] }] };
+  const [a] = J.cleanImagePlans([{ name: "plan_image", input: { kind: "kit_back", prompt: "The back of the same dark shirt, plain.", leagueId: "L1", teamId: "T1", useTeamImages: ["kit_front", "logo", "bogus", "logo", "kit_back", "logo"] } }], ctx);
+  assert.deepStrictEqual(a.teamRefs, ["kit_front", "logo", "kit_back"]);
+  const [b] = J.cleanImagePlans([{ name: "plan_image", input: { kind: "logo", prompt: "A bold emblem on transparent.", useTeamImages: ["logo"] } }], ctx);
+  assert.deepStrictEqual(b.teamRefs, []);
+});
