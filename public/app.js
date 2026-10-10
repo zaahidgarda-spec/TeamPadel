@@ -6679,14 +6679,14 @@ function teamPayDetailHtml(t, isAdminView) {
   // same total, and whatever's still owed is what the team's own button charges.
   const head = teamPaid
     ? `<p class="note">&#10003; Team fee paid in full${t.paymentMethod === "split" ? " by the players" : " · " + paymentMethodLabel(t.paymentMethod)}${t.paidAt ? " · " + new Date(t.paidAt).toLocaleDateString() : ""}</p>`
-    : `<p>Team fee <strong>${fmtRands(fee)}</strong>${discountTag(t.discountCents, t.discountNote)} · paid so far <strong>${fmtRands(paidSoFar)}</strong> · <strong>${fmtRands(balance)}</strong> still to pay</p>
+    : `<p>Team fee <strong>${fmtRands(fee)}</strong>${discountTag(t.discountCents, t.discountNote)} · paid so far <strong>${fmtRands(paidSoFar)}</strong>${t.lumpCents ? ` <span class="ah-partpill">Team paid ${fmtRands(t.lumpCents)}${(t.lumpPayments || []).length > 1 ? " in " + t.lumpPayments.length + " payments" : ""}</span>` : ""} · <strong>${fmtRands(balance)}</strong> still to pay</p>
        <div class="pay-summary-track" style="margin:6px 0 10px;"><div class="pay-summary-fill" style="width:${pct}%;"></div></div>`;
   const evenBtn = isAdminView && t.players.some((p) => p.customShareCents != null) ? `<button class="link pay-team-even-btn" type="button">Back to an even split</button>` : "";
   const teamActions = teamPaid
     ? (isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="false">Mark team unpaid</button><button class="link pay-team-discount-btn" type="button">Team discount</button>${evenBtn}` : "")
     : `<button class="primary pay-now-btn" type="button">Pay ${balance < fee ? "the remaining " : ""}${fmtRands(balance)} for the team</button>
        <button class="link pay-team-link-copy-btn" type="button">Copy team pay link</button>
-       ${isAdminView ? `<button class="link pay-toggle-btn" type="button" data-paid="true">Mark team paid manually</button><button class="link pay-team-discount-btn" type="button">Team discount</button>${evenBtn}` : ""}
+       ${isAdminView ? `<button class="link pay-team-part-btn" type="button" data-left="${balance}">Record team payment</button><button class="link pay-toggle-btn" type="button" data-paid="true">Mark team paid manually</button><button class="link pay-team-discount-btn" type="button">Team discount</button>${evenBtn}` : ""}
        <div class="error pay-now-error"></div>`;
   // Each player's own share, paid through a link an admin or captain sends them
   // (never self-served from their own My Profile).
@@ -6743,6 +6743,19 @@ function bindPayDetailHandlers(container, t) {
       } catch (e) { if (errEl) errEl.textContent = e.message; }
     };
   }
+  const teamPart = container.querySelector(".pay-team-part-btn");
+  if (teamPart) teamPart.onclick = async () => {
+    const left = Number(teamPart.dataset.left) / 100;
+    const v = prompt(`How much did ${t.name} pay as a team? Any amount up to R${left.toFixed(2)} (what's still owed).`, left.toFixed(2));
+    if (v === null || !String(v).trim()) return;
+    const num = Number(String(v).replace(/[^0-9.]/g, ""));
+    if (!(num > 0)) { alert("Type the amount in rands, like 1800."); return; }
+    try {
+      const r = await api(`/leagues/${currentLeagueId}/teams/${t.id}/payments`, { method: "POST", body: { amountRands: num } });
+      showToast(r.settled ? `${t.name} is paid in full.` : `Team payment recorded. ${fmtRands(r.balanceCents)} still to pay.`);
+      await refreshLeague(); renderPay();
+    } catch (e) { alert(e.message); }
+  };
   const teamDisc = container.querySelector(".pay-team-discount-btn");
   if (teamDisc) teamDisc.onclick = async () => {
     if (await askDiscount({ label: t.name, path: `/leagues/${currentLeagueId}/teams/${t.id}/discount`, currentCents: t.discountCents })) { await refreshLeague(); renderPay(); }
