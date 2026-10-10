@@ -3193,3 +3193,35 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-check.on{background:#1F9D55;border-color:#1F9D55;}
 .ah-item.done .ah-title{text-decoration:line-through;}
 .ah-clear{color:#B42318;border-color:#F0A99F;}
+
+/* Colour coding, in the style of a monday.com board: bold solid labels for status,
+   priority and type, and a coloured edge down each note. */
+:root{--c-payment:#FFCB00;--c-sponsor:#9CD326;--c-court:#0086C0;--c-kit:#FF642E;--c-followup:#FF5AC4;--c-note:#757575;
+  --s-done:#00C875;--s-overdue:#DF2F4A;--s-soon:#FDAB3D;--s-open:#C4C4C4;
+  --p-urgent:#323338;--p-high:#784BD1;--p-low:#9AADBD;}
+.ah-item{border-left:5px solid var(--line);}
+.ah-item[data-type="payment"]{border-left-color:var(--c-payment);}.ah-item[data-type="sponsor"]{border-left-color:var(--c-sponsor);}
+.ah-item[data-type="court"]{border-left-color:var(--c-court);}.ah-item[data-type="kit"]{border-left-color:var(--c-kit);}
+.ah-item[data-type="followup"]{border-left-color:var(--c-followup);}.ah-item[data-type="note"]{border-left-color:var(--c-note);}
+.ah-item:has(.ah-prio.p-urgent){border-left-width:5px;}
+.ah-pill.t-payment{background:var(--c-payment);color:#3A2E00;}.ah-pill.t-sponsor{background:var(--c-sponsor);color:#1F3A00;}
+.ah-pill.t-court{background:var(--c-court);color:#fff;}.ah-pill.t-kit{background:var(--c-kit);color:#fff;}
+.ah-pill.t-followup{background:var(--c-followup);color:#fff;}.ah-pill.t-note{background:var(--c-note);color:#fff;}
+.ah-pill.stage{background:#fff;border:1px solid var(--line);color:var(--text);}
+.ah-pill.cat{color:#fff;border:none;text-shadow:0 0 2px rgba(0,0,0,.25);}
+.ah-status{display:inline-block;font-size:11px;font-weight:700;padding:2px 10px;border-radius:4px;color:#fff;white-space:nowrap;}
+.ah-status.s-done{background:var(--s-done);}.ah-status.s-overdue{background:var(--s-overdue);}
+.ah-status.s-soon{background:var(--s-soon);color:#4A2F00;}.ah-status.s-open{background:var(--s-open);color:#323338;}
+.ah-prio{border-radius:4px;}
+.ah-prio.p-urgent{background:var(--p-urgent);color:#fff;}.ah-prio.p-high{background:var(--p-high);color:#fff;}.ah-prio.p-low{background:var(--p-low);color:#fff;}
+.ah-prio-chip.p-urgent.on{background:var(--p-urgent);border-color:var(--p-urgent);color:#fff;}
+.ah-prio-chip.p-high.on{background:var(--p-high);border-color:var(--p-high);color:#fff;}
+.ah-prio-chip.p-low.on{background:var(--p-low);border-color:var(--p-low);color:#fff;}
+.ah-dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;flex:none;}
+.ah-cat-name{display:flex;align-items:center;}
+.ah-card{border-top:4px solid var(--line);}
+.ah-card.t-payment{border-top-color:var(--c-payment);}.ah-card.t-sponsor{border-top-color:var(--c-sponsor);}.ah-card.t-court{border-top-color:var(--c-court);}
+.ah-card.t-kit{border-top-color:var(--c-kit);}.ah-card.t-followup{border-top-color:var(--c-followup);}.ah-card.t-note{border-top-color:var(--c-note);}
+.ah-group-head{border-bottom-width:3px;}
+.ah-flag{border-radius:4px;background:var(--s-overdue);color:#fff;}
+.ah-team-row .ah-bar{height:8px;}

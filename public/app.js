@@ -6899,6 +6899,19 @@ function ahSponsorWho(it) {
 let ahItems = [], ahLeagues = [], ahMe = { name: "Admin", fromAccount: false }, ahPayments = { teams: [], leagues: [] };
 let ahOpenLeague = null, ahOpenTeam = null, ahCompScope = "league", ahCompPrio = "normal";
 let ahCategories = [], ahCat = "all", ahCatManage = false;
+const AH_CAT_COLORS = ["#579BFC", "#A25DDC", "#FF7575", "#9CD326", "#CAB641", "#66CCFF", "#FF158A", "#7F5347", "#037F4C", "#BB3354"];
+function ahCatColor(id) { const c = ahCategories.find((x) => x.id === id); return c && c.color ? c.color : "#C4C4C4"; }
+// A coloured label for where a note stands, like a status column on a board:
+// green done, red overdue, orange due in the next three days, grey otherwise.
+function ahStatusOf(it) {
+  if (!ahIsOpen(it)) return { key: "done", label: "Done" };
+  if (ahOverdue(it)) return { key: "overdue", label: "Overdue" };
+  if (it.dueDate) {
+    const days = Math.round((new Date(it.dueDate + "T12:00:00") - new Date(ahToday() + "T12:00:00")) / 86400000);
+    if (days <= 3) return { key: "soon", label: days === 0 ? "Due today" : days === 1 ? "Due tomorrow" : "Due in " + days + " days" };
+  }
+  return { key: "open", label: "Open" };
+}
 function ahCatName(id) { const c = ahCategories.find((x) => x.id === id); return c ? c.name : ""; }
 // Notes (not counting the category filter itself) that are open, for the counts in the left bar.
 function ahCatCount(id) {
@@ -6909,10 +6922,10 @@ function ahCatCount(id) {
   }).length;
 }
 function ahSideHtml() {
-  const btn = (id, label, extra) => `<div class="ah-cat-row${ahCat === id ? " on" : ""}"><button type="button" class="ah-cat-btn" data-cat="${id}"><span>${escapeHtml(label)}</span><span class="ah-cat-n">${ahCatCount(id) || ""}</span></button>${extra || ""}</div>`;
+  const btn = (id, label, extra, color) => `<div class="ah-cat-row${ahCat === id ? " on" : ""}"><button type="button" class="ah-cat-btn" data-cat="${id}"><span class="ah-cat-name"><i class="ah-dot" style="background:${color || "#C4C4C4"}"></i>${escapeHtml(label)}</span><span class="ah-cat-n">${ahCatCount(id) || ""}</span></button>${extra || ""}</div>`;
   return `<aside class="ah-side" aria-label="Categories">
     <div class="ah-side-head"><b>Categories</b><span class="ah-side-btns"><button type="button" class="link" id="ah-cat-manage">${ahCatManage ? "Done" : "Edit"}</button><button type="button" class="ah-cat-plus" id="ah-cat-add" aria-label="Add a category" title="Add a category">+</button></span></div>
-    <nav class="ah-cat-list">${btn("all", "All notes")}${ahCategories.map((c) => btn(c.id, c.name, ahCatManage ? `<button type="button" class="ah-cat-x ah-cat-ren" data-cat="${c.id}" aria-label="Rename ${escapeHtml(c.name)}" title="Rename">✎</button><button type="button" class="ah-cat-x ah-cat-del" data-cat="${c.id}" aria-label="Delete ${escapeHtml(c.name)}" title="Delete">×</button>` : "")).join("")}${btn("none", "No category")}</nav>
+    <nav class="ah-cat-list">${btn("all", "All notes", "", "#323338")}${ahCategories.map((c) => btn(c.id, c.name, ahCatManage ? `<button type="button" class="ah-cat-x ah-cat-col" data-cat="${c.id}" aria-label="Change the colour of ${escapeHtml(c.name)}" title="Change colour" style="color:${c.color}">●</button><button type="button" class="ah-cat-x ah-cat-ren" data-cat="${c.id}" aria-label="Rename ${escapeHtml(c.name)}" title="Rename">✎</button><button type="button" class="ah-cat-x ah-cat-del" data-cat="${c.id}" aria-label="Delete ${escapeHtml(c.name)}" title="Delete">×</button>` : "", c.color)).join("")}${btn("none", "No category", "", "#C4C4C4")}</nav>
   </aside>`;
 }
 function ahCatSelectHtml(selected, withAuto) {
@@ -6975,8 +6988,9 @@ function ahItemHtml(it) {
   const stages = AH_STAGES[it.type];
   const stage = stages ? stages.find((x) => x[0] === it.stage) : null;
   if (ahEditing === it.id) return ahEditHtml(it);
-  return `<div class="ah-item${!ahIsOpen(it) ? " done" : ""}${ahOverdue(it) ? " overdue" : ""}" data-id="${it.id}">
-    <div class="ah-item-top">${ahPrio(it) !== "normal" ? `<span class="ah-prio p-${ahPrio(it)}">${AH_PRIORITIES.find((p) => p[0] === ahPrio(it))[1]}</span>` : ""}<span class="ah-pill t-${it.type}">${AH_TYPE_LABEL[it.type]}</span>${it.categoryId && ahCatName(it.categoryId) ? `<span class="ah-pill cat">${escapeHtml(ahCatName(it.categoryId))}</span>` : ""}${stage ? `<span class="ah-pill stage">${stage[1]}</span>` : ""}${it.pinned ? '<span class="ah-pin" title="Pinned">★</span>' : ""}<span class="ah-where">${escapeHtml(where)}</span></div>
+  const st = ahStatusOf(it);
+  return `<div class="ah-item${!ahIsOpen(it) ? " done" : ""}${ahOverdue(it) ? " overdue" : ""}" data-id="${it.id}" data-type="${it.type}">
+    <div class="ah-item-top">${ahPrio(it) !== "normal" ? `<span class="ah-prio p-${ahPrio(it)}">${AH_PRIORITIES.find((p) => p[0] === ahPrio(it))[1]}</span>` : ""}<span class="ah-pill t-${it.type}">${AH_TYPE_LABEL[it.type]}</span>${it.categoryId && ahCatName(it.categoryId) ? `<span class="ah-pill cat" style="background:${ahCatColor(it.categoryId)}">${escapeHtml(ahCatName(it.categoryId))}</span>` : ""}<span class="ah-status s-${st.key}">${st.label}</span>${stage ? `<span class="ah-pill stage">${stage[1]}</span>` : ""}${it.pinned ? '<span class="ah-pin" title="Pinned">★</span>' : ""}<span class="ah-where">${escapeHtml(where)}</span></div>
     <div class="ah-title-line"><button type="button" class="ah-check${ahIsOpen(it) ? "" : " on"}" aria-label="${ahIsOpen(it) ? "Mark as done" : "Mark as not done"}" title="${ahIsOpen(it) ? "Mark as done" : "Not done after all"}">${ahIsOpen(it) ? "" : "✓"}</button><div class="ah-title">${escapeHtml(it.title)}${it.qty ? ` <span class="ah-qty">× ${it.qty}</span>` : ""}</div></div>
     ${it.text ? `<div class="ah-text">${escapeHtml(it.text).replace(/\n/g, "<br>")}</div>` : ""}
     ${money ? `<div class="ah-money"><b>${fmtRands(it.amountCents)}</b>${it.paidCents ? ` · ${it.direction === "out" ? "paid" : "received"} ${fmtRands(it.paidCents)} · <b>${fmtRands(ahOwed(it))} left</b>` : ""}</div>` : ""}
@@ -7173,7 +7187,8 @@ function renderAdminHub() {
           const group = list.filter((i) => (i.sponsorScope || "league") === k);
           const left = group.filter(ahIsOpen).reduce((t, i) => t + ahOwed(i), 0);
           const got = group.reduce((t, i) => t + (i.paidCents || 0), 0);
-          return `<div class="ah-group"><div class="ah-group-head"><b>${l}</b><span class="note">${group.length}${group.length ? ` · ${fmtRands(got)} in · ${fmtRands(left)} to come` : ""}</span></div>${group.map(ahItemHtml).join("") || '<p class="note" style="margin:6px 0;">None yet.</p>'}</div>`;
+          const gc = { team: "#0086C0", league: "#9CD326", region: "#A25DDC" }[k];
+          return `<div class="ah-group"><div class="ah-group-head" style="border-bottom-color:${gc}"><b><i class="ah-dot" style="background:${gc}"></i>${l}</b><span class="note">${group.length}${group.length ? ` · ${fmtRands(got)} in · ${fmtRands(left)} to come` : ""}</span></div>${group.map(ahItemHtml).join("") || '<p class="note" style="margin:6px 0;">None yet.</p>'}</div>`;
         }).join("")}</div>`;
       } else {
         html += `<div class="ah-list">${list.map(ahItemHtml).join("") || `<p class="empty">${ahArea === "payment" ? "No payment notes." : "Nothing here yet."}</p>`}</div>`;
@@ -7203,6 +7218,13 @@ function renderAdminHub() {
     try { const c = await ahApi("/categories", { method: "POST", body: { name } }); ahCat = c.id; await ahRefreshAndRender(); } catch (e) { alert(e.message); }
   };
   const catManage = root.querySelector("#ah-cat-manage"); if (catManage) catManage.onclick = () => { ahCatManage = !ahCatManage; renderAdminHub(); };
+  root.querySelectorAll(".ah-cat-col").forEach((b) => {
+    b.onclick = async () => {
+      const cur = ahCategories.find((c) => c.id === b.dataset.cat);
+      const next = AH_CAT_COLORS[(AH_CAT_COLORS.indexOf(cur && cur.color) + 1) % AH_CAT_COLORS.length];
+      try { await ahApi(`/categories/${b.dataset.cat}`, { method: "PUT", body: { color: next } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); }
+    };
+  });
   root.querySelectorAll(".ah-cat-ren").forEach((b) => { b.onclick = async () => { const cur = ahCatName(b.dataset.cat); const name = prompt("Rename this category", cur); if (!name || !name.trim() || name.trim() === cur) return; try { await ahApi(`/categories/${b.dataset.cat}`, { method: "PUT", body: { name } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
   root.querySelectorAll(".ah-cat-del").forEach((b) => { b.onclick = async () => { if (!confirm(`Delete the "${ahCatName(b.dataset.cat)}" category? Its notes stay, they just lose the category.`)) return; try { await ahApi(`/categories/${b.dataset.cat}`, { method: "DELETE" }); if (ahCat === b.dataset.cat) ahCat = "all"; await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
   bindAhItems(root);

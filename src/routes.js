@@ -4564,9 +4564,12 @@ const HUB_TYPES = ["note", "payment", "sponsor", "court", "kit", "followup"];
 const HUB_PRIORITIES = ["urgent", "high", "normal", "low"];
 // Categories down the left of the Note Machine. Anyone can add more; it
 // starts with Tasks and Reminders.
-const HUB_DEFAULT_CATEGORIES = [{ id: "tasks", name: "Tasks" }, { id: "reminders", name: "Reminders" }];
+const HUB_CATEGORY_COLORS = ["#579BFC", "#A25DDC", "#FF7575", "#9CD326", "#CAB641", "#66CCFF", "#FF158A", "#7F5347", "#037F4C", "#BB3354"];
+const HUB_DEFAULT_CATEGORIES = [{ id: "tasks", name: "Tasks", color: HUB_CATEGORY_COLORS[0] }, { id: "reminders", name: "Reminders", color: HUB_CATEGORY_COLORS[1] }];
 function hubCategories(hub) {
   if (!Array.isArray(hub.categories)) hub.categories = HUB_DEFAULT_CATEGORIES.map((c) => ({ ...c, createdAt: Date.now() }));
+  // Anything without a colour (made before categories had them) gets the next free one.
+  hub.categories.forEach((c, i) => { if (!c.color) c.color = HUB_CATEGORY_COLORS[i % HUB_CATEGORY_COLORS.length]; });
   return hub.categories;
 }
 // A note that says "remind me…" or "task: …" lands in that category on its own.
@@ -4643,7 +4646,7 @@ router.get("/admin/hub", requireOwnerSession, (req, res) => {
   const excluded = hubExcludedLeagueIds();
   const categories = hubCategories(hub);
   res.json({
-    categories: categories.map((c) => ({ id: c.id, name: c.name })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name, color: c.color })),
     me: { name: adminActorName(req), fromAccount: !!(req.session.playerUser && store.getUser(req.session.playerUser.id)) },
     items: (hub.items || []).filter((i) => !(i.leagueId && excluded.has(i.leagueId))).map(hubItemView).sort((a, b) => b.createdAt - a.createdAt),
     leagues: store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).map((e) => {
@@ -4665,21 +4668,30 @@ router.post("/admin/hub/categories", requireOwnerSession, (req, res) => {
   const cats = hubCategories(hub);
   if (cats.length >= 30) return res.status(400).json({ error: "That's the most categories you can have." });
   if (cats.some((c) => c.name.toLowerCase() === name.toLowerCase())) return res.status(400).json({ error: "You already have a category with that name." });
-  const cat = { id: logic.uid(), name, createdAt: Date.now(), by: adminActorName(req) };
+  const used = new Set(cats.map((c) => c.color));
+  const color = HUB_CATEGORY_COLORS.find((c) => !used.has(c)) || HUB_CATEGORY_COLORS[cats.length % HUB_CATEGORY_COLORS.length];
+  const cat = { id: logic.uid(), name, color, createdAt: Date.now(), by: adminActorName(req) };
   cats.push(cat);
   store.saveAdminHub(hub);
-  res.json({ id: cat.id, name: cat.name });
+  res.json({ id: cat.id, name: cat.name, color: cat.color });
 });
 router.put("/admin/hub/categories/:id", requireOwnerSession, (req, res) => {
   const hub = store.getAdminHub();
   const cat = hubCategories(hub).find((c) => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: "Category not found." });
-  const name = cleanHubText(req.body && req.body.name, 30);
-  if (!name) return res.status(400).json({ error: "Give the category a name." });
-  if (hub.categories.some((c) => c.id !== cat.id && c.name.toLowerCase() === name.toLowerCase())) return res.status(400).json({ error: "You already have a category with that name." });
-  cat.name = name;
+  const b = req.body || {};
+  if (b.color !== undefined) {
+    if (!HUB_CATEGORY_COLORS.includes(b.color)) return res.status(400).json({ error: "Pick one of the colours." });
+    cat.color = b.color;
+  }
+  if (b.name !== undefined || b.color === undefined) {
+    const name = cleanHubText(b.name, 30);
+    if (!name) return res.status(400).json({ error: "Give the category a name." });
+    if (hub.categories.some((c) => c.id !== cat.id && c.name.toLowerCase() === name.toLowerCase())) return res.status(400).json({ error: "You already have a category with that name." });
+    cat.name = name;
+  }
   store.saveAdminHub(hub);
-  res.json({ id: cat.id, name: cat.name });
+  res.json({ id: cat.id, name: cat.name, color: cat.color });
 });
 // Deleting a category keeps its notes; they just lose the category.
 router.delete("/admin/hub/categories/:id", requireOwnerSession, (req, res) => {
