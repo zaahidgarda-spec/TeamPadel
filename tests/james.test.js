@@ -211,3 +211,23 @@ test("finalizing is its own change kind, controlled by the scores switch", () =>
   const kinds = J.changesTool(perms).input_schema.properties.changes.items.properties.kind.enum;
   assert.ok(kinds.includes("fixture_finalize"));
 });
+
+test("league set-up changes keep only well-formed settings", () => {
+  const perms = J.permissions({});
+  const out = J.cleanChanges([
+    { kind: "league_create", name: "Sandton Mixed", adminEmail: "a@b.co", format: "pairs", singlesDecider: true, junk: 1 },
+    { kind: "league_settings", leagueName: "Sandton Mixed", courtCount: 4, slotCount: 3, courtNames: ["A", "B", 7], defaultVenue: "Courts", playoffFormat: "semis_final" },
+    { kind: "league_settings", leagueName: "Sandton Mixed", courtCount: "four", playoffFormat: "weird" },
+    { kind: "season_start", leagueId: "L1", doubleRound: true },
+    { kind: "fix_weekly_schedule", leagueId: "L1", firstDate: "2026-02-04", time: "18:00", venue: "Courts", everyDays: 7 },
+    { kind: "league_visibility", leagueId: "L1", hidden: false },
+  ], perms);
+  assert.strictEqual(out.length, 6);
+  assert.deepStrictEqual([out[0].format, out[0].singlesDecider, out[0].junk], ["pairs", true, undefined]);
+  assert.deepStrictEqual(out[1].courtNames, ["A", "B", "7"]);
+  assert.deepStrictEqual([out[1].courtCount, out[1].slotCount, out[1].playoffFormat], [4, 3, "semis_final"]);
+  assert.strictEqual(out[2].courtCount, undefined);
+  assert.strictEqual(out[3].doubleRound, true);
+  assert.deepStrictEqual([out[4].firstDate, out[4].time, out[4].everyDays], ["2026-02-04", "18:00", 7]);
+  assert.strictEqual(out[5].hidden, false);
+});

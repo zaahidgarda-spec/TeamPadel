@@ -4953,7 +4953,9 @@ function jamesContext(perms) {
   const hub = store.getAdminHub();
   const excluded = hubExcludedLeagueIds();
   const categories = hubCategories(hub).map((c) => ({ id: c.id, name: c.name }));
-  const entries = store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name));
+  // Hidden leagues are included (marked), so James can carry on setting up one he created.
+  const entries = store.getIndex().filter((e) => !hubExcludedLeague(e.name));
+  const hiddenIds = new Set(entries.filter((e) => e.hidden).map((e) => e.id));
   const full = entries.map((e) => store.getLeague(e.id)).filter(Boolean);
   const leagues = full.map((l) => ({ id: l.id, name: l.name, teams: l.teams.map((t) => ({ id: t.id, name: t.name })) }));
   const pay = perms.read.payments ? hubPaymentsData() : null;
@@ -4994,7 +4996,7 @@ function jamesContext(perms) {
     const base = {
       today: `${new Date(james.saNow().day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })} ${james.saNow().day}`,
       categories,
-      leagues: full.map((l) => ({ id: l.id, name: l.name, status: leagueStatus(l), format: l.format, scoring: l.format === "pairs" ? "best of 3 sets" : "each seed is 2 sets; if they split one set each, a match tie-break to 10 (win by 2) decides it, given as tb" + (l.singlesDecider ? "; seed 5 is a single tie-break to 10, no sets" : ""), teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null })),
+      leagues: full.map((l) => ({ id: l.id, name: l.name, ...(hiddenIds.has(l.id) ? { hiddenFromPublic: true } : {}), status: leagueStatus(l), format: l.format, scoring: l.format === "pairs" ? "best of 3 sets" : "each seed is 2 sets; if they split one set each, a match tie-break to 10 (win by 2) decides it, given as tb" + (l.singlesDecider ? "; seed 5 is a single tie-break to 10, no sets" : ""), teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null, courtNames: l.courtNames && l.courtNames.some(Boolean) ? l.courtNames : undefined, defaultVenue: l.defaultVenue || undefined, playoffs: l.playoffFormat || "none", singlesDecider: l.singlesDecider ? true : undefined, teamCount: l.teams.length })),
     };
     if (perms.read.rosters) {
       base.rosters = full.map((l) => ({ leagueId: l.id, teams: l.teams.map((t) => ({ id: t.id, name: t.name, players: t.players.map((p) => ({ id: p.id, name: p.name })) })), noTeamYet: (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name })) }));
@@ -5147,12 +5149,12 @@ router.post("/admin/james/apply", requireOwnerSession, (req, res) => {
   const changes = james.cleanChanges(req.body && req.body.changes, perms);
   if (!changes.length) return res.status(400).json({ error: "There's nothing to change." });
   if (jamesChangesToday(actor) + changes.length > cfg.dailyChanges) return res.status(429).json({ error: `That would go over today's limit of ${cfg.dailyChanges} changes by James for you. It resets at midnight.` });
-  // Finalizing emails players and can't be fully taken back: it needs the admin's own explicit OK.
-  if (changes.some((c) => c.kind === "fixture_finalize") && req.body.confirmFinalize !== true) return res.status(400).json({ error: "Finalizing needs your explicit OK. Confirm it first.", needsFinalizeConfirm: true });
   try {
     // Logo photos the admin attached: sent back with the confirmation, used here, never stored elsewhere.
     const images = (Array.isArray(req.body.images) ? req.body.images : []).slice(0, james.MAX_IMAGES).map((u) => (typeof u === "string" && u.length <= 400000 ? u : null));
-    const r = jamesActions().apply(changes, { actor, request: req.body.request, perms, images });
+    const r = jamesActions().apply(changes, { actor, request: req.body.request, perms, images, confirmed: req.body.confirmFinalize === true });
+    // Finalizing, starting a season and going public need the admin's own explicit OK.
+    if (r.needsConfirm) return res.status(400).json({ error: "That step needs your explicit OK. Confirm it first.", needsFinalizeConfirm: true });
     if (!r.ok) return res.status(400).json({ error: "Nothing was changed. One or more of these can't be done.", results: r.results });
     // Fixtures whose seeds are now all in: the app asks the admin whether to finalize them.
     const offers = [], seen = new Set();

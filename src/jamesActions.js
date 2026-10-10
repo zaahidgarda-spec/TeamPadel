@@ -65,12 +65,21 @@ module.exports = function createJamesActions(d) {
     };
   }
 
-  function leagueFor(ctx, id) {
-    const l = ctx.league(String(id || ""));
+  function leagueFor(ctx, id, name) {
+    let l = null;
+    if (id) l = ctx.league(String(id));
+    else if (name) {
+      // A league made earlier in the same set, or one that already exists, found by name.
+      const n = clip(name, 80).toLowerCase();
+      const made = ctx.newLeagues.find((x) => x.league.name.toLowerCase() === n);
+      if (made) l = made.league;
+      else { const e = store.getIndex().find((x) => x.name.toLowerCase() === n); if (e) l = ctx.league(e.id); }
+    }
     if (!l) throw err("I can't find that league.");
     if (d.hubExcludedLeague(l.name)) throw err(`${l.name} is outside the Note Machine, so James can't change it.`);
     return l;
   }
+  const leagueRef = (ctx, ch) => leagueFor(ctx, ch.leagueId, ch.leagueName);
   const teamFor = (l, id) => l.teams.find((t) => t.id === id) || (() => { throw err(`I can't find that team in ${l.name}.`); })();
   const teamByName = (l, name) => {
     const n = clip(name, 60).toLowerCase();
@@ -119,7 +128,7 @@ module.exports = function createJamesActions(d) {
     pay_record: {
       label: "Payment",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); needFee(l);
+        const l = leagueRef(ctx, ch); needFee(l);
         const t = teamFor(l, ch.teamId), p = playerFor(t, ch.playerId);
         const cents = rands(ch.amountRands);
         if (cents <= 0) throw err("Say how much was paid.");
@@ -135,7 +144,7 @@ module.exports = function createJamesActions(d) {
     pay_mark_player_paid: {
       label: "Payment",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); needFee(l);
+        const l = leagueRef(ctx, ch); needFee(l);
         const t = teamFor(l, ch.teamId), p = playerFor(t, ch.playerId);
         if (p.paymentStatus === "paid") throw err(`${p.name} is already marked paid.`);
         const left = d.playerOwedCents(l, t, p);
@@ -150,7 +159,7 @@ module.exports = function createJamesActions(d) {
     pay_mark_team_paid: {
       label: "Payment",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); needFee(l);
+        const l = leagueRef(ctx, ch); needFee(l);
         const t = teamFor(l, ch.teamId);
         if (t.paymentStatus === "paid") throw err(`${t.name} is already marked paid.`);
         const left = d.teamBalanceCents(l, t);
@@ -165,7 +174,7 @@ module.exports = function createJamesActions(d) {
     pay_discount_player: {
       label: "Payment",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); needFee(l);
+        const l = leagueRef(ctx, ch); needFee(l);
         const t = teamFor(l, ch.teamId), p = playerFor(t, ch.playerId);
         const cents = rands(ch.amountRands);
         const base = d.playerBaseShareFor(l, t, p);
@@ -180,7 +189,7 @@ module.exports = function createJamesActions(d) {
     pay_discount_team: {
       label: "Payment",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); needFee(l);
+        const l = leagueRef(ctx, ch); needFee(l);
         const t = teamFor(l, ch.teamId);
         const cents = rands(ch.amountRands);
         if (cents > l.registrationFeeCents) throw err(`A discount can't be more than the team fee (${fmt(l.registrationFeeCents)}).`);
@@ -194,7 +203,7 @@ module.exports = function createJamesActions(d) {
     pay_set_share: {
       label: "Payment",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); needFee(l);
+        const l = leagueRef(ctx, ch); needFee(l);
         const t = teamFor(l, ch.teamId), p = playerFor(t, ch.playerId);
         const before = paySnap(t), was = d.playerShareCents(l, t, p), feeWas = d.teamFeeCents(l, t);
         const clear = ch.amountRands === null || ch.amountRands === undefined || ch.amountRands === "";
@@ -223,7 +232,7 @@ module.exports = function createJamesActions(d) {
     fix_round_schedule: {
       label: "Schedule",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId);
+        const l = leagueRef(ctx, ch);
         const { key, label } = roundKey(l, ch.round);
         if (ch.date === undefined && ch.time === undefined && ch.venue === undefined) throw err("Tell me the new date, time or venue.");
         const entry = { date: "", venue: "", time: "", ...(l.schedule && l.schedule[key] ? clone(l.schedule[key]) : {}) };
@@ -256,10 +265,55 @@ module.exports = function createJamesActions(d) {
     },
   };
 
+  // Every round on a weekly rhythm in one go: "Wednesdays from 4 Feb at 18:00".
+  fixKinds.fix_weekly_schedule = {
+    label: "Schedule",
+    run(ctx, ch) {
+      const l = leagueRef(ctx, ch);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ch.firstDate || "")) || Number.isNaN(new Date(ch.firstDate + "T12:00:00Z").getTime())) throw err("What date does round 1 start? (a day like 2026-02-04)");
+      if (ch.time !== undefined && ch.time !== "" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(ch.time)) throw err("That time doesn't look right (use 24-hour, like 18:00).");
+      const every = ch.everyDays === undefined ? 7 : Number(ch.everyDays);
+      if (!Number.isInteger(every) || every < 1 || every > 31) throw err("Rounds can be 1 to 31 days apart.");
+      const rounds = Array.from(new Set(l.fixtures.map((f) => f.round))).sort((a, b) => a - b);
+      if (!rounds.length) throw err(`${l.name} has no rounds yet. The season has to be started first.`);
+      const played = rounds.filter((n) => l.fixtures.some((f) => f.round === n && f.finalized));
+      if (!l.schedule) l.schedule = {};
+      const before = {}, set = [];
+      rounds.forEach((n, i) => {
+        if (played.includes(n)) return;
+        const key = "r" + n;
+        before[key] = l.schedule[key] ? clone(l.schedule[key]) : null;
+        const dt = new Date(ch.firstDate + "T12:00:00Z"); dt.setUTCDate(dt.getUTCDate() + i * every);
+        const date = dt.toISOString().slice(0, 10);
+        const entry = { date: "", venue: "", time: "", ...(l.schedule[key] || {}), date };
+        if (ch.time !== undefined) entry.time = ch.time;
+        if (ch.venue !== undefined) entry.venue = clip(ch.venue, 120);
+        l.schedule[key] = entry; set.push(key);
+      });
+      if (!set.length) throw err("Every round already has finished matches.");
+      ctx.touch(l.id);
+      const first = l.schedule[set[0]], last = l.schedule[set[set.length - 1]];
+      const warnings = [];
+      if (played.length) warnings.push(`Rounds ${played.join(", ")} already have finished matches, so they keep their dates.`);
+      if (first.date < new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10)) warnings.push("The first date is in the past.");
+      const day = (iso) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+      return { leagueId: l.id, leagueName: l.name, warnings, text: `${l.name}: ${set.length} round${set.length === 1 ? "" : "s"} every ${every === 7 ? "week" : every + " days"}, ${dayText(first.date)} to ${dayText(last.date)}${first.time ? " at " + first.time : ""}${first.venue ? ", " + first.venue : ""}. (Round 1 is a ${day(first.date)}.)`, undo: { before }, after: JSON.stringify(set.map((k) => l.schedule[k])) };
+    },
+    check(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      const now = Object.keys(c.undo.before).map((k) => l.schedule && l.schedule[k]);
+      if (JSON.stringify(now) !== c.after) throw err(`${l.name}'s round dates have been changed since, so it can't be undone safely.`);
+    },
+    revert(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      Object.entries(c.undo.before).forEach(([k, v]) => { if (v) l.schedule[k] = clone(v); else delete l.schedule[k]; });
+      ctx.touch(l.id);
+    },
+  };
   fixKinds.fix_match_schedule = {
     label: "Schedule",
     run(ctx, ch) {
-      const l = leagueFor(ctx, ch.leagueId);
+      const l = leagueRef(ctx, ch);
       const f = logic.allFixturesOf(l).find((x) => x && x.id === ch.fixtureId);
       if (!f) throw err("I can't find that match.");
       if (f.finalized) throw err("That match has already been played, so I won't move it.");
@@ -310,7 +364,7 @@ module.exports = function createJamesActions(d) {
   // Both work on one seed (one court's match) of a fixture, exactly as the admin's own
   // buttons do: the same functions finish a match, put it back, and tell the captains.
   function seedOf(ctx, ch) {
-    const l = leagueFor(ctx, ch.leagueId);
+    const l = leagueRef(ctx, ch);
     const f = logic.allFixturesOf(l).find((x) => x && x.id === ch.fixtureId);
     if (!f) throw err("I can't find that match.");
     const idx = Number(ch.seed) - 1;
@@ -496,7 +550,7 @@ module.exports = function createJamesActions(d) {
     fixture_finalize: {
       label: "Finalize",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId);
+        const l = leagueRef(ctx, ch);
         const f = logic.allFixturesOf(l).find((x) => x && x.id === ch.fixtureId);
         if (!f) throw err("I can't find that match.");
         if (f.finalized) throw err("That fixture is already finalized.");
@@ -507,6 +561,7 @@ module.exports = function createJamesActions(d) {
         const label = `${l.name}, ${f.round ? "Round " + f.round + ", " : ""}${tname(l, f.teamA)} v ${tname(l, f.teamB)}`;
         return {
           leagueId: l.id, leagueName: l.name, needsConfirm: true,
+          confirmText: "I understand this locks the result and emails players, and I want to finalize it.",
           text: `Finalize ${label}.`,
           warnings: ["This locks the result and updates the table and ratings. Players are emailed to rate their opponents, and if the round is complete the wrap-up post and notifications go out. Undo can reopen the fixture, but it can't unsend those."],
           undo: { fixtureId: f.id }, after: "finalized",
@@ -530,7 +585,7 @@ module.exports = function createJamesActions(d) {
     league_set_fee: {
       label: "League",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId);
+        const l = leagueRef(ctx, ch);
         const cents = rands(ch.amountRands), was = l.registrationFeeCents || 0;
         l.registrationFeeCents = cents; ctx.touch(l.id);
         const warnings = was && cents !== was && l.teams.some((t) => t.paymentStatus === "paid" || (t.lumpCents || 0) > 0 || t.players.some((p) => (p.paidCents || 0) > 0)) ? ["Some payments are already recorded. They stay as recorded; only what's owed changes."] : [];
@@ -547,9 +602,11 @@ module.exports = function createJamesActions(d) {
         if (!email.includes("@")) throw err("I need an admin email address for the new league. Tell me which one to use.");
         if (store.getIndex().some((e) => e.name.toLowerCase() === name.toLowerCase())) throw err(`There's already a league called ${name}.`);
         if (d.hubExcludedLeague(name)) throw err("That name belongs to a league outside the Note Machine.");
-        const league = d.newLeagueObj(name, email, "teams", false);
+        const format = ch.format === "pairs" ? "pairs" : "teams";
+        const league = d.newLeagueObj(name, email, format, format === "teams" && ch.singlesDecider === true);
         ctx.newLeagues.push({ league, entry: { id: league.id, name: league.name, createdAt: league.createdAt, hidden: true } });
-        return { leagueId: league.id, leagueName: name, text: `Create a new league "${name}" (hidden until you unhide it), admin email ${email}.`, undo: { leagueId: league.id }, after: "created" };
+        ctx.leagues.set(league.id, league);
+        return { leagueId: league.id, leagueName: name, text: `Create a new ${format === "pairs" ? "Vibora (pairs)" : "team"} league "${name}"${league.singlesDecider ? " with the singles decider (Ormonde rules)" : ""}, hidden until you publish it. Admin email ${email}.`, undo: { leagueId: league.id }, after: "created" };
       },
       check(ctx, c) {
         const l = ctx.league(c.undo.leagueId);
@@ -561,7 +618,7 @@ module.exports = function createJamesActions(d) {
     team_add: {
       label: "League",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId);
+        const l = leagueRef(ctx, ch);
         const name = clip(ch.name, 60);
         if (!name) throw err("What's the team called?");
         if (l.format === "pairs") throw err("That's a Vibora (pairs) league, so it has no teams.");
@@ -597,7 +654,7 @@ module.exports = function createJamesActions(d) {
   leagueKinds.team_logo_set = {
     label: "Logo",
     run(ctx, ch) {
-      const l = leagueFor(ctx, ch.leagueId); const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
+      const l = leagueRef(ctx, ch); const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
       const up = uploadedLogo(ctx, ch);
       const img = up || String(ch.image || "");
       if (!up && (!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(img) || img.length > MAX_LOGO)) throw err("That logo image isn't usable.");
@@ -617,13 +674,130 @@ module.exports = function createJamesActions(d) {
     },
   };
 
+  // ---- setting a league up: its settings, going public, starting the season, the weekly times ----
+  const SETTING_FIELDS = ["courtCount", "slotCount", "courtNames", "defaultVenue", "playoffFormat"];
+  leagueKinds.league_settings = {
+    label: "League",
+    run(ctx, ch) {
+      const l = leagueRef(ctx, ch);
+      const before = {}; SETTING_FIELDS.forEach((k) => { before[k] = l[k] === undefined ? null : clone(l[k]); });
+      const bits = [], warnings = [];
+      if (ch.courtCount !== undefined || ch.slotCount !== undefined) {
+        const cc = ch.courtCount !== undefined ? Number(ch.courtCount) : (l.courtCount || 4), sc = ch.slotCount !== undefined ? Number(ch.slotCount) : (l.slotCount || 3);
+        if (!Number.isInteger(cc) || cc < 1 || cc > 12) throw err("Courts must be between 1 and 12.");
+        if (!Number.isInteger(sc) || sc < 1 || sc > 10) throw err("Time slots a night must be between 1 and 10.");
+        l.courtCount = cc; l.slotCount = sc; bits.push(`${cc} court${cc === 1 ? "" : "s"} and ${sc} time slot${sc === 1 ? "" : "s"} a night`);
+        if (l.format !== "pairs" && l.teams.length > 1 && Math.floor(l.teams.length / 2) > cc * sc) warnings.push(`${l.teams.length} teams need ${Math.floor(l.teams.length / 2)} matches a night, more than ${cc * sc} court slots.`);
+      }
+      if (ch.courtNames !== undefined) {
+        const names = (Array.isArray(ch.courtNames) ? ch.courtNames : []).slice(0, 12).map((n) => clip(n, 30));
+        l.courtNames = names; bits.push(names.length ? `court names ${names.join(", ")}` : "no court names");
+      }
+      if (ch.defaultVenue !== undefined) { l.defaultVenue = clip(ch.defaultVenue, 120); bits.push(l.defaultVenue ? `venue ${l.defaultVenue}` : "no default venue"); }
+      if (ch.playoffFormat !== undefined) {
+        if (!["none", "semis_final", "position"].includes(ch.playoffFormat)) throw err("Playoffs can be none, semis and final, or a final-spot playoff.");
+        if (l.format === "pairs" && ch.playoffFormat !== "none") throw err("Playoffs aren't available for a Vibora league yet.");
+        if (l.playoffs) throw err("The playoffs have already been built, so the format can't change here.");
+        l.playoffFormat = ch.playoffFormat; bits.push({ none: "no playoffs", semis_final: "semi-finals and a final", position: "a final-spot playoff" }[ch.playoffFormat]);
+      }
+      if (!bits.length) throw err("Tell me which setting to change.");
+      ctx.touch(l.id);
+      const after = {}; SETTING_FIELDS.forEach((k) => { after[k] = l[k] === undefined ? null : clone(l[k]); });
+      return { leagueId: l.id, leagueName: l.name, warnings, text: `${l.name}: ${bits.join(", ")}.`, undo: { before }, after: JSON.stringify(after) };
+    },
+    check(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      const now = {}; SETTING_FIELDS.forEach((k) => { now[k] = l[k] === undefined ? null : clone(l[k]); });
+      if (JSON.stringify(now) !== c.after) throw err(`${l.name}'s settings have been changed since, so it can't be undone safely.`);
+    },
+    revert(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      SETTING_FIELDS.forEach((k) => { if (c.undo.before[k] === null) delete l[k]; else l[k] = clone(c.undo.before[k]); });
+      ctx.touch(l.id);
+    },
+  };
+  // Hidden leagues can't be found by players. Publishing one puts it on the Leagues page, so it asks for a tick.
+  const indexEntry = (id) => store.getIndex().find((e) => e.id === id);
+  leagueKinds.league_visibility = {
+    label: "League",
+    run(ctx, ch) {
+      const l = leagueRef(ctx, ch);
+      const made = ctx.newLeagues.find((x) => x.league.id === l.id);
+      const e = made ? made.entry : indexEntry(l.id);
+      if (!e) throw err("I can't find that league.");
+      const hide = ch.hidden !== false && ch.hidden !== "false";
+      if (!!e.hidden === hide) throw err(hide ? `${l.name} is already hidden.` : `${l.name} is already public.`);
+      const was = !!e.hidden;
+      if (made) e.hidden = hide; else ctx.deferred.push(() => { const idx = store.getIndex(); const x = idx.find((y) => y.id === l.id); if (x) { x.hidden = hide; store.saveIndex(idx); } });
+      return { leagueId: l.id, leagueName: l.name, needsConfirm: !hide, confirmText: "I understand this puts the league on the public Leagues page, where anyone can find it.", warnings: hide ? [] : ["Anyone can then find the league and its teams on the public Leagues page."], text: hide ? `Hide ${l.name} from the public.` : `Publish ${l.name} on the public Leagues page.`, undo: { was }, after: hide ? "hidden" : "public" };
+    },
+    check(ctx, c) { const e = indexEntry(c.leagueId); if (!e) return; if ((c.after === "hidden") !== !!e.hidden) throw err("The league's visibility has been changed since, so it can't be undone safely."); },
+    revert(ctx, c) { ctx.deferred.push(() => { const idx = store.getIndex(); const x = idx.find((y) => y.id === c.leagueId); if (x) { x.hidden = c.undo.was; store.saveIndex(idx); } }); },
+  };
+  // Starting the season builds every fixture and locks the teams, so it asks for a tick of its own.
+  const fixtureShape = (l) => JSON.stringify([l.status || null, l.playoffFormat || null, !!l.singlesDecider, (l.fixtures || []).length, (l.byes || []).length]);
+  leagueKinds.season_start = {
+    label: "Season",
+    run(ctx, ch) {
+      const l = leagueRef(ctx, ch);
+      if (d.leagueStatus(l) !== "setup") throw err(`${l.name}'s season has already started.`);
+      const isPairs = l.format === "pairs";
+      if (isPairs && l.teams.some((t) => t.players.length !== 2)) throw err("Every pair needs exactly 2 players before the season can start.");
+      if (l.teams.length < 3) throw err(`${l.name} needs at least 3 ${isPairs ? "pairs" : "teams"} before the season can start (it has ${l.teams.length}).`);
+      if (isPairs && (l.groups || []).length) throw err("Leagues with groups have to be started by hand.");
+      const before = { status: l.status === undefined ? null : l.status, playoffFormat: l.playoffFormat === undefined ? null : l.playoffFormat, singlesDecider: !!l.singlesDecider, fixtures: clone(l.fixtures || []), byes: clone(l.byes || []) };
+      const warnings = [];
+      if (!isPairs) l.teams.filter((t) => t.players.length < 4).forEach((t) => warnings.push(`${t.name} has only ${t.players.length} player${t.players.length === 1 ? "" : "s"}. A match night needs 4 to pick from.`));
+      if (ch.playoffFormat !== undefined) {
+        if (!["none", "semis_final", "position"].includes(ch.playoffFormat)) throw err("Playoffs can be none, semis and final, or a final-spot playoff.");
+        if (isPairs && ch.playoffFormat !== "none") throw err("Playoffs aren't available for a Vibora league yet.");
+      }
+      if (!isPairs && ch.singlesDecider !== undefined) l.singlesDecider = ch.singlesDecider === true;
+      const gen = logic.generateRoundRobin(l.teams, ch.doubleRound === true, isPairs ? 1 : (l.singlesDecider ? 5 : 4));
+      if (isPairs) {
+        const byId = {}; l.teams.forEach((t) => { byId[t.id] = t; });
+        gen.fixtures.forEach((f) => {
+          const a = byId[f.teamA], b = byId[f.teamB];
+          if (a) f.selectionA = { submitted: true, pairs: [[a.players[0].id, a.players[1].id]] };
+          if (b) f.selectionB = { submitted: true, pairs: [[b.players[0].id, b.players[1].id]] };
+        });
+      }
+      l.fixtures = gen.fixtures; l.byes = gen.byes;
+      l.playoffFormat = isPairs ? "none" : (ch.playoffFormat || l.playoffFormat || "none");
+      l.status = "active";
+      ctx.touch(l.id);
+      const rounds = new Set(gen.fixtures.map((f) => f.round)).size;
+      return {
+        leagueId: l.id, leagueName: l.name, needsConfirm: true, warnings,
+        confirmText: "I understand this builds every fixture and locks the teams for the season, and I want to start it.",
+        text: `Start ${l.name}'s season: ${l.teams.length} ${isPairs ? "pairs" : "teams"}, ${gen.fixtures.length} fixtures over ${rounds} round${rounds === 1 ? "" : "s"}${ch.doubleRound === true ? " (home and away)" : " (everyone plays everyone once)"}${l.singlesDecider ? ", with the singles decider" : ""}, ${{ none: "no playoffs", semis_final: "semi-finals and a final", position: "a final-spot playoff" }[l.playoffFormat]}. Teams are locked from then on.`,
+        undo: { before }, after: fixtureShape(l),
+      };
+    },
+    check(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      if (fixtureShape(l) !== c.after) throw err(`${l.name}'s season has changed since it was started, so I can't undo the start.`);
+      const touched = (l.fixtures || []).some((f) => f.finalized || (f.selectionA && f.selectionA.submitted && l.format !== "pairs") || (f.selectionB && f.selectionB.submitted && l.format !== "pairs") || (f.rubbers || []).some((r) => r.startedAt || r.completedAt || r.forfeited || (r.sets || []).some((st) => st[0] !== null && st[0] !== undefined) || (r.tb && (r.tb[0] || r.tb[1]))));
+      if (touched) throw err(`${l.name} already has line-ups or scores in, so I won't wipe its fixtures.`);
+    },
+    revert(ctx, c) {
+      const l = leagueFor(ctx, c.leagueId);
+      l.fixtures = clone(c.undo.before.fixtures); l.byes = clone(c.undo.before.byes);
+      l.singlesDecider = c.undo.before.singlesDecider;
+      if (c.undo.before.status === null) delete l.status; else l.status = c.undo.before.status;
+      if (c.undo.before.playoffFormat === null) delete l.playoffFormat; else l.playoffFormat = c.undo.before.playoffFormat;
+      if (l.schedule) Object.keys(l.schedule).filter((k) => /^r\d+$/.test(k)).forEach((k) => { delete l.schedule[k]; });
+      ctx.touch(l.id);
+    },
+  };
+
   // ---- players ------------------------------------------------------------
   const hasPlayed = (l, pid) => logic.allFixturesOf(l).some((f) => ((f.selectionA && f.selectionA.pairs) || []).flat().includes(pid) || ((f.selectionB && f.selectionB.pairs) || []).flat().includes(pid));
   const playerKinds = {
     player_add: {
       label: "Player",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
+        const l = leagueRef(ctx, ch); const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
         const list = (Array.isArray(ch.names) && ch.names.length ? ch.names : [ch.name]).map((n) => clip(n, 60)).filter(Boolean);
         if (!list.length) throw err("What's the player's name?");
         const seen = new Set(t.players.map((p) => p.name.toLowerCase()));
@@ -650,7 +824,7 @@ module.exports = function createJamesActions(d) {
     player_move: {
       label: "Player",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId);
+        const l = leagueRef(ctx, ch);
         if (l.format === "pairs") throw err("Moving players between teams isn't available for a Vibora league.");
         if (d.leagueStatus(l) !== "setup") throw err("Players can be moved between seasons, before the new season starts.");
         const from = ch.fromTeamId ? teamFor(l, ch.fromTeamId) : null;
@@ -747,14 +921,17 @@ module.exports = function createJamesActions(d) {
   Object.keys(courtKinds).forEach((k) => { GROUP_OF[k] = "court"; });
   const GROUP_NAME = { payments: "Payments", fixtures: "Fixtures", leagues: "Leagues", players: "Players", notes: "Notes", scores: "Scores", court: "Court control", images: "Pictures" };
 
+  // Steps that can't be undone cleanly or that go public are always a set of their own, after the admin has said yes.
+  const ALONE = new Set(["fixture_finalize", "season_start", "league_visibility"]);
+
   // ---- the three entry points ---------------------------------------------
   function plan(changes, { dry, actor, perms, images }) {
     const ctx = makeCtx(dry, images, actor);
-    const hasFinalize = changes.some((c) => c && c.kind === "fixture_finalize");
+    const hasAlone = changes.some((c) => c && ALONE.has(c.kind));
     const results = changes.map((ch) => {
       const k = KINDS[ch && ch.kind];
       try {
-        if (hasFinalize && changes.length > 1) throw err("Finalizing has to be its own step. Do the other changes first, then finalize.");
+        if (hasAlone && changes.length > 1) throw err("That step has to be on its own. Do the other changes first, then do it.");
         if (!k) throw err("I don't know how to do that one.");
         if (!perms.write[GROUP_OF[ch.kind]]) throw err(`${GROUP_NAME[GROUP_OF[ch.kind]]} changes are switched off in James's permissions.`);
         const r = k.run(ctx, ch, actor);
@@ -767,7 +944,7 @@ module.exports = function createJamesActions(d) {
     return { ctx, results };
   }
   // What the admin sees: no snapshots.
-  const publicResult = (r) => ({ ok: r.ok, needsConfirm: !!r.needsConfirm, kind: r.kind, label: r.label, text: r.text || "", warnings: r.warnings || [], error: r.error || null, leagueName: r.leagueName || "" });
+  const publicResult = (r) => ({ ok: r.ok, needsConfirm: !!r.needsConfirm, confirmText: r.confirmText || "", kind: r.kind, label: r.label, text: r.text || "", warnings: r.warnings || [], error: r.error || null, leagueName: r.leagueName || "" });
 
   function preview(changes, opts) { return plan(changes, { ...opts, dry: true }).results.map(publicResult); }
 
@@ -789,9 +966,11 @@ module.exports = function createJamesActions(d) {
   }
 
   // All or nothing: every change must work, then everything is saved together.
-  function apply(changes, { actor, request, perms, images }) {
+  function apply(changes, { actor, request, perms, images, confirmed }) {
     const { ctx, results } = plan(changes, { dry: false, actor, perms, images });
     if (results.some((r) => !r.ok)) return { ok: false, results: results.map(publicResult) };
+    // Nothing has been saved yet: steps that need the admin's own OK stop here without it.
+    if (results.some((r) => r.needsConfirm) && !confirmed) return { ok: false, needsConfirm: true, results: results.map(publicResult) };
     results.forEach((r) => {
       const l = r.leagueId && ctx.leagues.get(r.leagueId);
       if (l && ctx.touched.has(l.id)) d.audit(l, actor, `${r.text}`);

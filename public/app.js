@@ -7356,9 +7356,9 @@ function ahJamesChangesHtml(t, ti) {
       ${ok ? (pv.warnings || []).map((w) => `<div class="ahj-concern"><b>Check:</b> ${escapeHtml(w)}</div>`).join("") : '<div class="ahj-sub">Left out. It will not be applied.</div>'}</div>`;
   }).join("");
   const needsOk = t.changes.some((c) => c.preview && c.preview.ok && c.preview.needsConfirm);
-  const finBox = st === "pending" && needsOk && okN ? `<label class="ahj-fin-ok"><input type="checkbox" class="ahj-fin-check" data-t="${ti}"${t.finOk ? " checked" : ""}><span>I understand this locks the result and emails players, and I want to finalize it.</span></label>` : "";
+  const finBox = st === "pending" && needsOk && okN ? `<label class="ahj-fin-ok"><input type="checkbox" class="ahj-fin-check" data-t="${ti}"${t.finOk ? " checked" : ""}><span>${escapeHtml((t.changes.find((c) => c.preview && c.preview.ok && c.preview.needsConfirm) || { preview: {} }).preview.confirmText || "I understand what this does, and I want to go ahead.")}</span></label>` : "";
   const actions = st === "pending"
-    ? (okN ? `<button type="button" class="ah-complete ahj-apply" data-t="${ti}"${needsOk && !t.finOk ? " disabled" : ""}>${needsOk ? "Finalize" : "Apply " + okN + " change" + (okN === 1 ? "" : "s")}</button>` : "") + `<button type="button" class="ah-complete undo ahj-cdismiss" data-t="${ti}">Dismiss</button>`
+    ? (okN ? `<button type="button" class="ah-complete ahj-apply" data-t="${ti}"${needsOk && !t.finOk ? " disabled" : ""}>${needsOk ? ((t.changes.find((c) => c.preview && c.preview.needsConfirm) || { preview: {} }).preview.label === "Finalize" ? "Finalize" : "Confirm") : "Apply " + okN + " change" + (okN === 1 ? "" : "s")}</button>` : "") + `<button type="button" class="ah-complete undo ahj-cdismiss" data-t="${ti}">Dismiss</button>`
     : st === "applied" ? `<button type="button" class="ah-complete undo ahj-cundo" data-t="${ti}">Undo these changes</button>` : "";
   return `<div class="ahj-block"><div class="ahj-block-head">${head}</div>${rows}${finBox}<div class="ahj-actions">${actions}</div></div>`;
 }
@@ -7458,7 +7458,7 @@ async function ahJamesApply(t, btn) {
   btn.disabled = true;
   try {
     const usesLogo = send.some((c) => Number.isInteger(c.logoImage));
-    const finalizing = send.some((c) => c.kind === "fixture_finalize");
+    const finalizing = t.changes.some((c) => c.preview && c.preview.ok && c.preview.needsConfirm);
     const r = await api("/admin/james/apply", { method: "POST", body: { changes: send, request: t.request || "", ...(usesLogo ? { images: t.logoImages || [] } : {}), ...(finalizing ? { confirmFinalize: !!t.finOk } : {}) } });
     t.cstate = "applied"; t.setId = r.setId; t.appliedN = r.results.length;
     t.changes = t.changes.filter((c) => c.preview && c.preview.ok);
