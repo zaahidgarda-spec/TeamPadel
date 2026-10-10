@@ -76,7 +76,7 @@ module.exports = function createJamesActions(d) {
       else { const e = store.getIndex().find((x) => x.name.toLowerCase() === n); if (e) l = ctx.league(e.id); }
     }
     if (!l) throw err("I can't find that league.");
-    if (d.hubExcludedLeague(l.name)) throw err(`${l.name} is outside the Note Machine, so James can't change it.`);
+    if (d.hubExcludedLeague(l.name)) throw err(`${l.name} is outside Cerebro, so James can't change it.`);
     return l;
   }
   const leagueRef = (ctx, ch) => leagueFor(ctx, ch.leagueId, ch.leagueName);
@@ -618,7 +618,7 @@ module.exports = function createJamesActions(d) {
         if (name.length < 2) throw err("What should the league be called?");
         if (!email.includes("@")) throw err("I need an admin email address for the new league. Tell me which one to use.");
         if (store.getIndex().some((e) => e.name.toLowerCase() === name.toLowerCase())) throw err(`There's already a league called ${name}.`);
-        if (d.hubExcludedLeague(name)) throw err("That name belongs to a league outside the Note Machine.");
+        if (d.hubExcludedLeague(name)) throw err("That name belongs to a league outside Cerebro.");
         const format = ch.format === "pairs" ? "pairs" : "teams";
         const league = d.newLeagueObj(name, email, format, format === "teams" && ch.singlesDecider === true);
         ctx.newLeagues.push({ league, entry: { id: league.id, name: league.name, createdAt: league.createdAt, hidden: true } });
@@ -890,7 +890,7 @@ module.exports = function createJamesActions(d) {
         const hub = ctx.hub();
         const item = (hub.items || []).find((i) => i.id === ch.noteId);
         if (!item) throw err("I can't find that note.");
-        if (item.leagueId && d.hubExcludedLeagueIds().has(item.leagueId)) throw err("That note belongs to a league outside the Note Machine.");
+        if (item.leagueId && d.hubExcludedLeagueIds().has(item.leagueId)) throw err("That note belongs to a league outside Cerebro.");
         const body = {};
         ["status", "priority", "categoryId", "dueDate", "pinned"].forEach((k) => { if (ch[k] !== undefined) body[k] = ch[k]; });
         if (!Object.keys(body).length) throw err("Tell me what to change on the note.");

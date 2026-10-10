@@ -3104,7 +3104,7 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-lrow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line);margin-top:6px;font-size:13px;}
 .ah-tiles .card{margin:0;}
 
-/* Note Machine payment bars */
+/* Cerebro payment bars */
 .ah-title-row{display:flex;align-items:center;gap:10px;}
 .ah-title-row h2{margin:0;font-size:24px;}
 .ah-admin-tag{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:#FDE6DE;color:#B42318;border-radius:999px;padding:3px 10px;}
@@ -3159,7 +3159,7 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-item:has(.ah-prio.p-urgent){border-left:4px solid #D64533;}
 .ah-prio-sel{min-height:0;padding:3px 6px;font-size:12px;}
 
-/* Note Machine left bar */
+/* Cerebro left bar */
 .ah-layout{display:flex;flex-direction:column;gap:12px;}
 .ah-main{min-width:0;flex:1;}
 .ah-side{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px;}
@@ -3278,7 +3278,7 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-av-none{width:28px;height:28px;}
 .ah-bact{flex-direction:column;gap:2px;}
 
-/* Note Machine: obvious Complete / Undo buttons and the Completed section */
+/* Cerebro: obvious Complete / Undo buttons and the Completed section */
 .ah-complete{display:inline-flex;align-items:center;gap:6px;min-height:0;padding:6px 12px;border-radius:8px;border:0;background:#1F9D55;color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
 .ah-complete:hover{background:#178246;}
 .ah-complete.undo{background:#fff;color:#334155;border:1.5px solid #94A3B8;}
@@ -3308,7 +3308,7 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-doneby-sel{min-height:0;padding:4px 6px;border-radius:6px;border:1px solid #CBD5E1;background:#fff;color:#0F172A;font-size:13px;font-weight:700;width:auto;}
 .ah-done-by{display:flex;align-items:center;gap:6px;font-size:12px;color:#64748B;white-space:nowrap;}
 
-/* James, the Note Machine assistant */
+/* James, Cerebro assistant */
 .ahj{background:#fff;border:1.5px solid #0B6E8A;border-radius:14px;padding:14px 16px;margin-bottom:16px;display:flex;flex-direction:column;gap:10px;color:#0F172A;}
 .ahj-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;}
 .ahj-title{display:flex;align-items:center;gap:8px;font-size:16px;}

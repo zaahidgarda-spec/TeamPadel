@@ -1,4 +1,4 @@
-// James: the admin-side assistant in the Note Machine.
+// James: the admin-side assistant in Cerebro.
 //
 // He never writes anything himself. Claude can only answer, propose notes or
 // draft messages; the admin sees the proposal and presses Confirm before a
@@ -143,7 +143,7 @@ function systemPrompt(context) {
   return [
     {
       type: "text",
-      text: `You are James, the assistant for the admins (ZG, ID and JN) of Team Padel, a padel league organiser in South Africa. You work inside the Note Machine, the admin-only notes and payments board.
+      text: `You are James, the assistant for the admins (ZG, ID and JN) of Team Padel, a padel league organiser in South Africa. You work inside Cerebro, the admin-only notes and payments board.
 
 How you work:
 - You can answer questions, propose notes (propose_notes), draft messages (draft_messages) and, where that tool is available, propose changes (propose_changes). You cannot save, send, change or delete anything yourself. The admin sees each proposal spelled out and confirms it, and every confirmed change can be undone. Never say you have changed or sent something; say what you have proposed.
@@ -165,7 +165,7 @@ How you work:
 }
 
 
-// ---- What James may read and change (switched on and off in the Note Machine).
+// ---- What James may read and change (switched on and off in Cerebro).
 const READ_GROUPS = ["payments", "fixtures", "rosters"];
 const WRITE_GROUPS = ["notes", "payments", "fixtures", "leagues", "players", "scores", "court", "images"];
 function permissions(settings) {

@@ -1769,7 +1769,7 @@ function updateAdminBar() {
   badge.textContent = n;
 }
 // A note from anywhere in the app: the "+ Note" button in the admin bar opens a
-// small box that files straight into the Note Machine, so nothing is lost
+// small box that files straight into Cerebro, so nothing is lost
 // while you're in the middle of something else.
 let quickNoteLeagues = null;
 let quickNoteCats = [];
@@ -1858,7 +1858,7 @@ el("ab-note-add").onclick = async () => {
     quickNoteType = "auto"; renderQuickNoteCats();
     el("ab-note-hint").textContent = `Filed under ${AH_TYPE_LABEL[it.type] || it.type}${body.priority !== "normal" ? ", " + body.priority : ""} by ${it.createdBy}.`;
     el("ab-note-prio").value = "normal";
-    // If the Note Machine is open behind this, it picks the new note up.
+    // If Cerebro is open behind this, it picks the new note up.
     if (document.querySelector("#hub-view-adminhub.active")) loadAdminHub();
   } catch (e) { el("ab-note-hint").textContent = e.message; }
   el("ab-note-add").disabled = false;
@@ -7305,10 +7305,10 @@ function ahVoiceStart(lang) {
   ahJRender();
 }
 
-// ---- Leo's own card in the Note Machine: draw a logo or kit design yourself, without going through James ----
+// ---- Leo's own card in Cerebro: draw a logo or kit design yourself, without going through James ----
 let ahLeo = { shut: false, turn: { imagePlans: [], logoImages: [] }, kind: "logo", leagueId: "", teamId: "", text: "", photos: [], error: "" };
 function ahTurn(ti) { return ti === -1 ? ahLeo.turn : ahJ.thread[ti]; }
-// Leo sits in the Note Machine, so anything that changes one of his pictures redraws that page (and James's panel if it's open).
+// Leo sits in Cerebro, so anything that changes one of his pictures redraws that page (and James's panel if it's open).
 function ahPicRender() { renderAdminHub(); if (ahJ.popup) renderJamesPopup(); }
 const AH_LEO_KINDS = [["logo", "A team logo"], ["kit_front", "Kit front"], ["kit_back", "Kit back"], ["artwork", "Other artwork"]];
 const AH_LEO_HINT = { logo: "e.g. A bold red storm swirl inside a circle, flat and simple, the letters CY in white.", kit_front: "e.g. A dark red padel shirt, a thin white stripe across the chest, room for the logo on the left.", kit_back: "e.g. The back of the same dark red shirt, plain, with space for a name and number.", artwork: "e.g. A banner of a padel court at sunset in warm colours." };
@@ -7366,7 +7366,7 @@ function bindAhLeo(root) {
     ahRunPlan(plan, ahLeo.turn);
   };
 }
-// James can live in the Note Machine or in a panel at the top of every page (next to + Note).
+// James can live in Cerebro or in a panel at the top of every page (next to + Note).
 // Only one place shows him at a time, so the chat is never on screen twice.
 function ahJRender() { const m = el("admin-bar-mic"); if (m) { m.classList.toggle("on", !!ahJ.listening); m.setAttribute("aria-pressed", String(!!ahJ.listening)); } if (ahJ.popup) renderJamesPopup(); else renderAdminHub(); }
 function renderJamesPopup() {
@@ -7948,7 +7948,7 @@ function bindAhJames(root) {
   }; });
 }
 function ahHeaderHtml() {
-  const title = '<div class="ah-title-row"><h2>Note Machine</h2><span class="ah-admin-tag">Admin only</span></div>';
+  const title = '<div class="ah-title-row"><h2>Cerebro</h2><span class="ah-admin-tag">Admin only</span></div>';
   const who = ahMe.fromAccount ? `Signed in as <b>${escapeHtml(ahMe.name)}</b>` : `Notes say <b>${escapeHtml(ahMe.name)}</b> <button class="link" id="ah-setname" type="button">Set your name</button>`;
   return `<div class="ah-head">${title}
     <div class="ah-who">${who}</div>

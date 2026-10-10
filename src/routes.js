@@ -4563,7 +4563,7 @@ function requireOwnerSession(req, res, next) {
   if (!req.session || !req.session.isOwner) return res.status(403).json({ error: "Admin login required." });
   next();
 }
-// The leagues Team Padel runs itself aren't managed through the Note Machine.
+// The leagues Team Padel runs itself aren't managed through Cerebro.
 // Anything already filed against them stays saved, just out of sight here.
 function hubExcludedLeague(name) { return /premier league|business class/i.test(String(name || "")); }
 function hubExcludedLeagueIds() {
@@ -4572,7 +4572,7 @@ function hubExcludedLeagueIds() {
 const HUB_TYPES = ["note", "payment", "sponsor", "court", "kit", "followup"];
 const HUB_DONE_BY = ["ZG", "ID", "JN"];
 const HUB_PRIORITIES = ["urgent", "high", "normal", "low"];
-// Categories down the left of the Note Machine. Anyone can add more; it
+// Categories down the left of Cerebro. Anyone can add more; it
 // starts with Tasks and Reminders.
 const HUB_CATEGORY_COLORS = ["#579BFC", "#A25DDC", "#FF7575", "#9CD326", "#CAB641", "#66CCFF", "#FF158A", "#7F5347", "#037F4C", "#BB3354"];
 const HUB_DEFAULT_CATEGORIES = [{ id: "tasks", name: "Tasks", color: HUB_CATEGORY_COLORS[0] }, { id: "reminders", name: "Reminders", color: HUB_CATEGORY_COLORS[1] }];
@@ -4717,7 +4717,7 @@ router.delete("/admin/hub/categories/:id", requireOwnerSession, (req, res) => {
   store.saveAdminHub(hub);
   res.json({ ok: true });
 });
-// Builds (without saving) a Note Machine item from what the admin typed. Used by
+// Builds (without saving) a Cerebro item from what the admin typed. Used by
 // the quick add and by James once the admin has confirmed his proposal.
 function hubBuildItem(b, who) {
   const text = cleanHubText(b.text || b.title, 2000);
@@ -4827,7 +4827,7 @@ router.post("/leagues/:leagueId/payments/reset", requireAdmin, (req, res) => {
       p.paidCents = 0; p.payments = []; p.coveredByTeam = false; delete p.overpaidCents;
     });
   });
-  // Starting a fresh collection: the league stays on the Note Machine, now at zero.
+  // Starting a fresh collection: the league stays on Cerebro, now at zero.
   if (wasTracked) league.hubTrackFees = true;
   logAudit(league, req, null, "payments_reset", { teamsPaid, playersPaid });
   store.saveLeague(league.id, league);
@@ -4908,7 +4908,7 @@ function hubPaymentsData() {
   return { teams, leagues };
 }
 router.get("/admin/hub/payments", requireOwnerSession, (req, res) => { res.json(hubPaymentsData()); });
-// ---- James: the admin assistant in the Note Machine (see src/james.js and
+// ---- James: the admin assistant in Cerebro (see src/james.js and
 // src/jamesActions.js). He reads a summary of the data, and can answer, propose
 // notes, draft messages or propose changes. He saves nothing himself: every
 // change is shown to the admin, who confirms it, and each confirmed set is
