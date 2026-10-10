@@ -73,6 +73,7 @@
       <input id="ab-note-region" type="text" maxlength="80" placeholder="Which region?" hidden>
     </div>
     <div class="ab-note-row">
+      <select id="ab-note-cat" aria-label="Category"></select>
       <select id="ab-note-prio" aria-label="Priority"><option value="normal">Normal priority</option><option value="urgent">Urgent</option><option value="high">High priority</option><option value="low">Low priority</option></select>
       <select id="ab-note-league" aria-label="League"></select>
       <button type="button" class="primary" id="ab-note-add">Add</button>
@@ -1044,39 +1045,6 @@
           <h2 class="section-title">Change history</h2>
           <p class="note">Every score edit, finalize/unlock, substitution, and roster change, with who made it and when. View-only — to fix a bad edit, just re-enter the correct value.</p>
           <div id="admin-audit-log-list" style="margin-top:10px;"></div>
-        </div>
-      </section>
-
-      <section class="view" id="view-desk">
-        <div class="admin-only-banner">ADMIN ONLY. NOTES AND PAYMENTS HERE ARE NEVER SHOWN TO CAPTAINS OR PLAYERS</div>
-        <div class="card" id="desk-summary-card"></div>
-        <div class="card">
-          <h2 class="section-title">Add a note</h2>
-          <textarea id="desk-note-text" rows="2" maxlength="1000" placeholder="Write anything: who paid what, kit sizes, a reminder…" style="width:100%;"></textarea>
-          <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px;align-items:center;">
-            <label class="note" for="desk-note-about">About</label>
-            <select id="desk-note-about" style="min-width:150px;max-width:100%;"></select>
-          </div>
-          <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px;align-items:center;" id="desk-note-cats"></div>
-          <div class="row" style="margin-top:10px;gap:10px;align-items:center;flex-wrap:wrap;">
-            <button class="primary" id="desk-note-add" type="button">Add note</button>
-            <span class="note" id="desk-note-hint"></span>
-          </div>
-        </div>
-        <div class="card">
-          <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <h2 class="section-title" style="margin:0;">Notes</h2>
-            <label class="note"><input type="checkbox" id="desk-open-only"> Open only</label>
-          </div>
-          <div class="desk-chips" id="desk-note-filter"></div>
-          <div id="desk-notes-list"></div>
-        </div>
-        <div class="card">
-          <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <h2 class="section-title" style="margin:0;">Players</h2>
-            <select id="desk-team-filter"></select>
-          </div>
-          <div id="desk-players"></div>
         </div>
       </section>
 

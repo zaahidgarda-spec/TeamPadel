@@ -1769,6 +1769,7 @@ function updateAdminBar() {
 // small box that files straight into the Note Machine, so nothing is lost
 // while you're in the middle of something else.
 let quickNoteLeagues = null;
+let quickNoteCats = [];
 let quickNoteType = "auto";
 function renderQuickNoteCats() {
   const cats = [["auto", "Auto"], ["payment", "Payment"], ["sponsor", "Sponsor"], ["court", "Court"], ["kit", "Kit"], ["followup", "Follow-up"], ["note", "Note"]];
@@ -1800,7 +1801,8 @@ function closeQuickNote() {
 async function openQuickNote() {
   const panel = el("ab-note-panel");
   if (!panel.hidden) return closeQuickNote();
-  if (!quickNoteLeagues) quickNoteLeagues = (await api("/admin/hub").catch(() => ({ leagues: [] }))).leagues;
+  if (!quickNoteLeagues) { const hub = await api("/admin/hub").catch(() => ({ leagues: [], categories: [] })); quickNoteLeagues = hub.leagues; quickNoteCats = hub.categories || []; }
+  el("ab-note-cat").innerHTML = '<option value="">Auto category</option><option value="none">No category</option>' + quickNoteCats.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
   const here = inLeagueView() ? currentLeagueId : "";
   el("ab-note-league").innerHTML = '<option value="">All leagues</option>' + quickNoteLeagues.map((l) => `<option value="${l.id}"${l.id === here ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
   el("ab-note-hint").textContent = "";
@@ -1820,6 +1822,7 @@ el("ab-note-add").onclick = async () => {
   const text = ta.value.trim();
   if (!text) { el("ab-note-hint").textContent = "Write something first."; return; }
   const body = { text, priority: el("ab-note-prio").value };
+  const qc = el("ab-note-cat").value; if (qc === "none") body.categoryId = null; else if (qc) body.categoryId = qc;
   if (quickNoteType !== "auto") body.type = quickNoteType;
   const lg = el("ab-note-league").value; if (lg) body.leagueId = lg;
   if (quickNoteType === "sponsor") {
@@ -5954,9 +5957,6 @@ function tabDefs() {
   // payment mode or pay) yet. The underlying split-payment logic is fully
   // built and working either way; this is purely a visibility/rollout
   // gate, same pattern as Toss/Ratings preview above.
-  // The admin desk: every player's payments (part payments included), kit notes
-  // and any note an admin types, filed by category. Admin only.
-  if (myRole === "admin") defs.push({ key: "desk", label: "Desk" });
   if (myRole === "admin") defs.push({ key: "pay", label: "Pay", wip: true });
   // Its own tab rather than a card buried at the bottom of Admin — a
   // captain never sees this (view-only, admin-only concern), so it's
@@ -6328,7 +6328,6 @@ function switchTab(key) {
   // that it actually is.
   if (key === "kit") renderKit();
   if (key === "auction") startAuctionRoom(); else stopAuctionRoom();
-  if (key === "desk") loadDeskNotes();
 }
 // Two tab rows instead of a dropdown — a division tab row (only shown when
 // there's more than one division) and a group tab row scoped to whichever
@@ -6605,7 +6604,7 @@ function renderAll() {
   renderPendingScoreBanner();
   renderPushPromptBanner();
   if (myRole === "admin") renderAdmin();
-  if (myRole === "admin") { renderPay(); renderDesk(); }
+  if (myRole === "admin") renderPay();
   if (myRole === "admin") renderAdminAuditLog();
   renderSelection();
   if (myRole === "admin") renderLiveCourtControl();
@@ -6899,12 +6898,33 @@ function ahSponsorWho(it) {
 }
 let ahItems = [], ahLeagues = [], ahMe = { name: "Admin", fromAccount: false }, ahPayments = { teams: [], leagues: [] };
 let ahOpenLeague = null, ahOpenTeam = null, ahCompScope = "league", ahCompPrio = "normal";
+let ahCategories = [], ahCat = "all", ahCatManage = false;
+function ahCatName(id) { const c = ahCategories.find((x) => x.id === id); return c ? c.name : ""; }
+// Notes (not counting the category filter itself) that are open, for the counts in the left bar.
+function ahCatCount(id) {
+  return ahItems.filter((i) => {
+    if (ahLeague !== "all" && i.leagueId && i.leagueId !== ahLeague) return false;
+    if (i.status === "done") return false;
+    return id === "all" || (id === "none" ? !i.categoryId : i.categoryId === id);
+  }).length;
+}
+function ahSideHtml() {
+  const btn = (id, label, extra) => `<div class="ah-cat-row${ahCat === id ? " on" : ""}"><button type="button" class="ah-cat-btn" data-cat="${id}"><span>${escapeHtml(label)}</span><span class="ah-cat-n">${ahCatCount(id) || ""}</span></button>${extra || ""}</div>`;
+  return `<aside class="ah-side" aria-label="Categories">
+    <div class="ah-side-head"><b>Categories</b><span class="ah-side-btns"><button type="button" class="link" id="ah-cat-manage">${ahCatManage ? "Done" : "Edit"}</button><button type="button" class="ah-cat-plus" id="ah-cat-add" aria-label="Add a category" title="Add a category">+</button></span></div>
+    <nav class="ah-cat-list">${btn("all", "All notes")}${ahCategories.map((c) => btn(c.id, c.name, ahCatManage ? `<button type="button" class="ah-cat-x ah-cat-ren" data-cat="${c.id}" aria-label="Rename ${escapeHtml(c.name)}" title="Rename">✎</button><button type="button" class="ah-cat-x ah-cat-del" data-cat="${c.id}" aria-label="Delete ${escapeHtml(c.name)}" title="Delete">×</button>` : "")).join("")}${btn("none", "No category")}</nav>
+  </aside>`;
+}
+function ahCatSelectHtml(selected, withAuto) {
+  return `${withAuto ? '<option value="">Auto: pick it up from the note</option>' : ""}<option value="none"${selected === "none" ? " selected" : ""}>No category</option>${ahCategories.map((c) => `<option value="${c.id}"${c.id === selected ? " selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}`;
+}
 let ahLeague = "all", ahArea = "home", ahStatus = "open", ahMode = "list", ahSearch = "", ahCompType = "auto", ahEditing = null, ahHint = "";
 async function loadAdminHub() {
   if (!isOwner) return;
   try {
     const [hub, pay] = await Promise.all([api("/admin/hub"), api("/admin/hub/payments").catch(() => ({ teams: [], leagues: [] }))]);
-    ahItems = hub.items; ahLeagues = hub.leagues; ahMe = hub.me; ahPayments = pay;
+    ahItems = hub.items; ahLeagues = hub.leagues; ahMe = hub.me; ahPayments = pay; ahCategories = hub.categories || [];
+    if (ahCat !== "all" && ahCat !== "none" && !ahCategories.some((c) => c.id === ahCat)) ahCat = "all";
   } catch (e) { el("ah-root").innerHTML = `<p class="empty">${escapeHtml(e.message || "Couldn't load the admin hub.")}</p>`; return; }
   renderAdminHub();
 }
@@ -6912,6 +6932,7 @@ function ahToday() { return new Date().toLocaleDateString("en-CA", { timeZone: "
 function ahLeagueName(id) { const l = ahLeagues.find((x) => x.id === id); return l ? l.name : ""; }
 function ahVisible(it) {
   if (ahLeague !== "all" && it.leagueId && it.leagueId !== ahLeague) return false;
+  if (ahCat === "none" ? it.categoryId : ahCat !== "all" && it.categoryId !== ahCat) return false;
   if (ahSearch) {
     const hay = (it.title + " " + (it.text || "") + " " + ahLeagueName(it.leagueId)).toLowerCase();
     if (!hay.includes(ahSearch.toLowerCase())) return false;
@@ -6955,7 +6976,7 @@ function ahItemHtml(it) {
   const stage = stages ? stages.find((x) => x[0] === it.stage) : null;
   if (ahEditing === it.id) return ahEditHtml(it);
   return `<div class="ah-item${!ahIsOpen(it) ? " done" : ""}${ahOverdue(it) ? " overdue" : ""}" data-id="${it.id}">
-    <div class="ah-item-top">${ahPrio(it) !== "normal" ? `<span class="ah-prio p-${ahPrio(it)}">${AH_PRIORITIES.find((p) => p[0] === ahPrio(it))[1]}</span>` : ""}<span class="ah-pill t-${it.type}">${AH_TYPE_LABEL[it.type]}</span>${stage ? `<span class="ah-pill stage">${stage[1]}</span>` : ""}${it.pinned ? '<span class="ah-pin" title="Pinned">★</span>' : ""}<span class="ah-where">${escapeHtml(where)}</span></div>
+    <div class="ah-item-top">${ahPrio(it) !== "normal" ? `<span class="ah-prio p-${ahPrio(it)}">${AH_PRIORITIES.find((p) => p[0] === ahPrio(it))[1]}</span>` : ""}<span class="ah-pill t-${it.type}">${AH_TYPE_LABEL[it.type]}</span>${it.categoryId && ahCatName(it.categoryId) ? `<span class="ah-pill cat">${escapeHtml(ahCatName(it.categoryId))}</span>` : ""}${stage ? `<span class="ah-pill stage">${stage[1]}</span>` : ""}${it.pinned ? '<span class="ah-pin" title="Pinned">★</span>' : ""}<span class="ah-where">${escapeHtml(where)}</span></div>
     <div class="ah-title">${escapeHtml(it.title)}${it.qty ? ` <span class="ah-qty">× ${it.qty}</span>` : ""}</div>
     ${it.text ? `<div class="ah-text">${escapeHtml(it.text).replace(/\n/g, "<br>")}</div>` : ""}
     ${money ? `<div class="ah-money"><b>${fmtRands(it.amountCents)}</b>${it.paidCents ? ` · ${it.direction === "out" ? "paid" : "received"} ${fmtRands(it.paidCents)} · <b>${fmtRands(ahOwed(it))} left</b>` : ""}</div>` : ""}
@@ -6965,6 +6986,7 @@ function ahItemHtml(it) {
       <button class="link ah-done" type="button">${ahIsOpen(it) ? "Done" : "Reopen"}</button>
       ${money && ahIsOpen(it) ? `<button class="link ah-pay" type="button">${it.direction === "out" ? "Record payment out" : "Record payment in"}</button>` : ""}
       ${stages ? `<select class="ah-stage" aria-label="Stage">${stages.map(([k, l]) => `<option value="${k}"${k === it.stage ? " selected" : ""}>${l}</option>`).join("")}</select>` : ""}
+      <select class="ah-cat-sel" aria-label="Category">${ahCatSelectHtml(it.categoryId || "none", false)}</select>
       <select class="ah-prio-sel" aria-label="Priority">${AH_PRIORITIES.map(([k, l]) => `<option value="${k}"${k === ahPrio(it) ? " selected" : ""}>${l}</option>`).join("")}</select>
       <button class="link ah-pinbtn" type="button">${it.pinned ? "Unpin" : "Pin"}</button>
       <button class="link ah-edit" type="button">Edit</button>
@@ -6977,6 +6999,7 @@ function ahEditHtml(it) {
     <textarea class="ah-e-text" rows="2" maxlength="2000" placeholder="More detail" aria-label="Details">${escapeHtml(it.text || "")}</textarea>
     <div class="ah-row">
       <select class="ah-e-type" aria-label="Type">${Object.entries(AH_TYPE_LABEL).map(([k, l]) => `<option value="${k}"${k === it.type ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <select class="ah-e-cat" aria-label="Category">${ahCatSelectHtml(it.categoryId || "none", false)}</select>
       <select class="ah-e-prio" aria-label="Priority">${AH_PRIORITIES.map(([k, l]) => `<option value="${k}"${k === ahPrio(it) ? " selected" : ""}>${l} priority</option>`).join("")}</select>
       <select class="ah-e-league" aria-label="League"><option value="">All leagues</option>${ahLeagues.map((l) => `<option value="${l.id}"${l.id === it.leagueId ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}</select>
     </div>
@@ -7005,7 +7028,7 @@ function bindAhItems(root) {
       q(".ah-e-cancel").onclick = () => { ahEditing = null; renderAdminHub(); };
       q(".ah-e-save").onclick = () => act(async () => {
         await ahApi(`/items/${id}`, { method: "PUT", body: {
-          title: q(".ah-e-title").value, text: q(".ah-e-text").value, type: q(".ah-e-type").value, priority: q(".ah-e-prio").value, leagueId: q(".ah-e-league").value || null,
+          title: q(".ah-e-title").value, text: q(".ah-e-text").value, type: q(".ah-e-type").value, priority: q(".ah-e-prio").value, categoryId: q(".ah-e-cat").value === "none" ? null : q(".ah-e-cat").value, leagueId: q(".ah-e-league").value || null,
           amountRands: q(".ah-e-amount").value === "" ? 0 : Number(q(".ah-e-amount").value), dueDate: q(".ah-e-due").value || null, qty: q(".ah-e-qty").value === "" ? 0 : Number(q(".ah-e-qty").value),
           ...(q(".ah-e-scope") ? { sponsorScope: q(".ah-e-scope").value, teamId: q(".ah-e-team").value || null, region: q(".ah-e-region").value } : {}),
         } });
@@ -7017,6 +7040,8 @@ function bindAhItems(root) {
     q(".ah-pinbtn").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { pinned: !it.pinned } }));
     q(".ah-edit").onclick = () => { ahEditing = id; renderAdminHub(); };
     q(".ah-del").onclick = () => { if (confirm("Delete this item?")) act(() => ahApi(`/items/${id}`, { method: "DELETE" })); };
+    const catSel = q(".ah-cat-sel");
+    if (catSel) catSel.onchange = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { categoryId: catSel.value === "none" ? null : catSel.value } }));
     const prio = q(".ah-prio-sel");
     if (prio) prio.onchange = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { priority: prio.value } }));
     const stage = q(".ah-stage");
@@ -7037,6 +7062,7 @@ function ahComposerHtml() {
   return `<div class="card ah-composer">
     <textarea id="ah-c-text" rows="2" maxlength="2000" placeholder="Type anything. It files itself: 'Pay Sandton R3200 by friday', 'Kit box 4 arrived', 'Chase Acme'…"></textarea>
     <div class="ah-chips">${types.map(([k, l]) => `<button type="button" class="ah-chip${ahCompType === k ? " on" : ""}" data-t="${k}">${l}</button>`).join("")}</div>
+    <div class="ah-row"><select id="ah-c-cat" aria-label="Category">${ahCatSelectHtml(ahCat !== "all" ? ahCat : "", true)}</select></div>
     <div class="ah-chips" id="ah-c-prios" role="group" aria-label="Priority"><span class="note">Priority</span>${AH_PRIORITIES.map(([k, l]) => `<button type="button" class="ah-chip ah-prio-chip p-${k}${ahCompPrio === k ? " on" : ""}" data-p="${k}" aria-pressed="${ahCompPrio === k}">${l}</button>`).join("")}</div>
     <div class="ah-row">
       <select id="ah-c-league" aria-label="League"><option value="">All leagues</option>${ahLeagues.map((l) => `<option value="${l.id}"${l.id === ahLeague ? " selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}</select>
@@ -7062,6 +7088,8 @@ function bindAhComposer(root) {
     const text = root.querySelector("#ah-c-text").value.trim();
     if (!text) { root.querySelector("#ah-c-hint").textContent = "Write something first."; return; }
     const body = { text, priority: ahCompPrio };
+    const catPick = root.querySelector("#ah-c-cat").value;
+    if (catPick === "none") body.categoryId = null; else if (catPick) body.categoryId = catPick;
     if (ahCompType !== "auto") body.type = ahCompType;
     const lg = root.querySelector("#ah-c-league").value; if (lg) body.leagueId = lg;
     const am = root.querySelector("#ah-c-amount").value; if (am) body.amountRands = Number(am);
@@ -7101,7 +7129,7 @@ function ahHeaderHtml() {
 function renderAdminHub() {
   const root = el("ah-root");
   if (!root || !isOwner) return;
-  let html = ahHeaderHtml();
+  let html = "";
   const visible = ahItems.filter(ahVisible);
   if (ahArea === "home") {
     const open = visible.filter(ahIsOpen);
@@ -7145,7 +7173,7 @@ function renderAdminHub() {
     }
     html += ahComposerHtml();
   }
-  root.innerHTML = html;
+  root.innerHTML = ahHeaderHtml() + `<div class="ah-layout">${ahSideHtml()}<div class="ah-main">${html}</div></div>`;
   const lg = root.querySelector("#ah-league"); if (lg) lg.onchange = () => { ahLeague = lg.value; renderAdminHub(); };
   const sr = root.querySelector("#ah-search"); if (sr) sr.oninput = () => { ahSearch = sr.value; const pos = sr.selectionStart; renderAdminHub(); const n = el("ah-search"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
   const sn = root.querySelector("#ah-setname"); if (sn) sn.onclick = async () => { const v = prompt("Your name, so notes show who made them:", ahMe.name === "Admin" ? "" : ahMe.name); if (v && v.trim()) { try { await ahApi("/name", { method: "POST", body: { name: v } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } } };
@@ -7154,6 +7182,16 @@ function renderAdminHub() {
   const back = root.querySelector("#ah-back"); if (back) back.onclick = () => { ahArea = "home"; ahCompType = "auto"; renderAdminHub(); };
   root.querySelectorAll(".ah-chips [data-s]").forEach((b) => { b.onclick = () => { ahStatus = b.dataset.s; renderAdminHub(); }; });
   root.querySelectorAll(".ah-chips [data-m]").forEach((b) => { b.onclick = () => { ahMode = b.dataset.m; renderAdminHub(); }; });
+  root.querySelectorAll(".ah-cat-btn").forEach((b) => { b.onclick = () => { ahCat = b.dataset.cat; if (ahArea === "home") { ahArea = "inbox"; ahStatus = "open"; } renderAdminHub(); }; });
+  const catAdd = root.querySelector("#ah-cat-add");
+  if (catAdd) catAdd.onclick = async () => {
+    const name = prompt("Name the new category", "");
+    if (!name || !name.trim()) return;
+    try { const c = await ahApi("/categories", { method: "POST", body: { name } }); ahCat = c.id; if (ahArea === "home") { ahArea = "inbox"; ahStatus = "open"; } await ahRefreshAndRender(); } catch (e) { alert(e.message); }
+  };
+  const catManage = root.querySelector("#ah-cat-manage"); if (catManage) catManage.onclick = () => { ahCatManage = !ahCatManage; renderAdminHub(); };
+  root.querySelectorAll(".ah-cat-ren").forEach((b) => { b.onclick = async () => { const cur = ahCatName(b.dataset.cat); const name = prompt("Rename this category", cur); if (!name || !name.trim() || name.trim() === cur) return; try { await ahApi(`/categories/${b.dataset.cat}`, { method: "PUT", body: { name } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
+  root.querySelectorAll(".ah-cat-del").forEach((b) => { b.onclick = async () => { if (!confirm(`Delete the "${ahCatName(b.dataset.cat)}" category? Its notes stay, they just lose the category.`)) return; try { await ahApi(`/categories/${b.dataset.cat}`, { method: "DELETE" }); if (ahCat === b.dataset.cat) ahCat = "all"; await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
   bindAhItems(root);
   bindAhComposer(root);
   bindAhPayments(root);
@@ -7268,213 +7306,6 @@ function bindAhPayments(root) {
     };
     row.querySelector(".ah-p-paid").onclick = () => done(() => api(base + "/payment-status", { method: "PUT", body: { paid: true } }));
     row.querySelector(".ah-p-disc").onclick = async () => { if (await askDiscount({ label: row.querySelector(".ah-p-disc").dataset.name, path: base + "/discount", currentCents: Number(row.querySelector(".ah-p-disc").dataset.cur) })) await ahRefreshAndRender(); };
-  });
-}
-/* ---------- Admin desk ---------- */
-const DESK_CATS = [["payments", "Payments"], ["kits", "Kits"], ["other", "Other"]];
-let deskNotes = [];
-let deskNotesLoaded = false;
-let deskNotesLeague = null;
-let deskFilter = "all";
-let deskCat = "auto";
-let deskTeamFilter = "all";
-let deskOpenPlayer = null;
-async function loadDeskNotes() {
-  if (myRole !== "admin" || !currentLeagueId) return;
-  try { deskNotes = await api(`/leagues/${currentLeagueId}/admin-notes`); deskNotesLoaded = true; deskNotesLeague = currentLeagueId; } catch { deskNotes = []; }
-  renderDesk();
-}
-function deskCatLabel(c) { return (DESK_CATS.find((x) => x[0] === c) || [c, c])[1]; }
-function deskNoteWhen(ms) {
-  const d = new Date(ms), now = new Date();
-  const same = d.toDateString() === now.toDateString();
-  return same ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
-function deskAboutLabel(n) {
-  const t = n.teamId && league.teams.find((x) => x.id === n.teamId);
-  const p = n.playerId && t && t.players.find((x) => x.id === n.playerId);
-  return p ? `${p.name} · ${t.name}` : t ? t.name : "";
-}
-function deskNoteHtml(n) {
-  const about = deskAboutLabel(n);
-  return `<div class="desk-note${n.done ? " done" : ""}" data-note="${n.id}">
-    <div class="desk-note-top"><span class="desk-pill cat-${n.category}">${deskCatLabel(n.category)}</span>${about ? `<span class="desk-about">${escapeHtml(about)}</span>` : ""}<span class="note" style="margin-left:auto;">${n.by ? escapeHtml(n.by) + " · " : ""}${deskNoteWhen(n.createdAt)}</span></div>
-    <div class="desk-note-text">${escapeHtml(n.text).replace(/\n/g, "<br>")}</div>
-    <div class="desk-note-actions">
-      <select class="desk-note-cat" aria-label="Category">${DESK_CATS.map(([k, l]) => `<option value="${k}"${k === n.category ? " selected" : ""}>${l}</option>`).join("")}</select>
-      <button class="link desk-note-done" type="button">${n.done ? "Reopen" : "Done"}</button>
-      <button class="link desk-note-edit" type="button">Edit</button>
-      <button class="link desk-note-del" type="button">Delete</button>
-    </div></div>`;
-}
-function bindDeskNotes(root) {
-  root.querySelectorAll(".desk-note").forEach((row) => {
-    const id = row.dataset.note;
-    const act = async (fn) => { try { await fn(); await loadDeskNotes(); } catch (e) { alert(e.message); } };
-    row.querySelector(".desk-note-cat").onchange = (e) => act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "PUT", body: { category: e.target.value } }));
-    row.querySelector(".desk-note-done").onclick = () => { const n = deskNotes.find((x) => x.id === id); act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "PUT", body: { done: !n.done } })); };
-    row.querySelector(".desk-note-edit").onclick = () => { const n = deskNotes.find((x) => x.id === id); const v = prompt("Edit note", n.text); if (v !== null && v.trim()) act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "PUT", body: { text: v } })); };
-    row.querySelector(".desk-note-del").onclick = () => { if (confirm("Delete this note?")) act(() => api(`/leagues/${currentLeagueId}/admin-notes/${id}`, { method: "DELETE" })); };
-  });
-}
-async function deskAddNote(text, opts) {
-  const body = { text, ...(opts || {}) };
-  const note = await api(`/leagues/${currentLeagueId}/admin-notes`, { method: "POST", body });
-  await loadDeskNotes();
-  return note;
-}
-function renderDesk() {
-  const root = el("view-desk");
-  if (!root || myRole !== "admin" || !league) return;
-  if (deskNotesLeague !== currentLeagueId) { deskNotes = []; deskNotesLoaded = false; deskOpenPlayer = null; deskTeamFilter = "all"; deskNotesLeague = currentLeagueId; loadDeskNotes(); }
-  const fee = league.registrationFeeCents || 0;
-  // ---- summary
-  let collected = 0, owed = 0, partN = 0;
-  league.teams.forEach((t) => {
-    const paid = t.paidSoFarCents != null ? t.paidSoFarCents : (t.paymentStatus === "paid" ? fee : 0);
-    collected += paid; owed += Math.max(0, fee - paid);
-    t.players.forEach((p) => { if (p.paymentStatus !== "paid" && t.paymentStatus !== "paid") { if ((p.paidCents || 0) > 0) partN++; } });
-  });
-  const openNotes = deskNotes.filter((n) => !n.done);
-  el("desk-summary-card").innerHTML = fee ? `<div class="desk-sum">
-      <div><div class="note">Collected</div><div class="desk-sum-n">${fmtRands(collected)}</div></div>
-      <div><div class="note">Still owed</div><div class="desk-sum-n">${fmtRands(owed)}</div></div>
-      <div><div class="note">Part paid</div><div class="desk-sum-n">${partN}</div></div>
-      <div><div class="note">Open notes</div><div class="desk-sum-n">${openNotes.length}</div></div>
-    </div>` : '<p class="note" style="margin:0;">No registration fee is set yet, so there are no payments to track. Notes still work below. Set the fee on the Pay tab.</p>';
-  // ---- composer
-  const about = el("desk-note-about");
-  const keepAbout = about.value;
-  about.innerHTML = '<option value="">Auto: pick it up from the note</option>'
-    + league.teams.map((t) => `<optgroup label="${escapeHtml(t.name)}"><option value="team:${t.id}">Whole team: ${escapeHtml(t.name)}</option>${t.players.map((p) => `<option value="player:${p.id}">${escapeHtml(p.name)}</option>`).join("")}</optgroup>`).join("");
-  about.value = keepAbout && [...about.options].some((o) => o.value === keepAbout) ? keepAbout : "";
-  const cats = el("desk-note-cats");
-  cats.innerHTML = '<span class="note">File under</span>' + [["auto", "Auto"], ...DESK_CATS].map(([k, l]) => `<button type="button" class="desk-chip${deskCat === k ? " on" : ""}" data-cat="${k}">${l}</button>`).join("");
-  cats.querySelectorAll(".desk-chip").forEach((b) => { b.onclick = () => { deskCat = b.dataset.cat; renderDesk(); }; });
-  el("desk-note-add").onclick = async () => {
-    const ta = el("desk-note-text");
-    const text = ta.value.trim();
-    if (!text) { el("desk-note-hint").textContent = "Write something first."; return; }
-    const sel = about.value;
-    const opts = {};
-    if (deskCat !== "auto") opts.category = deskCat;
-    if (sel.startsWith("player:")) opts.playerId = sel.slice(7);
-    if (sel.startsWith("team:")) opts.teamId = sel.slice(5);
-    try {
-      const note = await deskAddNote(text, opts);
-      ta.value = "";
-      const ab = deskAboutLabel(note);
-      el("desk-note-hint").textContent = `Filed under ${deskCatLabel(note.category)}${ab ? " for " + ab : ""}.`;
-    } catch (e) { el("desk-note-hint").textContent = e.message; }
-  };
-  // ---- notes list
-  const filt = el("desk-note-filter");
-  const shown = (deskOpenOnly() ? deskNotes.filter((n) => !n.done) : deskNotes);
-  filt.innerHTML = [["all", "All", shown.length], ...DESK_CATS.map(([k, l]) => [k, l, shown.filter((n) => n.category === k).length])]
-    .map(([k, l, c]) => `<button type="button" class="desk-chip${deskFilter === k ? " on" : ""}" data-f="${k}">${l} ${c}</button>`).join("");
-  filt.querySelectorAll(".desk-chip").forEach((b) => { b.onclick = () => { deskFilter = b.dataset.f; renderDesk(); }; });
-  el("desk-open-only").onchange = () => renderDesk();
-  const list = shown.filter((n) => deskFilter === "all" || n.category === deskFilter);
-  el("desk-notes-list").innerHTML = list.length ? list.map(deskNoteHtml).join("") : `<p class="empty">${deskNotesLoaded ? "No notes here yet." : "Loading…"}</p>`;
-  bindDeskNotes(el("desk-notes-list"));
-  // ---- players
-  const tf = el("desk-team-filter");
-  tf.innerHTML = '<option value="all">All teams</option>' + league.teams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
-  tf.value = league.teams.some((t) => t.id === deskTeamFilter) ? deskTeamFilter : "all";
-  tf.onchange = () => { deskTeamFilter = tf.value; renderDesk(); };
-  const teams = league.teams.filter((t) => deskTeamFilter === "all" || t.id === deskTeamFilter);
-  const box = el("desk-players");
-  box.innerHTML = teams.map((t) => deskTeamHtml(t, fee)).join("") || '<p class="empty">No teams yet.</p>';
-  box.querySelectorAll(".desk-prow-head").forEach((h) => { h.onclick = () => { const id = h.closest(".desk-prow").dataset.player; deskOpenPlayer = deskOpenPlayer === id ? null : id; renderDesk(); }; });
-  bindDeskPlayerPanels(box);
-}
-function deskOpenOnly() { const c = el("desk-open-only"); return !!(c && c.checked); }
-function deskPlayerPayState(t, p, fee) {
-  const share = p.shareCents != null ? p.shareCents : (fee ? Math.round(fee / (t.players.length || 1)) : 0);
-  const isPaid = p.paymentStatus === "paid";
-  const own = p.paidCents != null ? p.paidCents : (isPaid && !p.coveredByTeam ? share : 0);
-  const part = !isPaid && own > 0;
-  return { share, isPaid, own, part, left: Math.max(0, share - own) };
-}
-function deskTeamHtml(t, fee0) {
-  const fee = t.feeCents != null ? t.feeCents : fee0;
-  const paid = t.paidSoFarCents != null ? t.paidSoFarCents : (t.paymentStatus === "paid" ? fee : 0);
-  const pct = fee ? Math.min(100, Math.round((paid / fee) * 100)) : 0;
-  return `<div class="desk-team">
-    <div class="desk-team-head"><strong>${escapeHtml(t.name)}</strong><span class="note">${fee ? `${fmtRands(paid)} of ${fmtRands(fee)}` : ""}</span></div>
-    ${fee ? `<div class="desk-bar"><i style="width:${pct}%"></i></div>` : ""}
-    ${t.players.map((p) => deskPlayerHtml(t, p, fee)).join("") || '<p class="empty">No players.</p>'}
-  </div>`;
-}
-function deskPlayerHtml(t, p, fee) {
-  const st = deskPlayerPayState(t, p, fee);
-  const mine = deskNotes.filter((n) => n.playerId === p.id && !n.done);
-  const c = (k) => mine.filter((n) => n.category === k).length;
-  const pill = !fee ? "" : st.isPaid ? '<span class="desk-pill pay-paid">Paid</span>' : st.part ? `<span class="desk-pill pay-part">${fmtRands(st.own)} of ${fmtRands(st.share)}</span>` : '<span class="desk-pill pay-unpaid">Unpaid</span>';
-  const chips = (c("kits") ? `<span class="desk-mini cat-kits">Kit ${c("kits")}</span>` : "") + (c("payments") ? `<span class="desk-mini cat-payments">Pay ${c("payments")}</span>` : "") + (c("other") ? `<span class="desk-mini cat-other">Note ${c("other")}</span>` : "");
-  const open = deskOpenPlayer === p.id;
-  return `<div class="desk-prow${open ? " open" : ""}" data-team="${t.id}" data-player="${p.id}">
-    <div class="desk-prow-head"><span class="desk-pname">${escapeHtml(p.name)}</span><span class="desk-prow-right">${chips}${pill}</span></div>
-    ${open ? deskPlayerPanelHtml(t, p, fee, st) : ""}
-  </div>`;
-}
-function deskPlayerPanelHtml(t, p, fee, st) {
-  const ledger = (p.payments && p.payments.length)
-    ? p.payments.map((x) => `<div class="desk-ledger-row"><span>${fmtRands(x.cents)} · ${paymentMethodLabel(x.method)}</span><span class="note">${x.at ? new Date(x.at).toLocaleDateString() : ""}${x.ref ? " · Ref " + escapeHtml(x.ref) : ""}</span></div>`).join("")
-    : st.isPaid && !p.coveredByTeam ? `<div class="desk-ledger-row"><span>${fmtRands(st.share)} · ${paymentMethodLabel(p.paymentMethod)}</span><span class="note">${p.paidAt ? new Date(p.paidAt).toLocaleDateString() : ""}</span></div>` : "";
-  const payHtml = fee ? `
-    <div class="desk-section"><div class="desk-section-title">Payments</div>
-      <div class="note">Share ${fmtRands(st.share)}${discountTag(p.discountCents, p.discountNote)} · paid ${fmtRands(st.isPaid && p.coveredByTeam ? 0 : st.own)}${st.isPaid && p.coveredByTeam ? " · covered by the team" : ` · left ${fmtRands(st.isPaid ? 0 : st.left)}`}</div>
-      ${ledger || '<div class="note">Nothing paid yet.</div>'}
-      <div class="desk-btns">
-        ${st.isPaid ? (p.coveredByTeam ? "" : '<button class="link desk-pay-mark" data-paid="false" type="button">Mark unpaid</button>')
-          : `<button class="secondary desk-pay-part" data-left="${st.left}" type="button">Record payment</button><button class="link desk-pay-disc" data-cur="${p.discountCents || 0}" type="button">Discount</button><button class="link desk-pay-mark" data-paid="true" type="button">Mark paid</button>${st.part ? '<button class="link desk-pay-mark" data-paid="false" type="button">Reset</button>' : ""}<button class="link desk-pay-copy" type="button">Copy pay link</button>`}
-      </div></div>` : "";
-  const mine = deskNotes.filter((n) => n.playerId === p.id);
-  const groups = DESK_CATS.map(([k, l]) => {
-    const ns = mine.filter((n) => n.category === k);
-    return `<div class="desk-section"><div class="desk-section-title">${l === "Kits" ? "Kit notes" : l === "Payments" ? "Payment notes" : "Other notes"}</div>${ns.length ? ns.map(deskNoteHtml).join("") : '<div class="note">None.</div>'}</div>`;
-  }).join("");
-  return `<div class="desk-panel">
-    ${payHtml}
-    <div class="desk-section"><div class="desk-section-title">Add a note for ${escapeHtml(p.name)}</div>
-      <div class="desk-add"><input type="text" class="desk-player-note" placeholder="Anything: kit size, a promise to pay…" maxlength="1000">
-        <select class="desk-player-cat"><option value="">Auto</option>${DESK_CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
-        <button class="primary desk-player-add" type="button">Add</button></div></div>
-    ${groups}
-  </div>`;
-}
-function bindDeskPlayerPanels(box) {
-  box.querySelectorAll(".desk-prow.open").forEach((row) => {
-    const teamId = row.dataset.team, playerId = row.dataset.player;
-    row.querySelectorAll(".desk-pay-mark").forEach((b) => {
-      b.onclick = async () => {
-        try { await api(`/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/payment-status`, { method: "PUT", body: { paid: b.dataset.paid === "true" } }); await refreshLeague(); renderDesk(); renderPay(); } catch (e) { alert(e.message); }
-      };
-    });
-    const disc = row.querySelector(".desk-pay-disc");
-    if (disc) disc.onclick = async () => {
-      const team = league.teams.find((x) => x.id === teamId); const pl = team && team.players.find((x) => x.id === playerId);
-      if (await askDiscount({ label: pl ? pl.name : "this player", path: `/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/discount`, currentCents: Number(disc.dataset.cur) })) { await refreshLeague(); renderDesk(); renderPay(); }
-    };
-    const part = row.querySelector(".desk-pay-part");
-    if (part) part.onclick = async () => {
-      const left = Number(part.dataset.left) / 100;
-      const v = prompt(`How much did they pay? (up to R${left.toFixed(2)} left)`, left.toFixed(2));
-      if (v === null) return;
-      try { await api(`/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/payments`, { method: "POST", body: { amountRands: Number(String(v).replace(/[^0-9.]/g, "")) } }); await refreshLeague(); renderDesk(); renderPay(); } catch (e) { alert(e.message); }
-    };
-    const copy = row.querySelector(".desk-pay-copy");
-    if (copy) copy.onclick = () => copyTextWhenReady(api(`/leagues/${currentLeagueId}/teams/${teamId}/players/${playerId}/pay-link`).then((d) => d.url), copy);
-    const add = row.querySelector(".desk-player-add");
-    if (add) add.onclick = async () => {
-      const input = row.querySelector(".desk-player-note");
-      const text = input.value.trim();
-      if (!text) return;
-      const category = row.querySelector(".desk-player-cat").value;
-      try { await deskAddNote(text, { playerId, ...(category ? { category } : {}) }); } catch (e) { alert(e.message); }
-    };
-    bindDeskNotes(row);
   });
 }
 function renderPay() {
