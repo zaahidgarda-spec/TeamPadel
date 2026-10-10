@@ -6982,6 +6982,18 @@ function ahCardStats(type) {
   if (type === "followup") return { big: String(open.length), sub: open.filter(ahOverdue).length ? `${open.filter(ahOverdue).length} overdue` : "none overdue", extra: open.some(ahOverdue) ? "overdue" : "" };
   return { big: String(open.length), sub: `${open.filter((i) => i.pinned).length} pinned`, extra: "" };
 }
+let ahDoneShut = false, ahDraftClear = false;
+function ahDoneRowHtml(it) {
+  const where = it.type === "sponsor" && it.sponsorScope ? ahSponsorWho(it) : (ahLeagueName(it.leagueId) || "");
+  const cat = it.categoryId && ahCatName(it.categoryId) ? ahCatName(it.categoryId) : "";
+  const meta = [it.doneBy ? `Completed by ${escapeHtml(it.doneBy)}` : "Completed", it.doneAt ? ahWhen(it.doneAt) : "", cat ? escapeHtml(cat) : "", where ? escapeHtml(where) : ""].filter(Boolean).join(" · ");
+  return `<div class="ah-done-row" data-id="${it.id}"><span class="ah-check on" aria-hidden="true">✓</span><div class="ah-done-txt"><span class="ah-done-title">${escapeHtml(it.title)}</span><span class="ah-done-meta">${meta}</span></div><button type="button" class="ah-complete undo ah-done-undo" data-id="${it.id}">Undo</button><button type="button" class="link ah-del-done" data-id="${it.id}">Delete</button></div>`;
+}
+function ahCompleteBtn(it) {
+  return ahIsOpen(it)
+    ? '<button type="button" class="ah-complete" title="Mark this note as completed">✓ Complete</button>'
+    : '<button type="button" class="ah-complete undo" title="Put this note back on the open list">Undo</button>';
+}
 function ahItemHtml(it) {
   const money = AH_MONEY[it.type] && it.amountCents;
   const where = it.type === "sponsor" && it.sponsorScope ? ahSponsorWho(it) : (ahLeagueName(it.leagueId) || "All leagues");
@@ -6998,6 +7010,7 @@ function ahItemHtml(it) {
     ${it.dueDate ? `<div class="ah-due${ahOverdue(it) ? " late" : ""}">${ahOverdue(it) ? "Overdue · " : "Due "}${ahDue(it.dueDate)}</div>` : ""}
     <div class="ah-by">${escapeHtml(it.createdBy || "Admin")} · ${ahWhen(it.createdAt)}${edited}</div>
     <div class="ah-actions">
+      ${ahCompleteBtn(it)}
       ${money && ahIsOpen(it) ? `<button class="link ah-pay" type="button">${it.direction === "out" ? "Record payment out" : "Record payment in"}</button>` : ""}
       ${stages ? `<select class="ah-stage" aria-label="Stage">${stages.map(([k, l]) => `<option value="${k}"${k === it.stage ? " selected" : ""}>${l}</option>`).join("")}</select>` : ""}
       <select class="ah-cat-sel" aria-label="Category">${ahCatSelectHtml(it.categoryId || "none", false)}</select>
@@ -7031,6 +7044,15 @@ function ahEditHtml(it) {
 }
 function ahApi(path, opts) { return api("/admin/hub" + path, opts); }
 async function ahRefreshAndRender() { await loadAdminHub(); }
+// Completing a note (and bringing it back). Completing shows a toast with Undo.
+async function ahSetDone(id, done) {
+  try {
+    await ahApi(`/items/${id}`, { method: "PUT", body: { status: done ? "done" : "open" } });
+    await ahRefreshAndRender();
+    if (done) showToast("Note completed.", { label: "Undo", onClick: () => ahSetDone(id, false) });
+    else showToast("Note is open again.");
+  } catch (e) { alert(e.message); }
+}
 function bindAhItems(root) {
   root.querySelectorAll(".ah-item").forEach((row) => {
     const id = row.dataset.id;
@@ -7050,7 +7072,8 @@ function bindAhItems(root) {
       });
       return;
     }
-    q(".ah-check").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { status: ahIsOpen(it) ? "done" : "open" } }));
+    q(".ah-check").onclick = () => ahSetDone(id, ahIsOpen(it));
+    q(".ah-complete").onclick = () => ahSetDone(id, ahIsOpen(it));
     q(".ah-pinbtn").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { pinned: !it.pinned } }));
     q(".ah-edit").onclick = () => { ahEditing = id; renderAdminHub(); };
     q(".ah-del").onclick = () => { if (confirm("Delete this item?")) act(() => ahApi(`/items/${id}`, { method: "DELETE" })); };
@@ -7126,6 +7149,7 @@ function bindAhComposer(root) {
       ahHint = `Filed under ${AH_TYPE_LABEL[it.type]}${ahCompPrio !== "normal" ? ", " + ahCompPrio : ""} by ${it.createdBy}.`;
       ahCompPrio = "normal";
       if (ahCompType !== "auto" && ahArea === "home") ahCompType = "auto";
+      ahDraftClear = true;
       await ahRefreshAndRender();
     } catch (e) { root.querySelector("#ah-c-hint").textContent = e.message; }
   };
@@ -7169,6 +7193,7 @@ function ahBoardRowHtml(it) {
       <button type="button" class="ah-check${ahIsOpen(it) ? "" : " on"}" aria-label="${ahIsOpen(it) ? "Mark as done" : "Mark as not done"}">${ahIsOpen(it) ? "" : "✓"}</button>
       <div class="ah-bname-txt"><span class="ah-bname-title">${it.pinned ? '<span class="ah-pin" title="Pinned">★ </span>' : ""}${escapeHtml(it.title)}</span>
         ${bits.length || it.text ? `<span class="ah-bsub">${bits.join(" · ")}${it.text ? (bits.length ? " · " : "") + escapeHtml(it.text.slice(0, 80)) : ""}</span>` : ""}
+        <span class="ah-bdo">${ahCompleteBtn(it)}</span>
         ${(money && ahIsOpen(it)) || stages ? `<span class="ah-bmini">${money && ahIsOpen(it) ? `<button type="button" class="link ah-pay">${it.direction === "out" ? "Record payment out" : "Record payment in"}</button>` : ""}${stages ? `<select class="ah-stage" aria-label="Stage">${stages.map(([k, l]) => `<option value="${k}"${k === it.stage ? " selected" : ""}>${l}</option>`).join("")}</select>` : ""}</span>` : ""}
       </div>
     </div>
@@ -7213,9 +7238,10 @@ function bindAhBoard(root) {
     const id = row.dataset.id; const it = ahItems.find((x) => x.id === id); if (!it) return;
     const act = async (fn) => { try { await fn(); await ahRefreshAndRender(); } catch (e) { alert(e.message); } };
     const q = (sel) => row.querySelector(sel);
-    const toggle = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { status: ahIsOpen(it) ? "done" : "open" } }));
+    const toggle = () => ahSetDone(id, ahIsOpen(it));
     q(".ah-check").onclick = toggle;
     q(".ah-bstatus").onclick = toggle;
+    q(".ah-complete").onclick = toggle;
     q(".ah-prio-sel").onchange = (e) => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { priority: e.target.value } }));
     q(".ah-bdue-in").onchange = (e) => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { dueDate: e.target.value || null } }));
     q(".ah-pinbtn").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { pinned: !it.pinned } }));
@@ -7244,13 +7270,14 @@ function renderAdminHub() {
     // Notes first: add one, then what's open. The areas come next and the
     // payments by league sit at the bottom of the page.
     html += ahComposerHtml();
-    let list = visible.filter((i) => ahStatus === "all" || (ahStatus === "open") === ahIsOpen(i));
+    let list = visible.filter(ahIsOpen);
     list.sort(ahListSort);
-    const doneVisible = visible.filter((i) => !ahIsOpen(i));
-    const openN = visible.filter(ahIsOpen).length;
-    html += `<div class="ah-notes-head"><h2>Notes</h2><span class="note">${openN} open${doneVisible.length ? ` · ${doneVisible.length} completed` : ""}</span></div>
-      <div class="ah-chips">${[["open", "Open"], ["done", "Completed"], ["all", "All"]].map(([k, l]) => `<button type="button" class="ah-chip${ahStatus === k ? " on" : ""}" data-s="${k}">${l}</button>`).join("")}<span class="ah-sep"></span>${[["board", "Board"], ["cards", "Cards"]].map(([k, l]) => `<button type="button" class="ah-chip${ahView === k ? " on" : ""}" data-v="${k}">${l}</button>`).join("")}${ahStatus !== "open" && doneVisible.length ? `<span class="ah-sep"></span><button type="button" class="ah-chip ah-clear" id="ah-clear-done">Delete completed (${doneVisible.length})</button>` : ""}</div>
-      ${ahView === "board" ? ahBoardHtml(list) : `<div class="ah-list">${list.map(ahItemHtml).join("") || `<p class="empty">${ahStatus === "done" ? "Nothing completed yet." : "No notes here. Add one above."}</p>`}</div>`}`;
+    const doneList = visible.filter((i) => !ahIsOpen(i)).sort((x, y) => (y.doneAt || y.updatedAt || 0) - (x.doneAt || x.updatedAt || 0));
+    html += `<div class="ah-notes-head"><h2>Notes</h2><span class="note">${list.length} open</span></div>
+      <div class="ah-chips">${[["board", "Board"], ["cards", "Cards"]].map(([k, l]) => `<button type="button" class="ah-chip${ahView === k ? " on" : ""}" data-v="${k}">${l}</button>`).join("")}</div>
+      ${ahView === "board" ? ahBoardHtml(list) : `<div class="ah-list">${list.map(ahItemHtml).join("") || '<p class="empty">No open notes. Add one above.</p>'}</div>`}`;
+    html += `<section class="ah-done-sec"><div class="ah-done-head"><button type="button" class="ah-done-toggle" id="ah-done-toggle" aria-expanded="${!ahDoneShut}"><span class="ah-chev">${ahDoneShut ? "▸" : "▾"}</span><b>Completed</b><span class="ah-done-n">${doneList.length}</span></button>${doneList.length ? `<button type="button" class="ah-chip ah-clear" id="ah-clear-done">Delete all completed</button>` : ""}</div>
+      ${ahDoneShut ? "" : `<div class="ah-done-list">${doneList.map(ahDoneRowHtml).join("") || '<p class="note" style="margin:8px 0;">Nothing completed yet. Tick a note off and it lands here, and you can undo it.</p>'}</div>`}</section>`;
     html += `<div class="ah-block-title" style="margin-top:18px;">Areas</div><div class="ah-cards">${AH_AREAS.map(([k, l, tag]) => {
       const st = ahCardStats(k);
       return `<button type="button" class="ah-card t-${k}" data-area="${k}"><span class="ah-card-top"><b>${l}</b><span class="ah-pill t-${k}">${tag}</span></span><span class="ah-big">${st.big}</span><span class="ah-sub">${st.sub}</span>${st.extra ? `<span class="ah-flag">${st.extra}</span>` : ""}</button>`;
@@ -7288,7 +7315,12 @@ function renderAdminHub() {
     }
     html += ahComposerHtml();
   }
+  // Keep half-written notes when a chip, filter or search redraws the page.
+  const draft = {};
+  if (!ahDraftClear) ["ah-c-text", "ah-c-amount", "ah-c-due", "ah-c-league", "ah-c-cat", "ah-c-team", "ah-c-region"].forEach((id) => { const f = root.querySelector("#" + id); if (f && f.value) draft[id] = f.value; });
+  ahDraftClear = false;
   root.innerHTML = ahHeaderHtml() + `<div class="ah-layout">${ahSideHtml()}<div class="ah-main">${html}</div></div>`;
+  Object.keys(draft).forEach((id) => { const f = root.querySelector("#" + id); if (f) f.value = draft[id]; });
   const lg = root.querySelector("#ah-league"); if (lg) lg.onchange = () => { ahLeague = lg.value; renderAdminHub(); };
   const sr = root.querySelector("#ah-search"); if (sr) sr.oninput = () => { ahSearch = sr.value; const pos = sr.selectionStart; renderAdminHub(); const n = el("ah-search"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
   const sn = root.querySelector("#ah-setname"); if (sn) sn.onclick = async () => { const v = prompt("Your name, so notes show who made them:", ahMe.name === "Admin" ? "" : ahMe.name); if (v && v.trim()) { try { await ahApi("/name", { method: "POST", body: { name: v } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } } };
@@ -7296,9 +7328,12 @@ function renderAdminHub() {
   const clearDone = root.querySelector("#ah-clear-done");
   if (clearDone) clearDone.onclick = async () => {
     const ids = ahItems.filter(ahVisible).filter((i) => !ahIsOpen(i)).map((i) => i.id);
-    if (!ids.length || !confirm(`Delete ${ids.length} completed note${ids.length === 1 ? "" : "s"} for good?`)) return;
+    if (!ids.length || !confirm(`Delete ${ids.length} completed note${ids.length === 1 ? "" : "s"} for good? This can't be undone.`)) return;
     try { await ahApi("/items/delete", { method: "POST", body: { ids } }); showToast("Completed notes deleted."); await ahRefreshAndRender(); } catch (e) { alert(e.message); }
   };
+  const doneTog = root.querySelector("#ah-done-toggle"); if (doneTog) doneTog.onclick = () => { ahDoneShut = !ahDoneShut; renderAdminHub(); };
+  root.querySelectorAll(".ah-done-undo").forEach((b) => { b.onclick = () => ahSetDone(b.dataset.id, false); });
+  root.querySelectorAll(".ah-del-done").forEach((b) => { b.onclick = async () => { if (!confirm("Delete this completed note for good?")) return; try { await ahApi(`/items/${b.dataset.id}`, { method: "DELETE" }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
   const back = root.querySelector("#ah-back"); if (back) back.onclick = () => { ahArea = "home"; ahCompType = "auto"; renderAdminHub(); };
   root.querySelectorAll(".ah-chips [data-s]").forEach((b) => { b.onclick = () => { ahStatus = b.dataset.s; renderAdminHub(); }; });
   root.querySelectorAll(".ah-chips [data-v]").forEach((b) => { b.onclick = () => { ahView = b.dataset.v; renderAdminHub(); }; });
@@ -10602,17 +10637,22 @@ function seedSuggestionHint(team) {
 // A small confirmation that appears at the bottom of the screen for a few
 // seconds — "it worked" feedback for actions that otherwise just redraw.
 let toastTimer = null;
-function showToast(message) {
+function showToast(message, action) {
   let t = document.getElementById("app-toast");
   if (!t) {
     t = document.createElement("div");
     t.id = "app-toast"; t.className = "app-toast"; t.setAttribute("role", "status"); t.setAttribute("aria-live", "polite");
     document.body.appendChild(t);
   }
-  t.innerHTML = `<span class="tick">&#10003;</span><span>${escapeHtml(message)}</span>`;
+  t.innerHTML = `<span class="tick">&#10003;</span><span>${escapeHtml(message)}</span>${action ? `<button type="button" class="toast-action">${escapeHtml(action.label)}</button>` : ""}`;
+  if (action) {
+    const b = t.querySelector(".toast-action");
+    b.onclick = () => { t.classList.remove("show"); clearTimeout(toastTimer); action.onClick(); };
+  }
+  t.classList.toggle("has-action", !!action);
   t.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 4500);
+  toastTimer = setTimeout(() => t.classList.remove("show"), action ? 9000 : 4500);
 }
 // Remembers a just-saved line-up so its form can keep showing a green
 // "Submitted" banner after the page redraws (the form stays editable until the
