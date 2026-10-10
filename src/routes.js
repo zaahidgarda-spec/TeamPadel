@@ -4922,6 +4922,10 @@ function jamesActions() {
     playerOwedCents, playerShareCents, playerBaseShareFor, teamFeeCents, teamBalanceCents, addPlayerPayment,
     reconcilePlayerStatus, reconcileTeamPayment, coverTeamPlayers,
     movePlayerRecord, followPlayerToTeam, setPlayerClaimsTeam, leagueStatus, genTeamCode, newLeagueObj,
+    completeRubberNow, reopenRubberNow, fixtureLabel,
+    // Told to the captains only once the whole set has been saved (and never while previewing).
+    notifyLater: (leagueId, teamId, type, msg, extra) => { const lg = store.getLeague(leagueId); if (lg) { notify(lg, teamId, type, msg, extra); store.saveLeague(leagueId, lg); } },
+    auditFixture: (league, f, who, action, detail) => logAudit(league, { session: { isOwner: true } }, f, action, { actor: "James, for " + who, ...detail }),
     audit: (league, who, text) => logAudit(league, { session: { isOwner: true } }, null, "james_change", { actor: "James, for " + who, text }),
   });
   return jamesActionsInstance;
@@ -4962,7 +4966,13 @@ function jamesContext(perms) {
           let res = "";
           if (f.finalized) { const w = (f.rubbers || []).map((r) => logic.rubberWinner(r)); res = ` (${w.filter((x) => x === "A").length}-${w.filter((x) => x === "B").length})`; }
           const own = f.scheduleOverride;
-          return { id: f.id, match: `${name(f.teamA)} v ${name(f.teamB)}${res}`, ...(own ? { movedTo: [own.date, own.time, own.venue].filter(Boolean).join(" ") } : {}) };
+          const names = (side, i) => ((side === "A" ? f.selectionA : f.selectionB).pairs[i] || []).map((pid) => { const t = l.teams.find((x) => x.id === (side === "A" ? f.teamA : f.teamB)); return ((t && t.players.find((p) => p.id === pid)) || {}).name || "?"; }).join(" & ");
+          // The pairs stay hidden until both line-ups are in, same as for everyone else.
+          const open = f.selectionA && f.selectionB && f.selectionA.submitted && f.selectionB.submitted && !f.finalized;
+          return {
+            id: f.id, match: `${name(f.teamA)} v ${name(f.teamB)}${res}`, ...(f.finalized ? { finalized: true } : {}), ...(own ? { movedTo: [own.date, own.time, own.venue].filter(Boolean).join(" ") } : {}),
+            ...(open ? { seeds: f.rubbers.map((r, i) => ({ seed: i + 1, a: names("A", i), b: names("B", i), score: logic.rubberScoreText(r) || "", state: r.forfeited ? "forfeit" : r.completedAt ? "finished" : r.startedAt ? "on court" : "not started" })) } : {}),
+          };
         }),
         done: fs.every((f) => f.finalized),
       };
@@ -4976,7 +4986,7 @@ function jamesContext(perms) {
     const base = {
       today: `${new Date(james.saNow().day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })} ${james.saNow().day}`,
       categories,
-      leagues: full.map((l) => ({ id: l.id, name: l.name, status: leagueStatus(l), format: l.format, teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null })),
+      leagues: full.map((l) => ({ id: l.id, name: l.name, status: leagueStatus(l), format: l.format, scoring: l.format === "pairs" ? "best of 3 sets" : "each seed is 2 sets; if they split one set each, a match tie-break to 10 (win by 2) decides it, given as tb" + (l.singlesDecider ? "; seed 5 is a single tie-break to 10, no sets" : ""), teamFeeRands: R(l.registrationFeeCents || 0), courts: l.courtCount || null, slotsPerNight: l.slotCount || null })),
     };
     if (perms.read.rosters) {
       base.rosters = full.map((l) => ({ leagueId: l.id, teams: l.teams.map((t) => ({ id: t.id, name: t.name, players: t.players.map((p) => ({ id: p.id, name: p.name })) })), noTeamYet: (l.freeAgents || []).map((p) => ({ id: p.id, name: p.name })) }));
@@ -8707,15 +8717,10 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/complete", requ
 // rolls back whatever that completion recorded in courtDurationStats/
 // courtMatchLog, so a genuine completion later isn't shadowed by a
 // mistaken one's numbers.
-router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/reopen", requireAdmin, (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  if (!league) return res.status(404).json({ error: "League not found." });
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  const idx = Number(req.params.idx);
-  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+// Puts a completed rubber back to live (or to upcoming, if it was only ever "completed" by a score being
+// entered), and rolls back what that completion recorded in the court timing data.
+function reopenRubberNow(league, f, idx) {
   const rubber = f.rubbers[idx];
-  if (!rubber.completedAt) return res.status(400).json({ error: "This match isn't marked complete." });
   const completedAt = rubber.completedAt;
   const wasSyntheticStart = rubber.startedAt === completedAt;
   rubber.completedAt = null;
@@ -8742,6 +8747,17 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/reopen", requir
       if (i !== -1) league.courtMatchLog.splice(i, 1);
     }
   }
+}
+router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/reopen", requireAdmin, (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  if (!league) return res.status(404).json({ error: "League not found." });
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const idx = Number(req.params.idx);
+  if (isNaN(idx) || idx < 0 || idx >= f.rubbers.length) return res.status(400).json({ error: "Invalid match." });
+  const rubber = f.rubbers[idx];
+  if (!rubber.completedAt) return res.status(400).json({ error: "This match isn't marked complete." });
+  reopenRubberNow(league, f, idx);
   store.saveLeague(league.id, league);
   res.json({ ok: true });
 });

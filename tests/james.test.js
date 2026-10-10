@@ -178,3 +178,26 @@ test("a logo photo and a team list come through as changes James can propose", (
   assert.strictEqual(out[2].logoImage, 2);
   assert.strictEqual(out[2].image, undefined);
 });
+
+test("score and court changes keep only well-formed numbers and sides", () => {
+  const perms = J.permissions({});
+  const out = J.cleanChanges([
+    { kind: "score_set", leagueId: "L1", fixtureId: "F1", seed: 2, sets: [[6, 4], ["3", 6], [1, 1], [9, 9]], tb: [10, null] },
+    { kind: "score_forfeit", leagueId: "L1", fixtureId: "F1", seed: 3, winner: "A" },
+    { kind: "score_forfeit", leagueId: "L1", fixtureId: "F1", seed: 3, winner: "C" },
+    { kind: "court_pace", leagueId: "L1", fixtureId: "F1", seed: 1, pace: "long" },
+    { kind: "court_pace", leagueId: "L1", fixtureId: "F1", seed: 1, pace: null },
+    { kind: "court_start", leagueId: "L1", fixtureId: "F1", seed: 99 },
+    { kind: "finalize_fixture", leagueId: "L1", fixtureId: "F1" },
+  ], perms);
+  assert.deepStrictEqual(out.map((c) => c.kind), ["score_set", "score_forfeit", "score_forfeit", "court_pace", "court_pace", "court_start"]);
+  assert.deepStrictEqual(out[0].sets, [[6, 4], [3, 6], [1, 1]]);
+  assert.deepStrictEqual(out[0].tb, [10, null]);
+  assert.strictEqual(out[1].winner, "A");
+  assert.strictEqual(out[2].winner, undefined);
+  assert.strictEqual(out[3].pace, "long");
+  assert.strictEqual(out[4].pace, null);
+  assert.strictEqual(out[5].seed, undefined);
+  const off = J.permissions(J.mergePermissions({}, { write: { scores: false, court: false } }));
+  assert.deepStrictEqual(J.cleanChanges([{ kind: "score_set", leagueId: "L1", fixtureId: "F1", seed: 1 }, { kind: "court_start", leagueId: "L1", fixtureId: "F1", seed: 1 }], off), []);
+});

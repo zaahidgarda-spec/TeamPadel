@@ -7381,7 +7381,7 @@ function ahJamesTurnHtml(t, ti) {
 }
 const AH_JAMES_PERMS = {
   read: [["payments", "Payments", "who owes what"], ["fixtures", "Fixtures", "rounds, dates and results"], ["rosters", "Teams and players", "who is on which team"]],
-  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"], ["images", "Leo (pictures)", "Leo draws logos and kit designs from a brief James writes; you check it first"]],
+  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"], ["scores", "Scores", "enter official scores and walkovers (never finalizes a fixture)"], ["court", "Court control", "start, score and finish matches on Live Court Control"], ["images", "Leo (pictures)", "Leo draws logos and kit designs from a brief James writes; you check it first"]],
 };
 function ahJamesPermsHtml() {
   const perms = (ahJ.status && ahJ.status.permissions) || { read: {}, write: {} };

@@ -33,7 +33,7 @@ module.exports = function createJamesActions(d) {
   };
 
   // ---- working on copies --------------------------------------------------
-  function makeCtx(dry, images) {
+  function makeCtx(dry, images, actor) {
     const leagues = new Map();
     const touched = new Set();
     const newLeagues = [];
@@ -41,7 +41,7 @@ module.exports = function createJamesActions(d) {
     const deferred = [];
     let hub = null, hubTouched = false;
     return {
-      dry, images: images || [], leagues, touched, deferred, newLeagues, removedLeagues,
+      dry, actor: actor || "Admin", images: images || [], leagues, touched, deferred, newLeagues, removedLeagues,
       league(id) {
         if (!leagues.has(id)) { const l = store.getLeague(id); leagues.set(id, l ? clone(l) : null); }
         return leagues.get(id);
@@ -306,6 +306,190 @@ module.exports = function createJamesActions(d) {
     },
   };
 
+  // ---- scores and Live Court Control --------------------------------------
+  // Both work on one seed (one court's match) of a fixture, exactly as the admin's own
+  // buttons do: the same functions finish a match, put it back, and tell the captains.
+  function seedOf(ctx, ch) {
+    const l = leagueFor(ctx, ch.leagueId);
+    const f = logic.allFixturesOf(l).find((x) => x && x.id === ch.fixtureId);
+    if (!f) throw err("I can't find that match.");
+    const idx = Number(ch.seed) - 1;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= f.rubbers.length) throw err(`That match has ${f.rubbers.length} seeds, so seed ${ch.seed} doesn't exist.`);
+    if (!f.selectionA.submitted || !f.selectionB.submitted) throw err("Both line-ups have to be in first.");
+    if (f.finalized) throw err("That fixture is finalized, so I won't change it. Unlock it first.");
+    return { l, f, idx, r: f.rubbers[idx] };
+  }
+  const tname = (l, id) => (l.teams.find((t) => t.id === id) || {}).name || "?";
+  function pairText(l, f, side, idx) {
+    const t = l.teams.find((x) => x.id === (side === "A" ? f.teamA : f.teamB));
+    const sel = side === "A" ? f.selectionA : f.selectionB;
+    return ((sel.pairs && sel.pairs[idx]) || []).map((pid) => ((t && t.players.find((p) => p.id === pid)) || {}).name || "?").join(" & ");
+  }
+  const seedLabel = (l, f, idx) => `${l.name}, ${f.round ? "Round " + f.round + ", " : ""}${tname(l, f.teamA)} v ${tname(l, f.teamB)}, seed ${idx + 1} (${pairText(l, f, "A", idx)} v ${pairText(l, f, "B", idx)})`;
+  const rubKey = (r) => JSON.stringify([r.sets, r.tb, r.startedAt || null, r.completedAt || null, r.forfeited || null, r.live || null, r.scoreBy || null, r.pace || null]);
+  const rubSnap = (l, idx, f) => ({ rubber: clone(f.rubbers[idx]), stats: clone(l.courtDurationStats || {}), logLen: (l.courtMatchLog || []).length });
+  const rubResult = (l, f, idx, snap, text, extra) => ({ leagueId: l.id, leagueName: l.name, text, undo: { fixtureId: f.id, idx, snap, afterLogLen: (l.courtMatchLog || []).length }, after: rubKey(f.rubbers[idx]), ...extra });
+  const rubCheck = (ctx, c) => {
+    const l = leagueFor(ctx, c.leagueId);
+    const f = logic.allFixturesOf(l).find((x) => x && x.id === c.undo.fixtureId);
+    if (!f) return;
+    if (f.finalized) throw err("That fixture has been finalized since, so this can't be undone. Unlock it first.");
+    if (rubKey(f.rubbers[c.undo.idx]) !== c.after) throw err("That match has been changed since James changed it, so it can't be undone safely.");
+  };
+  const rubRevert = (ctx, c) => {
+    const l = leagueFor(ctx, c.leagueId);
+    const f = logic.allFixturesOf(l).find((x) => x && x.id === c.undo.fixtureId);
+    if (!f) return;
+    const r = f.rubbers[c.undo.idx];
+    Object.keys(r).forEach((k) => { delete r[k]; });
+    Object.assign(r, clone(c.undo.snap.rubber));
+    // The court timing data only goes back if no other match was finished in the meantime.
+    if ((l.courtMatchLog || []).length === c.undo.afterLogLen) { if (l.courtMatchLog) l.courtMatchLog.length = c.undo.snap.logLen; l.courtDurationStats = clone(c.undo.snap.stats); }
+    ctx.touch(l.id);
+  };
+  const gameNum = (v) => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 99) throw err("Games have to be whole numbers between 0 and 99.");
+    return n;
+  };
+  const pairNums = (pr) => { if (!Array.isArray(pr) || pr.length !== 2) throw err("Each set needs two numbers, like 6 and 4."); return [gameNum(pr[0]), gameNum(pr[1])]; };
+  // Sets as the rubber stores them: as many as it has, with anything not given left empty.
+  function setsFor(r, given) {
+    const out = r.sets.map(() => [null, null]);
+    if (!Array.isArray(given)) return out;
+    if (given.length > r.sets.length) throw err(r.sets.length === 0 ? "That seed is a single tie-break, so give the tie-break score (tb), not sets." : r.sets.length === 2 ? "A seed is two sets, and if they split one set each it goes to a match tie-break (tb, first to 10). There's no third set." : `That seed has ${r.sets.length} sets at most.`);
+    given.forEach((pr, i) => { out[i] = pairNums(pr); });
+    return out;
+  }
+  const plausibleSet = ([a, b]) => a === null || b === null || (Math.max(a, b) === 6 && Math.min(a, b) <= 4) || (Math.max(a, b) === 7 && (Math.min(a, b) === 5 || Math.min(a, b) === 6));
+  const winnerName = (l, f, r) => { const w = logic.rubberWinner(r); return w === "A" ? tname(l, f.teamA) : w === "B" ? tname(l, f.teamB) : ""; };
+
+  const scoreKinds = {
+    score_set: {
+      label: "Score",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        const sets = ch.sets !== undefined ? setsFor(r, ch.sets) : null;
+        const tb = ch.tb !== undefined ? pairNums(ch.tb) : null;
+        if (!sets && !tb) throw err("Tell me the score.");
+        const before = { sets: clone(r.sets), tb: clone(r.tb) };
+        const snap = rubSnap(l, idx, f);
+        if (sets) r.sets = sets;
+        if (tb) r.tb = tb;
+        if (JSON.stringify(before) === JSON.stringify({ sets: r.sets, tb: r.tb })) throw err("That's already the score.");
+        if (r.forfeited) r.forfeited = null;
+        delete r.live;
+        r.scoreBy = "admin";
+        if (!r.completedAt && logic.rubberWinner(r)) d.completeRubberNow(l, f, idx);
+        d.auditFixture(l, f, ctx.actor, "score_edit", { seedIdx: idx, before, after: { sets: clone(r.sets), tb: clone(r.tb) }, wasFinalized: false });
+        ctx.touch(l.id);
+        const warnings = [];
+        (sets || []).forEach((st) => { if (!plausibleSet(st)) warnings.push(`${st[0]}–${st[1]} isn't a normal finished set. Check it.`); });
+        if (tb && tb[0] !== null && tb[1] !== null && !(Math.max(tb[0], tb[1]) >= 10 && Math.abs(tb[0] - tb[1]) >= 2)) warnings.push(`${tb[0]}–${tb[1]} isn't a finished match tie-break (first to 10, win by 2).`);
+        const w = winnerName(l, f, r);
+        if (!w) warnings.push("Nobody has won this seed yet, so it stays open.");
+        return rubResult(l, f, idx, snap, `Enter ${logic.rubberScoreText(r) || "that score"} for ${seedLabel(l, f, idx)}.${w ? " " + w + " win it." : ""}`, { warnings });
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+    score_forfeit: {
+      label: "Score",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        const w = ch.winner;
+        if (w !== "A" && w !== "B" && w !== "double") throw err("Say which side gets the walkover, or that both sides forfeited.");
+        const snap = rubSnap(l, idx, f);
+        if (w !== "double") {
+          if (r.sets.length === 0) r.tb = w === "A" ? [10, 0] : [0, 10];
+          else { r.sets = r.sets.map((_, si) => (si < 2 ? (w === "A" ? [6, 0] : [0, 6]) : [null, null])); r.tb = [null, null]; }
+        }
+        r.forfeited = w; r.startedAt = Date.now(); r.completedAt = r.startedAt;
+        const label = d.fixtureLabel(l, f);
+        const seedWord = f.rubbers.length === 1 ? "The match" : idx === 4 && f.selectionA.pairs.length === 5 ? "The Singles" : "Seed " + (idx + 1);
+        const msg = w === "double" ? `${seedWord} for ${label} was forfeited by both sides — no result, no points to either team.`
+          : `${seedWord} for ${label} was forfeited — ${w === "A" ? tname(l, f.teamA) : tname(l, f.teamB)} awarded a ${r.sets.length === 0 ? "10-0" : "6-0, 6-0"} walkover over ${w === "A" ? tname(l, f.teamB) : tname(l, f.teamA)}.`;
+        ctx.deferred.push(() => { d.notifyLater(l.id, f.teamA, "forfeit", msg, { round: f.round }); d.notifyLater(l.id, f.teamB, "forfeit", msg, { round: f.round }); });
+        d.auditFixture(l, f, ctx.actor, "forfeit", { seedIdx: idx, winner: w });
+        ctx.touch(l.id);
+        return rubResult(l, f, idx, snap, `${w === "double" ? "Record a double forfeit" : `Forfeit: ${w === "A" ? tname(l, f.teamA) : tname(l, f.teamB)} get a walkover`} for ${seedLabel(l, f, idx)}. Both captains are notified, and that notification can't be taken back.`);
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+  };
+  const courtKinds = {
+    court_start: {
+      label: "Court",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        if (r.completedAt) throw err("That match is already finished.");
+        if (r.startedAt) throw err("That match has already started.");
+        const snap = rubSnap(l, idx, f);
+        r.startedAt = Date.now(); ctx.touch(l.id);
+        return rubResult(l, f, idx, snap, `Start the clock on ${seedLabel(l, f, idx)}.`);
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+    court_pace: {
+      label: "Court",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        if (r.startedAt) throw err("That match has already started.");
+        const pace = ch.pace === "quick" || ch.pace === "long" ? ch.pace : null;
+        if ((r.pace || null) === pace) throw err("It's already set like that.");
+        const snap = rubSnap(l, idx, f);
+        if (pace) r.pace = pace; else delete r.pace;
+        ctx.touch(l.id);
+        return rubResult(l, f, idx, snap, `Mark ${seedLabel(l, f, idx)} as ${pace ? "a " + pace + " match" : "no pace call (the app guesses)"}.`);
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+    court_live_score: {
+      label: "Court",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        const sets = setsFor(r, ch.sets);
+        const tb = ch.tb !== undefined ? pairNums(ch.tb) : r.tb.slice();
+        const empty = sets.every((s) => s[0] === null && s[1] === null) && !tb[0] && !tb[1];
+        const snap = rubSnap(l, idx, f);
+        if (empty) delete r.live;
+        else {
+          r.live = { sets, tb, updatedAt: Date.now() };
+          if (!r.completedAt && logic.rubberWinner({ ...r, sets, tb })) d.completeRubberNow(l, f, idx);
+        }
+        ctx.touch(l.id);
+        const warnings = [];
+        sets.forEach((st) => { if (!plausibleSet(st) && !(st[0] !== null && st[1] !== null && Math.max(st[0], st[1]) < 6)) warnings.push(`${st[0]}–${st[1]} isn't a normal set score.`); });
+        const txt = sets.filter((s) => s[0] !== null || s[1] !== null).map((s) => `${s[0] === null ? 0 : s[0]}–${s[1] === null ? 0 : s[1]}`).join(", ") || "no score";
+        return rubResult(l, f, idx, snap, `Live score on the court board for ${seedLabel(l, f, idx)}: ${txt}. This is courtside only; it isn't the official result.`, { warnings });
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+    court_complete: {
+      label: "Court",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        if (!r.startedAt) throw err("That match hasn't been started yet.");
+        if (r.completedAt) throw err("That match is already finished.");
+        const snap = rubSnap(l, idx, f);
+        d.completeRubberNow(l, f, idx); ctx.touch(l.id);
+        return rubResult(l, f, idx, snap, `Mark ${seedLabel(l, f, idx)} as finished.`);
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+    court_reopen: {
+      label: "Court",
+      run(ctx, ch) {
+        const { l, f, idx, r } = seedOf(ctx, ch);
+        if (!r.completedAt) throw err("That match isn't marked finished.");
+        const snap = rubSnap(l, idx, f);
+        d.reopenRubberNow(l, f, idx); ctx.touch(l.id);
+        return rubResult(l, f, idx, snap, `Put ${seedLabel(l, f, idx)} back on court (not finished).`);
+      },
+      check: rubCheck, revert: rubRevert,
+    },
+  };
+
   // ---- leagues ------------------------------------------------------------
   const leagueKinds = {
     league_set_fee: {
@@ -516,18 +700,20 @@ module.exports = function createJamesActions(d) {
     },
   };
 
-  const KINDS = { ...payKinds, ...fixKinds, ...leagueKinds, ...playerKinds, ...noteKinds };
+  const KINDS = { ...payKinds, ...fixKinds, ...leagueKinds, ...playerKinds, ...noteKinds, ...scoreKinds, ...courtKinds };
   const GROUP_OF = {};
   Object.keys(payKinds).forEach((k) => { GROUP_OF[k] = "payments"; });
   Object.keys(fixKinds).forEach((k) => { GROUP_OF[k] = "fixtures"; });
   Object.keys(leagueKinds).forEach((k) => { GROUP_OF[k] = "leagues"; });
   Object.keys(playerKinds).forEach((k) => { GROUP_OF[k] = "players"; });
   Object.keys(noteKinds).forEach((k) => { GROUP_OF[k] = "notes"; });
-  const GROUP_NAME = { payments: "Payments", fixtures: "Fixtures", leagues: "Leagues", players: "Players", notes: "Notes" };
+  Object.keys(scoreKinds).forEach((k) => { GROUP_OF[k] = "scores"; });
+  Object.keys(courtKinds).forEach((k) => { GROUP_OF[k] = "court"; });
+  const GROUP_NAME = { payments: "Payments", fixtures: "Fixtures", leagues: "Leagues", players: "Players", notes: "Notes", scores: "Scores", court: "Court control", images: "Pictures" };
 
   // ---- the three entry points ---------------------------------------------
   function plan(changes, { dry, actor, perms, images }) {
-    const ctx = makeCtx(dry, images);
+    const ctx = makeCtx(dry, images, actor);
     const results = changes.map((ch) => {
       const k = KINDS[ch && ch.kind];
       try {
@@ -582,7 +768,7 @@ module.exports = function createJamesActions(d) {
     const set = (log.sets || []).find((s) => s.id === setId);
     if (!set) throw err("I can't find that change.");
     if (set.status !== "applied") throw err("That change was already undone.");
-    const ctx = makeCtx(false);
+    const ctx = makeCtx(false, [], actor);
     const lines = [];
     set.changes.slice().reverse().forEach((c) => {
       const k = KINDS[c.kind];
