@@ -184,6 +184,7 @@ async function init() {
   cache.set("interest-signups", signups);
   cache.set("homepage-extras", (await redis.get("homepage-extras")) || { dismissed: [], manual: [] });
   cache.set("admin-hub", (await redis.get("admin-hub")) || { items: [] });
+  cache.set("james-usage", (await redis.get("james-usage")) || { months: {}, days: {} });
   cache.set("player-ratings", (await redis.get("player-ratings")) || { items: {} });
   cache.set("prediction-accuracy", (await redis.get("prediction-accuracy")) || { latest: null, history: [] });
   cache.set("site-settings", (await redis.get("site-settings")) || {});
@@ -520,6 +521,22 @@ function saveAdminHub(hub) {
   writeJsonFile("admin-hub", hub);
 }
 
+// James (the admin assistant): what he has cost this month and how many
+// requests each admin has made today, so the spending cap and daily limit hold
+// across restarts.
+function getJamesUsage() {
+  if (useRedis) return cache.get("james-usage") || { months: {}, days: {} };
+  return readJsonFile("james-usage", { months: {}, days: {} });
+}
+function saveJamesUsage(u) {
+  if (useRedis) {
+    cache.set("james-usage", u);
+    persist("james-usage", u);
+    return;
+  }
+  writeJsonFile("james-usage", u);
+}
+
 // Opponent attribute ratings (the FIFA-style player card) — one record per
 // rater + match + rated player, keyed so a repeat submit overwrites rather
 // than double-counts. Rater ids stay in the store but are never sent to a
@@ -604,6 +621,8 @@ module.exports = {
   saveHomepageExtras,
   getAdminHub,
   saveAdminHub,
+  getJamesUsage,
+  saveJamesUsage,
   getKitPhoto,
   saveKitPhoto,
   deleteKitPhotosForTeam,

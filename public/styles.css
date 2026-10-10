@@ -3307,3 +3307,46 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-pick-btns button:hover{background:#178246;}
 .ah-doneby-sel{min-height:0;padding:4px 6px;border-radius:6px;border:1px solid #CBD5E1;background:#fff;color:#0F172A;font-size:13px;font-weight:700;width:auto;}
 .ah-done-by{display:flex;align-items:center;gap:6px;font-size:12px;color:#64748B;white-space:nowrap;}
+
+/* James, the Note Machine assistant */
+.ahj{background:#fff;border:1.5px solid #0B6E8A;border-radius:14px;padding:14px 16px;margin-bottom:16px;display:flex;flex-direction:column;gap:10px;color:#0F172A;}
+.ahj-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;}
+.ahj-title{display:flex;align-items:center;gap:8px;font-size:16px;}
+.ahj-av{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#0B6E8A;color:#fff;font-weight:800;font-size:14px;}
+.ahj-tag{background:#E2F1F5;color:#0B6E8A;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
+.ahj-head-r{display:flex;align-items:center;gap:12px;font-size:12px;color:#64748B;}
+.ahj-off{margin:0;padding:10px 12px;border-radius:10px;background:#FDF1DA;border:1px solid #E0961A;font-size:14px;}
+.ahj-off code{background:#fff;padding:1px 6px;border-radius:5px;}
+.ahj-ideas{display:flex;flex-wrap:wrap;gap:8px;}
+.ahj-thread{display:flex;flex-direction:column;gap:10px;max-height:520px;overflow-y:auto;padding-right:2px;}
+.ahj-msg{max-width:88%;padding:9px 13px;border-radius:12px;font-size:14px;line-height:1.5;overflow-wrap:anywhere;}
+.ahj-msg.you{align-self:flex-end;background:#0B6E8A;color:#fff;border-bottom-right-radius:4px;}
+.ahj-msg.james{align-self:flex-start;background:#F1F5F9;border-bottom-left-radius:4px;}
+.ahj-think{color:#64748B;display:flex;align-items:center;gap:8px;}
+.ahj-dots{display:inline-flex;gap:3px;}
+.ahj-dots i{width:6px;height:6px;border-radius:50%;background:#94A3B8;animation:ahjb 1s infinite ease-in-out;}
+.ahj-dots i:nth-child(2){animation-delay:.15s}.ahj-dots i:nth-child(3){animation-delay:.3s}
+@keyframes ahjb{0%,80%,100%{opacity:.3}40%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ahj-dots i{animation:none;opacity:.7}}
+.ahj-block{border:1px solid #DDE2E8;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:#fff;}
+.ahj-block-head{font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.05em;}
+.ahj-note{border:1px solid #E2E8F0;border-left:5px solid #0B6E8A;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:#F8FAFC;}
+.ahj-note-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+.ahj-sub{font-size:13px;color:#475569;}
+.ahj-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.ahj-chip{background:#E2E8F0;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:600;color:#334155;}
+.ahj-concern{font-size:13px;background:#FDF1DA;border:1px solid #E0961A;border-radius:8px;padding:5px 9px;}
+.ahj-actions{display:flex;flex-wrap:wrap;gap:8px;}
+.ahj-msgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;}
+.ahj-draft{border:1px solid #E2E8F0;border-radius:10px;padding:10px;background:#F8FAFC;display:flex;flex-direction:column;gap:6px;min-width:0;}
+.ahj-draft p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;}
+.ahj-to{font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.05em;}
+.ahj-draft .link{align-self:flex-start;}
+.ahj-error{padding:9px 12px;border-radius:10px;background:#FBE7E7;border:1px solid #D14343;font-size:14px;}
+.ahj-form{display:flex;gap:10px;align-items:flex-end;}
+.ahj-form textarea{flex:1;min-width:0;resize:vertical;min-height:44px;border:1.5px solid #CBD5E1;border-radius:10px;padding:9px 12px;font:inherit;font-size:14px;background:#fff;color:#0F172A;}
+.ahj-form textarea:focus-visible{outline:3px solid #0B6E8A;outline-offset:1px;}
+.ahj-form .ah-complete{padding:10px 18px;background:#0B6E8A;}
+.ahj-form .ah-complete:hover{background:#095A72;}
+.ahj-form .ah-complete:disabled,.ahj-idea:disabled{opacity:.5;cursor:default;}
+.ahj-save{background:#1F9D55 !important;}

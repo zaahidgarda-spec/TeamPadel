@@ -1,6 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const store = require("./store");
+const james = require("./james");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, buildRatingEmail, explainSendFailure } = require("./mailer");
@@ -4708,13 +4709,13 @@ router.delete("/admin/hub/categories/:id", requireOwnerSession, (req, res) => {
   store.saveAdminHub(hub);
   res.json({ ok: true });
 });
-router.post("/admin/hub/items", requireOwnerSession, (req, res) => {
-  const b = req.body || {};
+// Builds (without saving) a Note Machine item from what the admin typed. Used by
+// the quick add and by James once the admin has confirmed his proposal.
+function hubBuildItem(b, who) {
   const text = cleanHubText(b.text || b.title, 2000);
-  if (!text) return res.status(400).json({ error: "Write something first." });
+  if (!text) { const e = new Error("Write something first."); e.status = 400; throw e; }
   const type = HUB_TYPES.includes(b.type) ? b.type : guessHubType(text);
   const now = Date.now();
-  const who = adminActorName(req);
   const item = {
     id: logic.uid(), type, title: cleanHubText(b.title || text, 200), text: b.title ? cleanHubText(b.text, 2000) : "",
     leagueId: null, teamId: null, playerId: null, amountCents: null, dueDate: null, qty: null,
@@ -4733,6 +4734,11 @@ router.post("/admin/hub/items", requireOwnerSession, (req, res) => {
     const t = text.toLowerCase();
     item.sponsorScope = /\bregion(al)?\b/.test(t) ? "region" : item.teamId || /\bteam sponsor/.test(t) ? "team" : item.leagueId ? "league" : "region";
   }
+  return item;
+}
+router.post("/admin/hub/items", requireOwnerSession, (req, res) => {
+  let item;
+  try { item = hubBuildItem(req.body || {}, adminActorName(req)); } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
   const hub = store.getAdminHub();
   hub.items = hub.items || [];
   hub.items.push(item);
@@ -4850,7 +4856,7 @@ function leagueTracksFees(league) {
   if (league.hubTrackFees !== undefined) return !!league.hubTrackFees;
   return league.teams.some((t) => t.paymentStatus === "paid" || (t.lumpCents || 0) > 0 || t.players.some((p) => (p.paidCents || 0) > 0 || p.paymentStatus === "paid"));
 }
-router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
+function hubPaymentsData() {
   const teams = [], leagues = [];
   store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).forEach((entry) => {
     const league = store.getLeague(entry.id);
@@ -4891,7 +4897,92 @@ router.get("/admin/hub/payments", requireOwnerSession, (req, res) => {
       canUndoReset: !!league.paymentsBackup, resetAt: league.paymentsBackup ? league.paymentsBackup.at : null, resetBy: league.paymentsBackup ? league.paymentsBackup.by : null,
     });
   });
-  res.json({ teams, leagues });
+  return { teams, leagues };
+}
+router.get("/admin/hub/payments", requireOwnerSession, (req, res) => { res.json(hubPaymentsData()); });
+// ---- James: the admin assistant in the Note Machine (see src/james.js).
+// He reads a summary of the notes and payments, and can answer, propose notes
+// or draft messages. He can't save or send anything: notes are only created
+// when the admin confirms, through the same builder as the quick add.
+function jamesContext() {
+  const hub = store.getAdminHub();
+  const excluded = hubExcludedLeagueIds();
+  const categories = hubCategories(hub).map((c) => ({ id: c.id, name: c.name }));
+  const leagues = store.getIndex().filter((e) => !e.hidden && !hubExcludedLeague(e.name)).map((e) => {
+    const l = store.getLeague(e.id);
+    return { id: e.id, name: e.name, teams: l ? l.teams.map((t) => ({ id: t.id, name: t.name })) : [] };
+  });
+  const pay = hubPaymentsData();
+  const leagueName = (id) => (leagues.find((l) => l.id === id) || {}).name || null;
+  const catName = (id) => (categories.find((c) => c.id === id) || {}).name || null;
+  const build = (playerCap, noteCap) => {
+    const payments = pay.leagues.map((l) => ({
+      league: l.leagueName, leagueId: l.leagueId, feePerPlayerRands: l.feeCents / 100, noFeeSetYet: !!l.noFee, paymentsTracked: !!l.tracked,
+      collectedRands: l.collectedCents / 100, owedRands: l.owedCents / 100, teams: l.teamCount, teamsPaidInFull: l.teamsPaid || 0,
+      teamsOwing: pay.teams.filter((t) => t.leagueId === l.leagueId).slice(0, 30).map((t) => ({
+        team: t.teamName, teamOwedRands: t.teamOwedCents / 100,
+        playersOwing: t.players.slice(0, playerCap).map((p) => ({ name: p.name, owedRands: p.owedCents / 100, paidRands: p.paidCents / 100 })),
+      })),
+    }));
+    const openNotes = (hub.items || []).filter((i) => i.status !== "done" && !(i.leagueId && excluded.has(i.leagueId)))
+      .sort((a, b) => b.createdAt - a.createdAt).slice(0, noteCap).map((i) => ({
+        title: i.title, type: i.type, priority: i.priority || "normal", due: i.dueDate || null, league: leagueName(i.leagueId), category: catName(i.categoryId),
+        amountRands: i.amountCents ? i.amountCents / 100 : null, addedBy: i.createdBy, added: new Date(i.createdAt).toISOString().slice(0, 10),
+      }));
+    const day = james.saNow().day;
+    const weekday = new Date(day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+    return JSON.stringify({ today: `${weekday} ${day}`, categories, leagues: leagues.map((l) => ({ id: l.id, name: l.name, teams: l.teams })), payments, openNotes });
+  };
+  let text = build(12, 60);
+  if (text.length > 60000) text = build(5, 20);
+  return { text, raw: { categories, leagues } };
+}
+router.get("/admin/james/status", requireOwnerSession, (req, res) => {
+  const cfg = james.config();
+  res.json({ enabled: !!cfg.apiKey, model: cfg.model, usage: james.usageSummary(store.getJamesUsage(), adminActorName(req), cfg) });
+});
+router.post("/admin/james", requireOwnerSession, async (req, res) => {
+  const actor = adminActorName(req);
+  const cfg = james.config();
+  const message = String((req.body && req.body.message) || "").trim().slice(0, 2000);
+  if (!message) return res.status(400).json({ error: "Ask James something first." });
+  try {
+    if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
+    james.checkLimits(store.getJamesUsage(), actor, cfg);
+    const ctx = jamesContext();
+    const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.cleanHistory(req.body.history, message) });
+    const usage = james.recordUsage(store.getJamesUsage(), actor, james.costUsd(result.model, result.usage));
+    store.saveJamesUsage(usage);
+    const proposals = james.cleanProposals(result.toolUses, ctx.raw);
+    const reply = result.text || (proposals.notes.length || proposals.messages.length ? "" : "I didn't catch that. Could you say it another way?");
+    res.json({ reply, notes: proposals.notes, messages: proposals.messages, usage: james.usageSummary(usage, actor, cfg) });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || "James hit a problem." });
+  }
+});
+// The admin pressed Confirm on James's proposed notes.
+router.post("/admin/james/notes", requireOwnerSession, (req, res) => {
+  const list = Array.isArray(req.body && req.body.notes) ? req.body.notes.slice(0, 10) : [];
+  if (!list.length) return res.status(400).json({ error: "There's nothing to save." });
+  const who = adminActorName(req);
+  const items = [];
+  try {
+    list.forEach((n) => {
+      const body = { title: n.title, text: n.details || "", type: n.type, priority: n.priority };
+      if (n.categoryId) body.categoryId = n.categoryId;
+      if (n.leagueId) body.leagueId = n.leagueId;
+      if (n.teamId) body.teamId = n.teamId;
+      if (n.amountRands) body.amountRands = n.amountRands;
+      if (n.dueDate) body.dueDate = n.dueDate;
+      const item = hubBuildItem(body, who);
+      item.via = "james";
+      items.push(item);
+    });
+  } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  const hub = store.getAdminHub();
+  hub.items = (hub.items || []).concat(items);
+  store.saveAdminHub(hub);
+  res.json({ items: items.map(hubItemView) });
 });
 router.put("/admin/hub/league-tracking", requireOwnerSession, (req, res) => {
   const league = store.getLeague(req.body && req.body.leagueId);

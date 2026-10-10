@@ -6936,7 +6936,8 @@ let ahLeague = "all", ahArea = "home", ahStatus = "open", ahMode = "list", ahSea
 async function loadAdminHub() {
   if (!isOwner) return;
   try {
-    const [hub, pay] = await Promise.all([api("/admin/hub"), api("/admin/hub/payments").catch(() => ({ teams: [], leagues: [] }))]);
+    const [hub, pay, jst] = await Promise.all([api("/admin/hub"), api("/admin/hub/payments").catch(() => ({ teams: [], leagues: [] })), api("/admin/james/status").catch(() => null)]);
+    ahJ.status = jst;
     ahItems = hub.items; ahLeagues = hub.leagues; ahMe = hub.me; ahPayments = pay; ahCategories = hub.categories || [];
     if (ahCat !== "all" && ahCat !== "none" && !ahCategories.some((c) => c.id === ahCat)) ahCat = "all";
   } catch (e) { el("ah-root").innerHTML = `<p class="empty">${escapeHtml(e.message || "Couldn't load the admin hub.")}</p>`; return; }
@@ -7008,7 +7009,7 @@ function ahItemHtml(it) {
     ${it.text ? `<div class="ah-text">${escapeHtml(it.text).replace(/\n/g, "<br>")}</div>` : ""}
     ${money ? `<div class="ah-money"><b>${fmtRands(it.amountCents)}</b>${it.paidCents ? ` · ${it.direction === "out" ? "paid" : "received"} ${fmtRands(it.paidCents)} · <b>${fmtRands(ahOwed(it))} left</b>` : ""}</div>` : ""}
     ${it.dueDate ? `<div class="ah-due${ahOverdue(it) ? " late" : ""}">${ahOverdue(it) ? "Overdue · " : "Due "}${ahDue(it.dueDate)}</div>` : ""}
-    <div class="ah-by">${escapeHtml(it.createdBy || "Admin")} · ${ahWhen(it.createdAt)}${edited}</div>
+    <div class="ah-by">${escapeHtml(it.createdBy || "Admin")}${it.via === "james" ? " via James" : ""} · ${ahWhen(it.createdAt)}${edited}</div>
     <div class="ah-actions">
       ${ahCompleteBtn(it)}
       ${money && ahIsOpen(it) ? `<button class="link ah-pay" type="button">${it.direction === "out" ? "Record payment out" : "Record payment in"}</button>` : ""}
@@ -7166,6 +7167,111 @@ function bindAhComposer(root) {
     } catch (e) { root.querySelector("#ah-c-hint").textContent = e.message; }
   };
 }
+// ---- James, the admin assistant. He answers, proposes notes and drafts messages;
+// nothing is saved until the admin presses Save on a proposal.
+let ahJ = { status: null, thread: [], busy: false, draft: "", error: "" };
+const AH_JAMES_IDEAS = [["Who still owes?", "Who still owes money, by league?"], ["What's overdue?", "What notes are overdue or urgent?"], ["Draft a reminder", "Draft a friendly reminder for each team that still owes"], ["Add a note", "Add a note: "]];
+function ahDollars(n) { return "$" + (Math.round((n || 0) * 100) / 100).toFixed(2); }
+function ahJamesNoteHtml(n, i, editable) {
+  const team = n.teamId ? (ahLeagues.find((l) => l.id === n.leagueId) || { teams: [] }).teams.find((t) => t.id === n.teamId) : null;
+  const chips = [
+    `<span class="ah-pill t-${n.type}">${AH_TYPE_LABEL[n.type] || n.type}</span>`,
+    n.priority !== "normal" ? `<span class="ah-prio p-${n.priority}">${(AH_PRIORITIES.find((p) => p[0] === n.priority) || [0, n.priority])[1]}</span>` : "",
+    n.categoryId && ahCatName(n.categoryId) ? `<span class="ah-pill cat" style="background:${ahCatColor(n.categoryId)}">${escapeHtml(ahCatName(n.categoryId))}</span>` : "",
+    n.leagueId ? `<span class="ahj-chip">${escapeHtml(ahLeagueName(n.leagueId))}${team ? " · " + escapeHtml(team.name) : ""}</span>` : "",
+    n.dueDate ? `<span class="ahj-chip">Due ${ahDue(n.dueDate)}</span>` : "",
+    n.amountRands ? `<span class="ahj-chip">${fmtRands(n.amountRands * 100)}</span>` : "",
+  ].join("");
+  return `<div class="ahj-note"><div class="ahj-note-top"><b>${escapeHtml(n.title)}</b>${editable ? `<button type="button" class="link ahj-rm" data-i="${i}" aria-label="Leave this one out">Remove</button>` : ""}</div>
+    ${n.details ? `<div class="ahj-sub">${escapeHtml(n.details)}</div>` : ""}<div class="ahj-chips">${chips}</div>
+    ${(n.concerns || []).map((c) => `<div class="ahj-concern"><b>Check:</b> ${escapeHtml(c)}</div>`).join("")}</div>`;
+}
+function ahJamesTurnHtml(t, ti) {
+  if (t.role === "user") return `<div class="ahj-msg you">${escapeHtml(t.text).replace(/\n/g, "<br>")}</div>`;
+  let h = "";
+  if (t.reply) h += `<div class="ahj-msg james">${escapeHtml(t.reply).replace(/\n/g, "<br>")}</div>`;
+  if (t.notes && t.notes.length) {
+    const st = t.state || "pending";
+    h += `<div class="ahj-block"><div class="ahj-block-head">${st === "pending" ? `Proposed ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}. Nothing is saved yet.` : st === "saved" ? `Saved ${t.savedIds.length} note${t.savedIds.length === 1 ? "" : "s"}.` : st === "undone" ? "Saved, then undone." : "Dismissed. Nothing was saved."}</div>
+      ${t.notes.map((n, i) => ahJamesNoteHtml(n, i, st === "pending")).join("")}
+      <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
+  }
+  if (t.messages && t.messages.length) {
+    h += `<div class="ahj-block"><div class="ahj-block-head">Drafts for you to send. James can't send them.</div><div class="ahj-msgs">${t.messages.map((m, i) => `<div class="ahj-draft"><span class="ahj-to">${escapeHtml(m.to)}</span><p>${escapeHtml(m.text)}</p><button type="button" class="link ahj-copy" data-t="${ti}" data-i="${i}">Copy message</button></div>`).join("")}</div></div>`;
+  }
+  return h;
+}
+function ahJamesHtml() {
+  const st = ahJ.status, u = st && st.usage;
+  const off = st && !st.enabled;
+  const thread = ahJ.thread.map(ahJamesTurnHtml).join("");
+  return `<section class="ahj" aria-label="James, your assistant">
+    <div class="ahj-head"><div class="ahj-title"><span class="ahj-av" aria-hidden="true">J</span><b>James</b><span class="ahj-tag">Assistant</span></div>
+      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
+    ${off ? `<p class="ahj-off">James isn't connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host's Secrets, then publish.</p>` : ""}
+    ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
+    ${ahJ.error ? `<div class="ahj-error" role="alert">${escapeHtml(ahJ.error)}</div>` : ""}
+    ${!ahJ.thread.length ? `<div class="ahj-ideas">${AH_JAMES_IDEAS.map(([l, t], i) => `<button type="button" class="ah-chip ahj-idea" data-i="${i}"${off ? " disabled" : ""}>${l}</button>`).join("")}</div>` : ""}
+    <div class="ahj-form"><textarea id="ahj-in" rows="2" maxlength="2000" placeholder="Ask James, or tell him what to add. For example: remind me Friday to chase the Cyclones sponsor logo"${off || ahJ.busy ? " disabled" : ""} aria-label="Message to James">${escapeHtml(ahJ.draft)}</textarea>
+      <button type="button" class="ah-complete" id="ahj-send"${off || ahJ.busy ? " disabled" : ""}>Send</button></div>
+  </section>`;
+}
+async function ahJamesSend(text) {
+  text = String(text || "").trim();
+  if (!text || ahJ.busy) return;
+  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") || "(no reply)" });
+  ahJ.thread.push({ role: "user", text }); ahJ.draft = ""; ahJ.error = ""; ahJ.busy = true;
+  renderAdminHub(); ahJamesScroll();
+  try {
+    const r = await api("/admin/james", { method: "POST", body: { message: text, history } });
+    ahJ.thread.push({ role: "james", reply: r.reply, notes: r.notes || [], messages: r.messages || [], state: "pending", savedIds: [] });
+    if (ahJ.status) ahJ.status.usage = r.usage;
+  } catch (e) { ahJ.error = e.message || "James hit a problem."; }
+  ahJ.busy = false;
+  renderAdminHub(); ahJamesScroll();
+  const again = el("ahj-in"); if (again) again.focus();
+}
+function ahJamesScroll() { const t = el("ahj-thread"); if (t) t.scrollTop = t.scrollHeight; }
+async function ahJamesUndo(t) {
+  try {
+    await ahApi("/items/delete", { method: "POST", body: { ids: t.savedIds } });
+    t.state = "undone"; await ahRefreshAndRender(); showToast("Undone. The notes are gone.");
+  } catch (e) { alert(e.message); }
+}
+function bindAhJames(root) {
+  const inp = root.querySelector("#ahj-in");
+  if (inp) {
+    inp.oninput = () => { ahJ.draft = inp.value; };
+    inp.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ahJamesSend(inp.value); } };
+  }
+  const send = root.querySelector("#ahj-send"); if (send) send.onclick = () => ahJamesSend(inp.value);
+  root.querySelectorAll(".ahj-idea").forEach((b) => { b.onclick = () => {
+    const [, text] = AH_JAMES_IDEAS[+b.dataset.i];
+    if (text.endsWith(": ")) { ahJ.draft = text; renderAdminHub(); const n = el("ahj-in"); if (n) { n.focus(); n.setSelectionRange(text.length, text.length); } } else ahJamesSend(text);
+  }; });
+  const nw = root.querySelector("#ahj-new"); if (nw) nw.onclick = () => { ahJ.thread = []; ahJ.error = ""; renderAdminHub(); };
+  root.querySelectorAll(".ahj-rm").forEach((b) => { b.onclick = () => {
+    const t = ahJ.thread[+b.closest(".ahj-block").querySelector(".ahj-save,.ahj-dismiss").dataset.t]; t.notes.splice(+b.dataset.i, 1);
+    if (!t.notes.length) t.state = "dismissed";
+    renderAdminHub();
+  }; });
+  root.querySelectorAll(".ahj-dismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].state = "dismissed"; renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-save").forEach((b) => { b.onclick = async () => {
+    const t = ahJ.thread[+b.dataset.t]; b.disabled = true;
+    try {
+      const r = await api("/admin/james/notes", { method: "POST", body: { notes: t.notes } });
+      t.savedIds = r.items.map((i) => i.id); t.state = "saved";
+      await ahRefreshAndRender();
+      showToast(`${t.savedIds.length} note${t.savedIds.length === 1 ? "" : "s"} saved.`, { label: "Undo", onClick: () => ahJamesUndo(t) });
+    } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+  }; });
+  root.querySelectorAll(".ahj-undo").forEach((b) => { b.onclick = () => ahJamesUndo(ahJ.thread[+b.dataset.t]); });
+  root.querySelectorAll(".ahj-copy").forEach((b) => { b.onclick = () => {
+    const m = ahJ.thread[+b.dataset.t].messages[+b.dataset.i];
+    const done = () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy message"; }, 1400); };
+    try { navigator.clipboard.writeText(m.text).then(done, () => { b.textContent = "Select the text to copy"; }); } catch { b.textContent = "Select the text to copy"; }
+  }; });
+}
 function ahHeaderHtml() {
   const title = '<div class="ah-title-row"><h2>Note Machine</h2><span class="ah-admin-tag">Admin only</span></div>';
   const who = ahMe.fromAccount ? `Signed in as <b>${escapeHtml(ahMe.name)}</b>` : `Notes say <b>${escapeHtml(ahMe.name)}</b> <button class="link" id="ah-setname" type="button">Set your name</button>`;
@@ -7184,11 +7290,11 @@ const AH_PRIO_COLOR = { urgent: "#D3434F", high: "#FDAB3D", normal: "#A25DDC", l
 const AH_STATUS_COLOR = { done: "#00C875", overdue: "#D3434F", soon: "#FDAB3D", open: "#C4C4C4" };
 const AH_TYPE_COLOR = { payment: "#FFCB00", sponsor: "#9CD326", court: "#0086C0", kit: "#FF642E", followup: "#FF5AC4", note: "#757575" };
 const AH_DONE_BY = ["ZG", "ID", "JN"];
-function ahAvatar(name, when) {
+function ahAvatar(name, when, via) {
   if (!name) return '<span class="ah-av ah-av-none"></span>';
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
   const ini = AH_DONE_BY.includes(name) ? name : name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
-  return `<span class="ah-av" style="background:hsl(${h} 52% 42%)" title="${escapeHtml(name)}${when ? " · " + ahWhen(when) : ""}">${escapeHtml(ini)}</span>`;
+  return `<span class="ah-av" style="background:hsl(${h} 52% 42%)" title="${escapeHtml(name)}${via ? " via James" : ""}${when ? " · " + ahWhen(when) : ""}">${escapeHtml(ini)}</span>`;
 }
 function ahBoardRowHtml(it) {
   if (ahEditing === it.id) return `<div class="ah-brow-edit">${ahEditHtml(it)}</div>`;
@@ -7212,7 +7318,7 @@ function ahBoardRowHtml(it) {
     </div>
     <div class="ah-bc ah-bcell" style="background:${AH_PRIO_COLOR[p]};color:${p === "high" ? "#4A2F00" : "#fff"}"><select class="ah-prio-sel ah-bsel" aria-label="Priority">${AH_PRIORITIES.map(([k, l]) => `<option value="${k}"${k === p ? " selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="ah-bc ah-bcell ah-btype" style="background:${AH_TYPE_COLOR[it.type]};color:${it.type === "payment" || it.type === "sponsor" ? "#2B2400" : "#fff"}">${AH_TYPE_LABEL[it.type]}</div>
-    <div class="ah-bc ah-bavatar">${ahAvatar(it.createdBy, it.createdAt)}</div>
+    <div class="ah-bc ah-bavatar">${ahAvatar(it.createdBy, it.createdAt, it.via === "james")}</div>
     <div class="ah-bc ah-bavatar">${ahIsOpen(it) ? ahAvatar(it.doneBy, it.doneAt) : `<select class="ah-doneby-sel" aria-label="Done by">${AH_DONE_BY.includes(it.doneBy) ? "" : `<option value="">${escapeHtml(it.doneBy || "–")}</option>`}${AH_DONE_BY.map((n) => `<option${n === it.doneBy ? " selected" : ""}>${n}</option>`).join("")}</select>`}</div>
     <button type="button" class="ah-bc ah-bcell ah-bstatus" style="background:${AH_STATUS_COLOR[st.key]};color:${st.key === "open" ? "#323338" : st.key === "soon" ? "#4A2F00" : "#fff"}" title="Tap to ${ahIsOpen(it) ? "mark done" : "reopen"}">${st.label}</button>
     <label class="ah-bc ah-bdue"><span class="ah-bdue-pill${it.dueDate ? "" : " none"}${ahOverdue(it) ? " late" : ""}">${it.dueDate ? ahDue(it.dueDate) : "–"}</span><input type="date" class="ah-bdue-in" value="${it.dueDate || ""}" aria-label="Due date"></label>
@@ -7283,6 +7389,7 @@ function renderAdminHub() {
   if (ahArea === "home") {
     // Notes first: add one, then what's open. The areas come next and the
     // payments by league sit at the bottom of the page.
+    html += ahJamesHtml();
     html += ahComposerHtml();
     let list = visible.filter(ahIsOpen);
     list.sort(ahListSort);
@@ -7373,6 +7480,7 @@ function renderAdminHub() {
   bindAhItems(root);
   bindAhBoard(root);
   bindAhComposer(root);
+  bindAhJames(root);
   bindAhPayments(root);
 }
 // The payments dashboard: one bar per league, split into paid in full (green),
