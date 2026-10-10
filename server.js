@@ -6,6 +6,7 @@ const fs = require("fs");
 const routes = require("./src/routes");
 const store = require("./src/store");
 const { createSessionStore } = require("./src/sessionStore");
+const { resolveSessionSecret } = require("./src/sessionSecret");
 const esbuild = require("esbuild");
 
 // An async route handler (router.get(path, async (req, res) => {...})) that
@@ -22,9 +23,20 @@ process.on("unhandledRejection", (err) => {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-in-production";
-if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
-  console.warn("WARNING: SESSION_SECRET is not set in this environment — falling back to a public, hardcoded value. Set SESSION_SECRET in your host's environment variables so sessions can't be forged.");
+// Production refuses to start without a real session secret (set, long enough,
+// not a placeholder): a hardcoded fallback would let anyone who reads the source
+// forge a login cookie, including the admin's. Elsewhere a random per-process
+// secret is used, so nothing guessable ever signs a session.
+let SESSION_SECRET;
+try {
+  SESSION_SECRET = resolveSessionSecret();
+} catch (e) {
+  console.error("FATAL: " + e.message);
+  console.error("The server will not start until this is fixed.");
+  process.exit(1);
+}
+if (process.env.NODE_ENV !== "production" && !process.env.SESSION_SECRET) {
+  console.log("SESSION_SECRET not set: using a random one for this run (sessions reset when the server restarts).");
 }
 
 // GoDaddy (like most hosts) terminates HTTPS at a proxy in front of this

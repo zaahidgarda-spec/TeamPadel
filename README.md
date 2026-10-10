@@ -71,7 +71,9 @@ for exactly this kind of app and still let you keep your GoDaddy domain
 
 Whichever you pick, the steps are the same: get the code onto the
 server, run `npm install`, set `SESSION_SECRET` and `NODE_ENV=production`
-as environment variables, and start it with `npm start` (a process
+as environment variables (in production the server refuses to start unless
+`SESSION_SECRET` is a random string of at least 32 characters; make one with
+`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`), and start it with `npm start` (a process
 manager like `pm2` will keep it running and restart it if it crashes).
 
 ### Keeping your data safe in production
