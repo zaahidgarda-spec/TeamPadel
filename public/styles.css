@@ -3410,3 +3410,17 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-gen-row select{width:auto;min-height:0;padding:5px 8px;}
 .ahj-gen-img{width:100%;max-width:240px;height:auto;border-radius:10px;background:#F1F5F9;display:block;}
 .ahj-gen-img.logo{background:repeating-conic-gradient(#E2E8F0 0% 25%,#fff 0% 50%) 50%/16px 16px;}
+
+/* James in the top bar, next to + Note */
+.admin-bar .ab-james-btn{background:#0B6E8A;border-color:#2A93B3;}
+.admin-bar .ab-james-btn:hover{background:#0F85A8;}
+.ab-james-av{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#fff;color:#0B6E8A;font-size:11px;font-weight:800;}
+.ab-james-panel{position:fixed;top:50px;left:50%;transform:translateX(-50%);width:min(780px,calc(100vw - 24px));max-height:calc(100vh - 66px);overflow-y:auto;z-index:62;background:#fff;color:#0F172A;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 40px rgba(6,11,24,.32);padding:12px 14px;}
+.ab-james-panel[hidden]{display:none;}
+.ab-james-panel .ahj{border:0;padding:0;margin:0;}
+.ab-james-panel .ahj-thread{max-height:44vh;}
+.ab-james-x{position:absolute;top:8px;right:10px;width:30px;height:30px;min-height:0;padding:0;border-radius:50%;border:0;background:#F1F5F9;color:#334155;font-size:20px;line-height:1;cursor:pointer;z-index:2;}
+.ab-james-panel .ahj-head{padding-right:38px;}
+.ahj-docked{flex-direction:row !important;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.ahj-docked .ahj-av{display:inline-grid;vertical-align:middle;}
+@media (max-width:560px){.ab-james-panel{top:46px;width:calc(100vw - 16px);max-height:calc(100vh - 56px);padding:10px;}.admin-bar .ab-james-btn{padding:8px 10px;}}

@@ -1756,7 +1756,8 @@ function updateAdminBar() {
   const show = isOwner || leagueAdmin;
   el("admin-bar").style.display = show ? "flex" : "none";
   el("admin-bar-note").style.display = isOwner ? "" : "none";
-  if (!isOwner) closeQuickNote();
+  el("admin-bar-james").style.display = isOwner ? "" : "none";
+  if (!isOwner) { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); }
   document.documentElement.classList.toggle("has-admin-bar", show);
   if (!show) return;
   const n = inLeague && !isOwner ? currentLeagueLiveCount() : Math.max(adminBarLive, inLeague ? currentLeagueLiveCount() : 0);
@@ -1813,7 +1814,8 @@ async function openQuickNote() {
   el("admin-bar-note").setAttribute("aria-expanded", "true");
   el("ab-note-text").focus();
 }
-el("admin-bar-note").onclick = openQuickNote;
+el("admin-bar-note").onclick = () => { if (ahJ.popup) closeJamesPopup(); openQuickNote(); };
+el("admin-bar-james").onclick = openJamesPopup;
 el("ab-note-scope").onchange = updateQuickNoteSponsor;
 el("ab-note-league").onchange = updateQuickNoteSponsor;
 el("ab-note-open").onclick = () => { closeQuickNote(); showHub(); switchHubTab("adminhub"); window.scrollTo({ top: 0, behavior: "smooth" }); };
@@ -1852,7 +1854,7 @@ el("ab-note-add").onclick = async () => {
   el("ab-note-add").disabled = false;
 };
 el("ab-note-text").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") el("ab-note-add").click(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeQuickNote(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickNote(); if (ahJ.popup) closeJamesPopup(); } });
 // Picking a category redraws the chips, so the clicked button may already be
 // gone from the page by now: judge by the path the click took, not the element.
 document.addEventListener("click", (e) => {
@@ -6975,6 +6977,7 @@ async function loadAdminHub() {
     if (ahCat !== "all" && ahCat !== "none" && !ahCategories.some((c) => c.id === ahCat)) ahCat = "all";
   } catch (e) { el("ah-root").innerHTML = `<p class="empty">${escapeHtml(e.message || "Couldn't load the admin hub.")}</p>`; return; }
   renderAdminHub();
+  if (ahJ.popup) renderJamesPopup();
 }
 function ahToday() { return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }); }
 function ahLeagueName(id) { const l = ahLeagues.find((x) => x.id === id); return l ? l.name : ""; }
@@ -7202,6 +7205,40 @@ function bindAhComposer(root) {
 }
 // ---- James, the admin assistant. He answers, proposes notes and drafts messages;
 // nothing is saved until the admin presses Save on a proposal.
+// James can live in the Note Machine or in a panel at the top of every page (next to + Note).
+// Only one place shows him at a time, so the chat is never on screen twice.
+function ahJRender() { if (ahJ.popup) renderJamesPopup(); else renderAdminHub(); }
+function renderJamesPopup() {
+  const panel = el("ab-james-panel");
+  if (!panel || !isOwner) return;
+  const keep = panel.scrollTop;
+  panel.innerHTML = `<button type="button" class="ab-james-x" id="ab-james-x" aria-label="Close James">&times;</button>${ahJamesHtml()}`;
+  bindAhJames(panel); bindAhJamesDesign(panel); bindAhJamesPictures(panel);
+  const x = panel.querySelector("#ab-james-x"); if (x) x.onclick = closeJamesPopup;
+  panel.scrollTop = keep;
+}
+function ahJamesDockedHtml() {
+  return `<section class="ahj ahj-docked" aria-label="James"><span><span class="ahj-av" aria-hidden="true">J</span> <b>James</b> is open at the top of the page.</span><button type="button" class="link" id="ahj-bring">Bring him back here</button></section>`;
+}
+function closeJamesPopup() {
+  const panel = el("ab-james-panel");
+  ahJ.popup = false;
+  if (panel) { panel.hidden = true; panel.innerHTML = ""; }
+  el("admin-bar-james").setAttribute("aria-expanded", "false");
+  renderAdminHub();
+}
+async function openJamesPopup() {
+  const panel = el("ab-james-panel");
+  if (!panel.hidden) return closeJamesPopup();
+  closeQuickNote();
+  // The hub's lists (leagues, categories) are what James's notes and changes are shown against.
+  if (!ahLeagues.length && !ahCategories.length) await loadAdminHub();
+  ahJ.popup = true; panel.hidden = false;
+  el("admin-bar-james").setAttribute("aria-expanded", "true");
+  renderAdminHub();
+  renderJamesPopup(); ahJamesScroll();
+  const inp = el("ahj-in"); if (inp) inp.focus();
+}
 let ahJ = { status: null, thread: [], busy: false, draft: "", error: "", panel: null, log: null, images: [] };
 const AH_JAMES_IDEAS = [["Who still owes?", "Who still owes money, by league?"], ["What's overdue?", "What notes are overdue or urgent?"], ["Draft a reminder", "Draft a friendly reminder for each team that still owes"], ["Add a note", "Add a note: "]];
 function ahDollars(n) { return "$" + (Math.round((n || 0) * 100) / 100).toFixed(2); }
@@ -7298,14 +7335,14 @@ async function ahJamesSend(text) {
   if ((!text && !photos.length) || ahJ.busy) return;
   const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.imagePlans && t.imagePlans.length ? ` [Wrote picture brief: ${t.imagePlans.map((p) => p.forWhat).join(", ")}]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
   ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url), logoImages: photos.map((p) => p.logoUrl) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
-  renderAdminHub(); ahJamesScroll();
+  ahJRender(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
     ahJ.thread.push({ role: "james", request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
   } catch (e) { ahJ.error = e.message || "James hit a problem."; }
   ahJ.busy = false;
-  renderAdminHub(); ahJamesScroll();
+  ahJRender(); ahJamesScroll();
   const again = el("ahj-in"); if (again) again.focus();
 }
 function ahJamesScroll() { const t = el("ahj-thread"); if (t) t.scrollTop = t.scrollHeight; }
@@ -7328,7 +7365,7 @@ async function ahJamesApply(t, btn) {
     ahJ.error = ""; ahJ.log = null;
     await ahRefreshAndRender();
     showToast(`${t.appliedN} change${t.appliedN === 1 ? "" : "s"} applied.`, { label: "Undo", onClick: () => ahJamesUndoSet(t.setId, t) });
-  } catch (e) { btn.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+  } catch (e) { btn.disabled = false; ahJ.error = e.message; ahJRender(); }
 }
 async function ahJamesUndoSet(setId, t) {
   try {
@@ -7338,7 +7375,7 @@ async function ahJamesUndoSet(setId, t) {
     if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
     await ahRefreshAndRender();
     showToast("Undone. Everything is back as it was.");
-  } catch (e) { ahJ.error = e.message; renderAdminHub(); }
+  } catch (e) { ahJ.error = e.message; ahJRender(); }
 }
 // Shrinks a photo in the browser before it is sent: long side 1568px, JPEG, small enough to send.
 // A copy small enough to be a team logo: up to 512px, PNG (keeps a transparent background), or JPEG if that is too big.
@@ -7585,14 +7622,14 @@ function bindAhJamesPictures(root) {
   root.querySelectorAll(".ahj-generate").forEach((b) => { b.onclick = async () => {
     const p = plan(b), t = ahJ.thread[+b.dataset.t];
     if (p.busy) return;
-    p.busy = true; p.error = ""; renderAdminHub();
+    p.busy = true; p.error = ""; ahJRender();
     try {
       const refs = (p.refPhotos || []).map((i) => (t.logoImages || [])[i]).filter(Boolean);
       const r = await api("/admin/james/image", { method: "POST", body: { kind: p.kind, prompt: p.prompt, variants: p.variants, refs } });
       p.results = r.images.map((url) => ({ url, state: "" })); p.cost = r.cost;
       if (ahJ.status) ahJ.status.images = r.images_usage;
     } catch (e) { p.error = e.message; }
-    p.busy = false; renderAdminHub();
+    p.busy = false; ahJRender();
   }; });
   const res = (b) => plan(b).results[+b.dataset.r];
   root.querySelectorAll(".ahj-gen-dl").forEach((b) => { b.onclick = () => { const p = plan(b); kitDownloadDataUrl(res(b).url, (p.forWhat || "picture").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + (+b.dataset.r + 1) + (p.kind === "logo" ? ".png" : ".jpg")); }; });
@@ -7609,9 +7646,9 @@ function bindAhJamesPictures(root) {
         out = await api("/admin/james/kit", { method: "POST", body: { leagueId: p.leagueId, teamId: p.teamId, side: p.kind === "kit_front" ? "front" : "back", image: jpg } });
       }
       r.state = "used"; r.setId = out.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = out.changes; ahJ.error = ""; ahJ.log = null;
-      renderAdminHub();
+      ahJRender();
       showToast(p.kind === "logo" ? `${p.teamName}'s logo changed.` : `${p.teamName}'s kit ${p.kind === "kit_front" ? "front" : "back"} changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(out.setId, null) });
-    } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+    } catch (e) { b.disabled = false; ahJ.error = e.message; ahJRender(); }
   }; });
   root.querySelectorAll(".ahj-gen-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(res(b).setId, null); });
 }
@@ -7622,10 +7659,10 @@ function bindAhJamesDesign(root) {
     const size = p.size || "square";
     if (!(p.cache && p.cache[size]) && !(p.drawing && p.drawing[size]) && !(p.failed && p.failed[size])) {
       p.drawing = { ...(p.drawing || {}), [size]: true };
-      ahPosterDraw(p, size).then((url) => { p.cache = { ...(p.cache || {}), [size]: url }; }).catch((e) => { p.failed = { ...(p.failed || {}), [size]: true }; ahJ.error = "Couldn't draw the poster: " + (e.message || "unknown problem"); }).finally(() => { p.drawing[size] = false; renderAdminHub(); });
+      ahPosterDraw(p, size).then((url) => { p.cache = { ...(p.cache || {}), [size]: url }; }).catch((e) => { p.failed = { ...(p.failed || {}), [size]: true }; ahJ.error = "Couldn't draw the poster: " + (e.message || "unknown problem"); }).finally(() => { p.drawing[size] = false; ahJRender(); });
     }
   });
-  root.querySelectorAll(".ahj-psize").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].posters[+b.dataset.p].size = b.dataset.size; renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-psize").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].posters[+b.dataset.p].size = b.dataset.size; ahJRender(); }; });
   root.querySelectorAll(".ahj-pdl").forEach((b) => { b.onclick = () => {
     const p = ahJ.thread[+b.dataset.t].posters[+b.dataset.p], size = p.size || "square";
     if (p.cache && p.cache[size]) kitDownloadDataUrl(p.cache[size], ahPosterFileName(p, size));
@@ -7639,13 +7676,14 @@ function bindAhJamesDesign(root) {
       const png = await ahSvgToPng(o.svg, 512);
       const r = await api("/admin/james/logo", { method: "POST", body: { leagueId: set.leagueId, teamId: set.teamId, image: png } });
       o.state = "used"; o.setId = r.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes; ahJ.error = ""; ahJ.log = null;
-      renderAdminHub();
+      ahJRender();
       showToast(`${set.teamName}'s logo changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(r.setId, null) });
-    } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+    } catch (e) { b.disabled = false; ahJ.error = e.message; ahJRender(); }
   }; });
   root.querySelectorAll(".ahj-logo-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(opt(b).setId, null); });
 }
 function bindAhJames(root) {
+  const bring = root.querySelector("#ahj-bring"); if (bring) bring.onclick = closeJamesPopup;
   const inp = root.querySelector("#ahj-in");
   if (inp) {
     inp.oninput = () => { ahJ.draft = inp.value; };
@@ -7662,21 +7700,21 @@ function bindAhJames(root) {
       for (const f of picked) {
         try { ahJ.images.push(await ahResizePhoto(f)); } catch (e) { ahJ.error = e.message; }
       }
-      renderAdminHub();
+      ahJRender();
     };
   }
-  root.querySelectorAll(".ahj-thumb-x").forEach((b) => { b.onclick = () => { ahJ.images.splice(+b.dataset.i, 1); renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-thumb-x").forEach((b) => { b.onclick = () => { ahJ.images.splice(+b.dataset.i, 1); ahJRender(); }; });
   root.querySelectorAll(".ahj-idea").forEach((b) => { b.onclick = () => {
     const [, text] = AH_JAMES_IDEAS[+b.dataset.i];
-    if (text.endsWith(": ")) { ahJ.draft = text; renderAdminHub(); const n = el("ahj-in"); if (n) { n.focus(); n.setSelectionRange(text.length, text.length); } } else ahJamesSend(text);
+    if (text.endsWith(": ")) { ahJ.draft = text; ahJRender(); const n = el("ahj-in"); if (n) { n.focus(); n.setSelectionRange(text.length, text.length); } } else ahJamesSend(text);
   }; });
-  const nw = root.querySelector("#ahj-new"); if (nw) nw.onclick = () => { ahJ.thread = []; ahJ.error = ""; renderAdminHub(); };
+  const nw = root.querySelector("#ahj-new"); if (nw) nw.onclick = () => { ahJ.thread = []; ahJ.error = ""; ahJRender(); };
   root.querySelectorAll(".ahj-rm").forEach((b) => { b.onclick = () => {
     const t = ahJ.thread[+b.closest(".ahj-block").querySelector(".ahj-save,.ahj-dismiss").dataset.t]; t.notes.splice(+b.dataset.i, 1);
     if (!t.notes.length) t.state = "dismissed";
-    renderAdminHub();
+    ahJRender();
   }; });
-  root.querySelectorAll(".ahj-dismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].state = "dismissed"; renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-dismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].state = "dismissed"; ahJRender(); }; });
   root.querySelectorAll(".ahj-save").forEach((b) => { b.onclick = async () => {
     const t = ahJ.thread[+b.dataset.t]; b.disabled = true;
     try {
@@ -7684,21 +7722,21 @@ function bindAhJames(root) {
       t.savedIds = r.items.map((i) => i.id); t.state = "saved";
       await ahRefreshAndRender();
       showToast(`${t.savedIds.length} note${t.savedIds.length === 1 ? "" : "s"} saved.`, { label: "Undo", onClick: () => ahJamesUndo(t) });
-    } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+    } catch (e) { b.disabled = false; ahJ.error = e.message; ahJRender(); }
   }; });
   root.querySelectorAll(".ahj-undo").forEach((b) => { b.onclick = () => ahJamesUndo(ahJ.thread[+b.dataset.t]); });
   root.querySelectorAll(".ahj-crm").forEach((b) => { b.onclick = () => {
     const t = ahJ.thread[+b.dataset.t]; t.changes.splice(+b.dataset.i, 1);
     if (!t.changes.length) t.cstate = "dismissed";
-    renderAdminHub();
+    ahJRender();
   }; });
-  root.querySelectorAll(".ahj-cdismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].cstate = "dismissed"; renderAdminHub(); }; });
+  root.querySelectorAll(".ahj-cdismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].cstate = "dismissed"; ahJRender(); }; });
   root.querySelectorAll(".ahj-apply").forEach((b) => { b.onclick = () => ahJamesApply(ahJ.thread[+b.dataset.t], b); });
   root.querySelectorAll(".ahj-cundo").forEach((b) => { b.onclick = () => ahJamesUndoSet(ahJ.thread[+b.dataset.t].setId, ahJ.thread[+b.dataset.t]); });
   root.querySelectorAll(".ahj-panel-btn").forEach((b) => { b.onclick = async () => {
     ahJ.panel = ahJ.panel === b.dataset.p ? null : b.dataset.p;
-    renderAdminHub();
-    if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } renderAdminHub(); }
+    ahJRender();
+    if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } ahJRender(); }
   }; });
   root.querySelectorAll(".ahj-logundo").forEach((b) => { b.onclick = () => ahJamesUndoSet(b.dataset.id, null); });
   root.querySelectorAll(".ahj-perm input").forEach((cb) => { cb.onchange = async () => {
@@ -7829,7 +7867,7 @@ function renderAdminHub() {
   if (ahArea === "home") {
     // Notes first: add one, then what's open. The areas come next and the
     // payments by league sit at the bottom of the page.
-    html += ahJamesHtml();
+    html += ahJ.popup ? ahJamesDockedHtml() : ahJamesHtml();
     html += ahComposerHtml();
     let list = visible.filter(ahIsOpen);
     list.sort(ahListSort);
