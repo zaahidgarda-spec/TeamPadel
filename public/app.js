@@ -7355,10 +7355,20 @@ function ahJamesChangesHtml(t, ti) {
       <div class="ahj-ctext">${escapeHtml(ok ? pv.text : pv.error || "Can't do this one.")}</div>
       ${ok ? (pv.warnings || []).map((w) => `<div class="ahj-concern"><b>Check:</b> ${escapeHtml(w)}</div>`).join("") : '<div class="ahj-sub">Left out. It will not be applied.</div>'}</div>`;
   }).join("");
+  const needsOk = t.changes.some((c) => c.preview && c.preview.ok && c.preview.needsConfirm);
+  const finBox = st === "pending" && needsOk && okN ? `<label class="ahj-fin-ok"><input type="checkbox" class="ahj-fin-check" data-t="${ti}"${t.finOk ? " checked" : ""}><span>I understand this locks the result and emails players, and I want to finalize it.</span></label>` : "";
   const actions = st === "pending"
-    ? (okN ? `<button type="button" class="ah-complete ahj-apply" data-t="${ti}">Apply ${okN} change${okN === 1 ? "" : "s"}</button>` : "") + `<button type="button" class="ah-complete undo ahj-cdismiss" data-t="${ti}">Dismiss</button>`
+    ? (okN ? `<button type="button" class="ah-complete ahj-apply" data-t="${ti}"${needsOk && !t.finOk ? " disabled" : ""}>${needsOk ? "Finalize" : "Apply " + okN + " change" + (okN === 1 ? "" : "s")}</button>` : "") + `<button type="button" class="ah-complete undo ahj-cdismiss" data-t="${ti}">Dismiss</button>`
     : st === "applied" ? `<button type="button" class="ah-complete undo ahj-cundo" data-t="${ti}">Undo these changes</button>` : "";
-  return `<div class="ahj-block"><div class="ahj-block-head">${head}</div>${rows}<div class="ahj-actions">${actions}</div></div>`;
+  return `<div class="ahj-block"><div class="ahj-block-head">${head}</div>${rows}${finBox}<div class="ahj-actions">${actions}</div></div>`;
+}
+// The app itself asks, once every seed of a fixture is in, whether to finalize it. Two clicks, so it is never an accident.
+function ahJamesFinalizeAskHtml(t, ti) {
+  return `<div class="ahj-block ahj-finask"><div class="ahj-block-head">Ready to finalize?</div>${t.finalizeAsk.map((o, oi) => `<div class="ahj-fin"><b>${escapeHtml(o.label)}</b>
+    ${o.state === "ask" ? `<div class="ahj-sub">Every seed has a score. Do you want to finalize this fixture?</div><div class="ahj-actions"><button type="button" class="ah-complete ahj-fin-yes" data-t="${ti}" data-o="${oi}">Yes, finalize it…</button><button type="button" class="ah-complete undo ahj-fin-no" data-t="${ti}" data-o="${oi}">Not yet</button></div>`
+      : o.state === "confirm" ? `<div class="ahj-concern"><b>Are you sure?</b> Finalizing locks the result and updates the table and ratings. Players are emailed to rate their opponents, and if the round is complete the wrap-up and notifications go out. You can reopen it afterwards, but those can't be unsent.</div><div class="ahj-actions"><button type="button" class="ah-complete ahj-fin-go" data-t="${ti}" data-o="${oi}">Finalize now</button><button type="button" class="ah-complete undo ahj-fin-no" data-t="${ti}" data-o="${oi}">Cancel</button></div>`
+      : o.state === "done" ? `<div class="ahj-actions"><span class="ahj-logo-done">Finalized</span><button type="button" class="ah-complete undo ahj-fin-undo" data-t="${ti}" data-o="${oi}">Reopen (undo)</button></div>`
+      : o.state === "undone" ? '<div class="ahj-sub">Reopened. The emails already sent can\'t be taken back.</div>' : '<div class="ahj-sub">Left for now. Finalize it from Results whenever you like, or ask James.</div>'}</div>`).join("")}</div>`;
 }
 function ahJamesTurnHtml(t, ti) {
   if (t.role === "user") return `<div class="ahj-msg you">${(t.images || []).map((u) => `<img class="ahj-sent-img" src="${u}" alt="Photo you attached">`).join("")}${escapeHtml(t.text).replace(/\n/g, "<br>")}</div>`;
@@ -7371,6 +7381,7 @@ function ahJamesTurnHtml(t, ti) {
       <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
   }
   if (t.changes && t.changes.length) h += ahJamesChangesHtml(t, ti);
+  if (t.finalizeAsk && t.finalizeAsk.length) h += ahJamesFinalizeAskHtml(t, ti);
   if (t.imagePlans && t.imagePlans.length) h += ahJamesImagePlansHtml(t, ti);
   if (t.logos && t.logos.length) h += ahJamesLogosHtml(t, ti);
   if (t.posters && t.posters.length) h += ahJamesPostersHtml(t, ti);
@@ -7421,7 +7432,7 @@ async function ahJamesSend(text, opts) {
   text = String(text || "").trim();
   const photos = ahJ.images.slice();
   if ((!text && !photos.length) || ahJ.busy) return;
-  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.imagePlans && t.imagePlans.length ? ` [Wrote picture brief: ${t.imagePlans.map((p) => p.forWhat).join(", ")}]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
+  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.imagePlans && t.imagePlans.length ? ` [Wrote picture brief: ${t.imagePlans.map((p) => p.forWhat).join(", ")}]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.finalizeAsk && t.finalizeAsk.length ? ` [Asked the admin whether to finalize: ${t.finalizeAsk.map((o) => o.label + " (" + o.state + ")").join("; ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
   ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url), logoImages: photos.map((p) => p.logoUrl) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
   ahJRender(); ahJamesScroll();
   try {
@@ -7447,11 +7458,13 @@ async function ahJamesApply(t, btn) {
   btn.disabled = true;
   try {
     const usesLogo = send.some((c) => Number.isInteger(c.logoImage));
-    const r = await api("/admin/james/apply", { method: "POST", body: { changes: send, request: t.request || "", ...(usesLogo ? { images: t.logoImages || [] } : {}) } });
+    const finalizing = send.some((c) => c.kind === "fixture_finalize");
+    const r = await api("/admin/james/apply", { method: "POST", body: { changes: send, request: t.request || "", ...(usesLogo ? { images: t.logoImages || [] } : {}), ...(finalizing ? { confirmFinalize: !!t.finOk } : {}) } });
     t.cstate = "applied"; t.setId = r.setId; t.appliedN = r.results.length;
     t.changes = t.changes.filter((c) => c.preview && c.preview.ok);
     if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes;
     ahJ.error = ""; ahJ.log = null;
+    if (r.finalizeOffers && r.finalizeOffers.length) ahJ.thread.push({ role: "james", reply: "", finalizeAsk: r.finalizeOffers.map((o) => ({ ...o, state: "ask" })) });
     await ahRefreshAndRender();
     showToast(`${t.appliedN} change${t.appliedN === 1 ? "" : "s"} applied.`, { label: "Undo", onClick: () => ahJamesUndoSet(t.setId, t) });
   } catch (e) { btn.disabled = false; ahJ.error = e.message; ahJRender(); }
@@ -7459,7 +7472,7 @@ async function ahJamesApply(t, btn) {
 async function ahJamesUndoSet(setId, t) {
   try {
     await api(`/admin/james/log/${setId}/undo`, { method: "POST" });
-    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.imagePlans || []).forEach((pl) => pl.results.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); });
+    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.imagePlans || []).forEach((pl) => pl.results.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.finalizeAsk || []).forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } }); });
     ahJ.error = ""; ahJ.log = null;
     if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
     await ahRefreshAndRender();
@@ -7822,6 +7835,20 @@ function bindAhJames(root) {
     if (!t.changes.length) t.cstate = "dismissed";
     ahJRender();
   }; });
+  root.querySelectorAll(".ahj-fin-check").forEach((cb) => { cb.onchange = () => { ahJ.thread[+cb.dataset.t].finOk = cb.checked; ahJRender(); }; });
+  const fin = (b) => ahJ.thread[+b.dataset.t].finalizeAsk[+b.dataset.o];
+  root.querySelectorAll(".ahj-fin-yes").forEach((b) => { b.onclick = () => { fin(b).state = "confirm"; ahJRender(); }; });
+  root.querySelectorAll(".ahj-fin-no").forEach((b) => { b.onclick = () => { fin(b).state = "later"; ahJRender(); }; });
+  root.querySelectorAll(".ahj-fin-go").forEach((b) => { b.onclick = async () => {
+    const o = fin(b); b.disabled = true;
+    try {
+      const r = await api("/admin/james/apply", { method: "POST", body: { changes: [{ kind: "fixture_finalize", leagueId: o.leagueId, fixtureId: o.fixtureId }], request: "Finalize after scores were entered", confirmFinalize: true } });
+      o.state = "done"; o.setId = r.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes; ahJ.error = ""; ahJ.log = null;
+      await ahRefreshAndRender();
+      showToast("Fixture finalized.", { label: "Reopen", onClick: () => ahJamesUndoSet(r.setId, null) });
+    } catch (e) { b.disabled = false; ahJ.error = e.message; ahJRender(); }
+  }; });
+  root.querySelectorAll(".ahj-fin-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(fin(b).setId, null); });
   root.querySelectorAll(".ahj-cdismiss").forEach((b) => { b.onclick = () => { ahJ.thread[+b.dataset.t].cstate = "dismissed"; ahJRender(); }; });
   root.querySelectorAll(".ahj-apply").forEach((b) => { b.onclick = () => ahJamesApply(ahJ.thread[+b.dataset.t], b); });
   root.querySelectorAll(".ahj-cundo").forEach((b) => { b.onclick = () => ahJamesUndoSet(ahJ.thread[+b.dataset.t].setId, ahJ.thread[+b.dataset.t]); });

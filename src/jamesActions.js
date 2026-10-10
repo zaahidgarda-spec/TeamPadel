@@ -490,6 +490,41 @@ module.exports = function createJamesActions(d) {
     },
   };
 
+  // Finalizing locks a result and sets off emails and the round wrap-up, so it only ever happens
+  // as a step of its own, after the admin has been asked and has said yes (see the apply route).
+  const finalizeKinds = {
+    fixture_finalize: {
+      label: "Finalize",
+      run(ctx, ch) {
+        const l = leagueFor(ctx, ch.leagueId);
+        const f = logic.allFixturesOf(l).find((x) => x && x.id === ch.fixtureId);
+        if (!f) throw err("I can't find that match.");
+        if (f.finalized) throw err("That fixture is already finalized.");
+        if (!f.selectionA.submitted || !f.selectionB.submitted) throw err("Both line-ups have to be in first.");
+        const singles = l.singlesDecider && f.stage === "regular" && f.rubbers.length === 5 ? 5 : undefined;
+        if (!logic.requiredRubbersOk(f, l.format === "pairs", singles)) throw err("Not every seed has a full score yet, so it can't be finalized.");
+        ctx.deferred.push(() => { try { d.finalizeLater(l.id, f.id, ctx.actor); } catch (e) { console.error("James finalize failed:", e); } });
+        const label = `${l.name}, ${f.round ? "Round " + f.round + ", " : ""}${tname(l, f.teamA)} v ${tname(l, f.teamB)}`;
+        return {
+          leagueId: l.id, leagueName: l.name, needsConfirm: true,
+          text: `Finalize ${label}.`,
+          warnings: ["This locks the result and updates the table and ratings. Players are emailed to rate their opponents, and if the round is complete the wrap-up post and notifications go out. Undo can reopen the fixture, but it can't unsend those."],
+          undo: { fixtureId: f.id }, after: "finalized",
+        };
+      },
+      check(ctx, c) {
+        const l = leagueFor(ctx, c.leagueId);
+        const f = logic.allFixturesOf(l).find((x) => x && x.id === c.undo.fixtureId);
+        if (f && !f.finalized) throw err("That fixture has been unlocked since, so there's nothing to undo.");
+      },
+      revert(ctx, c) {
+        const l = leagueFor(ctx, c.leagueId);
+        const f = logic.allFixturesOf(l).find((x) => x && x.id === c.undo.fixtureId);
+        if (f) { f.finalized = false; ctx.touch(l.id); }
+      },
+    },
+  };
+
   // ---- leagues ------------------------------------------------------------
   const leagueKinds = {
     league_set_fee: {
@@ -700,7 +735,7 @@ module.exports = function createJamesActions(d) {
     },
   };
 
-  const KINDS = { ...payKinds, ...fixKinds, ...leagueKinds, ...playerKinds, ...noteKinds, ...scoreKinds, ...courtKinds };
+  const KINDS = { ...payKinds, ...fixKinds, ...leagueKinds, ...playerKinds, ...noteKinds, ...scoreKinds, ...courtKinds, ...finalizeKinds };
   const GROUP_OF = {};
   Object.keys(payKinds).forEach((k) => { GROUP_OF[k] = "payments"; });
   Object.keys(fixKinds).forEach((k) => { GROUP_OF[k] = "fixtures"; });
@@ -708,15 +743,18 @@ module.exports = function createJamesActions(d) {
   Object.keys(playerKinds).forEach((k) => { GROUP_OF[k] = "players"; });
   Object.keys(noteKinds).forEach((k) => { GROUP_OF[k] = "notes"; });
   Object.keys(scoreKinds).forEach((k) => { GROUP_OF[k] = "scores"; });
+  Object.keys(finalizeKinds).forEach((k) => { GROUP_OF[k] = "scores"; });
   Object.keys(courtKinds).forEach((k) => { GROUP_OF[k] = "court"; });
   const GROUP_NAME = { payments: "Payments", fixtures: "Fixtures", leagues: "Leagues", players: "Players", notes: "Notes", scores: "Scores", court: "Court control", images: "Pictures" };
 
   // ---- the three entry points ---------------------------------------------
   function plan(changes, { dry, actor, perms, images }) {
     const ctx = makeCtx(dry, images, actor);
+    const hasFinalize = changes.some((c) => c && c.kind === "fixture_finalize");
     const results = changes.map((ch) => {
       const k = KINDS[ch && ch.kind];
       try {
+        if (hasFinalize && changes.length > 1) throw err("Finalizing has to be its own step. Do the other changes first, then finalize.");
         if (!k) throw err("I don't know how to do that one.");
         if (!perms.write[GROUP_OF[ch.kind]]) throw err(`${GROUP_NAME[GROUP_OF[ch.kind]]} changes are switched off in James's permissions.`);
         const r = k.run(ctx, ch, actor);
@@ -729,7 +767,7 @@ module.exports = function createJamesActions(d) {
     return { ctx, results };
   }
   // What the admin sees: no snapshots.
-  const publicResult = (r) => ({ ok: r.ok, kind: r.kind, label: r.label, text: r.text || "", warnings: r.warnings || [], error: r.error || null, leagueName: r.leagueName || "" });
+  const publicResult = (r) => ({ ok: r.ok, needsConfirm: !!r.needsConfirm, kind: r.kind, label: r.label, text: r.text || "", warnings: r.warnings || [], error: r.error || null, leagueName: r.leagueName || "" });
 
   function preview(changes, opts) { return plan(changes, { ...opts, dry: true }).results.map(publicResult); }
 

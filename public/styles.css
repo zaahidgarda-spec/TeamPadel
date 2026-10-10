@@ -3433,3 +3433,10 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-mic{padding:10px 12px !important;display:inline-flex;align-items:center;gap:6px;}
 .ahj-mic-t{font-size:12px;font-weight:700;}
 .ahj-speak-btn[aria-pressed="false"]{color:#94A3B8;}
+
+/* James: asking before a fixture is finalized */
+.ahj-finask{border-color:#E0961A;background:#FFFBF2;}
+.ahj-fin{display:flex;flex-direction:column;gap:8px;padding:6px 0;}
+.ahj-fin-ok{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border:1.5px solid #E0961A;border-radius:10px;background:#FDF1DA;font-size:14px;cursor:pointer;}
+.ahj-fin-ok input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:#B45309;}
+.ahj-apply:disabled{opacity:.5;cursor:not-allowed;}

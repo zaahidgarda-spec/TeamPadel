@@ -201,3 +201,13 @@ test("score and court changes keep only well-formed numbers and sides", () => {
   const off = J.permissions(J.mergePermissions({}, { write: { scores: false, court: false } }));
   assert.deepStrictEqual(J.cleanChanges([{ kind: "score_set", leagueId: "L1", fixtureId: "F1", seed: 1 }, { kind: "court_start", leagueId: "L1", fixtureId: "F1", seed: 1 }], off), []);
 });
+
+test("finalizing is its own change kind, controlled by the scores switch", () => {
+  const perms = J.permissions({});
+  const out = J.cleanChanges([{ kind: "fixture_finalize", leagueId: "L1", fixtureId: "F1", why: "all in" }], perms);
+  assert.deepStrictEqual(out, [{ kind: "fixture_finalize", leagueId: "L1", fixtureId: "F1", why: "all in" }]);
+  const off = J.permissions(J.mergePermissions({}, { write: { scores: false } }));
+  assert.deepStrictEqual(J.cleanChanges([{ kind: "fixture_finalize", leagueId: "L1", fixtureId: "F1" }], off), []);
+  const kinds = J.changesTool(perms).input_schema.properties.changes.items.properties.kind.enum;
+  assert.ok(kinds.includes("fixture_finalize"));
+});

@@ -4923,6 +4923,12 @@ function jamesActions() {
     reconcilePlayerStatus, reconcileTeamPayment, coverTeamPlayers,
     movePlayerRecord, followPlayerToTeam, setPlayerClaimsTeam, leagueStatus, genTeamCode, newLeagueObj,
     completeRubberNow, reopenRubberNow, fixtureLabel,
+    finalizeLater: (leagueId, fixtureId, who) => {
+      const lg = store.getLeague(leagueId); const fx = lg && findFixture(lg, fixtureId);
+      if (!fx || fx.finalized) return;
+      finalizeFixtureNow(lg, fx, { session: { isOwner: true } }, { actor: "James, for " + who });
+      store.saveLeague(leagueId, lg);
+    },
     // Told to the captains only once the whole set has been saved (and never while previewing).
     notifyLater: (leagueId, teamId, type, msg, extra) => { const lg = store.getLeague(leagueId); if (lg) { notify(lg, teamId, type, msg, extra); store.saveLeague(leagueId, lg); } },
     auditFixture: (league, f, who, action, detail) => logAudit(league, { session: { isOwner: true } }, f, action, { actor: "James, for " + who, ...detail }),
@@ -4969,8 +4975,10 @@ function jamesContext(perms) {
           const names = (side, i) => ((side === "A" ? f.selectionA : f.selectionB).pairs[i] || []).map((pid) => { const t = l.teams.find((x) => x.id === (side === "A" ? f.teamA : f.teamB)); return ((t && t.players.find((p) => p.id === pid)) || {}).name || "?"; }).join(" & ");
           // The pairs stay hidden until both line-ups are in, same as for everyone else.
           const open = f.selectionA && f.selectionB && f.selectionA.submitted && f.selectionB.submitted && !f.finalized;
+          const singles = l.singlesDecider && f.stage === "regular" && f.rubbers.length === 5 ? 5 : undefined;
+          const ready = open && logic.requiredRubbersOk(f, l.format === "pairs", singles);
           return {
-            id: f.id, match: `${name(f.teamA)} v ${name(f.teamB)}${res}`, ...(f.finalized ? { finalized: true } : {}), ...(own ? { movedTo: [own.date, own.time, own.venue].filter(Boolean).join(" ") } : {}),
+            id: f.id, match: `${name(f.teamA)} v ${name(f.teamB)}${res}`, ...(f.finalized ? { finalized: true } : {}), ...(ready ? { readyToFinalize: true } : {}), ...(own ? { movedTo: [own.date, own.time, own.venue].filter(Boolean).join(" ") } : {}),
             ...(open ? { seeds: f.rubbers.map((r, i) => ({ seed: i + 1, a: names("A", i), b: names("B", i), score: logic.rubberScoreText(r) || "", state: r.forfeited ? "forfeit" : r.completedAt ? "finished" : r.startedAt ? "on court" : "not started" })) } : {}),
           };
         }),
@@ -5139,12 +5147,25 @@ router.post("/admin/james/apply", requireOwnerSession, (req, res) => {
   const changes = james.cleanChanges(req.body && req.body.changes, perms);
   if (!changes.length) return res.status(400).json({ error: "There's nothing to change." });
   if (jamesChangesToday(actor) + changes.length > cfg.dailyChanges) return res.status(429).json({ error: `That would go over today's limit of ${cfg.dailyChanges} changes by James for you. It resets at midnight.` });
+  // Finalizing emails players and can't be fully taken back: it needs the admin's own explicit OK.
+  if (changes.some((c) => c.kind === "fixture_finalize") && req.body.confirmFinalize !== true) return res.status(400).json({ error: "Finalizing needs your explicit OK. Confirm it first.", needsFinalizeConfirm: true });
   try {
     // Logo photos the admin attached: sent back with the confirmation, used here, never stored elsewhere.
     const images = (Array.isArray(req.body.images) ? req.body.images : []).slice(0, james.MAX_IMAGES).map((u) => (typeof u === "string" && u.length <= 400000 ? u : null));
     const r = jamesActions().apply(changes, { actor, request: req.body.request, perms, images });
     if (!r.ok) return res.status(400).json({ error: "Nothing was changed. One or more of these can't be done.", results: r.results });
-    res.json({ ok: true, setId: r.setId, results: r.results, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
+    // Fixtures whose seeds are now all in: the app asks the admin whether to finalize them.
+    const offers = [], seen = new Set();
+    changes.filter((c) => /^(score_|court_)/.test(c.kind) && c.fixtureId).forEach((c) => {
+      const lg = store.getLeague(c.leagueId); const fx = lg && findFixture(lg, c.fixtureId);
+      if (!fx || fx.finalized || seen.has(fx.id) || !fx.selectionA.submitted || !fx.selectionB.submitted) return;
+      const singles = lg.singlesDecider && fx.stage === "regular" && fx.rubbers.length === 5 ? 5 : undefined;
+      if (!logic.requiredRubbersOk(fx, lg.format === "pairs", singles)) return;
+      seen.add(fx.id);
+      const nm = (id) => (lg.teams.find((t) => t.id === id) || {}).name || "?";
+      offers.push({ leagueId: lg.id, fixtureId: fx.id, label: `${lg.name}, ${fixtureLabel(lg, fx)}: ${nm(fx.teamA)} v ${nm(fx.teamB)}` });
+    });
+    res.json({ ok: true, setId: r.setId, results: r.results, finalizeOffers: offers, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
   } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't apply that." }); }
 });
 // The admin pressed "Use this logo" on one of James's designs (already drawn to a PNG in the browser).
@@ -8762,23 +8783,12 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/rubbers/:idx/reopen", requir
   res.json({ ok: true });
 });
 
-router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
-  const league = store.getLeague(req.params.leagueId);
-  const f = findFixture(league, req.params.fixtureId);
-  if (!f) return res.status(404).json({ error: "Fixture not found." });
-  const u = resolveLeagueSession(req, league.id);
-  const isAdmin = isAdminSession(req, league.id);
-  const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
-  if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
-  // An Ormonde-rules regular fixture's 5th rubber is a real, always-played
-  // singles match — all 5 rubbers are required, not just the first 4 with
-  // the 5th only on a tie (that's the knockout-decider shape, still used by
-  // playoff fixtures, which stay untouched by leaving this undefined).
-  const singlesRegulation = league.singlesDecider && f.stage === "regular" && f.rubbers.length === 5 ? 5 : undefined;
-  if (!logic.requiredRubbersOk(f, league.format === "pairs", singlesRegulation)) return res.status(400).json({ error: "Enter a full score before finalizing." });
+// Finalizing a fixture: locks the result, starts the rating reminders and posts the round wrap-up
+// and notifications. Shared by the admin's Finalize button and James (after the admin says yes).
+function finalizeFixtureNow(league, f, auditReq, auditDetail) {
   f.finalized = true;
   f.finalizedAt = Date.now();
-  logAudit(league, req, f, "finalize", {});
+  logAudit(league, auditReq, f, "finalize", auditDetail || {});
   remindFixtureRatings(league, f);
   syncPlayoffs(league);
 
@@ -8824,6 +8834,23 @@ router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
     }
   }
 
+  return roundComplete;
+}
+router.post("/leagues/:leagueId/fixtures/:fixtureId/finalize", (req, res) => {
+  const league = store.getLeague(req.params.leagueId);
+  const f = findFixture(league, req.params.fixtureId);
+  if (!f) return res.status(404).json({ error: "Fixture not found." });
+  const u = resolveLeagueSession(req, league.id);
+  const isAdmin = isAdminSession(req, league.id);
+  const isPlayer = u && u.leagueId === league.id && u.role === "captain" && (u.teamId === f.teamA || u.teamId === f.teamB);
+  if (!isAdmin && !isPlayer) return res.status(403).json({ error: "Not allowed." });
+  // An Ormonde-rules regular fixture's 5th rubber is a real, always-played
+  // singles match — all 5 rubbers are required, not just the first 4 with
+  // the 5th only on a tie (that's the knockout-decider shape, still used by
+  // playoff fixtures, which stay untouched by leaving this undefined).
+  const singlesRegulation = league.singlesDecider && f.stage === "regular" && f.rubbers.length === 5 ? 5 : undefined;
+  if (!logic.requiredRubbersOk(f, league.format === "pairs", singlesRegulation)) return res.status(400).json({ error: "Enter a full score before finalizing." });
+  const roundComplete = finalizeFixtureNow(league, f, req);
   store.saveLeague(league.id, league);
   res.json({ ok: true, roundComplete, round: f.round });
 });
