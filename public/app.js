@@ -6977,13 +6977,12 @@ function ahItemHtml(it) {
   if (ahEditing === it.id) return ahEditHtml(it);
   return `<div class="ah-item${!ahIsOpen(it) ? " done" : ""}${ahOverdue(it) ? " overdue" : ""}" data-id="${it.id}">
     <div class="ah-item-top">${ahPrio(it) !== "normal" ? `<span class="ah-prio p-${ahPrio(it)}">${AH_PRIORITIES.find((p) => p[0] === ahPrio(it))[1]}</span>` : ""}<span class="ah-pill t-${it.type}">${AH_TYPE_LABEL[it.type]}</span>${it.categoryId && ahCatName(it.categoryId) ? `<span class="ah-pill cat">${escapeHtml(ahCatName(it.categoryId))}</span>` : ""}${stage ? `<span class="ah-pill stage">${stage[1]}</span>` : ""}${it.pinned ? '<span class="ah-pin" title="Pinned">★</span>' : ""}<span class="ah-where">${escapeHtml(where)}</span></div>
-    <div class="ah-title">${escapeHtml(it.title)}${it.qty ? ` <span class="ah-qty">× ${it.qty}</span>` : ""}</div>
+    <div class="ah-title-line"><button type="button" class="ah-check${ahIsOpen(it) ? "" : " on"}" aria-label="${ahIsOpen(it) ? "Mark as done" : "Mark as not done"}" title="${ahIsOpen(it) ? "Mark as done" : "Not done after all"}">${ahIsOpen(it) ? "" : "✓"}</button><div class="ah-title">${escapeHtml(it.title)}${it.qty ? ` <span class="ah-qty">× ${it.qty}</span>` : ""}</div></div>
     ${it.text ? `<div class="ah-text">${escapeHtml(it.text).replace(/\n/g, "<br>")}</div>` : ""}
     ${money ? `<div class="ah-money"><b>${fmtRands(it.amountCents)}</b>${it.paidCents ? ` · ${it.direction === "out" ? "paid" : "received"} ${fmtRands(it.paidCents)} · <b>${fmtRands(ahOwed(it))} left</b>` : ""}</div>` : ""}
     ${it.dueDate ? `<div class="ah-due${ahOverdue(it) ? " late" : ""}">${ahOverdue(it) ? "Overdue · " : "Due "}${ahDue(it.dueDate)}</div>` : ""}
     <div class="ah-by">${escapeHtml(it.createdBy || "Admin")} · ${ahWhen(it.createdAt)}${edited}</div>
     <div class="ah-actions">
-      <button class="link ah-done" type="button">${ahIsOpen(it) ? "Done" : "Reopen"}</button>
       ${money && ahIsOpen(it) ? `<button class="link ah-pay" type="button">${it.direction === "out" ? "Record payment out" : "Record payment in"}</button>` : ""}
       ${stages ? `<select class="ah-stage" aria-label="Stage">${stages.map(([k, l]) => `<option value="${k}"${k === it.stage ? " selected" : ""}>${l}</option>`).join("")}</select>` : ""}
       <select class="ah-cat-sel" aria-label="Category">${ahCatSelectHtml(it.categoryId || "none", false)}</select>
@@ -7036,7 +7035,7 @@ function bindAhItems(root) {
       });
       return;
     }
-    q(".ah-done").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { status: ahIsOpen(it) ? "done" : "open" } }));
+    q(".ah-check").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { status: ahIsOpen(it) ? "done" : "open" } }));
     q(".ah-pinbtn").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { pinned: !it.pinned } }));
     q(".ah-edit").onclick = () => { ahEditing = id; renderAdminHub(); };
     q(".ah-del").onclick = () => { if (confirm("Delete this item?")) act(() => ahApi(`/items/${id}`, { method: "DELETE" })); };
@@ -7126,29 +7125,38 @@ function ahHeaderHtml() {
       <input id="ah-search" type="search" placeholder="Search anything" value="${escapeHtml(ahSearch)}" aria-label="Search">
     </div></div>`;
 }
+// Urgent first, then overdue, pinned, due date, newest.
+function ahListSort(a, b) {
+  return ahPrioRank(a) - ahPrioRank(b) || (ahOverdue(b) ? 1 : 0) - (ahOverdue(a) ? 1 : 0) || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || b.createdAt - a.createdAt;
+}
 function renderAdminHub() {
   const root = el("ah-root");
   if (!root || !isOwner) return;
   let html = "";
   const visible = ahItems.filter(ahVisible);
   if (ahArea === "home") {
-    const open = visible.filter(ahIsOpen);
-    const overdue = open.filter(ahOverdue).length;
-    const urgent = open.filter((i) => ahPrio(i) === "urgent").length;
-    html += `<button type="button" class="ah-inbox" id="ah-open-inbox"><b>Everything open</b><span>${open.length} item${open.length === 1 ? "" : "s"}${urgent ? ` · <em>${urgent} urgent</em>` : ""}${overdue ? ` · <em>${overdue} overdue</em>` : ""}</span></button>`;
-    html += ahPaymentsDashboardHtml();
-    html += `<div class="ah-cards">${AH_AREAS.map(([k, l, tag]) => {
+    // Notes first: add one, then what's open. The areas come next and the
+    // payments by league sit at the bottom of the page.
+    html += ahComposerHtml();
+    let list = visible.filter((i) => ahStatus === "all" || (ahStatus === "open") === ahIsOpen(i));
+    list.sort(ahListSort);
+    const doneVisible = visible.filter((i) => !ahIsOpen(i));
+    const openN = visible.filter(ahIsOpen).length;
+    html += `<div class="ah-notes-head"><h2>Notes</h2><span class="note">${openN} open${doneVisible.length ? ` · ${doneVisible.length} completed` : ""}</span></div>
+      <div class="ah-chips">${[["open", "Open"], ["done", "Completed"], ["all", "All"]].map(([k, l]) => `<button type="button" class="ah-chip${ahStatus === k ? " on" : ""}" data-s="${k}">${l}</button>`).join("")}${ahStatus !== "open" && doneVisible.length ? `<span class="ah-sep"></span><button type="button" class="ah-chip ah-clear" id="ah-clear-done">Delete completed (${doneVisible.length})</button>` : ""}</div>
+      <div class="ah-list">${list.map(ahItemHtml).join("") || `<p class="empty">${ahStatus === "done" ? "Nothing completed yet." : "No notes here. Add one above."}</p>`}</div>`;
+    html += `<div class="ah-block-title" style="margin-top:18px;">Areas</div><div class="ah-cards">${AH_AREAS.map(([k, l, tag]) => {
       const st = ahCardStats(k);
       return `<button type="button" class="ah-card t-${k}" data-area="${k}"><span class="ah-card-top"><b>${l}</b><span class="ah-pill t-${k}">${tag}</span></span><span class="ah-big">${st.big}</span><span class="ah-sub">${st.sub}</span>${st.extra ? `<span class="ah-flag">${st.extra}</span>` : ""}</button>`;
     }).join("")}</div>`;
-    html += ahComposerHtml();
+    html += ahPaymentsDashboardHtml();
   } else {
     const isInbox = ahArea === "inbox";
     const title = isInbox ? "Everything open" : (AH_AREAS.find((a) => a[0] === ahArea) || [0, ""])[1];
     let list = visible.filter((i) => isInbox || i.type === ahArea || (ahArea === "note" && i.type === "payment"));
     if (ahStatus === "open") list = list.filter(ahIsOpen); else if (ahStatus === "done") list = list.filter((i) => !ahIsOpen(i));
     // Overdue first, then pinned, then by due date, then newest.
-    list.sort((a, b) => ahPrioRank(a) - ahPrioRank(b) || (ahOverdue(b) ? 1 : 0) - (ahOverdue(a) ? 1 : 0) || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || b.createdAt - a.createdAt);
+    list.sort(ahListSort);
     const hasPipeline = !!AH_STAGES[ahArea];
     html += `<div class="ah-area-head"><button type="button" class="link" id="ah-back">← All areas</button><h2>${title}</h2></div>`;
     html += `<div class="ah-chips">${[["open", "Open"], ["done", "Done"], ["all", "All"]].map(([k, l]) => `<button type="button" class="ah-chip${ahStatus === k ? " on" : ""}" data-s="${k}">${l}</button>`).join("")}${hasPipeline ? `<span class="ah-sep"></span>${[["list", "List"], ["pipeline", "Pipeline"]].map(([k, l]) => `<button type="button" class="ah-chip${ahMode === k ? " on" : ""}" data-m="${k}">${l}</button>`).join("")}` : ""}</div>`;
@@ -7178,16 +7186,21 @@ function renderAdminHub() {
   const sr = root.querySelector("#ah-search"); if (sr) sr.oninput = () => { ahSearch = sr.value; const pos = sr.selectionStart; renderAdminHub(); const n = el("ah-search"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
   const sn = root.querySelector("#ah-setname"); if (sn) sn.onclick = async () => { const v = prompt("Your name, so notes show who made them:", ahMe.name === "Admin" ? "" : ahMe.name); if (v && v.trim()) { try { await ahApi("/name", { method: "POST", body: { name: v } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } } };
   root.querySelectorAll(".ah-card").forEach((c) => { c.onclick = () => { ahArea = c.dataset.area; ahStatus = "open"; ahMode = "list"; ahCompType = "auto"; renderAdminHub(); }; });
-  const inbox = root.querySelector("#ah-open-inbox"); if (inbox) inbox.onclick = () => { ahArea = "inbox"; ahStatus = "open"; ahCompType = "auto"; renderAdminHub(); };
+  const clearDone = root.querySelector("#ah-clear-done");
+  if (clearDone) clearDone.onclick = async () => {
+    const ids = ahItems.filter(ahVisible).filter((i) => !ahIsOpen(i)).map((i) => i.id);
+    if (!ids.length || !confirm(`Delete ${ids.length} completed note${ids.length === 1 ? "" : "s"} for good?`)) return;
+    try { await ahApi("/items/delete", { method: "POST", body: { ids } }); showToast("Completed notes deleted."); await ahRefreshAndRender(); } catch (e) { alert(e.message); }
+  };
   const back = root.querySelector("#ah-back"); if (back) back.onclick = () => { ahArea = "home"; ahCompType = "auto"; renderAdminHub(); };
   root.querySelectorAll(".ah-chips [data-s]").forEach((b) => { b.onclick = () => { ahStatus = b.dataset.s; renderAdminHub(); }; });
   root.querySelectorAll(".ah-chips [data-m]").forEach((b) => { b.onclick = () => { ahMode = b.dataset.m; renderAdminHub(); }; });
-  root.querySelectorAll(".ah-cat-btn").forEach((b) => { b.onclick = () => { ahCat = b.dataset.cat; if (ahArea === "home") { ahArea = "inbox"; ahStatus = "open"; } renderAdminHub(); }; });
+  root.querySelectorAll(".ah-cat-btn").forEach((b) => { b.onclick = () => { ahCat = b.dataset.cat; renderAdminHub(); }; });
   const catAdd = root.querySelector("#ah-cat-add");
   if (catAdd) catAdd.onclick = async () => {
     const name = prompt("Name the new category", "");
     if (!name || !name.trim()) return;
-    try { const c = await ahApi("/categories", { method: "POST", body: { name } }); ahCat = c.id; if (ahArea === "home") { ahArea = "inbox"; ahStatus = "open"; } await ahRefreshAndRender(); } catch (e) { alert(e.message); }
+    try { const c = await ahApi("/categories", { method: "POST", body: { name } }); ahCat = c.id; await ahRefreshAndRender(); } catch (e) { alert(e.message); }
   };
   const catManage = root.querySelector("#ah-cat-manage"); if (catManage) catManage.onclick = () => { ahCatManage = !ahCatManage; renderAdminHub(); };
   root.querySelectorAll(".ah-cat-ren").forEach((b) => { b.onclick = async () => { const cur = ahCatName(b.dataset.cat); const name = prompt("Rename this category", cur); if (!name || !name.trim() || name.trim() === cur) return; try { await ahApi(`/categories/${b.dataset.cat}`, { method: "PUT", body: { name } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });

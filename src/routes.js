@@ -4752,6 +4752,16 @@ router.post("/admin/hub/items/:id/payments", requireOwnerSession, (req, res) => 
   store.saveAdminHub(hub);
   res.json(hubItemView(item));
 });
+// Clears a batch of items at once (the completed ones, from "Delete all completed").
+router.post("/admin/hub/items/delete", requireOwnerSession, (req, res) => {
+  const ids = new Set(Array.isArray(req.body && req.body.ids) ? req.body.ids.filter((x) => typeof x === "string") : []);
+  if (!ids.size) return res.status(400).json({ error: "Nothing to delete." });
+  const hub = store.getAdminHub();
+  const before = (hub.items || []).length;
+  hub.items = (hub.items || []).filter((x) => !ids.has(x.id));
+  store.saveAdminHub(hub);
+  res.json({ ok: true, deleted: before - hub.items.length });
+});
 router.delete("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
   const hub = store.getAdminHub();
   hub.items = (hub.items || []).filter((x) => x.id !== req.params.id);
