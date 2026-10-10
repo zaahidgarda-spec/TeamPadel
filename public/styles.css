@@ -3225,3 +3225,55 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-group-head{border-bottom-width:3px;}
 .ah-flag{border-radius:4px;background:var(--s-overdue);color:#fff;}
 .ah-team-row .ah-bar{height:8px;}
+
+/* The board (monday.com style) */
+.ah-board{display:flex;flex-direction:column;gap:18px;margin-top:8px;}
+.ah-bgroup{--g:#579BFC;}
+.ah-bgroup-head{display:flex;align-items:center;gap:8px;width:100%;text-align:left;min-height:0;padding:4px 0;border:none;background:none;font:inherit;cursor:pointer;color:var(--g);}
+.ah-bgroup-head b{font-size:17px;font-weight:700;}
+.ah-chev{font-size:13px;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--g);color:#fff;}
+.ah-bgroup-n{font-size:12px;color:var(--text-dim,#64748B);margin-left:4px;}
+.ah-bscroll{overflow-x:auto;border-left:6px solid var(--g);border-radius:6px 0 0 6px;background:#fff;box-shadow:0 0 0 1px var(--line);}
+.ah-btable{min-width:860px;}
+.ah-brow{display:grid;grid-template-columns:minmax(250px,1fr) 104px 96px 64px 64px 116px 96px 120px;align-items:stretch;border-top:1px solid var(--line);background:#fff;}
+.ah-bheadrow{font-size:12.5px;color:var(--text-dim,#64748B);text-align:center;border-top:none;}
+.ah-bheadrow span{padding:8px 4px;}
+.ah-bheadrow span:first-child{text-align:left;padding-left:14px;}
+.ah-brow.done .ah-bname-title{text-decoration:line-through;color:var(--text-dim,#64748B);}
+.ah-bc{min-width:0;}
+.ah-bname{display:flex;align-items:flex-start;gap:10px;padding:9px 10px 9px 12px;border-left:4px solid var(--edge,var(--line));margin-left:-4px;}
+.ah-bname-txt{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.ah-bname-title{font-weight:600;word-break:break-word;}
+.ah-bsub{font-size:12px;color:var(--text-dim,#64748B);word-break:break-word;}
+.ah-bmini{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:2px;}
+.ah-bmini .ah-stage{min-height:0;padding:2px 6px;font-size:12px;}
+.ah-bcell{display:grid;place-items:center;text-align:center;font-weight:600;font-size:13px;border:none;border-left:1px solid #fff;margin:0;cursor:pointer;min-height:0;border-radius:0;font-family:inherit;padding:0;}
+.ah-bsel{appearance:none;-webkit-appearance:none;background:transparent;border:none;color:inherit;font:inherit;font-weight:600;text-align:center;text-align-last:center;width:100%;height:100%;min-height:0;padding:10px 4px;cursor:pointer;}
+.ah-bsel option{color:#323338;}
+.ah-btype{cursor:default;}
+.ah-bavatar{display:grid;place-items:center;}
+.ah-av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;}
+.ah-av-none{background:none;border:1.5px dashed #D0D6E0;}
+.ah-bstatus{padding:10px 4px;}
+.ah-bdue{display:grid;place-items:center;position:relative;cursor:pointer;}
+.ah-bdue-pill{background:#323338;color:#fff;border-radius:999px;padding:3px 12px;font-size:12.5px;font-weight:600;}
+.ah-bdue-pill.none{background:#E6E9EF;color:#8A93A5;}
+.ah-bdue-pill.late{background:#D3434F;}
+.ah-bdue-in{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.ah-bact{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:6px;font-size:12px;}
+.ah-bact .link{font-size:12px;}
+.ah-badd{display:block;width:100%;text-align:left;min-height:0;padding:10px 16px;border:none;border-top:1px solid var(--line);background:#fff;color:var(--text-dim,#64748B);font:inherit;cursor:pointer;border-radius:0;}
+.ah-badd:hover{background:#F6F8FC;color:var(--text);}
+.ah-bempty{padding:12px 16px;color:var(--text-dim,#64748B);font-size:13px;border-top:1px solid var(--line);}
+.ah-brow-edit{padding:8px;border-top:1px solid var(--line);}
+.ah-brow-edit .ah-item{margin-top:0;}
+/* One palette for priority and status across the cards and the board */
+:root{--p-urgent:#D3434F;--p-high:#FDAB3D;--p-low:#579BFC;--s-overdue:#D3434F;}
+.ah-prio.p-high{color:#4A2F00;}
+.ah-prio-chip.p-high.on{color:#4A2F00;}
+.ah-btable{min-width:780px;}
+.ah-brow{grid-template-columns:minmax(220px,1fr) 92px 84px 56px 56px 104px 88px 100px;}
+.ah-bavatar{align-items:center;justify-items:center;}
+.ah-av{flex:none;box-sizing:border-box;align-self:center;justify-self:center;}
+.ah-av-none{width:28px;height:28px;}
+.ah-bact{flex-direction:column;gap:2px;}

@@ -4620,7 +4620,7 @@ function hubItemView(item) {
   return { ...item, paidCents: paid };
 }
 function cleanHubText(v, max) { return String(v == null ? "" : v).trim().slice(0, max); }
-function applyHubFields(item, b, league) {
+function applyHubFields(item, b, league, actor) {
   if (b.title !== undefined) item.title = cleanHubText(b.title, 200);
   if (b.text !== undefined) item.text = cleanHubText(b.text, 2000);
   if (b.leagueId !== undefined) item.leagueId = b.leagueId && store.getLeague(b.leagueId) && !hubExcludedLeagueIds().has(b.leagueId) ? b.leagueId : null;
@@ -4632,7 +4632,11 @@ function applyHubFields(item, b, league) {
   }
   if (b.dueDate !== undefined) item.dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(b.dueDate)) ? b.dueDate : null;
   if (b.qty !== undefined) { const q = Math.round(Number(b.qty)); item.qty = Number.isFinite(q) && q > 0 ? q : null; }
-  if (b.status !== undefined) item.status = b.status === "done" ? "done" : "open";
+  if (b.status !== undefined) {
+    item.status = b.status === "done" ? "done" : "open";
+    // Who ticked it off (the "Done by" column); cleared if it's reopened.
+    if (item.status === "done") { if (!item.doneBy) { item.doneBy = actor || "Admin"; item.doneAt = Date.now(); } } else { delete item.doneBy; delete item.doneAt; }
+  }
   if (b.pinned !== undefined) item.pinned = !!b.pinned;
   if (b.priority !== undefined && HUB_PRIORITIES.includes(b.priority)) item.priority = b.priority;
   if (b.categoryId !== undefined) item.categoryId = b.categoryId && hubCategories(store.getAdminHub()).some((c) => c.id === b.categoryId) ? b.categoryId : null;
@@ -4742,7 +4746,7 @@ router.put("/admin/hub/items/:id", requireOwnerSession, (req, res) => {
     if (b.type === "sponsor" && !item.sponsorScope) item.sponsorScope = item.teamId ? "team" : item.leagueId ? "league" : "region";
     item.stage = HUB_STAGES[b.type] ? (HUB_STAGES[b.type].includes(item.stage) ? item.stage : HUB_STAGES[b.type][0]) : null;
   }
-  applyHubFields(item, b, null);
+  applyHubFields(item, b, null, adminActorName(req));
   if (b.title !== undefined && !item.title) return res.status(400).json({ error: "An item needs some text." });
   item.updatedAt = Date.now(); item.updatedBy = adminActorName(req);
   store.saveAdminHub(hub);
@@ -4759,7 +4763,7 @@ router.post("/admin/hub/items/:id/payments", requireOwnerSession, (req, res) => 
   const paid = (item.payments || []).reduce((t, x) => t + x.cents, 0);
   if (item.amountCents && paid + cents > item.amountCents) return res.status(400).json({ error: `That's more than what's left (R${((item.amountCents - paid) / 100).toFixed(2)}).` });
   item.payments = (item.payments || []).concat([{ cents, at: Date.now(), by: adminActorName(req) }]);
-  if (item.amountCents && paid + cents >= item.amountCents) { item.status = "done"; if (item.type === "sponsor") item.stage = "paid"; }
+  if (item.amountCents && paid + cents >= item.amountCents) { item.status = "done"; item.doneBy = item.doneBy || adminActorName(req); item.doneAt = item.doneAt || Date.now(); if (item.type === "sponsor") item.stage = "paid"; }
   item.updatedAt = Date.now(); item.updatedBy = adminActorName(req);
   store.saveAdminHub(hub);
   res.json(hubItemView(item));
