@@ -147,6 +147,7 @@ function systemPrompt(context) {
 
 How you work:
 - You can answer questions, propose notes (propose_notes), draft messages (draft_messages) and, where that tool is available, propose changes (propose_changes). You cannot save, send, change or delete anything yourself. The admin sees each proposal spelled out and confirms it, and every confirmed change can be undone. Never say you have changed or sent something; say what you have proposed.
+- Pictures: plan_image writes a brief for a separate image-making AI (OpenAI) for a logo or a kit design; the admin edits your brief and presses Generate, and you never see the result. Use design_logos instead when simple lettering/shape logos are enough and free; use plan_image when they want something richer, or a kit design. Say plainly that drawn text can be misspelt.
 - Logos and posters: design_logos makes up to 3 simple vector logo options (shapes and lettering only; you cannot draw realistic pictures, people or animals, so say so if asked). make_poster makes a poster the admin can preview and download; the app draws it from the real teams, logos, sponsors and kit photos. Neither saves or posts anything.
 - When the admin attaches a logo and/or a list of players and asks you to add a team: propose team_add (with logoImage = the photo number of the logo, starting at 0) and one player_add using names, with teamName set to the new team. Read names carefully from text or a photo and put anything uncertain in your reply.
 - Changes: use only ids from the data. One entry per player, team or round. For money use the exact figures in the data. If the request is unclear, a name matches more than one person, or you can't find the id, ask a short question instead of guessing. If the data section for it is missing, say you can't see that information. For something you can't do (deleting, resetting payments, publishing, refunds, moving a single match, sending messages), say so and say what the admin can do instead. At most 25 changes at once; for more, do the first 25 and say so.
@@ -164,7 +165,7 @@ How you work:
 
 // ---- What James may read and change (switched on and off in the Note Machine).
 const READ_GROUPS = ["payments", "fixtures", "rosters"];
-const WRITE_GROUPS = ["notes", "payments", "fixtures", "leagues", "players"];
+const WRITE_GROUPS = ["notes", "payments", "fixtures", "leagues", "players", "images"];
 function permissions(settings) {
   const s = (settings && settings.permissions) || {};
   const out = { read: {}, write: {} };
@@ -185,6 +186,7 @@ const CHANGE_KINDS = {
   leagues: ["league_set_fee", "league_create", "team_add", "team_logo_set"],
   players: ["player_add", "player_move"],
   notes: ["note_update"],
+  images: [],
 };
 const MAX_CHANGES = 25;
 
@@ -377,6 +379,63 @@ function cleanLogoSets(toolUses, ctx) {
   return sets;
 }
 
+// ---- Image briefs (the picture itself is made by OpenAI, see src/images.js) ----
+const IMAGE_KINDS = ["logo", "kit_front", "kit_back", "artwork"];
+const IMAGE_TOOL = {
+  name: "plan_image",
+  description: "Write a brief for the image maker (a separate AI that draws pictures) for a team logo, a kit design (front or back) or other artwork. The admin sees your brief, can edit it, and presses Generate; you do not see the pictures. Be concrete: colours, style, what is on it, what it must not include. Logo: a clean flat emblem or badge on a transparent background that still reads small; avoid long text (a short name or initials is fine, but drawn lettering is often misspelt, so keep it to a few letters). Kit front or back: a flat-lay product picture of one padel shirt, plain light background, the team's colours, a simple design. Never put real people's names, faces or personal details in a brief. If the admin attached photos, say which one to start from with refPhotos (0 is the first), for example to put their logo on a kit.",
+  input_schema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: IMAGE_KINDS },
+      forWhat: { type: "string", description: "Short label, e.g. 'Cyclones kit front'" },
+      prompt: { type: "string", description: "The full brief for the image maker" },
+      leagueId: { type: "string" }, teamId: { type: "string" },
+      variants: { type: "integer", description: "How many options to draw, 1 to 3 (default 2)" },
+      refPhotos: { type: "array", items: { type: "integer" }, description: "Attached photo numbers to start from" },
+    },
+    required: ["kind", "prompt"],
+  },
+};
+function cleanImagePlans(toolUses, ctx) {
+  const leagues = new Map((ctx.leagues || []).map((l) => [l.id, l]));
+  return toolUses.filter((t) => t.name === "plan_image").slice(0, 3).map((t) => {
+    const i = t.input || {};
+    if (!IMAGE_KINDS.includes(i.kind)) return null;
+    const prompt = String(i.prompt || "").trim().slice(0, 3000);
+    if (prompt.length < 10) return null;
+    const league = i.leagueId && leagues.get(i.leagueId) ? i.leagueId : null;
+    const team = league && i.teamId ? (leagues.get(league).teams.find((x) => x.id === i.teamId) || null) : null;
+    return {
+      kind: i.kind, prompt, leagueId: league, teamId: team ? team.id : null, teamName: team ? team.name : "",
+      forWhat: String(i.forWhat || (team ? team.name + " " + i.kind.replace("_", " ") : i.kind)).trim().slice(0, 80),
+      variants: Math.max(1, Math.min(3, Math.floor(Number(i.variants)) || 2)),
+      refPhotos: (Array.isArray(i.refPhotos) ? i.refPhotos : []).filter((n) => Number.isInteger(n) && n >= 0 && n < MAX_IMAGES).slice(0, 2),
+    };
+  }).filter(Boolean);
+}
+// Spending on pictures is counted apart from Claude's own: a monthly cap and a daily number per admin.
+function imageSummary(usage, actor, cfg, now) {
+  const t = saNow(now);
+  const m = (usage.months && usage.months[t.month]) || {};
+  const d = (usage.days && usage.days[t.day]) || {};
+  return { monthCostUsd: Math.round((m.imageCostUsd || 0) * 10000) / 10000, monthCount: m.imageCount || 0, capUsd: cfg.capUsd, todayCount: d[actor + "#img"] || 0, dailyLimit: cfg.dailyLimit };
+}
+function checkImageLimits(usage, actor, cfg, n, now) {
+  const s = imageSummary(usage, actor, cfg, now);
+  if (s.monthCostUsd >= cfg.capUsd) { const e = new Error(`The image maker has reached this month's spending cap ($${cfg.capUsd}). It's back on the 1st, or raise JAMES_IMAGE_CAP_USD.`); e.status = 429; throw e; }
+  if (s.todayCount + n > cfg.dailyLimit) { const e = new Error(`That would go over today's limit of ${cfg.dailyLimit} pictures for you. It resets at midnight.`); e.status = 429; throw e; }
+}
+function recordImageUsage(usage, actor, cost, n, now) {
+  const t = saNow(now);
+  usage.months = usage.months || {}; usage.days = usage.days || {};
+  const m = usage.months[t.month] = usage.months[t.month] || { costUsd: 0, requests: 0, byPerson: {} };
+  m.imageCostUsd = (m.imageCostUsd || 0) + cost; m.imageCount = (m.imageCount || 0) + n;
+  const d = usage.days[t.day] = usage.days[t.day] || {};
+  d[actor + "#img"] = (d[actor + "#img"] || 0) + n;
+  return usage;
+}
+
 class JamesError extends Error {
   constructor(message, status) { super(message); this.status = status || 502; }
 }
@@ -471,4 +530,4 @@ function cleanHistory(history, message) {
   return turns;
 }
 
-module.exports = { cleanSvg, cleanLogoSets, DESIGN_TOOLS, POSTER_KINDS, POSTER_THEMES, cleanImages, withImages, MAX_IMAGES, READ_GROUPS, WRITE_GROUPS, permissions, mergePermissions, changesTool, cleanChanges, MAX_CHANGES, config, costUsd, saNow, usageSummary, checkLimits, recordUsage, systemPrompt, callClaude, cleanProposals, cleanHistory, JamesError, TOOLS, PRICES };
+module.exports = { IMAGE_TOOL, IMAGE_KINDS, cleanImagePlans, imageSummary, checkImageLimits, recordImageUsage, cleanSvg, cleanLogoSets, DESIGN_TOOLS, POSTER_KINDS, POSTER_THEMES, cleanImages, withImages, MAX_IMAGES, READ_GROUPS, WRITE_GROUPS, permissions, mergePermissions, changesTool, cleanChanges, MAX_CHANGES, config, costUsd, saNow, usageSummary, checkLimits, recordUsage, systemPrompt, callClaude, cleanProposals, cleanHistory, JamesError, TOOLS, PRICES };

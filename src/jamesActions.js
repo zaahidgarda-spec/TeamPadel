@@ -547,6 +547,23 @@ module.exports = function createJamesActions(d) {
 
   function preview(changes, opts) { return plan(changes, { ...opts, dry: true }).results.map(publicResult); }
 
+  // Writes one set of changes to James's log. Old pictures kept for undo are the only
+  // big things in it, so only the newest few are kept.
+  function recordSet({ actor, request, changes }) {
+    const log = store.getJamesLog();
+    log.sets = log.sets || [];
+    const set = { id: logic.uid(), at: Date.now(), by: actor, request: clip(request, 300), status: "applied", changes };
+    log.sets.unshift(set);
+    log.sets = log.sets.slice(0, 100);
+    let kept = 0;
+    log.sets.forEach((st) => st.changes.forEach((c) => {
+      if ((c.kind !== "team_logo_set" && c.kind !== "team_kit_set") || !c.undo) return;
+      if (++kept > 5 && c.undo.prev) { c.undo.prev = ""; c.undo.expired = true; }
+    }));
+    store.saveJamesLog(log);
+    return set;
+  }
+
   // All or nothing: every change must work, then everything is saved together.
   function apply(changes, { actor, request, perms, images }) {
     const { ctx, results } = plan(changes, { dry: false, actor, perms, images });
@@ -556,21 +573,7 @@ module.exports = function createJamesActions(d) {
       if (l && ctx.touched.has(l.id)) d.audit(l, actor, `${r.text}`);
     });
     ctx.commit();
-    const log = store.getJamesLog();
-    log.sets = log.sets || [];
-    const set = {
-      id: logic.uid(), at: Date.now(), by: actor, request: clip(request, 300), status: "applied",
-      changes: results.map((r) => ({ kind: r.kind, label: r.label, leagueId: r.leagueId || null, leagueName: r.leagueName || "", text: r.text, undo: r.undo, after: r.after })),
-    };
-    log.sets.unshift(set);
-    log.sets = log.sets.slice(0, 100);
-    // Old logos kept for undo are the only big thing in the log: only the newest few stay.
-    let kept = 0;
-    log.sets.forEach((st) => st.changes.forEach((c) => {
-      if (c.kind !== "team_logo_set" || !c.undo) return;
-      if (++kept > 5 && c.undo.prev) { c.undo.prev = ""; c.undo.expired = true; }
-    }));
-    store.saveJamesLog(log);
+    const set = recordSet({ actor, request, changes: results.map((r) => ({ kind: r.kind, label: r.label, leagueId: r.leagueId || null, leagueName: r.leagueName || "", text: r.text, undo: r.undo, after: r.after })) });
     return { ok: true, setId: set.id, results: results.map(publicResult) };
   }
 
@@ -583,6 +586,7 @@ module.exports = function createJamesActions(d) {
     const lines = [];
     set.changes.slice().reverse().forEach((c) => {
       const k = KINDS[c.kind];
+      if (!k) throw err("This change can't be undone from here.");
       k.check(ctx, c);
       k.revert(ctx, c);
       lines.push(c);
@@ -601,5 +605,5 @@ module.exports = function createJamesActions(d) {
     }));
   }
 
-  return { KINDS, GROUP_OF, GROUP_NAME, preview, apply, undo, recentLog, fmt, dayText };
+  return { KINDS, GROUP_OF, GROUP_NAME, preview, apply, undo, recordSet, recentLog, fmt, dayText };
 };

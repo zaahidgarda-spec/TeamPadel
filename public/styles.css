@@ -3402,3 +3402,11 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ah-partpill{display:inline-block;margin-left:8px;background:#FDF1DA;color:#8A5A00;border:1px solid #E0961A;border-radius:999px;padding:0 8px;font-size:11px;font-weight:700;vertical-align:middle;white-space:nowrap;}
 .ah-pbar{display:inline-block;width:70px;height:7px;border-radius:99px;background:#E2E8F0;overflow:hidden;margin-left:8px;vertical-align:middle;}
 .ah-pbar i{display:block;height:100%;background:#E0961A;}
+
+/* James: pictures from the image maker */
+.ahj-brief{width:100%;resize:vertical;border:1.5px solid #CBD5E1;border-radius:10px;padding:9px 12px;font:inherit;font-size:14px;background:#fff;color:#0F172A;}
+.ahj-brief:focus-visible{outline:3px solid #0B6E8A;outline-offset:1px;}
+.ahj-gen-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+.ahj-gen-row select{width:auto;min-height:0;padding:5px 8px;}
+.ahj-gen-img{width:100%;max-width:240px;height:auto;border-radius:10px;background:#F1F5F9;display:block;}
+.ahj-gen-img.logo{background:repeating-conic-gradient(#E2E8F0 0% 25%,#fff 0% 50%) 50%/16px 16px;}

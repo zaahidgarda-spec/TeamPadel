@@ -2,6 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const store = require("./store");
 const james = require("./james");
+const images = require("./images");
 const logic = require("./logic");
 const { hashPassword, verifyPassword, requireAdmin, requireAdminOrCaptain, requireLeagueSession, resolveLeagueSession, isAdminSession, isOwnerSession } = require("./auth");
 const { sendMail, isConfigured: mailConfigured, buildNotificationEmail, buildRatingEmail, explainSendFailure } = require("./mailer");
@@ -5052,6 +5053,7 @@ function jamesStatusPayload(actor) {
   return {
     enabled: !!cfg.apiKey, model: cfg.model, usage: james.usageSummary(store.getJamesUsage(), actor, cfg),
     changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges }, permissions: jamesPermissions(),
+    images: { enabled: !!images.config().apiKey, ...james.imageSummary(store.getJamesUsage(), actor, images.config()) },
   };
 }
 router.get("/admin/james/status", requireOwnerSession, (req, res) => { res.json(jamesStatusPayload(adminActorName(req))); });
@@ -5072,7 +5074,7 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     if (!cfg.apiKey) throw new james.JamesError("James isn't connected yet. Add ANTHROPIC_API_KEY to your host's Secrets, then publish.", 503);
     james.checkLimits(store.getJamesUsage(), actor, cfg);
     const ctx = jamesContext(perms);
-    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS);
+    const tools = james.TOOLS.filter((t) => t.name !== "propose_notes" || perms.write.notes).concat(james.DESIGN_TOOLS, perms.write.images ? [james.IMAGE_TOOL] : []);
     const ct = james.changesTool(perms);
     if (ct) tools.push(ct);
     const result = await james.callClaude({ cfg, system: james.systemPrompt(ctx.text), messages: james.withImages(james.cleanHistory(req.body.history, message || "Here is a photo."), images, message), tools });
@@ -5083,9 +5085,10 @@ router.post("/admin/james", requireOwnerSession, async (req, res) => {
     const previews = changes.length ? jamesActions().preview(changes, { actor, perms }) : [];
     const reply = result.text || (proposals.notes.length || proposals.messages.length || changes.length || result.toolUses.length ? "" : "I didn't catch that. Could you say it another way?");
     const logos = james.cleanLogoSets(result.toolUses, ctx.raw);
+    const imagePlans = perms.write.images ? james.cleanImagePlans(result.toolUses, ctx.raw) : [];
     const posters = result.toolUses.filter((t) => t.name === "make_poster").slice(0, 3).map((t) => jamesPosterSpec(t.input || {}, perms)).filter(Boolean);
     res.json({
-      reply, logos, posters, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
+      reply, logos, posters, imagePlans, notes: perms.write.notes ? proposals.notes : [], messages: proposals.messages,
       changes: changes.map((c, i) => ({ ...c, preview: previews[i] })), usage: james.usageSummary(usage, actor, cfg),
     });
   } catch (e) {
@@ -5147,10 +5150,94 @@ router.post("/admin/james/logo", requireOwnerSession, (req, res) => {
     res.json({ ok: true, setId: r.setId, results: r.results, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
   } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't set that logo." }); }
 });
+// The admin pressed Generate on one of James's picture briefs.
+router.post("/admin/james/image", requireOwnerSession, async (req, res) => {
+  const actor = adminActorName(req);
+  const cfg = images.config();
+  const perms = jamesPermissions();
+  const b = req.body || {};
+  const kind = james.IMAGE_KINDS.includes(b.kind) ? b.kind : null;
+  const prompt = String(b.prompt || "").trim().slice(0, 3000);
+  const n = Math.max(1, Math.min(3, Math.floor(Number(b.variants)) || 1));
+  const refs = (Array.isArray(b.refs) ? b.refs : []).slice(0, 2).filter((u) => typeof u === "string" && u.length <= 600000 && /^data:image\/(png|jpeg|webp);base64,/.test(u));
+  try {
+    if (!perms.write.images) throw Object.assign(new Error("Picture making is switched off in James's permissions."), { status: 403 });
+    if (!kind || prompt.length < 10) throw Object.assign(new Error("Describe the picture first."), { status: 400 });
+    if (!cfg.apiKey) throw new images.ImageError("The image maker isn't connected yet. Add OPENAI_API_KEY to your host's Secrets, then publish.", 503);
+    james.checkImageLimits(store.getJamesUsage(), actor, cfg, n);
+    const r = await images.generate({ cfg, kind, prompt, n, refs });
+    const usage = james.recordImageUsage(store.getJamesUsage(), actor, r.cost, r.images.length);
+    store.saveJamesUsage(usage);
+    res.json({ images: r.images, cost: Math.round(r.cost * 10000) / 10000, images_usage: { ...james.imageSummary(usage, actor, cfg), enabled: true } });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || "The image maker hit a problem." }); }
+});
+// The admin chose a generated picture as a team's kit front or back. Kit photos live in their
+// own store, so this is its own step: the old photo is kept for undo (when it is small enough).
+const KIT_MAX = 400000;
+const kitKey = (img) => `${(img || "").length}:${(img || "").slice(-48)}`;
+router.post("/admin/james/kit", requireOwnerSession, async (req, res) => {
+  const actor = adminActorName(req);
+  const cfg = james.config();
+  const b = req.body || {};
+  try {
+    const perms = jamesPermissions();
+    if (!perms.write.leagues) throw Object.assign(new Error("League changes are switched off in James's permissions."), { status: 403 });
+    if (jamesChangesToday(actor) + 1 > cfg.dailyChanges) throw Object.assign(new Error(`That would go over today's limit of ${cfg.dailyChanges} changes by James for you.`), { status: 429 });
+    const league = store.getLeague(String(b.leagueId || ""));
+    if (!league || hubExcludedLeague(league.name)) throw Object.assign(new Error("I can't find that league."), { status: 404 });
+    const team = league.teams.find((t) => t.id === b.teamId);
+    if (!team) throw Object.assign(new Error("I can't find that team."), { status: 404 });
+    if (b.side !== "front" && b.side !== "back") throw Object.assign(new Error("Front or back?"), { status: 400 });
+    const img = String(b.image || "");
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(img) || img.length > KIT_MAX) throw Object.assign(new Error("That kit picture isn't usable (too large or not an image)."), { status: 400 });
+    const prev = await store.getKitPhoto(league.id, team.id, b.side);
+    if (prev.length > KIT_MAX) throw Object.assign(new Error(`${team.name}'s current kit ${b.side} photo is too large for me to keep a backup of, so I won't replace it. Change it by hand.`), { status: 400 });
+    await store.saveKitPhoto(league.id, team.id, b.side, img);
+    if (!team.kit) team.kit = defaultKit();
+    team.kit[b.side] = true;
+    const text = `Set ${team.name}'s kit ${b.side} (${league.name}) to the picture you chose${prev ? ". The old photo is kept so this can be undone" : ""}.`;
+    logAudit(league, { session: { isOwner: true } }, null, "james_change", { actor: "James, for " + actor, text });
+    store.saveLeague(league.id, league);
+    const set = jamesActions().recordSet({ actor, request: "Use a kit picture James made", changes: [{ kind: "team_kit_set", label: "Kit", leagueId: league.id, leagueName: league.name, text, undo: { teamId: team.id, side: b.side, prev }, after: kitKey(img) }] });
+    res.json({ ok: true, setId: set.id, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || "Couldn't set that kit picture." }); }
+});
+async function jamesKitUndo(set, actor) {
+  const bad = (m) => Object.assign(new Error(m), { userFacing: true });
+  const leagues = new Map();
+  const items = set.changes.slice().reverse();
+  for (const c of items) {
+    if (c.kind !== "team_kit_set") throw bad("This change can't be undone from here.");
+    if (c.undo.expired) throw bad("That kit change is too old to undo. Change the photo by hand.");
+    const league = leagues.get(c.leagueId) || store.getLeague(c.leagueId);
+    leagues.set(c.leagueId, league);
+    const team = league && league.teams.find((t) => t.id === c.undo.teamId);
+    if (!team) continue;
+    const cur = await store.getKitPhoto(league.id, team.id, c.undo.side);
+    if (kitKey(cur) !== c.after) throw bad(`${team.name}'s kit ${c.undo.side} has been changed since, so it can't be undone safely.`);
+  }
+  for (const c of items) {
+    const league = leagues.get(c.leagueId);
+    const team = league && league.teams.find((t) => t.id === c.undo.teamId);
+    if (!team) continue;
+    await store.saveKitPhoto(league.id, team.id, c.undo.side, c.undo.prev || "");
+    if (!team.kit) team.kit = defaultKit();
+    team.kit[c.undo.side] = !!c.undo.prev;
+    logAudit(league, { session: { isOwner: true } }, null, "james_change", { actor: "James, for " + actor, text: "Undid: " + c.text });
+    store.saveLeague(league.id, league);
+  }
+  const log = store.getJamesLog();
+  const live = (log.sets || []).find((s) => s.id === set.id);
+  if (live) { live.status = "undone"; live.undoneAt = Date.now(); live.undoneBy = actor; store.saveJamesLog(log); }
+}
 router.get("/admin/james/log", requireOwnerSession, (req, res) => { res.json({ sets: jamesActions().recentLog(30) }); });
-router.post("/admin/james/log/:id/undo", requireOwnerSession, (req, res) => {
-  try { jamesActions().undo(req.params.id, { actor: adminActorName(req) }); res.json({ ok: true }); }
-  catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't undo that." }); }
+router.post("/admin/james/log/:id/undo", requireOwnerSession, async (req, res) => {
+  try {
+    const set = (store.getJamesLog().sets || []).find((s) => s.id === req.params.id);
+    if (set && set.status === "applied" && set.changes.some((c) => c.kind === "team_kit_set")) await jamesKitUndo(set, adminActorName(req));
+    else jamesActions().undo(req.params.id, { actor: adminActorName(req) });
+    res.json({ ok: true });
+  } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't undo that." }); }
 });
 router.put("/admin/hub/league-tracking", requireOwnerSession, (req, res) => {
   const league = store.getLeague(req.body && req.body.leagueId);

@@ -7247,6 +7247,7 @@ function ahJamesTurnHtml(t, ti) {
       <div class="ahj-actions">${st === "pending" ? `<button type="button" class="ah-complete ahj-save" data-t="${ti}">Save ${t.notes.length === 1 ? "note" : t.notes.length + " notes"}</button><button type="button" class="ah-complete undo ahj-dismiss" data-t="${ti}">Dismiss</button>` : st === "saved" ? `<button type="button" class="ah-complete undo ahj-undo" data-t="${ti}">Undo</button>` : ""}</div></div>`;
   }
   if (t.changes && t.changes.length) h += ahJamesChangesHtml(t, ti);
+  if (t.imagePlans && t.imagePlans.length) h += ahJamesImagePlansHtml(t, ti);
   if (t.logos && t.logos.length) h += ahJamesLogosHtml(t, ti);
   if (t.posters && t.posters.length) h += ahJamesPostersHtml(t, ti);
   if (t.messages && t.messages.length) {
@@ -7256,7 +7257,7 @@ function ahJamesTurnHtml(t, ti) {
 }
 const AH_JAMES_PERMS = {
   read: [["payments", "Payments", "who owes what"], ["fixtures", "Fixtures", "rounds, dates and results"], ["rosters", "Teams and players", "who is on which team"]],
-  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"]],
+  write: [["notes", "Notes", "add notes, complete or reprioritise them"], ["payments", "Payments", "record payments, mark paid, discounts, custom amounts"], ["fixtures", "Fixtures", "change a round's date, time or venue"], ["leagues", "Leagues", "create a hidden league, add teams, set the team fee"], ["players", "Players", "add players, move or remove them before a season"], ["images", "Pictures (OpenAI)", "make logo and kit pictures; you check and edit each brief first"]],
 };
 function ahJamesPermsHtml() {
   const perms = (ahJ.status && ahJ.status.permissions) || { read: {}, write: {} };
@@ -7278,7 +7279,7 @@ function ahJamesHtml() {
   const thread = ahJ.thread.map(ahJamesTurnHtml).join("");
   return `<section class="ahj" aria-label="James, your assistant">
     <div class="ahj-head"><div class="ahj-title"><span class="ahj-av" aria-hidden="true">J</span><b>James</b><span class="ahj-tag">Assistant</span></div>
-      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
+      <div class="ahj-head-r">${u ? `<span class="ahj-meter" title="${u.todayCount} of ${u.dailyLimit} requests used today${st.changes ? `, ${st.changes.today} of ${st.changes.limit} changes today` : ""}">This month ${ahDollars(u.monthCostUsd)} of $${u.capUsd}</span>` : ""}${st && st.images && st.images.enabled ? `<span class="ahj-meter" title="${st.images.todayCount} of ${st.images.dailyLimit} pictures made today">Pictures ${ahDollars(st.images.monthCostUsd)} of $${st.images.capUsd}</span>` : ""}<button type="button" class="link ahj-panel-btn${ahJ.panel === "log" ? " on" : ""}" data-p="log">His changes</button><button type="button" class="link ahj-panel-btn${ahJ.panel === "perms" ? " on" : ""}" data-p="perms">Permissions</button>${ahJ.thread.length ? '<button type="button" class="link" id="ahj-new">New chat</button>' : ""}</div></div>
     ${ahJ.panel === "perms" ? ahJamesPermsHtml() : ahJ.panel === "log" ? ahJamesLogHtml() : ""}
     ${off ? `<p class="ahj-off">James isn't connected yet. Add <code>ANTHROPIC_API_KEY</code> in your host's Secrets, then publish.</p>` : ""}
     ${thread ? `<div class="ahj-thread" id="ahj-thread">${thread}${ahJ.busy ? '<div class="ahj-msg james ahj-think"><span class="ahj-dots"><i></i><i></i><i></i></span> James is thinking</div>' : ""}</div>` : ""}
@@ -7295,12 +7296,12 @@ async function ahJamesSend(text) {
   text = String(text || "").trim();
   const photos = ahJ.images.slice();
   if ((!text && !photos.length) || ahJ.busy) return;
-  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
+  const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.imagePlans && t.imagePlans.length ? ` [Wrote picture brief: ${t.imagePlans.map((p) => p.forWhat).join(", ")}]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
   ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url), logoImages: photos.map((p) => p.logoUrl) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
   renderAdminHub(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
-    ahJ.thread.push({ role: "james", request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], cstate: "pending", state: "pending", savedIds: [] });
+    ahJ.thread.push({ role: "james", request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], imagePlans: (r.imagePlans || []).map((p) => ({ ...p, results: [], busy: false, error: "" })), cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
   } catch (e) { ahJ.error = e.message || "James hit a problem."; }
   ahJ.busy = false;
@@ -7332,7 +7333,7 @@ async function ahJamesApply(t, btn) {
 async function ahJamesUndoSet(setId, t) {
   try {
     await api(`/admin/james/log/${setId}/undo`, { method: "POST" });
-    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); });
+    ahJ.thread.forEach((x) => { if (x.setId === setId) x.cstate = "undone"; (x.logos || []).forEach((set) => set.options.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); (x.imagePlans || []).forEach((pl) => pl.results.forEach((o) => { if (o.setId === setId) { o.state = "undone"; o.setId = null; } })); });
     ahJ.error = ""; ahJ.log = null;
     if (ahJ.panel === "log") { try { ahJ.log = (await api("/admin/james/log")).sets; } catch { ahJ.log = []; } }
     await ahRefreshAndRender();
@@ -7534,6 +7535,86 @@ async function ahPosterDraw(spec, sizeKey) {
   return canvas.toDataURL("image/png");
 }
 function ahPosterFileName(p, size) { return (p.leagueName + "-" + (p.kind === "kit_reveal" ? p.teamName + "-kit" : p.kind) + (p.round ? "-round-" + p.round : "") + "-" + size).toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".png"; }
+// ---- James: pictures made by the image maker (OpenAI), from a brief the admin has checked ----
+// Shrinks a picture to fit a size limit, redrawing smaller until it does. keepAlpha keeps a see-through background (PNG).
+function ahShrinkPicture(url, { maxSide, keepAlpha, limit }) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let side = maxSide;
+      for (let i = 0; i < 6; i++) {
+        const k = Math.min(1, side / Math.max(img.width, img.height));
+        const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        const cx = c.getContext("2d");
+        if (!keepAlpha) { cx.fillStyle = "#fff"; cx.fillRect(0, 0, c.width, c.height); }
+        cx.drawImage(img, 0, 0, c.width, c.height);
+        const out = keepAlpha ? c.toDataURL("image/png") : c.toDataURL("image/jpeg", 0.85);
+        if (out.length <= limit) { resolve(out); return; }
+        side = Math.round(side * 0.8);
+      }
+      reject(new Error("That picture is too large to use. Make a simpler one."));
+    };
+    img.onerror = () => reject(new Error("Couldn't read that picture."));
+    img.src = url;
+  });
+}
+function ahJamesImagePlansHtml(t, ti) {
+  const img = (ahJ.status && ahJ.status.images) || {};
+  return t.imagePlans.map((p, pi) => {
+    const results = p.results.map((r, ri) => {
+      const usable = p.teamId && (p.kind === "logo" || p.kind === "kit_front" || p.kind === "kit_back");
+      const useLabel = p.kind === "logo" ? `Use as ${p.teamName}'s logo` : p.kind === "kit_front" ? `Use as ${p.teamName}'s kit front` : `Use as ${p.teamName}'s kit back`;
+      return `<div class="ahj-logo"><img src="${r.url}" alt="Picture option ${ri + 1}" class="ahj-gen-img${p.kind === "logo" ? " logo" : ""}">
+        <div class="ahj-logo-btns">${r.state === "used" ? `<span class="ahj-logo-done">In use for ${escapeHtml(p.teamName)}</span><button type="button" class="ah-complete undo ahj-gen-undo" data-t="${ti}" data-p="${pi}" data-r="${ri}">Undo</button>`
+          : `${usable ? `<button type="button" class="ah-complete ahj-gen-use" data-t="${ti}" data-p="${pi}" data-r="${ri}">${escapeHtml(useLabel)}</button>` : ""}<button type="button" class="ah-complete undo ahj-gen-dl" data-t="${ti}" data-p="${pi}" data-r="${ri}">Download</button>${r.state === "undone" ? '<span class="ahj-sub">Undone</span>' : ""}`}</div></div>`;
+    }).join("");
+    return `<div class="ahj-block ahj-imageplan"><div class="ahj-block-head">Picture idea: ${escapeHtml(p.forWhat)}. Check the brief, change it if you like, then press Generate.</div>
+      ${img.enabled === false ? `<p class="ahj-off">The image maker isn't connected yet. Add <code>OPENAI_API_KEY</code> in your host's Secrets and publish. You can still copy this brief.</p>` : ""}
+      <textarea class="ahj-brief" rows="5" maxlength="3000" data-t="${ti}" data-p="${pi}" aria-label="Brief for the image maker">${escapeHtml(p.prompt)}</textarea>
+      <div class="ahj-gen-row"><label>Options <select class="ahj-variants" data-t="${ti}" data-p="${pi}">${[1, 2, 3].map((n) => `<option${n === p.variants ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+        <button type="button" class="ah-complete ahj-generate" data-t="${ti}" data-p="${pi}"${p.busy || img.enabled === false ? " disabled" : ""}>${p.busy ? "Drawing…" : p.results.length ? "Generate again" : "Generate"}</button>
+        <span class="ahj-sub">${p.cost ? `That cost about ${ahDollars(p.cost)}. ` : ""}Each picture costs a few cents. Drawn lettering is often misspelt, so check it.</span></div>
+      ${p.error ? `<div class="ahj-error" role="alert">${escapeHtml(p.error)}</div>` : ""}
+      ${results ? `<div class="ahj-logos">${results}</div>` : ""}</div>`;
+  }).join("");
+}
+function bindAhJamesPictures(root) {
+  const plan = (b) => ahJ.thread[+b.dataset.t].imagePlans[+b.dataset.p];
+  root.querySelectorAll(".ahj-brief").forEach((a) => { a.oninput = () => { plan(a).prompt = a.value; }; });
+  root.querySelectorAll(".ahj-variants").forEach((sel) => { sel.onchange = () => { plan(sel).variants = +sel.value; }; });
+  root.querySelectorAll(".ahj-generate").forEach((b) => { b.onclick = async () => {
+    const p = plan(b), t = ahJ.thread[+b.dataset.t];
+    if (p.busy) return;
+    p.busy = true; p.error = ""; renderAdminHub();
+    try {
+      const refs = (p.refPhotos || []).map((i) => (t.logoImages || [])[i]).filter(Boolean);
+      const r = await api("/admin/james/image", { method: "POST", body: { kind: p.kind, prompt: p.prompt, variants: p.variants, refs } });
+      p.results = r.images.map((url) => ({ url, state: "" })); p.cost = r.cost;
+      if (ahJ.status) ahJ.status.images = r.images_usage;
+    } catch (e) { p.error = e.message; }
+    p.busy = false; renderAdminHub();
+  }; });
+  const res = (b) => plan(b).results[+b.dataset.r];
+  root.querySelectorAll(".ahj-gen-dl").forEach((b) => { b.onclick = () => { const p = plan(b); kitDownloadDataUrl(res(b).url, (p.forWhat || "picture").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + (+b.dataset.r + 1) + (p.kind === "logo" ? ".png" : ".jpg")); }; });
+  root.querySelectorAll(".ahj-gen-use").forEach((b) => { b.onclick = async () => {
+    const p = plan(b), r = res(b);
+    b.disabled = true;
+    try {
+      let out;
+      if (p.kind === "logo") {
+        const png = await ahShrinkPicture(r.url, { maxSide: 512, keepAlpha: true, limit: 380000 });
+        out = await api("/admin/james/logo", { method: "POST", body: { leagueId: p.leagueId, teamId: p.teamId, image: png } });
+      } else {
+        const jpg = await ahShrinkPicture(r.url, { maxSide: 1100, keepAlpha: false, limit: 380000 });
+        out = await api("/admin/james/kit", { method: "POST", body: { leagueId: p.leagueId, teamId: p.teamId, side: p.kind === "kit_front" ? "front" : "back", image: jpg } });
+      }
+      r.state = "used"; r.setId = out.setId; if (ahJ.status && ahJ.status.changes) ahJ.status.changes = out.changes; ahJ.error = ""; ahJ.log = null;
+      renderAdminHub();
+      showToast(p.kind === "logo" ? `${p.teamName}'s logo changed.` : `${p.teamName}'s kit ${p.kind === "kit_front" ? "front" : "back"} changed.`, { label: "Undo", onClick: () => ahJamesUndoSet(out.setId, null) });
+    } catch (e) { b.disabled = false; ahJ.error = e.message; renderAdminHub(); }
+  }; });
+  root.querySelectorAll(".ahj-gen-undo").forEach((b) => { b.onclick = () => ahJamesUndoSet(res(b).setId, null); });
+}
 function bindAhJamesDesign(root) {
   root.querySelectorAll(".ahj-poster").forEach((box) => {
     const t = ahJ.thread[+box.dataset.t], p = t && t.posters[+box.dataset.p];
@@ -7841,6 +7922,7 @@ function renderAdminHub() {
   bindAhComposer(root);
   bindAhJames(root);
   bindAhJamesDesign(root);
+  bindAhJamesPictures(root);
   bindAhPayments(root);
 }
 // The payments dashboard: one bar per league, split into paid in full (green),
