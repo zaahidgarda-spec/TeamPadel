@@ -4561,6 +4561,7 @@ function hubExcludedLeagueIds() {
   return new Set(store.getIndex().filter((e) => hubExcludedLeague(e.name)).map((e) => e.id));
 }
 const HUB_TYPES = ["note", "payment", "sponsor", "court", "kit", "followup"];
+const HUB_DONE_BY = ["ZG", "ID", "JN"];
 const HUB_PRIORITIES = ["urgent", "high", "normal", "low"];
 // Categories down the left of the Note Machine. Anyone can add more; it
 // starts with Tasks and Reminders.
@@ -4635,8 +4636,10 @@ function applyHubFields(item, b, league, actor) {
   if (b.status !== undefined) {
     item.status = b.status === "done" ? "done" : "open";
     // Who ticked it off (the "Done by" column); cleared if it's reopened.
-    if (item.status === "done") { if (!item.doneBy) { item.doneBy = actor || "Admin"; item.doneAt = Date.now(); } } else { delete item.doneBy; delete item.doneAt; }
+    if (item.status === "done") { if (!item.doneBy) { item.doneBy = HUB_DONE_BY.includes(b.doneBy) ? b.doneBy : (actor || "Admin"); item.doneAt = Date.now(); } } else { delete item.doneBy; delete item.doneAt; }
   }
+  // "Done by" is one of the three people who work the board.
+  if (b.doneBy !== undefined && item.status === "done" && HUB_DONE_BY.includes(b.doneBy)) item.doneBy = b.doneBy;
   if (b.pinned !== undefined) item.pinned = !!b.pinned;
   if (b.priority !== undefined && HUB_PRIORITIES.includes(b.priority)) item.priority = b.priority;
   if (b.categoryId !== undefined) item.categoryId = b.categoryId && hubCategories(store.getAdminHub()).some((c) => c.id === b.categoryId) ? b.categoryId : null;

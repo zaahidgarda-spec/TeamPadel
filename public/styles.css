@@ -3300,3 +3300,10 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .app-toast .toast-action{margin-left:6px;padding:5px 12px;min-height:0;border-radius:8px;border:1.5px solid #fff;background:transparent;color:#fff;font-size:13px;font-weight:700;cursor:pointer;}
 .app-toast .toast-action:hover{background:rgba(255,255,255,.18);}
 .ah-bdo{display:flex;margin-top:6px;}
+.ah-pick-wrap{position:fixed;inset:0;z-index:9600;background:rgba(15,23,42,.45);display:grid;place-items:center;padding:16px;}
+.ah-pick{background:#fff;color:#0F172A;border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 20px 50px rgba(0,0,0,.35);min-width:240px;}
+.ah-pick-btns{display:flex;gap:10px;}
+.ah-pick-btns button{min-height:0;width:64px;padding:12px 0;border-radius:10px;border:0;background:#1F9D55;color:#fff;font-size:16px;font-weight:800;cursor:pointer;}
+.ah-pick-btns button:hover{background:#178246;}
+.ah-doneby-sel{min-height:0;padding:4px 6px;border-radius:6px;border:1px solid #CBD5E1;background:#fff;color:#0F172A;font-size:13px;font-weight:700;width:auto;}
+.ah-done-by{display:flex;align-items:center;gap:6px;font-size:12px;color:#64748B;white-space:nowrap;}

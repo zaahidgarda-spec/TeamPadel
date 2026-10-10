@@ -6986,8 +6986,8 @@ let ahDoneShut = false, ahDraftClear = false;
 function ahDoneRowHtml(it) {
   const where = it.type === "sponsor" && it.sponsorScope ? ahSponsorWho(it) : (ahLeagueName(it.leagueId) || "");
   const cat = it.categoryId && ahCatName(it.categoryId) ? ahCatName(it.categoryId) : "";
-  const meta = [it.doneBy ? `Completed by ${escapeHtml(it.doneBy)}` : "Completed", it.doneAt ? ahWhen(it.doneAt) : "", cat ? escapeHtml(cat) : "", where ? escapeHtml(where) : ""].filter(Boolean).join(" · ");
-  return `<div class="ah-done-row" data-id="${it.id}"><span class="ah-check on" aria-hidden="true">✓</span><div class="ah-done-txt"><span class="ah-done-title">${escapeHtml(it.title)}</span><span class="ah-done-meta">${meta}</span></div><button type="button" class="ah-complete undo ah-done-undo" data-id="${it.id}">Undo</button><button type="button" class="link ah-del-done" data-id="${it.id}">Delete</button></div>`;
+  const meta = ["Completed", it.doneAt ? ahWhen(it.doneAt) : "", cat ? escapeHtml(cat) : "", where ? escapeHtml(where) : ""].filter(Boolean).join(" · ");
+  return `<div class="ah-done-row" data-id="${it.id}"><span class="ah-check on" aria-hidden="true">✓</span><div class="ah-done-txt"><span class="ah-done-title">${escapeHtml(it.title)}</span><span class="ah-done-meta">${meta}</span></div><label class="ah-done-by">Done by <select class="ah-doneby-sel" data-id="${it.id}" aria-label="Done by">${AH_DONE_BY.includes(it.doneBy) ? "" : `<option value="">${escapeHtml(it.doneBy || "–")}</option>`}${AH_DONE_BY.map((n) => `<option${n === it.doneBy ? " selected" : ""}>${n}</option>`).join("")}</select></label><button type="button" class="ah-complete undo ah-done-undo" data-id="${it.id}">Undo</button><button type="button" class="link ah-del-done" data-id="${it.id}">Delete</button></div>`;
 }
 function ahCompleteBtn(it) {
   return ahIsOpen(it)
@@ -7045,9 +7045,21 @@ function ahEditHtml(it) {
 function ahApi(path, opts) { return api("/admin/hub" + path, opts); }
 async function ahRefreshAndRender() { await loadAdminHub(); }
 // Completing a note (and bringing it back). Completing shows a toast with Undo.
+function ahPickDoneBy() {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "ah-pick-wrap";
+    wrap.innerHTML = `<div class="ah-pick" role="dialog" aria-label="Who completed this note?"><b>Who completed it?</b><div class="ah-pick-btns">${AH_DONE_BY.map((n) => `<button type="button" data-n="${n}">${n}</button>`).join("")}</div><button type="button" class="link" data-n="">Cancel</button></div>`;
+    const end = (v) => { wrap.remove(); resolve(v); };
+    wrap.onclick = (e) => { const b = e.target.closest("[data-n]"); if (b) end(b.dataset.n || null); else if (e.target === wrap) end(null); };
+    document.body.appendChild(wrap);
+  });
+}
 async function ahSetDone(id, done) {
   try {
-    await ahApi(`/items/${id}`, { method: "PUT", body: { status: done ? "done" : "open" } });
+    const body = { status: done ? "done" : "open" };
+    if (done) { const who = await ahPickDoneBy(); if (!who) return; body.doneBy = who; }
+    await ahApi(`/items/${id}`, { method: "PUT", body });
     await ahRefreshAndRender();
     if (done) showToast("Note completed.", { label: "Undo", onClick: () => ahSetDone(id, false) });
     else showToast("Note is open again.");
@@ -7171,10 +7183,11 @@ function ahHeaderHtml() {
 const AH_PRIO_COLOR = { urgent: "#D3434F", high: "#FDAB3D", normal: "#A25DDC", low: "#579BFC" };
 const AH_STATUS_COLOR = { done: "#00C875", overdue: "#D3434F", soon: "#FDAB3D", open: "#C4C4C4" };
 const AH_TYPE_COLOR = { payment: "#FFCB00", sponsor: "#9CD326", court: "#0086C0", kit: "#FF642E", followup: "#FF5AC4", note: "#757575" };
+const AH_DONE_BY = ["ZG", "ID", "JN"];
 function ahAvatar(name, when) {
   if (!name) return '<span class="ah-av ah-av-none"></span>';
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  const ini = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+  const ini = AH_DONE_BY.includes(name) ? name : name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
   return `<span class="ah-av" style="background:hsl(${h} 52% 42%)" title="${escapeHtml(name)}${when ? " · " + ahWhen(when) : ""}">${escapeHtml(ini)}</span>`;
 }
 function ahBoardRowHtml(it) {
@@ -7200,7 +7213,7 @@ function ahBoardRowHtml(it) {
     <div class="ah-bc ah-bcell" style="background:${AH_PRIO_COLOR[p]};color:${p === "high" ? "#4A2F00" : "#fff"}"><select class="ah-prio-sel ah-bsel" aria-label="Priority">${AH_PRIORITIES.map(([k, l]) => `<option value="${k}"${k === p ? " selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="ah-bc ah-bcell ah-btype" style="background:${AH_TYPE_COLOR[it.type]};color:${it.type === "payment" || it.type === "sponsor" ? "#2B2400" : "#fff"}">${AH_TYPE_LABEL[it.type]}</div>
     <div class="ah-bc ah-bavatar">${ahAvatar(it.createdBy, it.createdAt)}</div>
-    <div class="ah-bc ah-bavatar">${ahAvatar(it.doneBy, it.doneAt)}</div>
+    <div class="ah-bc ah-bavatar">${ahIsOpen(it) ? ahAvatar(it.doneBy, it.doneAt) : `<select class="ah-doneby-sel" aria-label="Done by">${AH_DONE_BY.includes(it.doneBy) ? "" : `<option value="">${escapeHtml(it.doneBy || "–")}</option>`}${AH_DONE_BY.map((n) => `<option${n === it.doneBy ? " selected" : ""}>${n}</option>`).join("")}</select>`}</div>
     <button type="button" class="ah-bc ah-bcell ah-bstatus" style="background:${AH_STATUS_COLOR[st.key]};color:${st.key === "open" ? "#323338" : st.key === "soon" ? "#4A2F00" : "#fff"}" title="Tap to ${ahIsOpen(it) ? "mark done" : "reopen"}">${st.label}</button>
     <label class="ah-bc ah-bdue"><span class="ah-bdue-pill${it.dueDate ? "" : " none"}${ahOverdue(it) ? " late" : ""}">${it.dueDate ? ahDue(it.dueDate) : "–"}</span><input type="date" class="ah-bdue-in" value="${it.dueDate || ""}" aria-label="Due date"></label>
     <div class="ah-bc ah-bact"><button type="button" class="link ah-pinbtn" title="${it.pinned ? "Unpin" : "Pin"}">${it.pinned ? "Unpin" : "Pin"}</button><button type="button" class="link ah-edit">Edit</button><button type="button" class="link ah-del" aria-label="Delete">Delete</button></div>
@@ -7242,6 +7255,7 @@ function bindAhBoard(root) {
     q(".ah-check").onclick = toggle;
     q(".ah-bstatus").onclick = toggle;
     q(".ah-complete").onclick = toggle;
+    const dbs = q(".ah-doneby-sel"); if (dbs) dbs.onchange = () => { if (dbs.value) act(() => ahApi(`/items/${id}`, { method: "PUT", body: { doneBy: dbs.value } })); };
     q(".ah-prio-sel").onchange = (e) => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { priority: e.target.value } }));
     q(".ah-bdue-in").onchange = (e) => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { dueDate: e.target.value || null } }));
     q(".ah-pinbtn").onclick = () => act(() => ahApi(`/items/${id}`, { method: "PUT", body: { pinned: !it.pinned } }));
@@ -7332,6 +7346,7 @@ function renderAdminHub() {
     try { await ahApi("/items/delete", { method: "POST", body: { ids } }); showToast("Completed notes deleted."); await ahRefreshAndRender(); } catch (e) { alert(e.message); }
   };
   const doneTog = root.querySelector("#ah-done-toggle"); if (doneTog) doneTog.onclick = () => { ahDoneShut = !ahDoneShut; renderAdminHub(); };
+  root.querySelectorAll(".ah-done-row .ah-doneby-sel").forEach((sel) => { sel.onchange = async () => { if (!sel.value) return; try { await ahApi(`/items/${sel.dataset.id}`, { method: "PUT", body: { doneBy: sel.value } }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
   root.querySelectorAll(".ah-done-undo").forEach((b) => { b.onclick = () => ahSetDone(b.dataset.id, false); });
   root.querySelectorAll(".ah-del-done").forEach((b) => { b.onclick = async () => { if (!confirm("Delete this completed note for good?")) return; try { await ahApi(`/items/${b.dataset.id}`, { method: "DELETE" }); await ahRefreshAndRender(); } catch (e) { alert(e.message); } }; });
   const back = root.querySelector("#ah-back"); if (back) back.onclick = () => { ahArea = "home"; ahCompType = "auto"; renderAdminHub(); };
