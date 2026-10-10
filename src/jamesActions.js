@@ -33,7 +33,7 @@ module.exports = function createJamesActions(d) {
   };
 
   // ---- working on copies --------------------------------------------------
-  function makeCtx(dry) {
+  function makeCtx(dry, images) {
     const leagues = new Map();
     const touched = new Set();
     const newLeagues = [];
@@ -41,7 +41,7 @@ module.exports = function createJamesActions(d) {
     const deferred = [];
     let hub = null, hubTouched = false;
     return {
-      dry, leagues, touched, deferred, newLeagues, removedLeagues,
+      dry, images: images || [], leagues, touched, deferred, newLeagues, removedLeagues,
       league(id) {
         if (!leagues.has(id)) { const l = store.getLeague(id); leagues.set(id, l ? clone(l) : null); }
         return leagues.get(id);
@@ -72,6 +72,12 @@ module.exports = function createJamesActions(d) {
     return l;
   }
   const teamFor = (l, id) => l.teams.find((t) => t.id === id) || (() => { throw err(`I can't find that team in ${l.name}.`); })();
+  const teamByName = (l, name) => {
+    const n = clip(name, 60).toLowerCase();
+    const t = n && l.teams.find((x) => x.name.toLowerCase() === n);
+    if (!t) throw err(n ? `I can't find a team called ${clip(name, 60)} in ${l.name}.` : `Which team in ${l.name}?`);
+    return t;
+  };
   const playerFor = (t, id) => t.players.find((p) => p.id === id) || (() => { throw err(`I can't find that player on ${t.name}.`); })();
   const needFee = (l) => { if (!l.registrationFeeCents) throw err(`${l.name} has no fee set yet, so there's nothing to pay.`); };
   const rands = (v) => {
@@ -342,9 +348,10 @@ module.exports = function createJamesActions(d) {
         if (l.format === "pairs") throw err("That's a Vibora (pairs) league, so it has no teams.");
         if (d.leagueStatus(l) !== "setup") throw err("Teams are locked once the season has started.");
         if (l.teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) throw err(`${l.name} already has a team called ${name}.`);
-        const team = { id: logic.uid(), name, code: d.genTeamCode(l), logo: "", notifyEmail: "", players: [], groupId: null };
+        const logo = uploadedLogo(ctx, ch);
+        const team = { id: logic.uid(), name, code: d.genTeamCode(l), logo: logo && logo !== "(preview)" ? logo : "", notifyEmail: "", players: [], groupId: null };
         l.teams.push(team); ctx.touch(l.id);
-        return { leagueId: l.id, leagueName: l.name, text: `Add the team "${name}" to ${l.name}.`, undo: { teamId: team.id }, after: "added" };
+        return { leagueId: l.id, leagueName: l.name, text: `Add the team "${name}" to ${l.name}${logo ? ", with the logo you uploaded" : ""}.`, undo: { teamId: team.id }, after: "added" };
       },
       check(ctx, c) {
         const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId);
@@ -356,18 +363,29 @@ module.exports = function createJamesActions(d) {
 
   // A team's logo, set from a design the admin chose. The old logo is kept in the
   // undo record (only for the last few, so the log stays small).
+  const LOGO_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+=*$/;
+  // The uploaded logo for a change: the admin's own image (sent along when they confirm).
+  // While only previewing, the image isn't there yet, so a valid number is enough.
+  function uploadedLogo(ctx, ch) {
+    if (!Number.isInteger(ch.logoImage)) return null;
+    const img = ctx.images[ch.logoImage];
+    if (img === undefined || img === null) { if (ctx.dry) return "(preview)"; throw err("I need the logo photo again. Attach it and ask once more."); }
+    if (!LOGO_RE.test(img) || img.length > 400000) throw err("That logo image isn't usable. Try a smaller one.");
+    return img;
+  }
   const logoKey = (img) => `${(img || "").length}:${(img || "").slice(-48)}`;
   const MAX_LOGO = 400000;
   leagueKinds.team_logo_set = {
     label: "Logo",
     run(ctx, ch) {
-      const l = leagueFor(ctx, ch.leagueId); const t = teamFor(l, ch.teamId);
-      const img = String(ch.image || "");
-      if (!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(img) || img.length > MAX_LOGO) throw err("That logo image isn't usable.");
+      const l = leagueFor(ctx, ch.leagueId); const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
+      const up = uploadedLogo(ctx, ch);
+      const img = up || String(ch.image || "");
+      if (!up && (!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(img) || img.length > MAX_LOGO)) throw err("That logo image isn't usable.");
       const prev = t.logo || "";
       if (prev.length > MAX_LOGO) throw err(`${t.name}'s current logo is too large for me to keep a backup of, so I won't replace it. Change it by hand.`);
-      t.logo = img; ctx.touch(l.id);
-      return { leagueId: l.id, leagueName: l.name, text: `Set ${t.name}'s logo (${l.name}) to the new design${prev ? ". The old logo is kept so this can be undone" : ""}.`, undo: { teamId: t.id, prev }, after: logoKey(img) };
+      t.logo = img === "(preview)" ? t.logo : img; ctx.touch(l.id);
+      return { leagueId: l.id, leagueName: l.name, text: `Set ${t.name}'s logo (${l.name}) to ${up ? "the photo you uploaded" : "the new design"}${prev ? ". The old logo is kept so this can be undone" : ""}.`, undo: { teamId: t.id, prev }, after: logoKey(t.logo) };
     },
     check(ctx, c) {
       const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId);
@@ -386,19 +404,29 @@ module.exports = function createJamesActions(d) {
     player_add: {
       label: "Player",
       run(ctx, ch) {
-        const l = leagueFor(ctx, ch.leagueId); const t = teamFor(l, ch.teamId);
-        const name = clip(ch.name, 60);
-        if (!name) throw err("What's the player's name?");
-        if (t.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) throw err(`${t.name} already has a player called ${name}.`);
-        const p = { id: logic.uid(), name };
-        t.players.push(p); ctx.touch(l.id);
-        return { leagueId: l.id, leagueName: l.name, text: `Add ${name} to ${t.name} (${l.name}).`, undo: { teamId: t.id, playerId: p.id }, after: "added" };
+        const l = leagueFor(ctx, ch.leagueId); const t = ch.teamId ? teamFor(l, ch.teamId) : teamByName(l, ch.teamName);
+        const list = (Array.isArray(ch.names) && ch.names.length ? ch.names : [ch.name]).map((n) => clip(n, 60)).filter(Boolean);
+        if (!list.length) throw err("What's the player's name?");
+        const seen = new Set(t.players.map((p) => p.name.toLowerCase()));
+        const added = [], skipped = [];
+        list.forEach((name) => {
+          if (seen.has(name.toLowerCase())) { skipped.push(name); return; }
+          seen.add(name.toLowerCase());
+          const p = { id: logic.uid(), name };
+          t.players.push(p); added.push(p);
+        });
+        if (!added.length) throw err(list.length === 1 ? `${t.name} already has a player called ${list[0]}.` : `${t.name} already has all of those players.`);
+        ctx.touch(l.id);
+        return { leagueId: l.id, leagueName: l.name, warnings: skipped.length ? [`Already on ${t.name}, so left out: ${skipped.join(", ")}.`] : [], text: `Add ${added.length === 1 ? added[0].name : added.length + " players (" + added.map((p) => p.name).join(", ") + ")"} to ${t.name} (${l.name}).`, undo: { teamId: t.id, playerIds: added.map((p) => p.id) }, after: "added" };
       },
       check(ctx, c) {
-        const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId); const p = t && t.players.find((x) => x.id === c.undo.playerId);
-        if (p && (hasPlayed(l, p.id) || (p.paidCents || 0) > 0)) throw err(`${p.name} has played or paid since, so I won't remove them.`);
+        const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId);
+        (c.undo.playerIds || [c.undo.playerId]).forEach((id) => {
+          const p = t && t.players.find((x) => x.id === id);
+          if (p && (hasPlayed(l, p.id) || (p.paidCents || 0) > 0)) throw err(`${p.name} has played or paid since, so I won't remove them.`);
+        });
       },
-      revert(ctx, c) { const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId); if (t) t.players = t.players.filter((x) => x.id !== c.undo.playerId); ctx.touch(l.id); },
+      revert(ctx, c) { const l = leagueFor(ctx, c.leagueId); const t = l.teams.find((x) => x.id === c.undo.teamId); const ids = c.undo.playerIds || [c.undo.playerId]; if (t) t.players = t.players.filter((x) => !ids.includes(x.id)); ctx.touch(l.id); },
     },
     player_move: {
       label: "Player",
@@ -498,8 +526,8 @@ module.exports = function createJamesActions(d) {
   const GROUP_NAME = { payments: "Payments", fixtures: "Fixtures", leagues: "Leagues", players: "Players", notes: "Notes" };
 
   // ---- the three entry points ---------------------------------------------
-  function plan(changes, { dry, actor, perms }) {
-    const ctx = makeCtx(dry);
+  function plan(changes, { dry, actor, perms, images }) {
+    const ctx = makeCtx(dry, images);
     const results = changes.map((ch) => {
       const k = KINDS[ch && ch.kind];
       try {
@@ -520,8 +548,8 @@ module.exports = function createJamesActions(d) {
   function preview(changes, opts) { return plan(changes, { ...opts, dry: true }).results.map(publicResult); }
 
   // All or nothing: every change must work, then everything is saved together.
-  function apply(changes, { actor, request, perms }) {
-    const { ctx, results } = plan(changes, { dry: false, actor, perms });
+  function apply(changes, { actor, request, perms, images }) {
+    const { ctx, results } = plan(changes, { dry: false, actor, perms, images });
     if (results.some((r) => !r.ok)) return { ok: false, results: results.map(publicResult) };
     results.forEach((r) => {
       const l = r.leagueId && ctx.leagues.get(r.leagueId);

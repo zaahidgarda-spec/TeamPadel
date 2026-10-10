@@ -6684,7 +6684,7 @@ function teamPayDetailHtml(t, isAdminView) {
     const own = p.paidCents != null ? p.paidCents : (isPaid && !p.coveredByTeam ? pShare : 0);
     const part = !isPaid && own > 0;
     const note = isPaid ? `${fmtRands(pShare)} · Paid · ${p.coveredByTeam ? "covered by the team" : paymentMethodLabel(p.paymentMethod)}`
-      : part ? `${fmtRands(own)} of ${fmtRands(pShare)} paid · ${fmtRands(Math.max(0, pShare - own))} left`
+      : part ? `${fmtRands(own)} of ${fmtRands(pShare)} paid${(p.payments || []).length > 1 ? ` in ${(p.payments || []).length} payments` : ""}${(p.payments || []).length ? ` (last ${new Date(Math.max(...p.payments.map((x) => x.at || 0))).toLocaleDateString()})` : ""} · ${fmtRands(Math.max(0, pShare - own))} left`
       : fmtRands(pShare);
     const shareBtn = isAdminView ? `<button class="link pay-player-share-btn" type="button" data-cur="${p.customShareCents != null ? p.customShareCents : ""}" data-even="${pShare}">Set amount</button>` : "";
     const actions = isPaid
@@ -6693,7 +6693,7 @@ function teamPayDetailHtml(t, isAdminView) {
     return `
     <div class="notif-row" data-player="${p.id}">
       <div><strong>${escapeHtml(p.name)}</strong>${discountTag(p.discountCents, p.discountNote)}${customTag(p)}<div class="note">${note}</div></div>
-      <span class="badge ${isPaid ? "done" : part ? "part" : "outstanding"}">${isPaid ? "Paid" : part ? "Part paid" : "Unpaid"}</span>
+      <span class="badge ${isPaid ? "done" : part ? "part" : "outstanding"}">${isPaid ? "Paid" : part ? "Part paid" : "Unpaid"}</span>${part ? `<span class="ah-pbar" role="img" aria-label="${Math.round((own / Math.max(1, pShare)) * 100)} percent paid"><i style="width:${Math.min(100, Math.round((own / Math.max(1, pShare)) * 100))}%"></i></span>` : ""}
       ${actions ? `<div class="pay-row-actions">${actions}</div>` : ""}
     </div>`;
   }).join("");
@@ -7296,11 +7296,11 @@ async function ahJamesSend(text) {
   const photos = ahJ.images.slice();
   if ((!text && !photos.length) || ahJ.busy) return;
   const history = ahJ.thread.map((t) => t.role === "user" ? { role: "user", content: (t.images && t.images.length ? "[Photo attached] " : "") + t.text } : { role: "assistant", content: (t.reply || "") + (t.notes && t.notes.length ? ` [Proposed notes: ${t.notes.map((n) => n.title).join("; ")}]` : "") + (t.messages && t.messages.length ? ` [Drafted ${t.messages.length} messages]` : "") + (t.logos && t.logos.length ? ` [Designed logo options for: ${t.logos.map((l) => l.forWhat).join(", ")}]` : "") + (t.posters && t.posters.length ? ` [Made poster: ${t.posters.map((p) => p.headline).join(", ")}]` : "") + (t.changes && t.changes.length ? ` [Proposed changes: ${t.changes.map((c) => (c.preview && (c.preview.text || c.preview.error)) || c.kind).join("; ")}]` : "") || "(no reply)" });
-  ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
+  ahJ.thread.push({ role: "user", text: text || "(photo)", images: photos.map((p) => p.url), logoImages: photos.map((p) => p.logoUrl) }); ahJ.draft = ""; ahJ.images = []; ahJ.error = ""; ahJ.busy = true;
   renderAdminHub(); ahJamesScroll();
   try {
     const r = await api("/admin/james", { method: "POST", body: { message: text, history, images: photos.map((p) => ({ mediaType: p.mediaType, data: p.data })) } });
-    ahJ.thread.push({ role: "james", request: text, reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], cstate: "pending", state: "pending", savedIds: [] });
+    ahJ.thread.push({ role: "james", request: text, logoImages: photos.map((p) => p.logoUrl), reply: r.reply, notes: r.notes || [], messages: r.messages || [], changes: r.changes || [], logos: r.logos || [], posters: r.posters || [], cstate: "pending", state: "pending", savedIds: [] });
     if (ahJ.status) ahJ.status.usage = r.usage;
   } catch (e) { ahJ.error = e.message || "James hit a problem."; }
   ahJ.busy = false;
@@ -7319,7 +7319,8 @@ async function ahJamesApply(t, btn) {
   if (!send.length) return;
   btn.disabled = true;
   try {
-    const r = await api("/admin/james/apply", { method: "POST", body: { changes: send, request: t.request || "" } });
+    const usesLogo = send.some((c) => Number.isInteger(c.logoImage));
+    const r = await api("/admin/james/apply", { method: "POST", body: { changes: send, request: t.request || "", ...(usesLogo ? { images: t.logoImages || [] } : {}) } });
     t.cstate = "applied"; t.setId = r.setId; t.appliedN = r.results.length;
     t.changes = t.changes.filter((c) => c.preview && c.preview.ok);
     if (ahJ.status && ahJ.status.changes) ahJ.status.changes = r.changes;
@@ -7339,6 +7340,16 @@ async function ahJamesUndoSet(setId, t) {
   } catch (e) { ahJ.error = e.message; renderAdminHub(); }
 }
 // Shrinks a photo in the browser before it is sent: long side 1568px, JPEG, small enough to send.
+// A copy small enough to be a team logo: up to 512px, PNG (keeps a transparent background), or JPEG if that is too big.
+function ahLogoCopy(img) {
+  const k = Math.min(1, 512 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+  const cx = c.getContext("2d"); cx.drawImage(img, 0, 0, c.width, c.height);
+  const png = c.toDataURL("image/png");
+  if (png.length <= 380000) return png;
+  cx.globalCompositeOperation = "destination-over"; cx.fillStyle = "#fff"; cx.fillRect(0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.85);
+}
 function ahResizePhoto(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -7353,7 +7364,7 @@ function ahResizePhoto(file) {
         const cx = c.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(img, 0, 0, c.width, c.height);
         const dataUrl = c.toDataURL("image/jpeg", q);
         const data = dataUrl.slice(dataUrl.indexOf(",") + 1);
-        if (data.length <= 2500000 || tries === 4) { resolve({ mediaType: "image/jpeg", data, url: dataUrl }); return; }
+        if (data.length <= 2500000 || tries === 4) { resolve({ mediaType: "image/jpeg", data, url: dataUrl, logoUrl: ahLogoCopy(img) }); return; }
         side = Math.round(side * 0.75); q = 0.7;
       }
     };
@@ -7839,6 +7850,16 @@ function ahBarHtml(paid, part, total) {
   const pc = (n) => (total ? Math.max(0, Math.min(100, (n / total) * 100)) : 0);
   return `<div class="ah-bar" role="img" aria-label="${Math.round(pc(paid + part))} percent paid"><i class="f-paid" style="width:${pc(paid)}%"></i><i class="f-part" style="width:${pc(part)}%"></i></div>`;
 }
+// Players who have paid some of their share but not all of it.
+function ahPartPlayers(leagueId, teamId) {
+  return ahPayments.teams.filter((t) => t.leagueId === leagueId && (!teamId || t.teamId === teamId)).reduce((n, t) => n + t.players.filter((p) => p.paidCents > 0 && p.owedCents > 0).length, 0);
+}
+function ahPartPill(n) { return n ? `<span class="ah-partpill">${n} part paid</span>` : ""; }
+function ahPlayerPartHtml(p) {
+  if (!(p.paidCents > 0 && p.owedCents > 0)) return "";
+  const pct = p.shareCents ? Math.min(100, Math.round((p.paidCents / p.shareCents) * 100)) : 0;
+  return `<span class="ah-partpill">Part paid</span><span class="ah-pbar" role="img" aria-label="${pct} percent paid"><i style="width:${pct}%"></i></span>`;
+}
 function ahPaymentsDashboardHtml() {
   const lgs = ahPayments.leagues.filter((l) => ahLeague === "all" || l.leagueId === ahLeague);
   const q = ahSearch.trim().toLowerCase();
@@ -7858,16 +7879,16 @@ function ahPaymentsDashboardHtml() {
         return `<button type="button" class="ah-team-row${tOpen ? " open" : ""}" data-team-key="${l.leagueId}:${t.teamId}">
             <span class="ah-team-name">${escapeHtml(t.teamName)}</span>
             ${ahBarHtml(t.complete ? t.feeCents : 0, t.complete ? 0 : t.paidCents, t.feeCents)}
-            <span class="ah-team-pct">${t.complete ? "Paid" : tp + "%"}</span></button>
+            <span class="ah-team-pct">${t.complete ? "Paid" : tp + "%"}${t.complete ? "" : ahPartPill(ahPartPlayers(l.leagueId, t.teamId))}</span></button>
           ${tOpen ? `<div class="ah-expand"><div class="ah-team-actions">${t.discountCents ? `<span class="note">Team discount ${fmtRands(t.discountCents)}${t.discountNote ? " · " + escapeHtml(t.discountNote) : ""}</span>` : `<span class="note">Fee ${fmtRands(t.feeCents)}</span>`}<button class="link ah-disc-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}" data-cur="${t.discountCents || 0}">${t.discountCents ? "Change team discount" : "Discount team"}</button>${owing && owing.anyCustom ? `<button class="link ah-even-team" type="button" data-league="${l.leagueId}" data-team="${t.teamId}" data-name="${escapeHtml(t.teamName)}">Back to an even split</button>` : ""}</div>${owing && owing.players.length ? owing.players.map((p) => `<div class="ah-prow" data-league="${l.leagueId}" data-team="${t.teamId}" data-player="${p.playerId}" data-owed="${p.owedCents}">
-              <span><b>${escapeHtml(p.name)}</b>${discountTag(p.discountCents)}${p.customShare ? '<span class="disc-tag custom-tag">custom amount</span>' : ""}<br><span class="note">${p.paidCents ? `paid ${fmtRands(p.paidCents)} of ${fmtRands(p.shareCents)} · ` : ""}owes ${fmtRands(p.owedCents)}</span></span>
+              <span><b>${escapeHtml(p.name)}</b>${discountTag(p.discountCents)}${p.customShare ? '<span class="disc-tag custom-tag">custom amount</span>' : ""}${ahPlayerPartHtml(p)}<br><span class="note">${p.paidCents ? `paid ${fmtRands(p.paidCents)} of ${fmtRands(p.shareCents)}${p.payCount > 1 ? ` in ${p.payCount} payments` : ""}${p.lastPaidAt ? ` (last ${ahWhen(p.lastPaidAt)})` : ""} · ` : ""}owes ${fmtRands(p.owedCents)}</span></span>
               <span class="ah-prow-btns"><button class="secondary ah-p-part" type="button">Record payment</button><button class="link ah-p-disc" type="button" data-name="${escapeHtml(p.name)}" data-cur="${p.discountCents || 0}">Discount</button><button class="link ah-p-share" type="button" data-name="${escapeHtml(p.name)}" data-custom="${p.customShare ? 1 : 0}" data-share="${p.shareCents}" data-limit="${t.baseFeeCents - (t.discountCents || 0)}">Set amount</button><button class="link ah-p-paid" type="button">Mark paid</button></span></div>`).join("") : '<p class="note" style="margin:0;">Everyone on this team has paid.</p>'}</div>` : ""}`;
       }).join("")}</div>`;
     }
     return `<div class="ah-lrow2"><button type="button" class="ah-league-row${open ? " open" : ""}" data-league-open="${l.leagueId}">
         <span class="ah-lr-top"><b>${escapeHtml(l.leagueName)}</b><span class="ah-lr-left">${left ? fmtRands(left) + " left" : "Paid in full"}</span></span>
         ${ahBarHtml(l.fullPaidCents, l.partPaidCents, l.totalCents)}
-        <span class="ah-lr-sub"><span>${pct}% · ${l.teamsPaid} of ${l.teamCount} teams paid</span><span>${fmtRands(l.fullPaidCents + l.partPaidCents)} of ${fmtRands(l.totalCents)}</span></span>
+        <span class="ah-lr-sub"><span>${pct}% · ${l.teamsPaid} of ${l.teamCount} teams paid ${ahPartPill(ahPartPlayers(l.leagueId))}</span><span>${fmtRands(l.fullPaidCents + l.partPaidCents)} of ${fmtRands(l.totalCents)}</span></span>
       </button>${inner}
       <div class="ah-lr-foot"><span class="note">${fmtRands(l.feeCents)} a team</span><button class="link ah-setfee" type="button" data-league="${l.leagueId}" data-name="${escapeHtml(l.leagueName)}" data-fee="${l.feeCents / 100}">Change amount</button><button class="link ah-track" type="button" data-league="${l.leagueId}" data-on="0">Stop counting</button>
         <button class="link ah-reset" type="button" data-league="${l.leagueId}" data-name="${escapeHtml(l.leagueName)}">Reset payments</button>

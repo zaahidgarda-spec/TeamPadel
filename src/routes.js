@@ -4882,7 +4882,7 @@ function hubPaymentsData() {
       owed += teamBalanceCents(league, team);
       if (!tracked || team.paymentStatus === "paid") return;
       const players = team.players.map((p) => ({
-        playerId: p.id, name: p.name, owedCents: playerOwedCents(league, team, p), paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team, p), customShare: p.customShareCents != null, discountCents: p.discountCents || 0,
+        playerId: p.id, name: p.name, owedCents: playerOwedCents(league, team, p), paidCents: playerPaidCents(league, team, p), shareCents: playerShareCents(league, team, p), customShare: p.customShareCents != null, discountCents: p.discountCents || 0, payCount: (p.payments || []).length, lastPaidAt: (p.payments || []).reduce((m, x) => Math.max(m, x.at || 0), 0) || null,
       })).filter((p) => p.owedCents > 0);
       if (!players.length) return;
       teams.push({ leagueId: league.id, leagueName: league.name, teamId: team.id, teamName: team.name, feeCents: teamFeeCents(league, team), teamOwedCents: teamBalanceCents(league, team), anyCustom: team.players.some((p) => p.customShareCents != null), players });
@@ -4986,7 +4986,7 @@ function jamesContext(perms) {
         collectedRands: l.collectedCents / 100, owedRands: l.owedCents / 100, teams: l.teamCount, teamsPaidInFull: l.teamsPaid || 0,
         teamsOwing: pay.teams.filter((t) => t.leagueId === l.leagueId).slice(0, 30).map((t) => ({
           team: t.teamName, teamId: t.teamId, teamOwedRands: t.teamOwedCents / 100,
-          playersOwing: t.players.slice(0, playerCap).map((p) => ({ playerId: p.playerId, name: p.name, owedRands: p.owedCents / 100, paidRands: p.paidCents / 100 })),
+          playersOwing: t.players.slice(0, playerCap).map((p) => ({ playerId: p.playerId, name: p.name, owedRands: p.owedCents / 100, paidRands: p.paidCents / 100, ...(p.paidCents > 0 ? { partPaid: true, payments: p.payCount } : {}) })),
         })),
       }));
     }
@@ -5127,7 +5127,9 @@ router.post("/admin/james/apply", requireOwnerSession, (req, res) => {
   if (!changes.length) return res.status(400).json({ error: "There's nothing to change." });
   if (jamesChangesToday(actor) + changes.length > cfg.dailyChanges) return res.status(429).json({ error: `That would go over today's limit of ${cfg.dailyChanges} changes by James for you. It resets at midnight.` });
   try {
-    const r = jamesActions().apply(changes, { actor, request: req.body.request, perms });
+    // Logo photos the admin attached: sent back with the confirmation, used here, never stored elsewhere.
+    const images = (Array.isArray(req.body.images) ? req.body.images : []).slice(0, james.MAX_IMAGES).map((u) => (typeof u === "string" && u.length <= 400000 ? u : null));
+    const r = jamesActions().apply(changes, { actor, request: req.body.request, perms, images });
     if (!r.ok) return res.status(400).json({ error: "Nothing was changed. One or more of these can't be done.", results: r.results });
     res.json({ ok: true, setId: r.setId, results: r.results, changes: { today: jamesChangesToday(actor), limit: cfg.dailyChanges } });
   } catch (e) { res.status(e.userFacing ? 400 : 500).json({ error: e.message || "Couldn't apply that." }); }

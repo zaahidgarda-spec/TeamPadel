@@ -161,3 +161,20 @@ test("a logo drawing is rebuilt from a short allow-list and anything risky is re
   assert.strictEqual(sets[0].dropped, 1);
   assert.strictEqual(sets[0].teamName, "Cyclones");
 });
+
+test("a logo photo and a team list come through as changes James can propose", () => {
+  const perms = J.permissions({});
+  const out = J.cleanChanges([
+    { kind: "team_add", leagueId: "L1", name: "Falcons", logoImage: 0 },
+    { kind: "player_add", leagueId: "L1", teamName: "Falcons", names: [" Ann ", "Bo", "", 7] },
+    { kind: "team_logo_set", leagueId: "L1", teamId: "T1", logoImage: 2 },
+    { kind: "team_logo_set", leagueId: "L1", teamId: "T1", image: "data:image/png;base64,AAAA" },
+    { kind: "team_logo_set", leagueId: "L1", teamId: "T1", logoImage: 9 },
+  ], perms);
+  assert.deepStrictEqual(out.map((c) => c.kind), ["team_add", "player_add", "team_logo_set"]);
+  assert.strictEqual(out[0].logoImage, 0);
+  assert.deepStrictEqual(out[1].names, ["Ann", "Bo", "7"]);
+  assert.strictEqual(out[1].teamName, "Falcons");
+  assert.strictEqual(out[2].logoImage, 2);
+  assert.strictEqual(out[2].image, undefined);
+});

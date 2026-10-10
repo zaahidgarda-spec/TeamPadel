@@ -3399,3 +3399,6 @@ html.gw-locked,html.gw-locked body{overflow:hidden;}
 .ahj-poster-frame{display:flex;justify-content:center;background:#0F172A;border-radius:12px;padding:12px;min-height:120px;align-items:center;}
 .ahj-poster-frame .ahj-sub{color:#CBD5E1;}
 .ahj-poster-img{max-width:100%;max-height:560px;height:auto;border-radius:8px;display:block;}
+.ah-partpill{display:inline-block;margin-left:8px;background:#FDF1DA;color:#8A5A00;border:1px solid #E0961A;border-radius:999px;padding:0 8px;font-size:11px;font-weight:700;vertical-align:middle;white-space:nowrap;}
+.ah-pbar{display:inline-block;width:70px;height:7px;border-radius:99px;background:#E2E8F0;overflow:hidden;margin-left:8px;vertical-align:middle;}
+.ah-pbar i{display:block;height:100%;background:#E0961A;}
